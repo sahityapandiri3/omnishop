@@ -1,0 +1,21 @@
+name: Claude Code
+
+on:
+  workflow_dispatch: # run manually from Actions tab
+  push:
+    branches:
+      - main
+
+jobs:
+  claude-code:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # you can add more config here, e.g.:
+          # model: claude-3-5-sonnet-20240620
+          # instructions: "Explain changes clearly"
