@@ -358,7 +358,20 @@ Analysis Instructions:
             import traceback
             traceback.print_exc()
             logger.error(f"Error in ChatGPT analysis: {e}", exc_info=True)
-            fallback_response = "I apologize, but I'm having trouble analyzing your request right now. Could you please try rephrasing your interior design needs?"
+
+            # Provide specific error messages based on error type
+            error_message = str(e).lower()
+            if "connection" in error_message or "timeout" in error_message:
+                fallback_response = "I'm having trouble connecting to the OpenAI service right now. Please check your internet connection and try again in a moment."
+            elif "image processing not supported" in error_message or "image" in error_message:
+                fallback_response = "The image you provided couldn't be processed. Please try uploading a different image format (JPG or PNG) or ensure the image size is under 5MB."
+            elif "rate limit" in error_message or "quota" in error_message or "429" in error_message:
+                fallback_response = "The OpenAI API has reached its rate limit or quota. Please try again in a few moments."
+            elif "authentication" in error_message or "api key" in error_message or "401" in error_message:
+                fallback_response = "There's an issue with the OpenAI API authentication. Please contact the administrator to verify the API key configuration."
+            else:
+                fallback_response = f"I encountered an error while analyzing your request: {type(e).__name__}. Please try rephrasing your interior design needs or contact support if this persists."
+
             return fallback_response, None
 
     async def _call_chatgpt(self, messages: List[Dict[str, Any]]) -> str:
@@ -410,30 +423,42 @@ Analysis Instructions:
             if "429" in error_message or "quota" in error_message.lower() or "insufficient_quota" in error_message.lower():
                 print(f"[DEBUG] Quota error detected, returning fallback")
                 logger.warning("OpenAI quota exceeded - returning structured fallback response")
-                return self._get_structured_fallback(messages)
-            raise
+                return self._get_structured_fallback(messages, error_type="rate_limit")
+
+            # Return structured fallback for other API errors
+            return self._get_structured_fallback(messages, error_type="api_error", error_message=error_message)
         except openai.RateLimitError as e:
             print(f"[DEBUG] OpenAI RateLimitError: {str(e)}")
             self.api_usage_stats["failed_requests"] += 1
             logger.warning(f"Rate limit exceeded - returning structured fallback: {e}")
-            return self._get_structured_fallback(messages)
+            return self._get_structured_fallback(messages, error_type="rate_limit")
         except openai.AuthenticationError as e:
             print(f"[DEBUG] OpenAI AuthenticationError: {str(e)}")
             self.api_usage_stats["failed_requests"] += 1
             logger.error(f"Authentication failed: {e}")
-            raise
+            return self._get_structured_fallback(messages, error_type="authentication")
         except Exception as e:
             print(f"[DEBUG] Generic exception in _call_chatgpt: {type(e).__name__}: {str(e)}")
             import traceback
             traceback.print_exc()
             self.api_usage_stats["failed_requests"] += 1
             logger.error(f"ChatGPT API call failed: {e}", exc_info=True)
-            # Return a structured fallback response for any other errors
-            return self._get_structured_fallback(messages)
 
-    def _get_structured_fallback(self, messages: List[Dict[str, Any]]) -> str:
+            # Categorize the error
+            error_message = str(e).lower()
+            if "connection" in error_message or "timeout" in error_message:
+                error_type = "connection"
+            elif "image" in error_message:
+                error_type = "image_processing"
+            else:
+                error_type = "unknown"
+
+            # Return a structured fallback response for any other errors
+            return self._get_structured_fallback(messages, error_type=error_type, error_message=str(e))
+
+    def _get_structured_fallback(self, messages: List[Dict[str, Any]], error_type: str = "unknown", error_message: str = "") -> str:
         """Get structured fallback response when API fails"""
-        print(f"[DEBUG] _get_structured_fallback called")
+        print(f"[DEBUG] _get_structured_fallback called with error_type: {error_type}")
         # Extract user message for contextual response
         user_message = ""
         has_image = False
@@ -524,15 +549,28 @@ Analysis Instructions:
                     "alternative_options": ["different styles available"],
                     "phased_approach": ["start with essentials"]
                 },
-                "user_friendly_response": self._build_fallback_message(user_message, has_image)
+                "user_friendly_response": self._build_fallback_message(user_message, has_image, error_type, error_message)
         }
         return json.dumps(fallback)
 
-    def _build_fallback_message(self, user_message: str, has_image: bool) -> str:
+    def _build_fallback_message(self, user_message: str, has_image: bool, error_type: str = "unknown", error_message: str = "") -> str:
         """Build fallback message for API failures"""
-        action = "transform your space" if has_image else "find the perfect pieces"
-        user_request_part = f'Based on your request for "{user_message[:100]}", ' if user_message else ''
-        return f"Thank you for your request! I'm experiencing high demand right now, but I can still help you {action}. {user_request_part}I'll show you some beautiful design options and product recommendations that match your style. Let's create something amazing together!"
+        # Provide specific error messages based on error type
+        if error_type == "connection":
+            return "I'm having trouble connecting to the OpenAI service right now. Please check your internet connection and try again in a moment. In the meantime, I'll show you some product recommendations."
+        elif error_type == "image_processing":
+            return "The image you provided couldn't be processed by the AI service. Please try uploading a different image format (JPG or PNG) or ensure the image size is under 5MB. I'll still show you some product recommendations based on your request."
+        elif error_type == "rate_limit":
+            return "The OpenAI API has reached its rate limit. Please try again in a few moments. I'll show you some product recommendations in the meantime."
+        elif error_type == "authentication":
+            return "There's an issue with the OpenAI API authentication. Please contact the administrator to verify the API key configuration. I'll show you some product recommendations for now."
+        elif error_type == "api_error":
+            return f"I encountered an API error while processing your request. Please try again in a moment. I'll show you some product recommendations based on your preferences."
+        else:
+            # Generic fallback with more helpful context
+            action = "transform your space" if has_image else "find the perfect pieces"
+            user_request_part = f'Based on your request for "{user_message[:100]}", ' if user_message else ''
+            return f"Thank you for your request! I'm experiencing some technical difficulties with the AI analysis service right now, but I can still help you {action}. {user_request_part}I'll show you some beautiful design options and product recommendations that match your style. Let's create something amazing together!"
 
     def _parse_response(self, response: str) -> Tuple[str, Optional[DesignAnalysisSchema]]:
         """Parse ChatGPT response into conversational text and structured analysis"""

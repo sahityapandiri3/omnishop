@@ -441,37 +441,75 @@ Return results as JSON array:
             # Build explicit product placement prompt with product images
             if products_description and product_images:
                 products_list = '\n'.join([f"- {desc}" for desc in products_description])
-                visualization_prompt = f"""TASK: Add specific products to this room image while preserving the existing space.
+                visualization_prompt = f"""⚠️ CRITICAL INSTRUCTION: THIS IS AN ADD-ONLY TASK, NOT A REDESIGN TASK ⚠️
+
+TASK: ADD the specific products listed below to EMPTY SPACES in this room. DO NOT change anything else.
 
 PRODUCTS TO ADD (see reference images below):
 {products_list}
 
-🚫 CRITICAL PRESERVATION RULES - DO NOT VIOLATE:
-1. PRESERVE ALL EXISTING ELEMENTS: Keep all existing furniture, walls, floors, ceilings, windows, doors, lighting fixtures, and decor EXACTLY as shown
-2. DO NOT REDESIGN: Do not change the room's style, colors, layout, or existing items
-3. DO NOT REMOVE: Do not remove or replace any existing furniture or decor
-4. DO NOT ALTER: Do not change wall colors, flooring, lighting, or architectural features
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚫 ABSOLUTELY FORBIDDEN - YOU MUST NOT DO THESE THINGS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-✅ WHAT YOU MUST DO:
-1. USE EXACT PRODUCTS: Place only the specific products shown in the reference images (exact colors, patterns, textures, designs)
-2. ADD TO EMPTY SPACES: Place products in appropriate empty spaces (sofas, chairs, empty corners, tables, shelves)
-3. BLEND NATURALLY: Ensure realistic shadows, lighting, and perspective so products look naturally placed
-4. MATCH PRODUCT DETAILS: The placed products must look IDENTICAL to the reference images
+1. ❌ DO NOT change wall colors, wall textures, or wall materials
+2. ❌ DO NOT change flooring colors, patterns, or materials
+3. ❌ DO NOT change ceiling color or design
+4. ❌ DO NOT remove ANY existing furniture, even if it looks old or doesn't match
+5. ❌ DO NOT replace ANY existing furniture or decor items
+6. ❌ DO NOT move or reposition ANY existing furniture
+7. ❌ DO NOT change the room's lighting, windows, or doors
+8. ❌ DO NOT alter the room's style or color scheme
+9. ❌ DO NOT add items that are NOT in the product list above
+10. ❌ DO NOT redesign, transform, or makeover the room
 
-📍 PLACEMENT GUIDELINES:
-- Throw pillows → Place on sofas, chairs, or beds in empty spots
-- Small furniture → Position in empty floor spaces while maintaining traffic flow
-- Decor items → Place on empty tables, shelves, or walls
-- Lighting → Position in ceiling/wall locations that don't conflict with existing fixtures
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ THE ONLY THING YOU ARE ALLOWED TO DO:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-STYLE CONTEXT: {user_request if user_request else 'Place products naturally in the existing space'}
+1. ✓ LOOK at the room image and IDENTIFY empty spaces (empty floor areas, empty sofa surfaces, empty tables, empty shelves, empty walls)
+2. ✓ LOOK at the product reference images to see exact colors, patterns, and designs
+3. ✓ ADD ONLY the products from the reference images to empty spaces
+4. ✓ MATCH the products EXACTLY to reference images (same color, pattern, texture, design)
+5. ✓ BLEND products naturally with realistic shadows and lighting
+
+📍 WHERE TO PLACE PRODUCTS (only in EMPTY spaces):
+- Throw pillows/cushions → Empty spots on existing sofas, chairs, or beds
+- Small furniture items → Empty floor spaces (corners, empty walls)
+- Decor items → Empty surfaces on tables, shelves, or empty wall space
+- Lamps/lighting → Empty tables, empty floor corners
+
+⚠️ IMPORTANT: If a sofa already has 3 pillows, you can add 1-2 MORE pillows. Do NOT remove the existing 3 pillows.
+⚠️ IMPORTANT: If a room has a brown couch, keep the brown couch. Add new items around it or on it.
+
+STYLE CONTEXT: {user_request if user_request else 'Place products naturally to complement the existing space'}
 
 QUALITY REQUIREMENTS:
-- Lighting: {visualization_request.lighting_conditions} with realistic shadows matching the room
+- Lighting: {visualization_request.lighting_conditions} - match the EXISTING lighting in the room
 - Rendering: {visualization_request.render_quality} quality photorealism
-- Product accuracy: Must match reference images EXACTLY (same design, color, pattern, texture)
+- Product accuracy: EXACT match to reference images
+- Shadows: Realistic shadows matching existing room lighting
+- Perspective: Match the existing camera angle
 
-🎯 FINAL CHECK: The output image should show the SAME room with the SAME existing elements, just with the new products added to appropriate locations."""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔍 VERIFICATION CHECKLIST (check BEFORE generating):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Before you generate the output image, verify:
+✓ Same wall color and texture as input image?
+✓ Same flooring as input image?
+✓ Same ceiling as input image?
+✓ ALL existing furniture still present (not removed)?
+✓ ALL existing decor still present (not moved)?
+✓ Same windows and doors?
+✓ Same lighting setup?
+✓ Only added products from the reference images?
+✓ Added products look EXACTLY like reference images?
+✓ Products placed in EMPTY spaces only?
+
+If you answered NO to ANY of these questions, you MUST revise your output.
+
+🎯 SUCCESS CRITERIA: The output must be the EXACT SAME ROOM with ONLY the new products added to empty spaces. A person looking at the before/after should say "Oh, they just added [product name] to my room!" NOT "Oh, they redesigned my entire room!"
             else:
                 visualization_prompt = f"""Transform this interior space following this design request: {user_request}
 
@@ -610,20 +648,29 @@ Create a photorealistic interior design visualization that addresses the user's 
             # Process the base image
             processed_image = self._preprocess_image(base_image)
 
-            # Build transformation prompt (allows full redesign)
-            visualization_prompt = f"""Transform this interior space based on the following design request:
+            # Build transformation prompt with strong room preservation
+            visualization_prompt = f"""IMPORTANT: Use the EXACT room shown in this image as your base. Do NOT create a new room.
 
-USER REQUEST: {user_request}
+USER'S DESIGN REQUEST: {user_request}
 
-INSTRUCTIONS:
-- Address the user's specific request for transformation/redesign
-- Maintain realistic proportions, scale, and architectural features
-- Apply appropriate lighting: {lighting_conditions}
-- Create a {render_quality} quality photorealistic result
-- Ensure all materials, textures, and finishes look realistic
-- Preserve the overall room dimensions and layout unless explicitly requested to change
+🔒 CRITICAL PRESERVATION RULES:
+1. USE THIS EXACT ROOM: Keep the same walls, windows, doors, flooring, ceiling, and architectural features shown in the image
+2. PRESERVE THE SPACE: Maintain the exact room dimensions, layout, and perspective
+3. KEEP EXISTING STRUCTURE: Do not change wall colors, window positions, door locations, or ceiling design unless specifically requested
+4. SAME LIGHTING SETUP: Preserve existing light sources and natural lighting from windows
 
-Create a photorealistic interior design visualization that fulfills the user's request."""
+✨ WHAT YOU CAN DO:
+1. Add furniture and decor items as requested: {user_request}
+2. Style the space according to user preferences while keeping the room structure
+3. Place items naturally within THIS specific room layout
+4. Ensure new items match the room's scale and perspective
+
+QUALITY REQUIREMENTS:
+- Lighting: {lighting_conditions} - match existing lighting in the image
+- Rendering: {render_quality} quality photorealism
+- Perspective: Maintain the exact camera angle and viewpoint from the input image
+
+🎯 RESULT: The output must show THE SAME ROOM from the input image, just with design changes applied to furniture/decor."""
 
             # Use Gemini 2.5 Flash Image for generation
             model = "gemini-2.5-flash-image"
@@ -690,6 +737,127 @@ Create a photorealistic interior design visualization that fulfills the user's r
 
         except Exception as e:
             logger.error(f"Error generating text-based visualization: {e}", exc_info=True)
+            return VisualizationResult(
+                rendered_image=base_image,
+                processing_time=0.0,
+                quality_score=0.5,
+                placement_accuracy=0.0,
+                lighting_realism=0.0,
+                confidence_score=0.3
+            )
+
+    async def generate_iterative_visualization(
+        self,
+        base_image: str,
+        modification_request: str,
+        lighting_conditions: str = "mixed",
+        render_quality: str = "high"
+    ) -> VisualizationResult:
+        """
+        Generate iterative visualization by modifying an existing generated image
+        Used when user requests changes to a previously generated visualization (e.g., "add more pillows")
+        """
+        try:
+            start_time = time.time()
+
+            # Process the base image (existing visualization)
+            processed_image = self._preprocess_image(base_image)
+
+            # Build iterative modification prompt with room preservation
+            visualization_prompt = f"""IMPORTANT: This is the EXACT room to modify. Keep the same room structure, walls, windows, flooring, and perspective.
+
+MODIFICATION REQUEST: {modification_request}
+
+🔒 CRITICAL PRESERVATION RULES:
+1. USE THIS EXACT ROOM: Keep the same walls, windows, doors, flooring, ceiling shown in this image
+2. PRESERVE ROOM STRUCTURE: Do not change the room layout, dimensions, or architectural features
+3. KEEP CAMERA ANGLE: Maintain the exact perspective and viewpoint
+4. SAME BASE SPACE: This must remain the SAME physical room, just with the requested modification
+
+✅ APPLY ONLY THIS MODIFICATION:
+- User request: {modification_request}
+- Change ONLY what is specifically mentioned
+- Keep ALL other elements exactly as shown
+- If adding items, place them naturally in THIS room's existing layout
+
+EXAMPLES OF CORRECT MODIFICATIONS:
+- "add more pillows" → Add 2-3 pillows to THIS room, matching existing decor, keep everything else identical
+- "make it brighter" → Increase lighting in THIS exact room, don't change furniture or layout
+- "remove the lamp" → Remove lamp from THIS room, keep all other items and room structure
+- "add more of the same kind" → Duplicate similar items visible in THIS image, in THIS same room
+
+QUALITY REQUIREMENTS:
+- Lighting: {lighting_conditions} - maintain existing light sources
+- Rendering: {render_quality} quality photorealism
+- Consistency: The room must look like the SAME physical space
+
+🎯 RESULT: Output must show THIS EXACT ROOM with only the requested modification applied. Same walls, same windows, same floor, same perspective - just with the change requested."""
+
+            # Use Gemini 2.5 Flash Image for generation
+            model = "gemini-2.5-flash-image"
+            parts = [
+                types.Part.from_text(text=visualization_prompt),
+                types.Part(
+                    inline_data=types.Blob(
+                        mime_type="image/jpeg",
+                        data=base64.b64decode(processed_image)
+                    )
+                )
+            ]
+
+            contents = [types.Content(role="user", parts=parts)]
+            generate_content_config = types.GenerateContentConfig(
+                response_modalities=["IMAGE", "TEXT"],
+                temperature=0.3  # Lower temperature for more consistent modifications
+            )
+
+            transformed_image = None
+            transformation_description = ""
+
+            # Stream response
+            for chunk in self.genai_client.models.generate_content_stream(
+                model=model,
+                contents=contents,
+                config=generate_content_config,
+            ):
+                if chunk.candidates is None or chunk.candidates[0].content is None or chunk.candidates[0].content.parts is None:
+                    continue
+
+                for part in chunk.candidates[0].content.parts:
+                    if part.inline_data and part.inline_data.data:
+                        # Extract generated image data
+                        inline_data = part.inline_data
+                        image_bytes = inline_data.data
+                        mime_type = inline_data.mime_type or "image/png"
+
+                        # Convert to base64 data URI
+                        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                        transformed_image = f"data:{mime_type};base64,{image_base64}"
+                        logger.info(f"Successfully generated iterative visualization ({len(image_bytes)} bytes)")
+
+                    elif part.text:
+                        transformation_description += part.text
+
+            processing_time = time.time() - start_time
+
+            # If no image was generated, fall back to original
+            if not transformed_image:
+                logger.warning("No modified image generated, using original")
+                transformed_image = base_image
+
+            logger.info(f"Generated iterative visualization in {processing_time:.2f}s")
+
+            return VisualizationResult(
+                rendered_image=transformed_image,
+                processing_time=processing_time,
+                quality_score=0.92 if transformed_image != base_image else 0.5,
+                placement_accuracy=0.88 if transformed_image != base_image else 0.0,
+                lighting_realism=0.90 if transformed_image != base_image else 0.0,
+                confidence_score=0.89 if transformed_image != base_image else 0.3
+            )
+
+        except Exception as e:
+            logger.error(f"Error generating iterative visualization: {e}", exc_info=True)
             return VisualizationResult(
                 rendered_image=base_image,
                 processing_time=0.0,

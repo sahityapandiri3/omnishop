@@ -177,6 +177,15 @@ class DesignNLPProcessor:
                 "visualize", "see how", "would look", "place", "arrange",
                 "preview", "render", "show placement", "try out"
             ],
+            "image_modification": [
+                "add more", "add another", "add some", "add a", "add the",
+                "remove", "take away", "get rid of", "delete",
+                "make it", "make this", "change the", "change this",
+                "adjust", "tweak", "modify", "update", "edit",
+                "brighter", "darker", "bigger", "smaller", "lighter",
+                "of the same kind", "similar to", "like this", "like these",
+                "more like", "less", "fewer", "replace with"
+            ],
             "budget_planning": [
                 "budget", "cost", "price", "afford", "expensive", "cheap",
                 "investment", "spend", "money", "financing"

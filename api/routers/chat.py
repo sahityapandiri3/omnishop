@@ -122,16 +122,63 @@ async def send_message(
                 analysis, db, limit=10, user_id=session.user_id, session_id=session_id
             )
 
-        # Check if user is requesting text-based visualization
+        # Smart 3-mode visualization detection
         visualization_image = None
-        if request.image and request.message:
-            # Use NLP to detect visualization intent
-            intent_result = await design_nlp_processor.classify_intent(request.message)
 
+        # Use NLP to detect user intent
+        intent_result = await design_nlp_processor.classify_intent(request.message)
+
+        # Helper function to find last generated visualization in conversation
+        def find_last_generated_visualization():
+            """Find the most recent AI-generated visualization image"""
+            # Get messages from database in reverse order
+            for msg in reversed(messages):
+                # Check if message has an image URL that's a data URI (AI-generated)
+                if msg.image_url and msg.image_url.startswith('data:image'):
+                    return msg.image_url
+            return None
+
+        # Get conversation messages from database for context
+        messages_query = select(ChatMessage).where(
+            ChatMessage.session_id == session_id
+        ).order_by(ChatMessage.timestamp)
+        messages_result = await db.execute(messages_query)
+        messages = list(messages_result.scalars().all())
+
+        # MODE 3: Iterative Improvement - User modifying existing generated image
+        if intent_result.primary_intent == "image_modification":
+            last_viz = find_last_generated_visualization()
+            if last_viz:
+                logger.info(f"Detected image modification intent: {request.message[:50]}...")
+                try:
+                    # Extract lighting conditions from analysis if available
+                    lighting_conditions = "mixed"
+                    if analysis and hasattr(analysis, 'design_analysis') and analysis.design_analysis:
+                        space_analysis = analysis.design_analysis.get('space_analysis', {})
+                        if isinstance(space_analysis, dict):
+                            lighting_conditions = space_analysis.get('lighting_conditions', 'mixed')
+
+                    # Generate iterative visualization
+                    viz_result = await google_ai_service.generate_iterative_visualization(
+                        base_image=last_viz,
+                        modification_request=request.message,
+                        lighting_conditions=lighting_conditions,
+                        render_quality="high"
+                    )
+
+                    visualization_image = viz_result.rendered_image
+                    logger.info("Successfully generated iterative visualization")
+                except Exception as viz_error:
+                    logger.error(f"Failed to generate iterative visualization: {viz_error}")
+            else:
+                logger.info("Image modification intent detected but no previous visualization found")
+
+        # MODE 2: Full Transformation - User uploaded image + wants transformation
+        elif request.image and request.message:
             # Visualization keywords that indicate user wants image transformation
             visualization_keywords = [
-                'visualize', 'transform', 'make', 'change', 'redesign', 'update',
-                'modernize', 'show', 'see how', 'would look', 'convert', 'turn into'
+                'visualize', 'transform', 'make this', 'redesign',
+                'modernize', 'see how', 'would look', 'convert', 'turn into'
             ]
 
             message_lower = request.message.lower()
@@ -142,7 +189,7 @@ async def send_message(
 
             # If visualization intent detected with image, generate visualization
             if has_visualization_intent:
-                logger.info(f"Detected visualization intent in message: {request.message[:50]}...")
+                logger.info(f"Detected full transformation intent: {request.message[:50]}...")
                 try:
                     # Extract lighting conditions from analysis if available
                     lighting_conditions = "mixed"
@@ -163,6 +210,9 @@ async def send_message(
                     logger.info("Successfully generated text-based visualization")
                 except Exception as viz_error:
                     logger.error(f"Failed to generate text-based visualization: {viz_error}")
+
+        # MODE 1: Product Recommendations - Default behavior when no visualization needed
+        # This happens automatically below when recommended_products are fetched
 
         # Create response message schema
         message_schema = ChatMessageSchema(
