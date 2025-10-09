@@ -127,6 +127,13 @@ async def send_message(
         # Smart 3-mode visualization detection
         visualization_image = None
 
+        # Get conversation messages from database for context (MOVED BEFORE USE)
+        messages_query = select(ChatMessage).where(
+            ChatMessage.session_id == session_id
+        ).order_by(ChatMessage.timestamp)
+        messages_result = await db.execute(messages_query)
+        messages = list(messages_result.scalars().all())
+
         # Use NLP to detect user intent
         intent_result = await design_nlp_processor.classify_intent(request.message)
 
@@ -139,13 +146,6 @@ async def send_message(
                 if msg.image_url and msg.image_url.startswith('data:image'):
                     return msg.image_url
             return None
-
-        # Get conversation messages from database for context
-        messages_query = select(ChatMessage).where(
-            ChatMessage.session_id == session_id
-        ).order_by(ChatMessage.timestamp)
-        messages_result = await db.execute(messages_query)
-        messages = list(messages_result.scalars().all())
 
         # MODE 3: Iterative Improvement - User modifying existing generated image
         if intent_result.primary_intent == "image_modification":
