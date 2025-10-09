@@ -509,7 +509,7 @@ Before you generate the output image, verify:
 
 If you answered NO to ANY of these questions, you MUST revise your output.
 
-🎯 SUCCESS CRITERIA: The output must be the EXACT SAME ROOM with ONLY the new products added to empty spaces. A person looking at the before/after should say "Oh, they just added [product name] to my room!" NOT "Oh, they redesigned my entire room!"
+🎯 SUCCESS CRITERIA: The output must be the EXACT SAME ROOM with ONLY the new products added to empty spaces. A person looking at the before/after should say "Oh, they just added [product name] to my room!" NOT "Oh, they redesigned my entire room!"""
             else:
                 visualization_prompt = f"""Transform this interior space following this design request: {user_request}
 
