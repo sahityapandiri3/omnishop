@@ -15,17 +15,19 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from api.routers import products, categories, chat
+    from api.routers import products, categories, chat, visualization
     from api.core.config import settings
     # from api.core.database import database
     from api.core.logging import setup_logging
+
+    # Setup logging
+    setup_logging()
 except ImportError as e:
     print(f"Import error: {e}")
     # Fallback imports for basic functionality
     settings = None
-
-# Setup logging
-setup_logging()
+    def setup_logging():
+        logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -35,16 +37,15 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Omnishop API...")
 
-    # Connect to database
-    await database.connect()
-    logger.info("Database connected")
+    # Database connection is managed by SQLAlchemy async session
+    # No explicit connect/disconnect needed
+    logger.info("Application started")
 
     yield
 
     # Shutdown
     logger.info("Shutting down Omnishop API...")
-    await database.disconnect()
-    logger.info("Database disconnected")
+    logger.info("Application stopped")
 
 
 # Create FastAPI application
@@ -107,7 +108,7 @@ async def health_check():
         "status": "healthy",
         "timestamp": time.time(),
         "version": "1.0.0",
-        "database": "connected" if database.is_connected else "disconnected"
+        "database": "ready"  # Database sessions managed per-request
     }
 
 
@@ -123,7 +124,8 @@ async def root():
         "endpoints": {
             "products": "/api/products",
             "categories": "/api/categories",
-            "chat": "/api/chat"
+            "chat": "/api/chat",
+            "visualization": "/api/visualization"
         }
     }
 
@@ -145,6 +147,12 @@ app.include_router(
     chat.router,
     prefix="/api/chat",
     tags=["chat"]
+)
+
+app.include_router(
+    visualization.router,
+    prefix="/api/visualization",
+    tags=["visualization"]
 )
 
 # Additional routers can be added here as needed

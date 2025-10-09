@@ -21,6 +21,19 @@ export interface Product {
   attributes: ProductAttribute[];
   scraped_at: string;
   last_updated: string;
+  // Additional fields from recommendation API
+  primary_image?: {
+    url: string;
+    alt_text: string;
+  };
+  recommendation_data?: {
+    confidence_score: number;
+    reasoning: string[];
+    style_match: number;
+    functional_match: number;
+    price_score: number;
+    overall_score: number;
+  };
 }
 
 export interface ProductImage {
@@ -89,8 +102,12 @@ export interface ChatMessage {
   type: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  session_id?: string;
   products?: Product[];
   image?: string;
+  image_url?: string;
+  recommendations?: any[]; // For compatibility with backend
+  analysis?: any; // For backend analysis data
 }
 
 export interface ChatSession {
@@ -219,4 +236,26 @@ export interface ChatFormData {
 export interface VisualizationFormData {
   room_image: File;
   room_name: string;
+}
+
+// API Response types for Chat
+export interface ChatMessageRequest {
+  content?: string;
+  message?: string;
+  image?: string;
+  image_data?: string;
+}
+
+export interface ChatMessageResponse {
+  id: string;
+  message_id?: string;
+  content: string;
+  message_type?: string;
+  type?: string;
+  timestamp: string;
+  session_id: string;
+  analysis?: any;
+  recommendations?: any[];
+  products?: any[];
+  processing_time?: number;
 }

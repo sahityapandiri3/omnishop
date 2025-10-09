@@ -7,7 +7,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000,
+  timeout: 200000, // Increased to 200 seconds to accommodate AI image generation
 });
 
 // Request interceptor for authentication
@@ -138,11 +138,7 @@ export const startChatSession = async (data?: { user_id?: string }) => {
     return response.data;
   } catch (error) {
     console.error('Error starting chat session:', error);
-    // Return mock data as fallback
-    return {
-      session_id: "mock-session-" + Date.now(),
-      message: "Hello! I'm your AI interior design assistant. How can I help you transform your space today?"
-    };
+    throw error; // Don't fall back to mock session, let the frontend handle the error
   }
 };
 
@@ -152,18 +148,7 @@ export const sendChatMessage = async (sessionId: string, data: { message: string
     return response.data;
   } catch (error) {
     console.error('Error sending chat message:', error);
-    // Return mock data as fallback
-    return {
-      message: {
-        id: "mock-message-" + Date.now(),
-        type: "assistant",
-        content: "I'd be happy to help you design your space! Could you tell me more about the room you're working with and your style preferences?",
-        timestamp: new Date().toISOString(),
-        session_id: sessionId
-      },
-      analysis: null,
-      recommended_products: []
-    };
+    throw error; // Don't fall back to generic response, let the frontend handle the error
   }
 };
 
@@ -173,16 +158,7 @@ export const getChatHistory = async (sessionId: string) => {
     return response.data;
   } catch (error) {
     console.error('Error fetching chat history:', error);
-    // Return mock data as fallback
-    return {
-      session: {
-        id: sessionId,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        message_count: 0
-      },
-      messages: []
-    };
+    throw error; // Don't fall back to empty messages, let the frontend handle the error
   }
 };
 

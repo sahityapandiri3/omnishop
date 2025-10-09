@@ -17,38 +17,27 @@ class PelicanEssentialsSpider(BaseProductSpider):
     name = 'pelicanessentials'
     allowed_domains = ['pelicanessentials.com']
 
-    # Main category URLs to scrape
+    # Limit products per category
+    PRODUCTS_PER_CATEGORY = 100
+
+    # Main category URLs to scrape (Shopify)
     start_urls = [
-        # Luxury furniture
-        'https://www.pelicanessentials.com/furniture/',
-        'https://www.pelicanessentials.com/seating/',
-        'https://www.pelicanessentials.com/tables/',
-        'https://www.pelicanessentials.com/storage-furniture/',
-        'https://www.pelicanessentials.com/bedroom-furniture/',
+        # Sofas and seating
+        'https://pelicanessentials.com/collections/fabric-sofa-sets',
+        'https://pelicanessentials.com/collections/1-seater-sofas',
+        'https://pelicanessentials.com/collections/corner-sectional-sofas',
+        'https://pelicanessentials.com/collections/nordhaven-sofas',
+        'https://pelicanessentials.com/collections/node-sofa-sets',
+        'https://pelicanessentials.com/collections/replaceable-fabric-sofas',
 
-        # Luxury decor
-        'https://www.pelicanessentials.com/decor/',
-        'https://www.pelicanessentials.com/wall-art/',
-        'https://www.pelicanessentials.com/sculptures/',
-        'https://www.pelicanessentials.com/vases-vessels/',
-        'https://www.pelicanessentials.com/decorative-objects/',
+        # Collections
+        'https://pelicanessentials.com/collections/harmony-collection-1',
+        'https://pelicanessentials.com/collections/ottoman',
+        'https://pelicanessentials.com/collections/accessories',
+        'https://pelicanessentials.com/collections/sideboards',
 
-        # Lighting
-        'https://www.pelicanessentials.com/lighting/',
-        'https://www.pelicanessentials.com/table-lamps/',
-        'https://www.pelicanessentials.com/floor-lamps/',
-        'https://www.pelicanessentials.com/chandeliers/',
-
-        # Textiles and rugs
-        'https://www.pelicanessentials.com/textiles/',
-        'https://www.pelicanessentials.com/rugs/',
-        'https://www.pelicanessentials.com/pillows/',
-        'https://www.pelicanessentials.com/throws/',
-
-        # Collections and designer pieces
-        'https://www.pelicanessentials.com/collections/',
-        'https://www.pelicanessentials.com/designer-pieces/',
-        'https://www.pelicanessentials.com/limited-edition/',
+        # All products
+        'https://pelicanessentials.com/collections/all',
     ]
 
     custom_settings = {
@@ -58,18 +47,33 @@ class PelicanEssentialsSpider(BaseProductSpider):
         'CONCURRENT_REQUESTS_PER_DOMAIN': 4,  # Lower concurrency
     }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.category_product_count = {}
+
     def parse(self, response):
         """Parse category pages and extract product links"""
         self.logger.info(f"Parsing category page: {response.url}")
 
-        # Multiple selectors for product links
+        # Get the category URL from meta or use current URL
+        category_url = response.meta.get('category_url', response.url)
+
+        # Initialize category counter if not exists
+        if category_url not in self.category_product_count:
+            self.category_product_count[category_url] = 0
+
+        # Check if we've reached the limit for this category
+        if self.category_product_count[category_url] >= self.PRODUCTS_PER_CATEGORY:
+            self.logger.info(f"Reached limit of {self.PRODUCTS_PER_CATEGORY} products for category: {category_url}")
+            return
+
+        # Shopify product link selectors
         product_selectors = [
-            'a.product-item-link::attr(href)',
-            'a.product-link::attr(href)',
-            '.product-grid a::attr(href)',
-            '.product-card a::attr(href)',
+            'a.link-faded::attr(href)',
+            'a.link-faded-reverse::attr(href)',
             'a[href*="/products/"]::attr(href)',
-            '.collection-item a::attr(href)'
+            '.product-card a::attr(href)',
+            '.grid-product a::attr(href)'
         ]
 
         product_links = []
@@ -77,36 +81,42 @@ class PelicanEssentialsSpider(BaseProductSpider):
             links = response.css(selector).getall()
             product_links.extend(links)
 
-        # Remove duplicates and filter valid links
+        # Remove duplicates and filter valid product links
         product_links = list(set([link for link in product_links if link and '/products/' in link]))
 
         for link in product_links:
+            # Check if we've reached the limit
+            if self.category_product_count[category_url] >= self.PRODUCTS_PER_CATEGORY:
+                break
+
             product_url = urljoin(response.url, link)
+            self.category_product_count[category_url] += 1
             yield scrapy.Request(
                 url=product_url,
                 callback=self.parse_product,
-                meta={'category_url': response.url}
+                meta={'category_url': category_url}
             )
 
-        # Follow pagination with multiple selectors
-        pagination_selectors = [
-            'a.next::attr(href)',
-            'a[rel="next"]::attr(href)',
-            '.pagination-next a::attr(href)',
-            '.load-more::attr(href)',
-            'a.page-next::attr(href)'
-        ]
+        # Follow pagination only if we haven't reached the limit
+        if self.category_product_count[category_url] < self.PRODUCTS_PER_CATEGORY:
+            pagination_selectors = [
+                'a.next::attr(href)',
+                'a[rel="next"]::attr(href)',
+                '.pagination-next a::attr(href)',
+                '.load-more::attr(href)',
+                'a.page-next::attr(href)'
+            ]
 
-        for selector in pagination_selectors:
-            next_page = response.css(selector).get()
-            if next_page:
-                next_url = urljoin(response.url, next_page)
-                yield scrapy.Request(
-                    url=next_url,
-                    callback=self.parse,
-                    meta={'category_url': response.meta.get('category_url', response.url)}
-                )
-                break
+            for selector in pagination_selectors:
+                next_page = response.css(selector).get()
+                if next_page:
+                    next_url = urljoin(response.url, next_page)
+                    yield scrapy.Request(
+                        url=next_url,
+                        callback=self.parse,
+                        meta={'category_url': category_url}
+                    )
+                    break
 
     def parse_product(self, response):
         """Parse individual product pages"""

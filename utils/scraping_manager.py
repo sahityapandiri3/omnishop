@@ -20,7 +20,7 @@ class ScrapingManager:
     """Manage scraping operations and scheduling"""
 
     def __init__(self):
-        self.spiders = ['westelm', 'orangetree', 'pelicanessentials']
+        self.spiders = ['pelicanessentials', 'sageliving']
         self.project_root = Path(__file__).parent.parent
 
     def run_spider(self, spider_name: str, **kwargs) -> Dict:
@@ -31,13 +31,13 @@ class ScrapingManager:
         logger.info(f"Starting spider: {spider_name}")
         start_time = datetime.utcnow()
 
-        # Create log entry
-        log_entry = self._create_log_entry(spider_name, start_time)
+        # Create log entry and get its ID
+        log_id = self._create_log_entry(spider_name, start_time)
 
         try:
             # Build scrapy command
             cmd = [
-                'scrapy', 'crawl', spider_name,
+                'python3', '-m', 'scrapy', 'crawl', spider_name,
                 '-s', f'IMAGES_STORE={settings.images.store_path}',
                 '-s', f'DOWNLOAD_DELAY={settings.scraping.download_delay}',
             ]
@@ -60,7 +60,7 @@ class ScrapingManager:
 
             # Update log entry
             self._update_log_entry(
-                log_entry,
+                log_id,
                 end_time=end_time,
                 duration=int(duration),
                 status=ScrapingStatus.SUCCESS if result.returncode == 0 else ScrapingStatus.FAILED,
@@ -72,7 +72,7 @@ class ScrapingManager:
                 'spider': spider_name,
                 'status': 'success' if result.returncode == 0 else 'failed',
                 'duration': duration,
-                'log_id': log_entry.id,
+                'log_id': log_id,
                 'stdout': result.stdout,
                 'stderr': result.stderr
             }
@@ -80,7 +80,7 @@ class ScrapingManager:
         except subprocess.TimeoutExpired:
             logger.error(f"Spider {spider_name} timed out")
             self._update_log_entry(
-                log_entry,
+                log_id,
                 end_time=datetime.utcnow(),
                 status=ScrapingStatus.FAILED,
                 error_messages=['Spider timed out after 1 hour']
@@ -88,14 +88,14 @@ class ScrapingManager:
             return {
                 'spider': spider_name,
                 'status': 'timeout',
-                'log_id': log_entry.id,
+                'log_id': log_id,
                 'error': 'Spider timed out'
             }
 
         except Exception as e:
             logger.error(f"Error running spider {spider_name}: {e}")
             self._update_log_entry(
-                log_entry,
+                log_id,
                 end_time=datetime.utcnow(),
                 status=ScrapingStatus.FAILED,
                 error_messages=[str(e)]
@@ -103,7 +103,7 @@ class ScrapingManager:
             return {
                 'spider': spider_name,
                 'status': 'error',
-                'log_id': log_entry.id,
+                'log_id': log_id,
                 'error': str(e)
             }
 
@@ -193,12 +193,13 @@ class ScrapingManager:
                 'total_products': self._get_total_products_by_source()
             }
 
-    def _create_log_entry(self, spider_name: str, start_time: datetime) -> ScrapingLog:
-        """Create initial log entry for scraping run"""
+    def _create_log_entry(self, spider_name: str, start_time: datetime) -> int:
+        """Create initial log entry for scraping run and return its ID"""
         website_mapping = {
             'westelm': 'westelm.com',
             'orangetree': 'orangetree.com',
-            'pelicanessentials': 'pelicanessentials.com'
+            'pelicanessentials': 'pelicanessentials.com',
+            'sageliving': 'sageliving.in'
         }
 
         with get_db_session() as session:
@@ -211,11 +212,12 @@ class ScrapingManager:
             session.add(log_entry)
             session.commit()
             session.refresh(log_entry)
-            return log_entry
+            log_id = log_entry.id
+            return log_id
 
     def _update_log_entry(
         self,
-        log_entry: ScrapingLog,
+        log_id: int,
         end_time: datetime = None,
         duration: int = None,
         status: ScrapingStatus = None,
@@ -225,8 +227,8 @@ class ScrapingManager:
     ):
         """Update log entry with results"""
         with get_db_session() as session:
-            # Re-fetch the log entry to avoid session issues
-            log = session.query(ScrapingLog).filter(ScrapingLog.id == log_entry.id).first()
+            # Fetch the log entry by ID
+            log = session.query(ScrapingLog).filter(ScrapingLog.id == log_id).first()
             if not log:
                 return
 

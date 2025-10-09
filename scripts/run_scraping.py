@@ -180,7 +180,7 @@ def main():
 
     # Spider commands
     spider_parser = subparsers.add_parser('spider', help='Run individual spider')
-    spider_parser.add_argument('spider_name', choices=['westelm', 'orangetree', 'pelicanessentials'])
+    spider_parser.add_argument('spider_name', choices=['pelicanessentials', 'sageliving'])
     spider_parser.add_argument('--delay', type=float, help='Download delay in seconds')
 
     # Batch command

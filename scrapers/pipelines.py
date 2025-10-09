@@ -80,9 +80,10 @@ class CustomImagesPipeline(ImagesPipeline):
 
     def __init__(self, store_uri, download_func=None, settings=None):
         super().__init__(store_uri, download_func, settings)
-        self.thumbnail_size = settings.images.thumbnail_size
-        self.medium_size = settings.images.medium_size
-        self.large_size = settings.images.large_size
+        # Access settings the Scrapy way or use defaults
+        self.thumbnail_size = (150, 150)
+        self.medium_size = (400, 400)
+        self.large_size = (800, 800)
 
     def get_media_requests(self, item, info):
         """Get image download requests"""
@@ -247,26 +248,47 @@ class DatabasePipeline:
 
     def _save_product_images(self, product, adapter, session):
         """Save product images"""
+        # Try to get images from pipeline first, then from URLs
         images_data = adapter.get('images', [])
+        image_urls = adapter.get('image_urls', [])
 
-        for i, image_data in enumerate(images_data):
-            # Check if image already exists
-            existing_image = session.query(ProductImage).filter_by(
-                product_id=product.id,
-                original_url=image_data.get('url', '')
-            ).first()
-
-            if not existing_image:
-                image = ProductImage(
+        # If we have processed images from ImagesPipeline, use those
+        if images_data:
+            for i, image_data in enumerate(images_data):
+                # Check if image already exists
+                existing_image = session.query(ProductImage).filter_by(
                     product_id=product.id,
-                    original_url=image_data.get('url', ''),
-                    thumbnail_url=image_data.get('thumbnail_url'),
-                    medium_url=image_data.get('medium_url'),
-                    large_url=image_data.get('large_url'),
-                    display_order=i,
-                    is_primary=(i == 0)  # First image is primary
-                )
-                session.add(image)
+                    original_url=image_data.get('url', '')
+                ).first()
+
+                if not existing_image:
+                    image = ProductImage(
+                        product_id=product.id,
+                        original_url=image_data.get('url', ''),
+                        thumbnail_url=image_data.get('thumbnail_url'),
+                        medium_url=image_data.get('medium_url'),
+                        large_url=image_data.get('large_url'),
+                        display_order=i,
+                        is_primary=(i == 0)  # First image is primary
+                    )
+                    session.add(image)
+        # Otherwise use direct URLs from scraper
+        elif image_urls:
+            for i, url in enumerate(image_urls):
+                # Check if image already exists
+                existing_image = session.query(ProductImage).filter_by(
+                    product_id=product.id,
+                    original_url=url
+                ).first()
+
+                if not existing_image:
+                    image = ProductImage(
+                        product_id=product.id,
+                        original_url=url,
+                        display_order=i,
+                        is_primary=(i == 0)  # First image is primary
+                    )
+                    session.add(image)
 
     def _save_product_attributes(self, product, adapter, session):
         """Save product attributes"""

@@ -24,7 +24,9 @@ class BaseProductSpider(scrapy.Spider):
         'ITEM_PIPELINES': {
             'scrapers.pipelines.ValidationPipeline': 200,
             'scrapers.pipelines.DuplicatesPipeline': 250,
-            'scrapers.pipelines.CustomImagesPipeline': 300,
+            # Disabled CustomImagesPipeline due to Scrapy compatibility issues
+            # Images will be saved as direct URLs instead
+            # 'scrapers.pipelines.CustomImagesPipeline': 300,
             'scrapers.pipelines.CategoryPipeline': 350,
             'scrapers.pipelines.DatabasePipeline': 400,
             'scrapers.pipelines.StatsPipeline': 500,
@@ -127,7 +129,7 @@ class BaseProductSpider(scrapy.Spider):
         item['stock_status'] = kwargs.get('stock_status', 'in_stock')
 
         # Pricing
-        item['currency'] = kwargs.get('currency', 'USD')
+        item['currency'] = kwargs.get('currency', 'INR')  # Changed from USD to INR
         item['original_price'] = kwargs.get('original_price')
 
         # Product details

@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     openai_max_tokens: int = 4000
     openai_temperature: float = 0.7
 
+    # Google AI Studio
+    google_ai_api_key: str = ""
+    google_ai_model: str = "gemini-1.5-pro"
+    google_ai_max_tokens: int = 2048
+    google_ai_temperature: float = 0.3
+
     # File upload
     upload_path: str = "../data/uploads"
     max_file_size: int = 10 * 1024 * 1024  # 10MB
@@ -61,6 +67,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # Allow extra fields from .env
 
 
 # Global settings instance

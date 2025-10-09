@@ -205,3 +205,39 @@ class ProductSearchView(Base):
 
     def __repr__(self):
         return f"<ProductSearchView(product_id={self.product_id}, name='{self.name[:50]}...')>"
+
+
+class ChatSession(Base):
+    """Chat session for interior design conversations"""
+    __tablename__ = "chat_sessions"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    message_count = Column(Integer, default=0, nullable=False)
+
+    # Relationships
+    messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<ChatSession(id={self.id}, user_id={self.user_id}, messages={self.message_count})>"
+
+
+class ChatMessage(Base):
+    """Individual chat messages"""
+    __tablename__ = "chat_messages"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = Column(String(36), ForeignKey("chat_sessions.id"), nullable=False, index=True)
+    type = Column(String(20), nullable=False, index=True)  # 'user' or 'assistant'
+    content = Column(Text, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    image_url = Column(Text, nullable=True)  # For user uploads or AI-generated images
+    analysis_data = Column(JSON, nullable=True)  # Store design analysis results
+
+    # Relationships
+    session = relationship("ChatSession", back_populates="messages")
+
+    def __repr__(self):
+        return f"<ChatMessage(id={self.id}, type={self.type}, session_id={self.session_id})>"

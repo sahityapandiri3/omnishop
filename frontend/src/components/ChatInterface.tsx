@@ -18,6 +18,9 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
   const [inputMessage, setInputMessage] = useState('')
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set())
+  const [isVisualizing, setIsVisualizing] = useState(false)
+  const [lastAnalysis, setLastAnalysis] = useState<any>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -26,6 +29,12 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
     mutationFn: startChatSession,
     onSuccess: (response) => {
       setSessionId(response.session_id)
+    },
+    onError: (error) => {
+      console.error('Failed to start session:', error)
+      // Create a temporary session ID if backend fails
+      const tempSessionId = `temp-session-${Date.now()}`
+      setSessionId(tempSessionId)
     }
   })
 
@@ -34,10 +43,40 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
     mutationFn: ({ sessionId, message, image }: { sessionId: string; message: string; image?: string }) =>
       sendChatMessage(sessionId, { message, image }),
     onSuccess: (response) => {
-      setMessages(prev => [...prev, response.message])
+      console.log('Chat API response:', response)
+      // Backend returns ChatMessageResponse with message object
+      const messageData = response.message || response
+      const products = response.recommended_products || messageData.products || []
+      console.log('Products received:', products)
+      const aiMessage: ChatMessage = {
+        id: messageData.id || response.message_id || `ai-${Date.now()}`,
+        type: 'assistant',
+        content: messageData.content || '',
+        timestamp: new Date(messageData.timestamp || Date.now()),
+        session_id: sessionId,
+        products: products,
+        image_url: messageData.image_url
+      }
+      setMessages(prev => [...prev, aiMessage])
       setInputMessage('')
       setSelectedImage(null)
       setImagePreview(null)
+      // Store the analysis for visualization
+      if (response.analysis) {
+        setLastAnalysis(response.analysis)
+      }
+    },
+    onError: (error) => {
+      console.error('Failed to send message:', error)
+      // Show error message to user
+      const errorMessage: ChatMessage = {
+        id: `error-${Date.now()}`,
+        type: 'assistant',
+        content: 'Sorry, I encountered an error processing your message. Please try again.',
+        timestamp: new Date(),
+        session_id: sessionId || ''
+      }
+      setMessages(prev => [...prev, errorMessage])
     }
   })
 
@@ -47,9 +86,25 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
     queryFn: () => sessionId ? getChatHistory(sessionId) : null,
     enabled: !!sessionId,
     onSuccess: (data) => {
-      if (data) {
-        setMessages(data.messages)
+      if (data && data.messages && Array.isArray(data.messages)) {
+        // Ensure all messages have proper structure and id field
+        const validMessages = data.messages
+          .filter(msg => msg && typeof msg === 'object')
+          .map(msg => ({
+            id: msg.id || msg.message_id || `msg-${Date.now()}-${Math.random()}`,
+            type: msg.message_type || msg.type || 'assistant',
+            content: msg.content || '',
+            timestamp: new Date(msg.timestamp || Date.now()),
+            session_id: msg.session_id || sessionId,
+            products: msg.recommendations || msg.products || []
+          }))
+        setMessages(validMessages)
       }
+    },
+    onError: (error) => {
+      console.error('Failed to load chat history:', error)
+      // Start with empty messages if history fails to load
+      setMessages([])
     }
   })
 
@@ -111,6 +166,103 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
     }
   }
 
+  const toggleProductSelection = (productId: number) => {
+    console.log('toggleProductSelection called with:', productId)
+    setSelectedProducts(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(productId)) {
+        console.log('Removing product:', productId)
+        newSet.delete(productId)
+      } else {
+        console.log('Adding product:', productId)
+        newSet.add(productId)
+      }
+      console.log('New selected products:', Array.from(newSet))
+      return newSet
+    })
+  }
+
+  const handleVisualize = async () => {
+    if (!sessionId || selectedProducts.size === 0) {
+      alert('Please select at least one product to visualize')
+      return
+    }
+
+    // Check if we have an image from any message in the conversation
+    const hasImageInConversation = messages.some(m => m.image_url)
+
+    if (!imagePreview && !selectedImage && !hasImageInConversation) {
+      alert('Please upload an image to visualize')
+      return
+    }
+
+    setIsVisualizing(true)
+    try {
+      // Get selected product details from messages
+      const allProducts = messages
+        .filter(m => m.products && m.products.length > 0)
+        .flatMap(m => m.products || [])
+
+      const selectedProductDetails = allProducts.filter(p => selectedProducts.has(p.id))
+
+      // Get the image to use - priority: newly uploaded > user message image > assistant message image
+      let imageToUse = selectedImage || imagePreview
+      if (!imageToUse) {
+        // Find the last user or assistant message with an image
+        const messageWithImage = [...messages].reverse().find(m => m.image_url)
+        if (messageWithImage) {
+          imageToUse = messageWithImage.image_url
+        }
+      }
+
+      console.log('Visualize request:', {
+        hasImage: !!imageToUse,
+        productsCount: selectedProductDetails.length,
+        hasAnalysis: !!lastAnalysis
+      })
+
+      // Prepare visualization request with full product details
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/chat/sessions/${sessionId}/visualize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image: imageToUse,
+          products: selectedProductDetails.map(p => ({
+            id: p.id,
+            name: p.name,
+            full_name: p.name,
+            style: p.recommendation_data?.style_match || 0.8,
+            category: 'furniture'
+          })),
+          analysis: lastAnalysis
+        }),
+      })
+
+      if (!response.ok) throw new Error('Visualization failed')
+
+      const data = await response.json()
+
+      // Add visualization result as a new message
+      const vizMessage: ChatMessage = {
+        id: `viz-${Date.now()}`,
+        type: 'assistant',
+        content: '✨ Here\'s your personalized room visualization with the selected products!',
+        timestamp: new Date(),
+        session_id: sessionId,
+        image_url: data.rendered_image
+      }
+
+      setMessages(prev => [...prev, vizMessage])
+    } catch (error) {
+      console.error('Visualization error:', error)
+      alert('Failed to generate visualization. Please try again.')
+    } finally {
+      setIsVisualizing(false)
+    }
+  }
+
   const isLoading = sendMessageMutation.isPending
 
   return (
@@ -121,10 +273,15 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
           <h3 className="text-lg font-semibold text-gray-900">AI Design Assistant</h3>
           <p className="text-sm text-gray-500">Get personalized interior design recommendations</p>
         </div>
+        {selectedProducts.size > 0 && (
+          <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
+            {selectedProducts.size} selected
+          </div>
+        )}
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-96">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && !isLoading && (
           <div className="text-center py-8">
             <div className="bg-blue-50 rounded-lg p-6 max-w-md mx-auto">
@@ -141,6 +298,8 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
             key={message.id}
             message={message}
             isLast={index === messages.length - 1}
+            selectedProducts={selectedProducts}
+            onToggleProduct={toggleProductSelection}
           />
         ))}
 
@@ -158,6 +317,32 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
 
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Visualize Button - Persistent at bottom */}
+      {selectedProducts.size > 0 && (
+        <div className="border-t border-gray-200 px-4 py-2 bg-blue-50">
+          <button
+            onClick={handleVisualize}
+            disabled={isVisualizing}
+            className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md flex items-center justify-center space-x-2"
+          >
+            {isVisualizing ? (
+              <>
+                <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                <span>Generating Visualization...</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                <span>Visualize Selected Products ({selectedProducts.size})</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Input */}
       <div className="border-t border-gray-200 p-4">
@@ -227,14 +412,16 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
 interface ChatMessageBubbleProps {
   message: ChatMessage
   isLast: boolean
+  selectedProducts: Set<number>
+  onToggleProduct: (productId: number) => void
 }
 
-function ChatMessageBubble({ message, isLast }: ChatMessageBubbleProps) {
+function ChatMessageBubble({ message, isLast, selectedProducts, onToggleProduct }: ChatMessageBubbleProps) {
   const isUser = message.type === 'user'
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-xs lg:max-w-md ${isUser ? 'ml-auto' : 'mr-auto'}`}>
+      <div className={`max-w-xs lg:max-w-md xl:max-w-lg ${isUser ? 'ml-auto' : 'mr-auto'}`}>
         <div
           className={`rounded-2xl px-4 py-2 ${
             isUser
@@ -243,39 +430,109 @@ function ChatMessageBubble({ message, isLast }: ChatMessageBubbleProps) {
           }`}
         >
           {message.image_url && (
-            <img
-              src={message.image_url}
-              alt="Uploaded"
-              className="w-full rounded-lg mb-2 max-w-xs"
-            />
+            <div className="mb-2">
+              <img
+                src={message.image_url}
+                alt={isUser ? "Uploaded room" : "Transformed design"}
+                className="w-full rounded-lg max-w-md"
+              />
+              {!isUser && (
+                <p className="text-xs text-gray-500 mt-1 italic">
+                  ✨ AI-transformed design visualization
+                </p>
+              )}
+            </div>
           )}
           <p className="text-sm whitespace-pre-wrap">{message.content}</p>
         </div>
 
         {/* Product recommendations */}
         {!isUser && message.products && message.products.length > 0 && (
-          <div className="mt-3 space-y-2">
-            <p className="text-xs font-medium text-gray-600">Recommended products:</p>
-            <div className="grid grid-cols-1 gap-2">
-              {message.products.slice(0, 3).map((product) => (
-                <div key={product.id} className="bg-white border border-gray-200 rounded-lg p-3">
-                  <div className="flex items-center space-x-3">
-                    {product.primary_image?.url && (
+          <div className="mt-3">
+            <p className="text-xs font-medium text-gray-600 mb-2">Recommended products:</p>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {message.products.map((product) => {
+                console.log('Product data:', {
+                  id: product.id,
+                  name: product.name,
+                  primary_image: product.primary_image,
+                  images: product.images
+                })
+                return (
+                <div
+                  key={product.id}
+                  className={`bg-white border-2 rounded-lg overflow-hidden hover:shadow-lg transition-all ${
+                    selectedProducts.has(product.id) ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
+                  }`}
+                >
+                  <div className="relative">
+                    {product.primary_image?.url ? (
                       <img
                         src={product.primary_image.url}
-                        alt={product.name}
-                        className="w-12 h-12 object-cover rounded"
+                        alt={product.primary_image?.alt_text || product.name}
+                        className="w-full h-32 object-cover"
+                        onError={(e) => {
+                          console.log('Image failed to load:', product.primary_image?.url)
+                          e.currentTarget.style.display = 'none'
+                          const parent = e.currentTarget.parentElement
+                          if (parent) {
+                            const fallback = document.createElement('div')
+                            fallback.className = 'w-full h-32 bg-gray-100 flex items-center justify-center'
+                            fallback.innerHTML = '<span class="text-gray-400 text-xs">No image</span>'
+                            parent.appendChild(fallback)
+                          }
+                        }}
                       />
+                    ) : (
+                      <div className="w-full h-32 bg-gray-100 flex items-center justify-center">
+                        <span className="text-gray-400 text-xs">No image</span>
+                      </div>
                     )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{product.name}</p>
-                      <p className="text-sm text-gray-500">${product.price}</p>
-                      <p className="text-xs text-gray-400">{product.source_website}</p>
+                    <div className="absolute top-2 right-2" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedProducts.has(product.id)}
+                        onChange={() => {
+                          console.log('Toggling product:', product.id)
+                          onToggleProduct(product.id)
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-5 h-5 text-blue-600 bg-white border-gray-300 rounded focus:ring-blue-500 cursor-pointer shadow-md"
+                      />
                     </div>
                   </div>
+                  <div className="p-2">
+                    <p className="text-sm font-medium text-gray-900 truncate" title={product.name}>
+                      {product.name}
+                    </p>
+                    <p className="text-sm font-semibold text-blue-600 mt-1">
+                      ₹{product.price.toLocaleString('en-IN')}
+                    </p>
+                    {product.source_url ? (
+                      <a
+                        href={product.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-xs text-blue-500 hover:text-blue-700 underline truncate block mt-1"
+                        title={`View on ${product.source_website}`}
+                      >
+                        {product.source_website}
+                      </a>
+                    ) : (
+                      <p className="text-xs text-gray-500 truncate mt-1" title={product.source_website}>
+                        {product.source_website}
+                      </p>
+                    )}
+                  </div>
                 </div>
-              ))}
+              )})}
             </div>
+            {selectedProducts.size > 0 && (
+              <p className="text-xs text-blue-600 font-medium mt-2">
+                {selectedProducts.size} product{selectedProducts.size !== 1 ? 's' : ''} selected
+              </p>
+            )}
           </div>
         )}
 

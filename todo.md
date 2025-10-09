@@ -1,4 +1,168 @@
-# AI Interior Design App - Milestone 1 Task List
+# AI Interior Design App - Task List
+
+---
+
+# Milestone 0: PostgreSQL Database Setup & Configuration
+
+**Objective**: Install and configure PostgreSQL database for Omnishop application
+**Duration**: 1-2 hours
+**Prerequisites**: macOS with Homebrew installed
+
+---
+
+## 0.1 PostgreSQL Installation
+
+### Install PostgreSQL via Homebrew
+- [ ] Update Homebrew: `brew update`
+- [ ] Install PostgreSQL: `brew install postgresql@15`
+- [ ] Add PostgreSQL to PATH in shell profile
+- [ ] Verify installation: `postgres --version`
+
+### Start PostgreSQL Service
+- [ ] Start PostgreSQL service: `brew services start postgresql@15`
+- [ ] Verify service is running: `brew services list`
+- [ ] Check PostgreSQL process: `ps aux | grep postgres`
+
+---
+
+## 0.2 Database Creation & Configuration
+
+### Create Omnishop Database
+- [ ] Access PostgreSQL prompt: `psql postgres`
+- [ ] Create database: `CREATE DATABASE omnishop;`
+- [ ] Create database user: `CREATE USER omnishop_user WITH PASSWORD 'your_secure_password';`
+- [ ] Grant privileges: `GRANT ALL PRIVILEGES ON DATABASE omnishop TO omnishop_user;`
+- [ ] Exit psql: `\q`
+
+### Configure Database Connection
+- [ ] Update `.env` file with database connection string:
+  ```
+  DATABASE_URL=postgresql://omnishop_user:your_secure_password@localhost:5432/omnishop
+  ```
+- [ ] Verify `.env` file is in `.gitignore`
+- [ ] Test connection using psql: `psql -U omnishop_user -d omnishop -h localhost`
+
+---
+
+## 0.3 Database Schema Setup with Alembic
+
+### Initialize Alembic (if not already done)
+- [ ] Install Alembic if needed: `pip install alembic`
+- [ ] Initialize Alembic in project: `alembic init alembic` (skip if alembic/ directory exists)
+- [ ] Update `alembic.ini` with database URL (or use env var)
+- [ ] Configure `alembic/env.py` to import Base from `database.models`
+
+### Create Database Migrations
+- [ ] Import all models in `alembic/env.py`:
+  ```python
+  from database.models import Base
+  target_metadata = Base.metadata
+  ```
+- [ ] Create initial migration: `alembic revision --autogenerate -m "Initial schema"`
+- [ ] Review generated migration in `alembic/versions/`
+- [ ] Run migrations: `alembic upgrade head`
+
+### Verify Database Schema
+- [ ] Connect to database: `psql -U omnishop_user -d omnishop`
+- [ ] List all tables: `\dt`
+- [ ] Verify tables exist:
+  - `categories`
+  - `products`
+  - `product_images`
+  - `product_attributes`
+  - `scraping_logs`
+  - `product_search_view`
+  - `chat_sessions`
+  - `chat_messages`
+  - `alembic_version`
+- [ ] Check table schemas: `\d products`, `\d chat_sessions`, etc.
+- [ ] Exit psql: `\q`
+
+---
+
+## 0.4 Backend Connection Testing
+
+### Test API Database Connection
+- [ ] Start backend server: `python -m uvicorn api.main:app --reload`
+- [ ] Check server logs for database connection success
+- [ ] Test health endpoint: `curl http://localhost:8000/health`
+- [ ] Verify "database": "ready" in health check response
+- [ ] Test chat session creation: `curl -X POST http://localhost:8000/api/chat/sessions -H "Content-Type: application/json" -d '{}'`
+- [ ] Verify no database connection errors in logs
+
+---
+
+## 0.5 Optional: PostgreSQL Management Tools
+
+### Install pgAdmin (GUI Tool)
+- [ ] Download pgAdmin: `brew install --cask pgadmin4`
+- [ ] Launch pgAdmin and configure server connection
+- [ ] Test connection to omnishop database
+
+### Alternative: Use psql for Database Management
+- [ ] Create alias for easy database access in shell profile:
+  ```bash
+  alias omnishop-db="psql -U omnishop_user -d omnishop -h localhost"
+  ```
+- [ ] Test alias: `omnishop-db`
+
+---
+
+## Milestone 0 Success Criteria
+
+### Database Installation & Configuration
+- [ ] PostgreSQL 15 installed and running on localhost:5432
+- [ ] `omnishop` database created with correct permissions
+- [ ] `omnishop_user` configured with appropriate privileges
+- [ ] `.env` file configured with correct `DATABASE_URL`
+
+### Schema & Migrations
+- [ ] Alembic configured and initialized
+- [ ] Initial migration created and applied successfully
+- [ ] All 9 required tables exist in database
+- [ ] Tables have correct schema and relationships
+
+### Application Integration
+- [ ] Backend server starts without database connection errors
+- [ ] Health check endpoint returns "database": "ready"
+- [ ] Can create chat sessions via API (tests database write)
+- [ ] No "[Errno 61] Connection refused" errors in logs
+
+### Documentation
+- [ ] Database setup steps documented in README (if needed)
+- [ ] Connection credentials stored securely (not in git)
+- [ ] Troubleshooting notes added for common issues
+
+---
+
+## Troubleshooting Common Issues
+
+### PostgreSQL won't start
+- Check if another instance is running: `lsof -i :5432`
+- Check PostgreSQL logs: `tail -f /opt/homebrew/var/log/postgresql@15.log`
+- Restart service: `brew services restart postgresql@15`
+
+### Connection refused errors
+- Verify PostgreSQL is listening: `netstat -an | grep 5432`
+- Check pg_hba.conf for connection permissions
+- Ensure host is `localhost` not `127.0.0.1` (or vice versa)
+
+### Migration errors
+- Drop and recreate database if needed (CAUTION: loses data)
+- Check Alembic version table: `SELECT * FROM alembic_version;`
+- Manually fix migration conflicts in `alembic/versions/`
+
+### Permission denied errors
+- Grant schema permissions: `GRANT ALL ON SCHEMA public TO omnishop_user;`
+- Grant table permissions: `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO omnishop_user;`
+
+---
+
+*Milestone 0 Duration: 1-2 hours*
+*Target: Complete PostgreSQL setup before starting Milestone 1*
+*Next: Milestone 1 - Data Foundation & Web Scraping Execution*
+
+---
 
 ## Milestone 1: Data Foundation & Web Scraping Execution (Weeks 1-5)
 **Objective**: Build robust data collection infrastructure and execute complete product catalog scraping

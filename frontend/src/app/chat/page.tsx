@@ -5,8 +5,8 @@ import ChatInterface from '@/components/ChatInterface'
 export default function ChatPage() {
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-4">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">AI Design Assistant</h1>
           <p className="text-gray-600">
             Get personalized interior design recommendations and product suggestions from our AI assistant.
@@ -14,7 +14,7 @@ export default function ChatPage() {
           </p>
         </div>
 
-        <div className="h-[600px]">
+        <div className="h-[calc(100vh-200px)]">
           <ChatInterface className="h-full" />
         </div>
 

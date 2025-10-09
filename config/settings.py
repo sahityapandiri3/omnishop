@@ -9,12 +9,12 @@ from pydantic import Field
 
 class DatabaseSettings(BaseSettings):
     """Database configuration"""
-    url: str = Field(default="postgresql://postgres:password@localhost:5432/omnishop")
+    url: str = Field(default="postgresql://omnishop_user:omnishop_secure_2024@localhost:5432/omnishop")
     host: str = Field(default="localhost")
     port: int = Field(default=5432)
     name: str = Field(default="omnishop")
-    user: str = Field(default="postgres")
-    password: str = Field(default="password")
+    user: str = Field(default="omnishop_user")
+    password: str = Field(default="omnishop_secure_2024")
 
     class Config:
         env_prefix = "DATABASE_"
@@ -103,6 +103,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # Allow extra fields from .env
 
 
 # Global settings instance

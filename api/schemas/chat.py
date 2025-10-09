@@ -43,11 +43,11 @@ class ChatSessionSchema(BaseModel):
 class DesignAnalysisSchema(BaseModel):
     """Design analysis schema from ChatGPT"""
     design_analysis: Dict[str, Any]
-    product_matching_criteria: Dict[str, Any]
-    visualization_guidance: Dict[str, Any]
-    confidence_scores: Dict[str, float]
-    recommendations: Dict[str, Any]
-    user_friendly_response: str
+    product_matching_criteria: Optional[Dict[str, Any]] = {}
+    visualization_guidance: Optional[Dict[str, Any]] = {}
+    confidence_scores: Optional[Dict[str, float]] = {}
+    recommendations: Optional[Dict[str, Any]] = {}
+    user_friendly_response: Optional[str] = "I've analyzed your request and found some great recommendations for you!"
 
     class Config:
         from_attributes = True
