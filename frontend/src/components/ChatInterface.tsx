@@ -66,13 +66,24 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
         setLastAnalysis(response.analysis)
       }
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error('Failed to send message:', error)
-      // Show error message to user
+
+      // Extract detailed error message
+      let errorDetail = 'An unknown error occurred.'
+      if (error?.response?.data?.detail) {
+        errorDetail = error.response.data.detail
+      } else if (error?.message) {
+        errorDetail = error.message
+      } else if (typeof error === 'string') {
+        errorDetail = error
+      }
+
+      // Show detailed error message to user
       const errorMessage: ChatMessage = {
         id: `error-${Date.now()}`,
         type: 'assistant',
-        content: 'Sorry, I encountered an error processing your message. Please try again.',
+        content: `❌ Error: ${errorDetail}\n\nPlease try again or contact support if the issue persists.`,
         timestamp: new Date(),
         session_id: sessionId || ''
       }

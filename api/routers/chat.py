@@ -52,8 +52,10 @@ async def start_chat_session(
         )
 
     except Exception as e:
-        logger.error(f"Error starting chat session: {e}")
-        raise HTTPException(status_code=500, detail="Error starting chat session")
+        import traceback
+        logger.error(f"Error starting chat session: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
 
 
 @router.post("/sessions/{session_id}/messages", response_model=ChatMessageResponse)
@@ -234,8 +236,13 @@ async def send_message(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error processing message: {e}")
-        raise HTTPException(status_code=500, detail="Error processing message")
+        import traceback
+        error_traceback = traceback.format_exc()
+        logger.error(f"Error processing message: {e}\n{error_traceback}")
+        # Include detailed error information for debugging
+        error_type = type(e).__name__
+        error_detail = f"{error_type}: {str(e)}"
+        raise HTTPException(status_code=500, detail=error_detail)
 
 
 @router.get("/sessions/{session_id}/history", response_model=ChatHistoryResponse)
@@ -297,8 +304,10 @@ async def get_chat_history(session_id: str, db: AsyncSession = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching chat history: {e}")
-        raise HTTPException(status_code=500, detail="Error fetching chat history")
+        import traceback
+        logger.error(f"Error fetching chat history: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
 
 
 @router.post("/sessions/{session_id}/visualize")
@@ -425,8 +434,10 @@ async def delete_chat_session(session_id: str, db: AsyncSession = Depends(get_db
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting chat session: {e}")
-        raise HTTPException(status_code=500, detail="Error deleting chat session")
+        import traceback
+        logger.error(f"Error deleting chat session: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
 
 
 async def _get_product_recommendations(
@@ -641,8 +652,10 @@ async def get_conversation_context(session_id: str):
             "context_length": len(context)
         }
     except Exception as e:
-        logger.error(f"Error getting conversation context: {e}")
-        raise HTTPException(status_code=500, detail="Error getting conversation context")
+        import traceback
+        logger.error(f"Error getting conversation context: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
 
 
 @router.delete("/sessions/{session_id}/context")
@@ -652,8 +665,10 @@ async def clear_conversation_context(session_id: str):
         chatgpt_service.clear_conversation_context(session_id)
         return {"message": f"Conversation context cleared for session {session_id}"}
     except Exception as e:
-        logger.error(f"Error clearing conversation context: {e}")
-        raise HTTPException(status_code=500, detail="Error clearing conversation context")
+        import traceback
+        logger.error(f"Error clearing conversation context: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
 
 
 @router.get("/health")
@@ -677,8 +692,10 @@ async def get_usage_statistics():
         stats = chatgpt_service.get_usage_stats()
         return stats
     except Exception as e:
-        logger.error(f"Error getting usage stats: {e}")
-        raise HTTPException(status_code=500, detail="Error getting usage statistics")
+        import traceback
+        logger.error(f"Error getting usage stats: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
 
 
 @router.post("/usage-stats/reset")
@@ -688,8 +705,10 @@ async def reset_usage_statistics():
         chatgpt_service.reset_usage_stats()
         return {"message": "Usage statistics reset successfully"}
     except Exception as e:
-        logger.error(f"Error resetting usage stats: {e}")
-        raise HTTPException(status_code=500, detail="Error resetting usage statistics")
+        import traceback
+        logger.error(f"Error resetting usage stats: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
 
 
 @router.post("/sessions/{session_id}/analyze-preference")
@@ -719,8 +738,10 @@ async def analyze_user_preference(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error analyzing user preference: {e}")
-        raise HTTPException(status_code=500, detail="Error analyzing user preference")
+        import traceback
+        logger.error(f"Error analyzing user preference: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
 
 
 @router.post("/sessions/{session_id}/generate-style-guide")
@@ -767,5 +788,7 @@ async def generate_style_guide(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating style guide: {e}")
-        raise HTTPException(status_code=500, detail="Error generating style guide")
+        import traceback
+        logger.error(f"Error generating style guide: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
