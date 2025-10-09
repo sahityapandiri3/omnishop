@@ -20,6 +20,7 @@ from api.services.recommendation_engine import recommendation_engine, Recommenda
 from api.services.ml_recommendation_model import ml_recommendation_model
 from api.services.google_ai_service import google_ai_service, VisualizationRequest
 from api.services.conversation_context import conversation_context_manager
+from api.services.nlp_processor import design_nlp_processor
 from database.models import ChatSession, ChatMessage, Product
 
 logger = logging.getLogger(__name__)
@@ -121,8 +122,47 @@ async def send_message(
                 analysis, db, limit=10, user_id=session.user_id, session_id=session_id
             )
 
-        # NOTE: Visualization is now only done when user clicks "Visualize" button
-        # See /sessions/{session_id}/visualize endpoint
+        # Check if user is requesting text-based visualization
+        visualization_image = None
+        if request.image and request.message:
+            # Use NLP to detect visualization intent
+            intent_result = await design_nlp_processor.classify_intent(request.message)
+
+            # Visualization keywords that indicate user wants image transformation
+            visualization_keywords = [
+                'visualize', 'transform', 'make', 'change', 'redesign', 'update',
+                'modernize', 'show', 'see how', 'would look', 'convert', 'turn into'
+            ]
+
+            message_lower = request.message.lower()
+            has_visualization_intent = (
+                intent_result.primary_intent == "visualization" or
+                any(keyword in message_lower for keyword in visualization_keywords)
+            )
+
+            # If visualization intent detected with image, generate visualization
+            if has_visualization_intent:
+                logger.info(f"Detected visualization intent in message: {request.message[:50]}...")
+                try:
+                    # Extract lighting conditions from analysis if available
+                    lighting_conditions = "mixed"
+                    if analysis and hasattr(analysis, 'design_analysis') and analysis.design_analysis:
+                        space_analysis = analysis.design_analysis.get('space_analysis', {})
+                        if isinstance(space_analysis, dict):
+                            lighting_conditions = space_analysis.get('lighting_conditions', 'mixed')
+
+                    # Generate text-based visualization
+                    viz_result = await google_ai_service.generate_text_based_visualization(
+                        base_image=request.image,
+                        user_request=request.message,
+                        lighting_conditions=lighting_conditions,
+                        render_quality="high"
+                    )
+
+                    visualization_image = viz_result.rendered_image
+                    logger.info("Successfully generated text-based visualization")
+                except Exception as viz_error:
+                    logger.error(f"Failed to generate text-based visualization: {viz_error}")
 
         # Create response message schema
         message_schema = ChatMessageSchema(
@@ -132,7 +172,7 @@ async def send_message(
             timestamp=assistant_message.timestamp,
             session_id=session_id,
             products=recommended_products,
-            image_url=None  # No automatic visualization
+            image_url=visualization_image  # Include visualization if generated
         )
 
         return ChatMessageResponse(

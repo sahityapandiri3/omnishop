@@ -441,30 +441,37 @@ Return results as JSON array:
             # Build explicit product placement prompt with product images
             if products_description and product_images:
                 products_list = '\n'.join([f"- {desc}" for desc in products_description])
-                visualization_prompt = f"""Create a photorealistic interior design visualization by digitally placing these SPECIFIC PRODUCTS (shown in the reference images) into this room:
+                visualization_prompt = f"""TASK: Add specific products to this room image while preserving the existing space.
 
-PRODUCTS TO PLACE (see reference images):
+PRODUCTS TO ADD (see reference images below):
 {products_list}
 
-USER'S DESIGN REQUEST: {user_request}
+🚫 CRITICAL PRESERVATION RULES - DO NOT VIOLATE:
+1. PRESERVE ALL EXISTING ELEMENTS: Keep all existing furniture, walls, floors, ceilings, windows, doors, lighting fixtures, and decor EXACTLY as shown
+2. DO NOT REDESIGN: Do not change the room's style, colors, layout, or existing items
+3. DO NOT REMOVE: Do not remove or replace any existing furniture or decor
+4. DO NOT ALTER: Do not change wall colors, flooring, lighting, or architectural features
 
-CRITICAL INSTRUCTIONS:
-1. USE THE EXACT PRODUCTS shown in the reference images provided
-2. DIGITALLY COMPOSITE each product image into appropriate locations in the room
-3. For throw pillows: place them on sofas, chairs, or beds - use the EXACT pillow designs from the reference images
-4. For furniture: position naturally in available floor space - match the EXACT furniture from reference images
-5. For decor items: place on tables, shelves, or walls - use EXACT items from reference images
-6. Maintain the EXACT colors, patterns, and designs of the products shown in reference images
-7. Ensure realistic lighting, shadows, and perspective to make products blend naturally
-8. DO NOT create generic/similar items - use the SPECIFIC products from the reference images
+✅ WHAT YOU MUST DO:
+1. USE EXACT PRODUCTS: Place only the specific products shown in the reference images (exact colors, patterns, textures, designs)
+2. ADD TO EMPTY SPACES: Place products in appropriate empty spaces (sofas, chairs, empty corners, tables, shelves)
+3. BLEND NATURALLY: Ensure realistic shadows, lighting, and perspective so products look naturally placed
+4. MATCH PRODUCT DETAILS: The placed products must look IDENTICAL to the reference images
 
-Design Quality:
-- Lighting: {visualization_request.lighting_conditions} lighting with realistic shadows
+📍 PLACEMENT GUIDELINES:
+- Throw pillows → Place on sofas, chairs, or beds in empty spots
+- Small furniture → Position in empty floor spaces while maintaining traffic flow
+- Decor items → Place on empty tables, shelves, or walls
+- Lighting → Position in ceiling/wall locations that don't conflict with existing fixtures
+
+STYLE CONTEXT: {user_request if user_request else 'Place products naturally in the existing space'}
+
+QUALITY REQUIREMENTS:
+- Lighting: {visualization_request.lighting_conditions} with realistic shadows matching the room
 - Rendering: {visualization_request.render_quality} quality photorealism
-- Product accuracy: MUST match the reference images exactly
-- Style consistency: {'Yes - maintain cohesive design' if visualization_request.style_consistency else 'No - allow eclectic mix'}
+- Product accuracy: Must match reference images EXACTLY (same design, color, pattern, texture)
 
-IMPORTANT: The products in the final image MUST look exactly like the products in the reference images - same colors, patterns, textures, and designs."""
+🎯 FINAL CHECK: The output image should show the SAME room with the SAME existing elements, just with the new products added to appropriate locations."""
             else:
                 visualization_prompt = f"""Transform this interior space following this design request: {user_request}
 
@@ -579,6 +586,112 @@ Create a photorealistic interior design visualization that addresses the user's 
             # Return original image on error
             return VisualizationResult(
                 rendered_image=visualization_request.base_image,
+                processing_time=0.0,
+                quality_score=0.5,
+                placement_accuracy=0.0,
+                lighting_realism=0.0,
+                confidence_score=0.3
+            )
+
+    async def generate_text_based_visualization(
+        self,
+        base_image: str,
+        user_request: str,
+        lighting_conditions: str = "mixed",
+        render_quality: str = "high"
+    ) -> VisualizationResult:
+        """
+        Generate room visualization based on text description (allows full transformation)
+        Used when user types text requesting image transformation (e.g., "make this modern")
+        """
+        try:
+            start_time = time.time()
+
+            # Process the base image
+            processed_image = self._preprocess_image(base_image)
+
+            # Build transformation prompt (allows full redesign)
+            visualization_prompt = f"""Transform this interior space based on the following design request:
+
+USER REQUEST: {user_request}
+
+INSTRUCTIONS:
+- Address the user's specific request for transformation/redesign
+- Maintain realistic proportions, scale, and architectural features
+- Apply appropriate lighting: {lighting_conditions}
+- Create a {render_quality} quality photorealistic result
+- Ensure all materials, textures, and finishes look realistic
+- Preserve the overall room dimensions and layout unless explicitly requested to change
+
+Create a photorealistic interior design visualization that fulfills the user's request."""
+
+            # Use Gemini 2.5 Flash Image for generation
+            model = "gemini-2.5-flash-image"
+            parts = [
+                types.Part.from_text(text=visualization_prompt),
+                types.Part(
+                    inline_data=types.Blob(
+                        mime_type="image/jpeg",
+                        data=base64.b64decode(processed_image)
+                    )
+                )
+            ]
+
+            contents = [types.Content(role="user", parts=parts)]
+            generate_content_config = types.GenerateContentConfig(
+                response_modalities=["IMAGE", "TEXT"],
+                temperature=0.4
+            )
+
+            transformed_image = None
+            transformation_description = ""
+
+            # Stream response
+            for chunk in self.genai_client.models.generate_content_stream(
+                model=model,
+                contents=contents,
+                config=generate_content_config,
+            ):
+                if chunk.candidates is None or chunk.candidates[0].content is None or chunk.candidates[0].content.parts is None:
+                    continue
+
+                for part in chunk.candidates[0].content.parts:
+                    if part.inline_data and part.inline_data.data:
+                        # Extract generated image data
+                        inline_data = part.inline_data
+                        image_bytes = inline_data.data
+                        mime_type = inline_data.mime_type or "image/png"
+
+                        # Convert to base64 data URI
+                        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                        transformed_image = f"data:{mime_type};base64,{image_base64}"
+                        logger.info(f"Successfully generated text-based visualization ({len(image_bytes)} bytes)")
+
+                    elif part.text:
+                        transformation_description += part.text
+
+            processing_time = time.time() - start_time
+
+            # If no image was generated, fall back to original
+            if not transformed_image:
+                logger.warning("No transformed image generated, using original")
+                transformed_image = base_image
+
+            logger.info(f"Generated text-based visualization in {processing_time:.2f}s")
+
+            return VisualizationResult(
+                rendered_image=transformed_image,
+                processing_time=processing_time,
+                quality_score=0.90 if transformed_image != base_image else 0.5,
+                placement_accuracy=0.85 if transformed_image != base_image else 0.0,
+                lighting_realism=0.88 if transformed_image != base_image else 0.0,
+                confidence_score=0.87 if transformed_image != base_image else 0.3
+            )
+
+        except Exception as e:
+            logger.error(f"Error generating text-based visualization: {e}", exc_info=True)
+            return VisualizationResult(
+                rendered_image=base_image,
                 processing_time=0.0,
                 quality_score=0.5,
                 placement_accuracy=0.0,
