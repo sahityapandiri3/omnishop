@@ -581,18 +581,21 @@ Analysis Instructions:
             response_data = json.loads(response)
             print(f"[DEBUG] JSON parsed successfully, keys: {list(response_data.keys())}")
 
-            # Extract user-friendly response - check both possible key names
+            # Extract user-friendly response - check all possible key names
             conversational_response = (
                 response_data.get("user_friendly_response") or
+                response_data.get("user_friendly_message") or  # OpenAI might return this key
                 response_data.get("message") or
                 "I've analyzed your request and found some great recommendations for you!"
             )
             print(f"[DEBUG] Extracted conversational_response: {conversational_response[:100]}")
 
             # Normalize the response data to match schema
-            # If OpenAI returns 'message', map it to 'user_friendly_response'
+            # If OpenAI returns 'message' or 'user_friendly_message', map it to 'user_friendly_response'
             if "message" in response_data and "user_friendly_response" not in response_data:
                 response_data["user_friendly_response"] = response_data["message"]
+            if "user_friendly_message" in response_data and "user_friendly_response" not in response_data:
+                response_data["user_friendly_response"] = response_data["user_friendly_message"]
 
             # Ensure all optional fields have defaults
             response_data.setdefault("product_matching_criteria", {})

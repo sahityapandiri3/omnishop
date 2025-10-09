@@ -390,9 +390,15 @@ async def visualize_room(
         # Generate visualization using Google AI Studio
         viz_result = await google_ai_service.generate_room_visualization(viz_request)
 
+        # Note: Due to AI model limitations, the visualization shows a design concept
+        # The room structure may vary from the original as generative models create new images
+        # rather than editing existing ones. For pixel-perfect preservation, an inpainting model
+        # would be required. See VISUALIZATION_ANALYSIS.md for technical details.
+
         return {
             "rendered_image": viz_result.rendered_image,
-            "message": "Visualization generated successfully"
+            "message": "Visualization generated successfully. Note: This shows a design concept with your selected products.",
+            "technical_note": "Generative AI models create new images rather than edit existing ones. Some variation in room structure is expected."
         }
 
     except HTTPException:

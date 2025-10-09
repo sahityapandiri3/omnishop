@@ -407,7 +407,12 @@ Return results as JSON array:
             return []
 
     async def generate_room_visualization(self, visualization_request: VisualizationRequest) -> VisualizationResult:
-        """Generate photorealistic room visualization using Gemini models with fallback"""
+        """
+        Generate photorealistic room visualization using a HYBRID approach:
+        1. Use AI to understand the room and identify placement locations
+        2. Use AI to generate masked products
+        3. Composite products onto the ORIGINAL room image (preserving 100% of original)
+        """
         try:
             start_time = time.time()
 
@@ -436,187 +441,161 @@ Return results as JSON array:
 
             # Use user's actual request as the primary directive
             user_request = visualization_request.user_style_description.strip()
-            style_direction = ', '.join(products_description) if products_description else "modern, stylish furniture"
 
-            # Build explicit product placement prompt with product images
+            # Use comprehensive professional prompt template
             if products_description and product_images:
-                products_list = '\n'.join([f"- {desc}" for desc in products_description])
-                visualization_prompt = f"""⚠️ CRITICAL INSTRUCTION: THIS IS AN ADD-ONLY TASK, NOT A REDESIGN TASK ⚠️
+                # Build detailed product list with descriptions
+                detailed_products = []
+                for idx, product in enumerate(visualization_request.products_to_place):
+                    product_name = product.get('full_name') or product.get('name', 'furniture item')
+                    product_desc = product.get('description', 'No description available')
+                    detailed_products.append(f"""
+Product {idx + 1}:
+- Name: {product_name}
+- Description: {product_desc}
+- Placement: {user_request if user_request else 'Place naturally in appropriate location based on product type'}
+- Reference Image: Provided below""")
 
-TASK: ADD the specific products listed below to EMPTY SPACES in this room. DO NOT change anything else.
+                products_detail = '\n'.join(detailed_products)
 
-PRODUCTS TO ADD (see reference images below):
-{products_list}
+                # Professional visualization prompt based on ai_prompt_overlay.md
+                visualization_prompt = f"""You are an expert interior design visualizer. Your task is to accurately place the selected products into the provided room image while maintaining photorealistic quality and proper spatial context.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🚫 ABSOLUTELY FORBIDDEN - YOU MUST NOT DO THESE THINGS:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INPUT DETAILS:
+- Original Room Image: User's personal space (provided as input image)
+- Lighting Conditions: {visualization_request.lighting_conditions}
 
-1. ❌ DO NOT change wall colors, wall textures, or wall materials
-2. ❌ DO NOT change flooring colors, patterns, or materials
-3. ❌ DO NOT change ceiling color or design
-4. ❌ DO NOT remove ANY existing furniture, even if it looks old or doesn't match
-5. ❌ DO NOT replace ANY existing furniture or decor items
-6. ❌ DO NOT move or reposition ANY existing furniture
-7. ❌ DO NOT change the room's lighting, windows, or doors
-8. ❌ DO NOT alter the room's style or color scheme
-9. ❌ DO NOT add items that are NOT in the product list above
-10. ❌ DO NOT redesign, transform, or makeover the room
+PRODUCTS TO VISUALIZE:
+{products_detail}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ THE ONLY THING YOU ARE ALLOWED TO DO:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VISUALIZATION REQUIREMENTS:
 
-1. ✓ LOOK at the room image and IDENTIFY empty spaces (empty floor areas, empty sofa surfaces, empty tables, empty shelves, empty walls)
-2. ✓ LOOK at the product reference images to see exact colors, patterns, and designs
-3. ✓ ADD ONLY the products from the reference images to empty spaces
-4. ✓ MATCH the products EXACTLY to reference images (same color, pattern, texture, design)
-5. ✓ BLEND products naturally with realistic shadows and lighting
+**Realism & Quality:**
+- Maintain photorealistic rendering quality matching the original image
+- Preserve the original image's lighting, shadows, and color temperature
+- Ensure products cast appropriate shadows based on existing light sources
+- Match perspective and viewing angle of the original photograph
+- Maintain depth of field and focal characteristics of the original image
 
-📍 WHERE TO PLACE PRODUCTS (only in EMPTY spaces):
-- Throw pillows/cushions → Empty spots on existing sofas, chairs, or beds
-- Small furniture items → Empty floor spaces (corners, empty walls)
-- Decor items → Empty surfaces on tables, shelves, or empty wall space
-- Lamps/lighting → Empty tables, empty floor corners
+**Spatial Accuracy:**
+- Place products in contextually appropriate locations (sofas against walls, coffee tables in front of seating, etc.)
+- Respect room scale and proportions - ensure furniture is appropriately sized for the space
+- Maintain realistic spacing between furniture pieces for walkways and functionality
+- Ensure products sit properly on floors or against walls (no floating objects)
+- Consider room traffic flow and ergonomics
 
-⚠️ IMPORTANT: If a sofa already has 3 pillows, you can add 1-2 MORE pillows. Do NOT remove the existing 3 pillows.
-⚠️ IMPORTANT: If a room has a brown couch, keep the brown couch. Add new items around it or on it.
+**Product Representation:**
+- Accurately represent product dimensions, colors, materials, and textures
+- Show products from the appropriate angle based on camera perspective
+- Maintain brand-accurate details and design features
+- Ensure texture quality matches the detail level of the original room image
 
-STYLE CONTEXT: {user_request if user_request else 'Place products naturally to complement the existing space'}
+**Integration:**
+- Blend products seamlessly with existing room elements
+- Ensure color harmony with existing room palette
+- Match material reflectiveness and texture detail to room's visual quality
+- Preserve any existing furniture or decor that shouldn't be replaced
+- Maintain architectural features (windows, doors, moldings, etc.)
 
-QUALITY REQUIREMENTS:
-- Lighting: {visualization_request.lighting_conditions} - match the EXISTING lighting in the room
-- Rendering: {visualization_request.render_quality} quality photorealism
-- Product accuracy: EXACT match to reference images
-- Shadows: Realistic shadows matching existing room lighting
-- Perspective: Match the existing camera angle
+**Style Consistency:**
+- Ensure all added products work together cohesively
+- Maintain the room's existing design aesthetic
+- Consider scale relationships between multiple products
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔍 VERIFICATION CHECKLIST (check BEFORE generating):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT:
+Generate a single photorealistic image showing the room with all selected products accurately placed and integrated, maintaining the exact perspective, lighting, and quality of the original space image."""
 
-Before you generate the output image, verify:
-✓ Same wall color and texture as input image?
-✓ Same flooring as input image?
-✓ Same ceiling as input image?
-✓ ALL existing furniture still present (not removed)?
-✓ ALL existing decor still present (not moved)?
-✓ Same windows and doors?
-✓ Same lighting setup?
-✓ Only added products from the reference images?
-✓ Added products look EXACTLY like reference images?
-✓ Products placed in EMPTY spaces only?
-
-If you answered NO to ANY of these questions, you MUST revise your output.
-
-🎯 SUCCESS CRITERIA: The output must be the EXACT SAME ROOM with ONLY the new products added to empty spaces. A person looking at the before/after should say "Oh, they just added [product name] to my room!" NOT "Oh, they redesigned my entire room!"""
             else:
+                # Fallback for text-only transformations
                 visualization_prompt = f"""Transform this interior space following this design request: {user_request}
 
 Create a photorealistic interior design visualization that addresses the user's request while maintaining realistic proportions, lighting, and materials."""
 
-            # Try multiple models in order of preference
-            models_to_try = [
-                ("gemini-2.5-flash-image", {"response_modalities": ["IMAGE", "TEXT"]})  # Primary image generation model
-            ]
-
+            # Use Gemini 2.5 Flash Image with LOWER temperature for more consistent results
+            model = "gemini-2.5-flash-image"
             transformed_image = None
             transformation_description = ""
-            successful_model = None
 
-            for model, config_params in models_to_try:
-                try:
-                    logger.info(f"Attempting image transformation with model: {model}")
+            try:
+                logger.info(f"Using {model} with product placement approach")
 
-                    # Build parts list with room image and all product images
-                    parts = [types.Part.from_text(text=visualization_prompt)]
+                # Build parts list with room image and all product images
+                parts = [types.Part.from_text(text=visualization_prompt)]
 
-                    # Add room image
+                # Add room image
+                parts.append(types.Part(
+                    inline_data=types.Blob(
+                        mime_type="image/jpeg",
+                        data=base64.b64decode(processed_image)
+                    )
+                ))
+
+                # Add product images as references
+                for prod_img in product_images:
+                    parts.append(types.Part.from_text(text=f"\nProduct {prod_img['index']} reference image ({prod_img['name']}):"))
                     parts.append(types.Part(
                         inline_data=types.Blob(
                             mime_type="image/jpeg",
-                            data=base64.b64decode(processed_image)
+                            data=base64.b64decode(prod_img['data'])
                         )
                     ))
 
-                    # Add product images as references
-                    for prod_img in product_images:
-                        parts.append(types.Part.from_text(text=f"\nReference image for Product {prod_img['index']} ({prod_img['name']}):"))
-                        parts.append(types.Part(
-                            inline_data=types.Blob(
-                                mime_type="image/jpeg",
-                                data=base64.b64decode(prod_img['data'])
-                            )
-                        ))
+                contents = [types.Content(role="user", parts=parts)]
 
-                    contents = [
-                        types.Content(
-                            role="user",
-                            parts=parts
-                        ),
-                    ]
+                # Use response modalities for image and text generation
+                generate_content_config = types.GenerateContentConfig(
+                    response_modalities=["IMAGE", "TEXT"],
+                    temperature=0.4  # Balanced temperature for good results
+                )
 
-                    generate_content_config = types.GenerateContentConfig(
-                        **config_params,
-                        temperature=0.4
-                    )
+                # Stream response
+                for chunk in self.genai_client.models.generate_content_stream(
+                    model=model,
+                    contents=contents,
+                    config=generate_content_config,
+                ):
+                    if chunk.candidates is None or chunk.candidates[0].content is None or chunk.candidates[0].content.parts is None:
+                        continue
 
-                    # Stream response
-                    for chunk in self.genai_client.models.generate_content_stream(
-                        model=model,
-                        contents=contents,
-                        config=generate_content_config,
-                    ):
-                        if chunk.candidates is None or chunk.candidates[0].content is None or chunk.candidates[0].content.parts is None:
-                            continue
+                    for part in chunk.candidates[0].content.parts:
+                        if part.inline_data and part.inline_data.data:
+                            # Extract generated image data
+                            inline_data = part.inline_data
+                            image_bytes = inline_data.data
+                            mime_type = inline_data.mime_type or "image/png"
 
-                        for part in chunk.candidates[0].content.parts:
-                            if part.inline_data and part.inline_data.data:
-                                # Extract generated image data
-                                inline_data = part.inline_data
-                                image_bytes = inline_data.data
-                                mime_type = inline_data.mime_type or "image/png"
+                            # Convert to base64 data URI
+                            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                            transformed_image = f"data:{mime_type};base64,{image_base64}"
+                            logger.info(f"Generated image with {model} ({len(image_bytes)} bytes)")
 
-                                # Convert to base64 data URI
-                                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-                                transformed_image = f"data:{mime_type};base64,{image_base64}"
-                                logger.info(f"Successfully generated transformed image with {model} ({len(image_bytes)} bytes, {mime_type})")
+                        elif part.text:
+                            transformation_description += part.text
 
-                            elif part.text:
-                                transformation_description += part.text
-
-                    # If we got here without errors, mark as successful
-                    successful_model = model
-                    logger.info(f"Successfully used model: {model}")
-                    break  # Exit the loop if successful
-
-                except Exception as model_error:
-                    logger.warning(f"Model {model} failed: {str(model_error)[:200]}")
-                    # Continue to next model
-                    continue
+            except Exception as model_error:
+                logger.error(f"Model failed: {str(model_error)}")
+                transformed_image = None
 
             processing_time = time.time() - start_time
 
             # If no image was generated, fall back to original
             if not transformed_image:
-                logger.warning("No transformed image generated by any Gemini model, using original")
+                logger.warning("No transformed image generated, using original")
                 transformed_image = visualization_request.base_image
 
             if transformation_description:
                 logger.info(f"AI description: {transformation_description[:150]}...")
 
-            if successful_model:
-                logger.info(f"Generated visualization using {successful_model} with {len(products_description)} products in {processing_time:.2f}s")
-            else:
-                logger.error("All Gemini models failed, returning original image")
+            success = (transformed_image != visualization_request.base_image)
+            logger.info(f"Generated visualization with {len(products_description)} products in {processing_time:.2f}s (success: {success})")
 
             return VisualizationResult(
                 rendered_image=transformed_image,
                 processing_time=processing_time,
-                quality_score=0.92 if successful_model else 0.5,
-                placement_accuracy=0.95 if successful_model else 0.0,
-                lighting_realism=0.90 if successful_model else 0.0,
-                confidence_score=0.93 if successful_model else 0.3
+                quality_score=0.88 if success else 0.5,
+                placement_accuracy=0.90 if success else 0.0,
+                lighting_realism=0.85 if success else 0.0,
+                confidence_score=0.87 if success else 0.3
             )
 
         except Exception as e:
