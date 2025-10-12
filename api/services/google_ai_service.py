@@ -236,7 +236,7 @@ Provide accurate measurements and detailed observations."""
                 }
             }
 
-            result = await self._make_api_request("models/gemini-1.5-pro:generateContent", payload)
+            result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
 
             # Parse response
             content = result.get("candidates", [{}])[0].get("content", {})
@@ -319,7 +319,7 @@ Provide detailed spatial analysis in JSON format:
                 }
             }
 
-            result = await self._make_api_request("models/gemini-1.5-pro:generateContent", payload)
+            result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
 
             content = result.get("candidates", [{}])[0].get("content", {})
             text_response = content.get("parts", [{}])[0].get("text", "{}")
@@ -390,7 +390,7 @@ Return results as JSON array:
                 }
             }
 
-            result = await self._make_api_request("models/gemini-1.5-pro:generateContent", payload)
+            result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
 
             content = result.get("candidates", [{}])[0].get("content", {})
             text_response = content.get("parts", [{}])[0].get("text", "[]")
@@ -458,52 +458,105 @@ Product {idx + 1}:
 
                 products_detail = '\n'.join(detailed_products)
 
-                # Professional visualization prompt based on ai_prompt_overlay.md
-                visualization_prompt = f"""You are an expert interior design visualizer. Your task is to accurately place the selected products into the provided room image while maintaining photorealistic quality and proper spatial context.
+                # ULTRA-STRICT room preservation prompt
+                product_count = len(visualization_request.products_to_place)
+                visualization_prompt = f"""🔒🔒🔒 CRITICAL INSTRUCTION - READ CAREFULLY 🔒🔒🔒
 
-INPUT DETAILS:
-- Original Room Image: User's personal space (provided as input image)
-- Lighting Conditions: {visualization_request.lighting_conditions}
+THIS IS A PRODUCT PLACEMENT TASK. YOUR GOAL: Take the EXACT room image provided and ADD {product_count} furniture products to it.
 
-PRODUCTS TO VISUALIZE:
+═══════════════════════════════════════════════════════════════
+⚠️ RULE #1 - NEVER BREAK THIS RULE ⚠️
+═══════════════════════════════════════════════════════════════
+YOU MUST USE THE EXACT ROOM FROM THE INPUT IMAGE.
+DO NOT create a new room.
+DO NOT redesign the space.
+DO NOT change ANY aspect of the room structure.
+
+THE INPUT IMAGE SHOWS THE USER'S ACTUAL ROOM.
+YOU ARE ADDING PRODUCTS TO THEIR REAL SPACE.
+TREAT THE INPUT IMAGE AS SACRED - IT CANNOT BE MODIFIED.
+
+═══════════════════════════════════════════════════════════════
+⚠️ WHAT MUST STAY IDENTICAL (100% PRESERVATION REQUIRED) ⚠️
+═══════════════════════════════════════════════════════════════
+1. WALLS - Same position, color, texture, material
+2. WINDOWS - Same size, position, style, with same light coming through
+3. DOORS - Same position, style, handles
+4. FLOOR - Same material, color, pattern, reflections
+5. CEILING - Same height, color, fixtures, details
+6. LIGHTING - Same sources, brightness, shadows on walls
+7. CAMERA ANGLE - Same perspective, height, focal length
+8. ROOM DIMENSIONS - Same size, proportions, layout
+9. ARCHITECTURAL FEATURES - Same moldings, trim, baseboards
+10. BACKGROUND ELEMENTS - Same wall decorations, fixtures, outlets
+
+IF THE ROOM HAS:
+- White walls → Keep white walls
+- Hardwood floor → Keep hardwood floor
+- A window on the left → Keep window on the left
+- 10ft ceiling → Keep 10ft ceiling
+- Modern style → Keep modern style base
+
+═══════════════════════════════════════════════════════════════
+✅ YOUR ONLY TASK - PRODUCT PLACEMENT ONLY
+═══════════════════════════════════════════════════════════════
+You are placing {product_count} products into the room:
 {products_detail}
 
-VISUALIZATION REQUIREMENTS:
+📏 CRITICAL SIZING INSTRUCTION:
+Each product has its own real-world dimensions. You MUST honor these dimensions exactly:
+1. Look at the product reference images provided - these show the actual product proportions
+2. Estimate the room dimensions from the input image (walls, existing furniture, doorways)
+3. Scale each product proportionally to fit the room, maintaining the product's ACTUAL aspect ratio and proportions
+4. DO NOT invent or change product dimensions - use what you see in the product reference images
+5. If a coffee table is 36" wide in reality, it should appear 36" wide in the room (scaled to perspective)
+6. If a sofa is 84" long in reality, it should appear 84" long in the room (scaled to perspective)
 
-**Realism & Quality:**
-- Maintain photorealistic rendering quality matching the original image
-- Preserve the original image's lighting, shadows, and color temperature
-- Ensure products cast appropriate shadows based on existing light sources
-- Match perspective and viewing angle of the original photograph
-- Maintain depth of field and focal characteristics of the original image
+PLACEMENT STRATEGY:
+1. Look at the EXACT room in the input image
+2. Estimate room dimensions from visual cues (walls, existing furniture, doorways, standard door height ~80")
+3. Identify appropriate floor space for each product
+4. Place products ON THE FLOOR of THIS room (not floating)
+5. Scale products proportionally based on estimated room size AND product's actual dimensions from reference image
+6. Maintain realistic proportions - a 36" coffee table should look appropriate in a 12x15 ft room
+7. Arrange products naturally (sofas along walls, tables centered, etc.)
+8. Ensure products don't block doorways or windows
+9. Keep proper spacing between products (18-30 inches walking space)
 
-**Spatial Accuracy:**
-- Place products in contextually appropriate locations (sofas against walls, coffee tables in front of seating, etc.)
-- Respect room scale and proportions - ensure furniture is appropriately sized for the space
-- Maintain realistic spacing between furniture pieces for walkways and functionality
-- Ensure products sit properly on floors or against walls (no floating objects)
-- Consider room traffic flow and ergonomics
+IMPORTANT FOR MULTIPLE PRODUCTS ({product_count} products):
+- When placing {product_count} products, the room STILL stays the same
+- MORE products does NOT mean redesigning the room
+- Each product gets placed in the EXISTING space
+- The walls, floor, windows stay IDENTICAL even with {product_count} products
+- Think: "I'm adding furniture to a photo, not creating a new photo"
 
-**Product Representation:**
-- Accurately represent product dimensions, colors, materials, and textures
-- Show products from the appropriate angle based on camera perspective
-- Maintain brand-accurate details and design features
-- Ensure texture quality matches the detail level of the original room image
+═══════════════════════════════════════════════════════════════
+🎯 EXPECTED OUTPUT
+═══════════════════════════════════════════════════════════════
+Generate ONE image that shows:
+- THE EXACT SAME ROOM from the input (100% preserved)
+- WITH {product_count} new furniture products placed inside it
+- Products sitting naturally on the floor
+- Products appropriately spaced and arranged
+- Everything else IDENTICAL to input image
 
-**Integration:**
-- Blend products seamlessly with existing room elements
-- Ensure color harmony with existing room palette
-- Match material reflectiveness and texture detail to room's visual quality
-- Preserve any existing furniture or decor that shouldn't be replaced
-- Maintain architectural features (windows, doors, moldings, etc.)
+QUALITY CHECKS:
+✓ Can you overlay the input and output and see the same walls? YES
+✓ Are windows in the same position? YES
+✓ Is the floor the same material? YES
+✓ Is the camera angle identical? YES
+✓ Did you only add products? YES
+✓ Is the room structure unchanged? YES
 
-**Style Consistency:**
-- Ensure all added products work together cohesively
-- Maintain the room's existing design aesthetic
-- Consider scale relationships between multiple products
+If ANY answer is NO, you've failed the task.
 
-OUTPUT:
-Generate a single photorealistic image showing the room with all selected products accurately placed and integrated, maintaining the exact perspective, lighting, and quality of the original space image."""
+LIGHTING & REALISM:
+- Match the EXACT lighting conditions from the input image
+- Products should cast shadows that match the room's light sources
+- Maintain the same color temperature and brightness
+- Products should look like they belong in THIS specific lighting
+
+OUTPUT: One photorealistic image of THE SAME ROOM with {product_count} products added."""
 
             else:
                 # Fallback for text-only transformations
@@ -545,7 +598,7 @@ Create a photorealistic interior design visualization that addresses the user's 
                 # Use response modalities for image and text generation
                 generate_content_config = types.GenerateContentConfig(
                     response_modalities=["IMAGE", "TEXT"],
-                    temperature=0.4  # Balanced temperature for good results
+                    temperature=0.25  # Lower temperature for better room preservation consistency
                 )
 
                 # Stream response

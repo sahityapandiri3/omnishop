@@ -21,8 +21,15 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
   const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set())
   const [isVisualizing, setIsVisualizing] = useState(false)
   const [lastAnalysis, setLastAnalysis] = useState<any>(null)
+  const [pendingVisualization, setPendingVisualization] = useState<{
+    products: any[],
+    image: string,
+    analysis: any,
+    existingFurniture: any[]
+  } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const formRef = useRef<HTMLFormElement>(null)
 
   // Start new session if none provided
   const startSessionMutation = useMutation({
@@ -58,9 +65,6 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
         image_url: messageData.image_url
       }
       setMessages(prev => [...prev, aiMessage])
-      setInputMessage('')
-      setSelectedImage(null)
-      setImagePreview(null)
       // Store the analysis for visualization
       if (response.analysis) {
         setLastAnalysis(response.analysis)
@@ -136,6 +140,46 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
 
     if (!sessionId || !inputMessage.trim()) return
 
+    // Check if we're waiting for clarification response
+    if (pendingVisualization) {
+      const response = inputMessage.trim().toLowerCase()
+
+      // Map user response to action
+      const actionMap: { [key: string]: string } = {
+        'a': 'replace_one',
+        'b': 'replace_all',
+        'c': 'add'
+      }
+
+      if (actionMap[response]) {
+        // Add user message to show their choice
+        const userMessage: ChatMessage = {
+          id: `temp-${Date.now()}`,
+          type: 'user',
+          content: inputMessage,
+          timestamp: new Date(),
+          session_id: sessionId
+        }
+        setMessages(prev => [...prev, userMessage])
+
+        // Clear input
+        setInputMessage('')
+
+        // Call visualization with action
+        await executeVisualization(
+          pendingVisualization.products,
+          pendingVisualization.image,
+          pendingVisualization.analysis,
+          pendingVisualization.existingFurniture,
+          actionMap[response]
+        )
+
+        // Clear pending visualization
+        setPendingVisualization(null)
+        return
+      }
+    }
+
     // Add user message immediately for better UX
     const userMessage: ChatMessage = {
       id: `temp-${Date.now()}`,
@@ -147,6 +191,11 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
     }
 
     setMessages(prev => [...prev, userMessage])
+
+    // Clear input immediately for better UX
+    setInputMessage('')
+    setSelectedImage(null)
+    setImagePreview(null)
 
     // Send to API
     sendMessageMutation.mutate({
@@ -166,6 +215,11 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
         setImagePreview(result)
       }
       reader.readAsDataURL(file)
+
+      // Reset the input value so the same file can be selected again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
     }
   }
 
@@ -193,6 +247,109 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
     })
   }
 
+  const executeVisualization = async (
+    productDetails: any[],
+    imageToUse: string,
+    analysis: any,
+    existingFurniture?: any[],
+    action?: string
+  ) => {
+    setIsVisualizing(true)
+    try {
+      console.log('Visualize request:', {
+        hasImage: !!imageToUse,
+        productsCount: productDetails.length,
+        hasAnalysis: !!analysis,
+        action: action || 'none',
+        existingFurniture: existingFurniture?.length || 0
+      })
+
+      // Prepare visualization request with full product details
+      const requestBody: any = {
+        image: imageToUse,
+        products: productDetails.map(p => ({
+          id: p.id,
+          name: p.name,
+          full_name: p.name,
+          style: p.recommendation_data?.style_match || 0.8,
+          category: 'furniture'
+        })),
+        analysis: analysis
+      }
+
+      // Add action and existing furniture if provided
+      if (action) {
+        requestBody.action = action
+      }
+      if (existingFurniture) {
+        requestBody.existing_furniture = existingFurniture
+      }
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/chat/sessions/${sessionId}/visualize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
+        throw new Error(errorData.detail || 'Visualization failed')
+      }
+
+      const data = await response.json()
+      console.log('Visualization response:', data)
+
+      // Check if visualization was successful
+      if (!data.rendered_image) {
+        // Check if clarification is needed (Issue 6 - existing furniture)
+        if (data.needs_clarification) {
+          const clarificationMessage: ChatMessage = {
+            id: `clarification-${Date.now()}`,
+            type: 'assistant',
+            content: data.message,
+            timestamp: new Date(),
+            session_id: sessionId
+          }
+          setMessages(prev => [...prev, clarificationMessage])
+
+          // Store visualization context for when user responds
+          setPendingVisualization({
+            products: productDetails,
+            image: imageToUse,
+            analysis: analysis,
+            existingFurniture: data.existing_furniture || []
+          })
+
+          return
+        }
+
+        throw new Error('No visualization image was generated')
+      }
+
+      // Add visualization result as a new message
+      const vizMessage: ChatMessage = {
+        id: `viz-${Date.now()}`,
+        type: 'assistant',
+        content: '✨ Here\'s your personalized room visualization with the selected products!',
+        timestamp: new Date(),
+        session_id: sessionId,
+        image_url: data.rendered_image
+      }
+
+      setMessages(prev => [...prev, vizMessage])
+
+      // Clear selected products after successful visualization
+      setSelectedProducts(new Set())
+    } catch (error) {
+      console.error('Visualization error:', error)
+      alert(`Failed to generate visualization: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsVisualizing(false)
+    }
+  }
+
   const handleVisualize = async () => {
     if (!sessionId || selectedProducts.size === 0) {
       alert('Please select at least one product to visualize')
@@ -207,71 +364,25 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
       return
     }
 
-    setIsVisualizing(true)
-    try {
-      // Get selected product details from messages
-      const allProducts = messages
-        .filter(m => m.products && m.products.length > 0)
-        .flatMap(m => m.products || [])
+    // Get selected product details from messages
+    const allProducts = messages
+      .filter(m => m.products && m.products.length > 0)
+      .flatMap(m => m.products || [])
 
-      const selectedProductDetails = allProducts.filter(p => selectedProducts.has(p.id))
+    const selectedProductDetails = allProducts.filter(p => selectedProducts.has(p.id))
 
-      // Get the image to use - priority: newly uploaded > user message image > assistant message image
-      let imageToUse = selectedImage || imagePreview
-      if (!imageToUse) {
-        // Find the last user or assistant message with an image
-        const messageWithImage = [...messages].reverse().find(m => m.image_url)
-        if (messageWithImage) {
-          imageToUse = messageWithImage.image_url
-        }
+    // Get the image to use - priority: newly uploaded > user message image > assistant message image
+    let imageToUse = selectedImage || imagePreview
+    if (!imageToUse) {
+      // Find the last user or assistant message with an image
+      const messageWithImage = [...messages].reverse().find(m => m.image_url)
+      if (messageWithImage) {
+        imageToUse = messageWithImage.image_url
       }
-
-      console.log('Visualize request:', {
-        hasImage: !!imageToUse,
-        productsCount: selectedProductDetails.length,
-        hasAnalysis: !!lastAnalysis
-      })
-
-      // Prepare visualization request with full product details
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/chat/sessions/${sessionId}/visualize`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          image: imageToUse,
-          products: selectedProductDetails.map(p => ({
-            id: p.id,
-            name: p.name,
-            full_name: p.name,
-            style: p.recommendation_data?.style_match || 0.8,
-            category: 'furniture'
-          })),
-          analysis: lastAnalysis
-        }),
-      })
-
-      if (!response.ok) throw new Error('Visualization failed')
-
-      const data = await response.json()
-
-      // Add visualization result as a new message
-      const vizMessage: ChatMessage = {
-        id: `viz-${Date.now()}`,
-        type: 'assistant',
-        content: '✨ Here\'s your personalized room visualization with the selected products!',
-        timestamp: new Date(),
-        session_id: sessionId,
-        image_url: data.rendered_image
-      }
-
-      setMessages(prev => [...prev, vizMessage])
-    } catch (error) {
-      console.error('Visualization error:', error)
-      alert('Failed to generate visualization. Please try again.')
-    } finally {
-      setIsVisualizing(false)
     }
+
+    // Call the extracted visualization function
+    await executeVisualization(selectedProductDetails, imageToUse!, lastAnalysis)
   }
 
   const isLoading = sendMessageMutation.isPending
@@ -373,7 +484,7 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
           </div>
         )}
 
-        <form onSubmit={handleSendMessage} className="flex items-end space-x-2">
+        <form ref={formRef} onSubmit={handleSendMessage} className="flex items-end space-x-2">
           <div className="flex-1">
             <div className="relative">
               <textarea
@@ -385,7 +496,7 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
-                    handleSendMessage(e)
+                    formRef.current?.requestSubmit()
                   }
                 }}
               />
