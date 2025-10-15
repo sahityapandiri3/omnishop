@@ -3,8 +3,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ChatMessage, ChatMessageRequest, ChatMessageResponse } from '@/types'
-import { startChatSession, sendChatMessage, getChatHistory } from '@/utils/api'
-import { PaperAirplaneIcon, PhotoIcon } from '@heroicons/react/24/outline'
+import { startChatSession, sendChatMessage, getChatHistory, undoVisualization, redoVisualization } from '@/utils/api'
+import { PaperAirplaneIcon, PhotoIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon } from '@heroicons/react/24/outline'
 import ProductCard from './ProductCard'
 
 interface ChatInterfaceProps {
@@ -18,6 +18,7 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
   const [inputMessage, setInputMessage] = useState('')
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [userUploadedNewImage, setUserUploadedNewImage] = useState(false) // Track if user explicitly uploaded new image
   const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set())
   const [isVisualizing, setIsVisualizing] = useState(false)
   const [lastAnalysis, setLastAnalysis] = useState<any>(null)
@@ -27,6 +28,10 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
     analysis: any,
     existingFurniture: any[]
   } | null>(null)
+  // BUG #9 FIX: Undo/Redo state management
+  const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
+  const [lastVisualizationMessage, setLastVisualizationMessage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
@@ -60,7 +65,7 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
         type: 'assistant',
         content: messageData.content || '',
         timestamp: new Date(messageData.timestamp || Date.now()),
-        session_id: sessionId,
+        session_id: sessionId || undefined,
         products: products,
         image_url: messageData.image_url
       }
@@ -68,6 +73,11 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
       // Store the analysis for visualization
       if (response.analysis) {
         setLastAnalysis(response.analysis)
+      }
+      // PRODUCT PERSISTENCE FIX: Clear product selections when new products arrive
+      // This ensures users don't accidentally visualize old products with new ones
+      if (products && products.length > 0) {
+        setSelectedProducts(new Set())
       }
     },
     onError: (error: any) => {
@@ -96,32 +106,38 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
   })
 
   // Load chat history if session exists
-  const { data: chatHistory } = useQuery({
+  const { data: chatHistory, error: chatHistoryError } = useQuery({
     queryKey: ['chatHistory', sessionId],
     queryFn: () => sessionId ? getChatHistory(sessionId) : null,
-    enabled: !!sessionId,
-    onSuccess: (data) => {
-      if (data && data.messages && Array.isArray(data.messages)) {
-        // Ensure all messages have proper structure and id field
-        const validMessages = data.messages
-          .filter(msg => msg && typeof msg === 'object')
-          .map(msg => ({
-            id: msg.id || msg.message_id || `msg-${Date.now()}-${Math.random()}`,
-            type: msg.message_type || msg.type || 'assistant',
-            content: msg.content || '',
-            timestamp: new Date(msg.timestamp || Date.now()),
-            session_id: msg.session_id || sessionId,
-            products: msg.recommendations || msg.products || []
-          }))
-        setMessages(validMessages)
-      }
-    },
-    onError: (error) => {
-      console.error('Failed to load chat history:', error)
+    enabled: !!sessionId
+  })
+
+  // Handle chat history data changes
+  useEffect(() => {
+    if (chatHistory && chatHistory.messages && Array.isArray(chatHistory.messages)) {
+      // Ensure all messages have proper structure and id field
+      const validMessages = chatHistory.messages
+        .filter((msg: any) => msg && typeof msg === 'object')
+        .map((msg: any) => ({
+          id: msg.id || msg.message_id || `msg-${Date.now()}-${Math.random()}`,
+          type: msg.message_type || msg.type || 'assistant',
+          content: msg.content || '',
+          timestamp: new Date(msg.timestamp || Date.now()),
+          session_id: msg.session_id || sessionId,
+          products: msg.recommendations || msg.products || []
+        }))
+      setMessages(validMessages)
+    }
+  }, [chatHistory, sessionId])
+
+  // Handle chat history errors
+  useEffect(() => {
+    if (chatHistoryError) {
+      console.error('Failed to load chat history:', chatHistoryError)
       // Start with empty messages if history fails to load
       setMessages([])
     }
-  })
+  }, [chatHistoryError])
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -158,7 +174,7 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
           type: 'user',
           content: inputMessage,
           timestamp: new Date(),
-          session_id: sessionId
+          session_id: sessionId || undefined
         }
         setMessages(prev => [...prev, userMessage])
 
@@ -186,7 +202,7 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
       type: 'user',
       content: inputMessage,
       timestamp: new Date(),
-      session_id: sessionId,
+      session_id: sessionId || undefined,
       image_url: imagePreview || undefined
     }
 
@@ -196,6 +212,7 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
     setInputMessage('')
     setSelectedImage(null)
     setImagePreview(null)
+    setUserUploadedNewImage(false) // Reset flag after sending message with image
 
     // Send to API
     sendMessageMutation.mutate({
@@ -213,6 +230,7 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
         const result = event.target?.result as string
         setSelectedImage(result)
         setImagePreview(result)
+        setUserUploadedNewImage(true) // Mark that user uploaded a new image
       }
       reader.readAsDataURL(file)
 
@@ -226,6 +244,7 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
   const removeImage = () => {
     setSelectedImage(null)
     setImagePreview(null)
+    setUserUploadedNewImage(false) // Reset flag when image is removed
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -252,7 +271,8 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
     imageToUse: string,
     analysis: any,
     existingFurniture?: any[],
-    action?: string
+    action?: string,
+    isUserUploadedImage?: boolean
   ) => {
     setIsVisualizing(true)
     try {
@@ -284,6 +304,10 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
       if (existingFurniture) {
         requestBody.existing_furniture = existingFurniture
       }
+      // USE CASE 1 & 3: Pass flag if user explicitly uploaded a new image
+      if (isUserUploadedImage !== undefined) {
+        requestBody.user_uploaded_new_image = isUserUploadedImage
+      }
 
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/chat/sessions/${sessionId}/visualize`, {
         method: 'POST',
@@ -310,7 +334,7 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
             type: 'assistant',
             content: data.message,
             timestamp: new Date(),
-            session_id: sessionId
+            session_id: sessionId || undefined
           }
           setMessages(prev => [...prev, clarificationMessage])
 
@@ -334,7 +358,7 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
         type: 'assistant',
         content: '✨ Here\'s your personalized room visualization with the selected products!',
         timestamp: new Date(),
-        session_id: sessionId,
+        session_id: sessionId || undefined,
         image_url: data.rendered_image
       }
 
@@ -342,11 +366,77 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
 
       // Clear selected products after successful visualization
       setSelectedProducts(new Set())
+
+      // BUG #9 FIX: Track this as last visualization for undo/redo
+      setLastVisualizationMessage(vizMessage.id)
+      setCanUndo(true)
+      setCanRedo(false)
     } catch (error) {
       console.error('Visualization error:', error)
       alert(`Failed to generate visualization: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsVisualizing(false)
+    }
+  }
+
+  // BUG #9 FIX: Undo/Redo handlers
+  const handleUndo = async () => {
+    if (!sessionId || !canUndo) return
+
+    try {
+      const response = await undoVisualization(sessionId)
+
+      if (response.success) {
+        // Add new message showing the undone visualization
+        const undoMessage: ChatMessage = {
+          id: `undo-${Date.now()}`,
+          type: 'assistant',
+          content: `↩️ ${response.message}`,
+          timestamp: new Date(),
+          session_id: sessionId || undefined,
+          image_url: response.rendered_image
+        }
+
+        setMessages(prev => [...prev, undoMessage])
+        setCanUndo(response.can_undo)
+        setCanRedo(response.can_redo)
+        setLastVisualizationMessage(undoMessage.id)
+      } else {
+        alert(response.message || 'Cannot undo: already at the beginning')
+      }
+    } catch (error) {
+      console.error('Undo error:', error)
+      alert('Failed to undo visualization')
+    }
+  }
+
+  const handleRedo = async () => {
+    if (!sessionId || !canRedo) return
+
+    try {
+      const response = await redoVisualization(sessionId)
+
+      if (response.success) {
+        // Add new message showing the redone visualization
+        const redoMessage: ChatMessage = {
+          id: `redo-${Date.now()}`,
+          type: 'assistant',
+          content: `↪️ ${response.message}`,
+          timestamp: new Date(),
+          session_id: sessionId || undefined,
+          image_url: response.rendered_image
+        }
+
+        setMessages(prev => [...prev, redoMessage])
+        setCanUndo(response.can_undo)
+        setCanRedo(response.can_redo)
+        setLastVisualizationMessage(redoMessage.id)
+      } else {
+        alert(response.message || 'Cannot redo: already at the latest state')
+      }
+    } catch (error) {
+      console.error('Redo error:', error)
+      alert('Failed to redo visualization')
     }
   }
 
@@ -364,10 +454,12 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
       return
     }
 
-    // Get selected product details from messages
-    const allProducts = messages
-      .filter(m => m.products && m.products.length > 0)
-      .flatMap(m => m.products || [])
+    // PRODUCT PERSISTENCE FIX: Get products only from the most recent assistant message
+    // This prevents products from previous searches appearing in new product type requests
+    const messagesWithProducts = messages.filter(m => m.products && m.products.length > 0)
+    const allProducts = messagesWithProducts.length > 0
+      ? messagesWithProducts[messagesWithProducts.length - 1].products || []
+      : []
 
     const selectedProductDetails = allProducts.filter(p => selectedProducts.has(p.id))
 
@@ -377,12 +469,19 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
       // Find the last user or assistant message with an image
       const messageWithImage = [...messages].reverse().find(m => m.image_url)
       if (messageWithImage) {
-        imageToUse = messageWithImage.image_url
+        imageToUse = messageWithImage.image_url || null
       }
     }
 
     // Call the extracted visualization function
-    await executeVisualization(selectedProductDetails, imageToUse!, lastAnalysis)
+    // Pass userUploadedNewImage flag if we're using the newly uploaded image
+    const isUsingNewUpload = userUploadedNewImage && (imageToUse === selectedImage || imageToUse === imagePreview)
+    await executeVisualization(selectedProductDetails, imageToUse!, lastAnalysis, undefined, undefined, isUsingNewUpload)
+
+    // Reset the flag after visualization (user's new image has been used)
+    if (isUsingNewUpload) {
+      setUserUploadedNewImage(false)
+    }
   }
 
   const isLoading = sendMessageMutation.isPending
@@ -422,6 +521,11 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
             isLast={index === messages.length - 1}
             selectedProducts={selectedProducts}
             onToggleProduct={toggleProductSelection}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            showUndoRedo={message.id === lastVisualizationMessage}
           />
         ))}
 
@@ -536,9 +640,24 @@ interface ChatMessageBubbleProps {
   isLast: boolean
   selectedProducts: Set<number>
   onToggleProduct: (productId: number) => void
+  canUndo?: boolean
+  canRedo?: boolean
+  onUndo?: () => void
+  onRedo?: () => void
+  showUndoRedo?: boolean
 }
 
-function ChatMessageBubble({ message, isLast, selectedProducts, onToggleProduct }: ChatMessageBubbleProps) {
+function ChatMessageBubble({
+  message,
+  isLast,
+  selectedProducts,
+  onToggleProduct,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+  showUndoRedo
+}: ChatMessageBubbleProps) {
   const isUser = message.type === 'user'
 
   return (
@@ -562,6 +681,38 @@ function ChatMessageBubble({ message, isLast, selectedProducts, onToggleProduct 
                 <p className="text-xs text-gray-500 mt-1 italic">
                   ✨ AI-transformed design visualization
                 </p>
+              )}
+
+              {/* BUG #9 FIX: Undo/Redo buttons for visualizations */}
+              {!isUser && showUndoRedo && (onUndo || onRedo) && (
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={onUndo}
+                    disabled={!canUndo}
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                      canUndo
+                        ? 'bg-blue-500 hover:bg-blue-600 text-white shadow-sm hover:shadow'
+                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    }`}
+                    title="Undo last action (Ctrl+Z)"
+                  >
+                    <ArrowUturnLeftIcon className="w-4 h-4" />
+                    Undo
+                  </button>
+                  <button
+                    onClick={onRedo}
+                    disabled={!canRedo}
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                      canRedo
+                        ? 'bg-blue-500 hover:bg-blue-600 text-white shadow-sm hover:shadow'
+                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    }`}
+                    title="Redo undone action (Ctrl+Y)"
+                  >
+                    Redo
+                    <ArrowUturnRightIcon className="w-4 h-4" />
+                  </button>
+                </div>
               )}
             </div>
           )}

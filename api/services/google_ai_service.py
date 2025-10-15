@@ -460,17 +460,30 @@ Product {idx + 1}:
 
                 # ULTRA-STRICT room preservation prompt
                 product_count = len(visualization_request.products_to_place)
+
+                # Create explicit product count instruction
+                product_count_instruction = ""
+                if product_count == 1:
+                    product_count_instruction = "⚠️ PLACE EXACTLY 1 (ONE) PRODUCT - Do NOT place multiple copies. Place only ONE instance of the product."
+                elif product_count == 2:
+                    product_count_instruction = "⚠️ PLACE EXACTLY 2 (TWO) DIFFERENT PRODUCTS - One of each product provided, not multiple copies of the same product."
+                else:
+                    product_count_instruction = f"⚠️ PLACE EXACTLY {product_count} DIFFERENT PRODUCTS - One of each product provided, not multiple copies of any single product."
+
                 visualization_prompt = f"""🔒🔒🔒 CRITICAL INSTRUCTION - READ CAREFULLY 🔒🔒🔒
 
-THIS IS A PRODUCT PLACEMENT TASK. YOUR GOAL: Take the EXACT room image provided and ADD {product_count} furniture products to it.
+THIS IS A PRODUCT PLACEMENT TASK. YOUR GOAL: Take the EXACT room image provided and ADD {product_count} furniture product(s) to it.
+
+{product_count_instruction}
 
 ═══════════════════════════════════════════════════════════════
 ⚠️ RULE #1 - NEVER BREAK THIS RULE ⚠️
 ═══════════════════════════════════════════════════════════════
-YOU MUST USE THE EXACT ROOM FROM THE INPUT IMAGE.
+YOU MUST USE THE EXACT ROOM FROM THE INPUT IMAGE - PIXEL-LEVEL PRESERVATION.
 DO NOT create a new room.
 DO NOT redesign the space.
 DO NOT change ANY aspect of the room structure.
+DO NOT alter floors, walls, windows, doors, or ceiling in ANY way.
 
 THE INPUT IMAGE SHOWS THE USER'S ACTUAL ROOM.
 YOU ARE ADDING PRODUCTS TO THEIR REAL SPACE.
@@ -479,16 +492,18 @@ TREAT THE INPUT IMAGE AS SACRED - IT CANNOT BE MODIFIED.
 ═══════════════════════════════════════════════════════════════
 ⚠️ WHAT MUST STAY IDENTICAL (100% PRESERVATION REQUIRED) ⚠️
 ═══════════════════════════════════════════════════════════════
-1. WALLS - Same position, color, texture, material
-2. WINDOWS - Same size, position, style, with same light coming through
-3. DOORS - Same position, style, handles
-4. FLOOR - Same material, color, pattern, reflections
-5. CEILING - Same height, color, fixtures, details
-6. LIGHTING - Same sources, brightness, shadows on walls
-7. CAMERA ANGLE - Same perspective, height, focal length
-8. ROOM DIMENSIONS - Same size, proportions, layout
-9. ARCHITECTURAL FEATURES - Same moldings, trim, baseboards
-10. BACKGROUND ELEMENTS - Same wall decorations, fixtures, outlets
+🚨 CRITICAL: FLOOR MUST NOT CHANGE - If the input shows solid flooring, output MUST show solid flooring. If input shows checkered floor, output MUST show checkered floor. NEVER change floor patterns or materials.
+
+1. FLOOR (MOST CRITICAL) - EXACT SAME material, color, pattern, texture, reflections, grain - DO NOT CHANGE under any circumstances
+2. WALLS - Same position, color, texture, material - walls cannot move or change
+3. WINDOWS - Same size, position, style, with same light coming through - windows are fixed
+4. DOORS - Same position, style, handles - doors are fixed architectural elements
+5. CEILING - Same height, color, fixtures, details - ceiling structure is permanent
+6. LIGHTING - Same sources, brightness, shadows on walls - preserve existing light setup
+7. CAMERA ANGLE - Same perspective, height, focal length - maintain exact viewpoint
+8. ROOM DIMENSIONS - Same size, proportions, layout - room size is fixed
+9. ARCHITECTURAL FEATURES - Same moldings, trim, baseboards - decorative elements stay
+10. BACKGROUND ELEMENTS - Same wall decorations, fixtures, outlets - all fixed elements remain
 
 IF THE ROOM HAS:
 - White walls → Keep white walls
@@ -550,13 +565,35 @@ QUALITY CHECKS:
 
 If ANY answer is NO, you've failed the task.
 
-LIGHTING & REALISM:
+LIGHTING & REALISM - CRITICAL FOR NATURAL APPEARANCE:
 - Match the EXACT lighting conditions from the input image
-- Products should cast shadows that match the room's light sources
-- Maintain the same color temperature and brightness
-- Products should look like they belong in THIS specific lighting
+- Products MUST cast realistic shadows that match the room's light sources
+- Maintain the same color temperature and brightness from the input image
+- Products should look like they PHYSICALLY EXIST in THIS specific room
+- Apply ambient occlusion where products meet the floor
+- Products should reflect or interact with the room's existing lighting
+- Ensure proper contact shadows where products touch the floor
+- Apply subtle color grading to match the room's atmosphere
 
-OUTPUT: One photorealistic image of THE SAME ROOM with {product_count} products added."""
+🎨 PHOTOREALISTIC BLENDING REQUIREMENTS:
+1. NATURAL INTEGRATION: Products must look like real physical objects in the space, NOT pasted cutouts
+2. LIGHTING CONSISTENCY: Product highlights and shadows must match the room's lighting direction and intensity
+3. FLOOR CONTACT: Products must have realistic contact shadows and ground connection
+4. PERSPECTIVE MATCHING: Products must follow the exact same perspective and vanishing points as the room
+5. COLOR HARMONY: Product colors should be influenced by the room's ambient lighting
+6. DEPTH AND DIMENSION: Products should have proper depth cues and look three-dimensional in the space
+7. MATERIAL REALISM: Reflections, textures, and material properties must look authentic in this lighting
+8. ATMOSPHERE MATCHING: Products should have the same depth-of-field, focus, and atmospheric effects as the room
+
+⚠️ AVOID THESE COMMON MISTAKES:
+- Do NOT make products look like flat cutouts or stickers
+- Do NOT place products floating above the floor
+- Do NOT ignore the room's lighting when rendering products
+- Do NOT use different lighting conditions for products vs. room
+- Do NOT create harsh, unrealistic edges around products
+- Do NOT forget shadows and reflections
+
+OUTPUT: One photorealistic image of THE SAME ROOM with {product_count} product(s) naturally integrated, where products look like they physically exist in the space with proper lighting, shadows, and material interactions."""
 
             else:
                 # Fallback for text-only transformations
@@ -625,6 +662,17 @@ Create a photorealistic interior design visualization that addresses the user's 
                         elif part.text:
                             transformation_description += part.text
 
+            except asyncio.TimeoutError:
+                logger.error(f"TIMEOUT: Google Gemini API timed out after {time.time() - start_time:.2f}s")
+                # Return original image on timeout with clear error message
+                return VisualizationResult(
+                    rendered_image=visualization_request.base_image,
+                    processing_time=time.time() - start_time,
+                    quality_score=0.0,
+                    placement_accuracy=0.0,
+                    lighting_realism=0.0,
+                    confidence_score=0.0
+                )
             except Exception as model_error:
                 logger.error(f"Model failed: {str(model_error)}")
                 transformed_image = None
@@ -782,12 +830,15 @@ QUALITY REQUIREMENTS:
         self,
         base_image: str,
         modification_request: str,
+        placed_products: List[Dict[str, Any]] = None,
         lighting_conditions: str = "mixed",
         render_quality: str = "high"
     ) -> VisualizationResult:
         """
         Generate iterative visualization by modifying an existing generated image
-        Used when user requests changes to a previously generated visualization (e.g., "add more pillows")
+        Used when user requests changes to a previously generated visualization (e.g., "place the lamp in the corner")
+
+        ISSUE 11 FIX: Now accepts placed_products to maintain product persistence across modifications
         """
         try:
             start_time = time.time()
@@ -795,35 +846,51 @@ QUALITY REQUIREMENTS:
             # Process the base image (existing visualization)
             processed_image = self._preprocess_image(base_image)
 
-            # Build iterative modification prompt with room preservation
+            # ISSUE 11 FIX: Build list of existing products to preserve
+            existing_products_description = ""
+            if placed_products and len(placed_products) > 0:
+                existing_products_description = "\n\n🔒 CRITICAL: PRESERVE THESE EXISTING PRODUCTS:\n"
+                existing_products_description += "The room already contains these products from previous visualizations:\n"
+                for idx, product in enumerate(placed_products, 1):
+                    product_name = product.get('full_name') or product.get('name', 'furniture item')
+                    existing_products_description += f"  {idx}. {product_name}\n"
+                existing_products_description += "\n⚠️ IMPORTANT: These products MUST remain visible in the output."
+                existing_products_description += "\n⚠️ DO NOT remove or replace these products unless specifically requested."
+                existing_products_description += f"\n⚠️ The modification '{modification_request}' should ONLY affect what is specifically mentioned."
+                existing_products_description += "\n⚠️ All other furniture and products must stay exactly as shown."
+
+            # Build iterative modification prompt with room and product preservation
             visualization_prompt = f"""IMPORTANT: This is the EXACT room to modify. Keep the same room structure, walls, windows, flooring, and perspective.
 
 MODIFICATION REQUEST: {modification_request}
+{existing_products_description}
 
 🔒 CRITICAL PRESERVATION RULES:
 1. USE THIS EXACT ROOM: Keep the same walls, windows, doors, flooring, ceiling shown in this image
 2. PRESERVE ROOM STRUCTURE: Do not change the room layout, dimensions, or architectural features
 3. KEEP CAMERA ANGLE: Maintain the exact perspective and viewpoint
 4. SAME BASE SPACE: This must remain the SAME physical room, just with the requested modification
+5. KEEP ALL EXISTING PRODUCTS: All furniture and products currently in the room must remain visible (unless removal is specifically requested)
 
 ✅ APPLY ONLY THIS MODIFICATION:
 - User request: {modification_request}
 - Change ONLY what is specifically mentioned
-- Keep ALL other elements exactly as shown
-- If adding items, place them naturally in THIS room's existing layout
+- Keep ALL other elements exactly as shown (especially existing products)
+- If repositioning items, move only what is specifically mentioned
+- If adding new items, place them naturally without removing existing items
 
 EXAMPLES OF CORRECT MODIFICATIONS:
-- "add more pillows" → Add 2-3 pillows to THIS room, matching existing decor, keep everything else identical
-- "make it brighter" → Increase lighting in THIS exact room, don't change furniture or layout
-- "remove the lamp" → Remove lamp from THIS room, keep all other items and room structure
-- "add more of the same kind" → Duplicate similar items visible in THIS image, in THIS same room
+- "place the lamp at the far corner" → Move ONLY the lamp to corner, keep ALL other furniture exactly where it is
+- "add more pillows" → Add 2-3 pillows to THIS room, keep ALL existing furniture unchanged
+- "make it brighter" → Increase lighting, keep ALL furniture and products in their positions
+- "move the table to the center" → Move ONLY the table, keep everything else in exact positions
 
 QUALITY REQUIREMENTS:
 - Lighting: {lighting_conditions} - maintain existing light sources
 - Rendering: {render_quality} quality photorealism
-- Consistency: The room must look like the SAME physical space
+- Consistency: The room must look like the SAME physical space with the SAME products
 
-🎯 RESULT: Output must show THIS EXACT ROOM with only the requested modification applied. Same walls, same windows, same floor, same perspective - just with the change requested."""
+🎯 RESULT: Output must show THIS EXACT ROOM with ALL existing products preserved and only the requested modification applied. Same walls, same windows, same floor, same furniture, same perspective - just with the specific change requested."""
 
             # Use Gemini 2.5 Flash Image for generation
             model = "gemini-2.5-flash-image"
@@ -846,29 +913,62 @@ QUALITY REQUIREMENTS:
             transformed_image = None
             transformation_description = ""
 
-            # Stream response
-            for chunk in self.genai_client.models.generate_content_stream(
-                model=model,
-                contents=contents,
-                config=generate_content_config,
-            ):
-                if chunk.candidates is None or chunk.candidates[0].content is None or chunk.candidates[0].content.parts is None:
-                    continue
+            # Stream response with timeout protection
+            timeout_seconds = 60  # 60 second timeout for iterative modifications
+            last_chunk_time = time.time()
 
-                for part in chunk.candidates[0].content.parts:
-                    if part.inline_data and part.inline_data.data:
-                        # Extract generated image data
-                        inline_data = part.inline_data
-                        image_bytes = inline_data.data
-                        mime_type = inline_data.mime_type or "image/png"
+            try:
+                for chunk in self.genai_client.models.generate_content_stream(
+                    model=model,
+                    contents=contents,
+                    config=generate_content_config,
+                ):
+                    # Check for timeout between chunks
+                    if time.time() - last_chunk_time > timeout_seconds:
+                        raise asyncio.TimeoutError(f"No response from Gemini API for {timeout_seconds}s")
 
-                        # Convert to base64 data URI
-                        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-                        transformed_image = f"data:{mime_type};base64,{image_base64}"
-                        logger.info(f"Successfully generated iterative visualization ({len(image_bytes)} bytes)")
+                    last_chunk_time = time.time()
 
-                    elif part.text:
-                        transformation_description += part.text
+                    if chunk.candidates is None or chunk.candidates[0].content is None or chunk.candidates[0].content.parts is None:
+                        continue
+
+                    for part in chunk.candidates[0].content.parts:
+                        if part.inline_data and part.inline_data.data:
+                            # Extract generated image data
+                            inline_data = part.inline_data
+                            image_bytes = inline_data.data
+                            mime_type = inline_data.mime_type or "image/png"
+
+                            # Convert to base64 data URI
+                            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                            transformed_image = f"data:{mime_type};base64,{image_base64}"
+                            logger.info(f"Successfully generated iterative visualization ({len(image_bytes)} bytes)")
+
+                        elif part.text:
+                            transformation_description += part.text
+
+            except asyncio.TimeoutError as te:
+                logger.error(f"TIMEOUT: {str(te)}")
+                # Return original image on timeout
+                return VisualizationResult(
+                    rendered_image=base_image,
+                    processing_time=time.time() - start_time,
+                    quality_score=0.0,
+                    placement_accuracy=0.0,
+                    lighting_realism=0.0,
+                    confidence_score=0.0
+                )
+            except Exception as stream_error:
+                logger.error(f"Streaming error: {str(stream_error)}")
+                # Return original on any streaming error
+                return VisualizationResult(
+                    rendered_image=base_image,
+                    processing_time=time.time() - start_time,
+                    quality_score=0.0,
+                    placement_accuracy=0.0,
+                    lighting_realism=0.0,
+                    confidence_score=0.0
+                )
 
             processing_time = time.time() - start_time
 
