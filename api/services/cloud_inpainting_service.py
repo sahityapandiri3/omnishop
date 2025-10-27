@@ -759,8 +759,15 @@ class CloudInpaintingService:
                 logger.info(f"Resizing Lang-Segment-Anything mask from {mask_image.size} to {target_size}")
                 mask_image = mask_image.resize(target_size, Image.Resampling.LANCZOS)
 
-            logger.info(f"Lang-Segment-Anything segmentation successful: {mask_image.size}")
-            return mask_image
+            # CRITICAL FIX: Convert grayscale mask to pure binary (0 or 255)
+            # Lang-Segment-Anything may return shades of grey - we need pure white/black
+            mask_array = np.array(mask_image)
+            binary_mask_array = np.where(mask_array > 128, 255, 0).astype(np.uint8)
+            binary_mask = Image.fromarray(binary_mask_array, mode='L')
+            logger.info(f"✅ Converted grayscale mask to binary: unique values = {np.unique(binary_mask_array)}")
+
+            logger.info(f"Lang-Segment-Anything segmentation successful: {binary_mask.size}")
+            return binary_mask
 
         except asyncio.TimeoutError:
             logger.error("Lang-Segment-Anything timeout")
@@ -805,18 +812,38 @@ class CloudInpaintingService:
             mask = Image.new('L', (width, height), color=0)  # Use grayscale 'L' mode
             draw = ImageDraw.Draw(mask)
 
-            # Priority 1: Try Lang-Segment-Anything AI segmentation (NEW - most accurate)
-            # CRITICAL FIX: Skip Priority 1 for replace actions - use bounding boxes for consistency
-            # For replace_one/replace_all, Pass 1 removes furniture at bounding box locations,
-            # so Pass 2 MUST place at the SAME locations (not AI-detected locations)
-            skip_priority_1 = user_action in ["replace_one", "replace_all"] and existing_furniture and len(existing_furniture) > 0
+            # Priority 1: Lang-Segment-Anything AI segmentation (pixel-perfect masks)
+            # USE AI SEGMENTATION FOR REPLACE ACTIONS - provides accurate masks
+            # This mask will be used for BOTH Pass 1 (removal) and Pass 2 (placement)
+            use_ai_for_replace = user_action in ["replace_one", "replace_all"] and existing_furniture and len(existing_furniture) > 0
 
-            if skip_priority_1:
-                logger.info(f"🔵 Priority 1: SKIPPING AI segmentation for {user_action} action")
-                logger.info(f"   Reason: Pass 1 removed furniture at bounding box locations")
-                logger.info(f"   Will use Priority 2 (bounding boxes) for placement consistency")
+            if use_ai_for_replace:
+                logger.info(f"🎯 Priority 1: USING AI segmentation for {user_action} action")
+                logger.info(f"   Segmenting EXISTING furniture for pixel-perfect removal and replacement")
+
+                # For replace actions, segment the EXISTING furniture type (not new product)
+                existing_type = existing_furniture[0].get('object_type', '').lower()
+                # Normalize type names
+                type_map = {'couch': 'sofa', 'sectional': 'sofa', 'loveseat': 'sofa'}
+                furniture_type = type_map.get(existing_type, existing_type)
+
+                if furniture_type:
+                    logger.info(f"✓ Segmenting existing '{furniture_type}' for replacement")
+                    sam_mask = await self._generate_segmentation_mask_with_grounded_sam(
+                        room_image=room_image_resized,  # Use resized 512x512 image
+                        furniture_type=furniture_type
+                    )
+
+                    if sam_mask:
+                        logger.info("✓ Lang-Segment-Anything SUCCESSFUL - using AI mask for both removal and placement")
+                        return sam_mask
+                    else:
+                        logger.warning("✗ Lang-Segment-Anything failed - falling back to bounding boxes")
+                else:
+                    logger.warning(f"✗ Could not identify furniture type from existing furniture")
             else:
-                logger.info(f"Priority 1: Attempting Lang-Segment-Anything segmentation")
+                # For ADD actions, segment the NEW product type
+                logger.info(f"Priority 1: Attempting Lang-Segment-Anything segmentation for ADD action")
                 if products_to_place and len(products_to_place) > 0:
                     product = products_to_place[0]
                     product_name = product.get('full_name') or product.get('name', 'furniture')
