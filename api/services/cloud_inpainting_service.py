@@ -885,11 +885,20 @@ class CloudInpaintingService:
                         else:
                             logger.info(f"✅ Valid coordinates: x1={x1}, x2={x2}, y1={y1}, y2={y2}")
 
-                        # Add 10% padding around detected furniture
+                        # Add padding around detected furniture
+                        # Use minimal padding for replace actions to avoid including extra items
+                        # Use more padding for add actions to ensure full coverage
+                        if user_action in ["replace_one", "replace_all"]:
+                            padding_percent = 0.02  # 2% padding for replace - tight fit
+                        else:
+                            padding_percent = 0.1   # 10% padding for add - room for variation
+
                         box_width = x2 - x1
                         box_height = y2 - y1
-                        padding_x = int(box_width * 0.1)
-                        padding_y = int(box_height * 0.1)
+                        padding_x = int(box_width * padding_percent)
+                        padding_y = int(box_height * padding_percent)
+
+                        logger.info(f"📏 Padding: {padding_percent*100}% ({padding_x}px x, {padding_y}px y) for {user_action}")
 
                         x1 = max(0, x1 - padding_x)
                         y1 = max(0, y1 - padding_y)
