@@ -119,7 +119,8 @@ async def send_message(
         recommended_products = []
         if analysis:
             recommended_products = await _get_product_recommendations(
-                analysis, db, limit=10, user_id=session.user_id, session_id=session_id
+                analysis, db, user_message=request.message, limit=10,
+                user_id=session.user_id, session_id=session_id
             )
 
         # Check if user is requesting text-based visualization
@@ -379,15 +380,49 @@ async def delete_chat_session(session_id: str, db: AsyncSession = Depends(get_db
         raise HTTPException(status_code=500, detail="Error deleting chat session")
 
 
+def _extract_product_keywords(user_message: str) -> List[str]:
+    """Extract product type keywords from user message"""
+    # Common furniture/product keywords to look for
+    product_types = [
+        'sofa', 'sofas', 'couch', 'sectional', 'loveseat',
+        'chair', 'chairs', 'armchair', 'recliner', 'accent chair',
+        'table', 'tables', 'coffee table', 'dining table', 'side table', 'end table',
+        'bed', 'beds', 'mattress', 'headboard',
+        'desk', 'desks', 'workstation',
+        'dresser', 'dressers', 'chest', 'cabinet', 'cabinets',
+        'bookshelf', 'bookshelves', 'shelving',
+        'lamp', 'lamps', 'lighting', 'chandelier', 'pendant',
+        'rug', 'rugs', 'carpet',
+        'mirror', 'mirrors',
+        'ottoman', 'bench', 'stool', 'stools'
+    ]
+
+    message_lower = user_message.lower()
+    found_keywords = []
+
+    for product_type in product_types:
+        if product_type in message_lower:
+            # Extract the base word (singular form)
+            base_word = product_type.replace('s', '') if product_type.endswith('s') else product_type
+            if base_word not in found_keywords:
+                found_keywords.append(product_type)
+
+    return found_keywords
+
+
 async def _get_product_recommendations(
     analysis: DesignAnalysisSchema,
     db: AsyncSession,
+    user_message: str = "",
     limit: int = 10,
     user_id: Optional[str] = None,
     session_id: Optional[str] = None
 ) -> List[dict]:
     """Get advanced product recommendations based on design analysis"""
     try:
+        # Extract product keywords from user message
+        product_keywords = _extract_product_keywords(user_message)
+
         # Extract preferences from analysis
         user_preferences = {}
         style_preferences = []
@@ -451,6 +486,7 @@ async def _get_product_recommendations(
             budget_range=budget_range,
             style_preferences=style_preferences,
             functional_requirements=functional_requirements,
+            product_keywords=product_keywords,
             max_recommendations=limit
         )
 

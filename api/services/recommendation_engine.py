@@ -27,6 +27,7 @@ class RecommendationRequest:
     budget_range: Optional[Tuple[float, float]] = None
     style_preferences: List[str] = None
     functional_requirements: List[str] = None
+    product_keywords: List[str] = None
     exclude_products: List[str] = None
     max_recommendations: int = 20
 
@@ -194,6 +195,20 @@ class AdvancedRecommendationEngine:
         from sqlalchemy.orm import selectinload
 
         query = select(Product).where(Product.is_available == True)
+
+        # Apply product keyword filter (MOST IMPORTANT - filter by what user asked for)
+        if request.product_keywords:
+            logger.info(f"Filtering products by keywords: {request.product_keywords}")
+            # Create OR conditions for each keyword (case-insensitive)
+            keyword_conditions = []
+            for keyword in request.product_keywords:
+                keyword_conditions.append(Product.name.ilike(f'%{keyword}%'))
+                keyword_conditions.append(Product.description.ilike(f'%{keyword}%'))
+
+            if keyword_conditions:
+                query = query.where(or_(*keyword_conditions))
+        else:
+            logger.warning("No product keywords provided - returning all products")
 
         # Apply budget filter
         if request.budget_range:

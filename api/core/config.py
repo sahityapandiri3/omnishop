@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     # OpenAI
     openai_api_key: str = ""
-    openai_model: str = "gpt-4-vision-preview"
+    openai_model: str = "gpt-4o"
     openai_max_tokens: int = 4000
     openai_temperature: float = 0.7
 
