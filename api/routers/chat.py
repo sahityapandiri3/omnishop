@@ -52,8 +52,10 @@ async def start_chat_session(
         )
 
     except Exception as e:
-        logger.error(f"Error starting chat session: {e}")
-        raise HTTPException(status_code=500, detail="Error starting chat session")
+        import traceback
+        logger.error(f"Error starting chat session: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
 
 
 @router.post("/sessions/{session_id}/messages", response_model=ChatMessageResponse)
@@ -115,24 +117,86 @@ async def send_message(
 
         await db.commit()
 
-        # Get product recommendations if analysis is available
+        # Get product recommendations (always try, even if analysis is None)
         recommended_products = []
         if analysis:
             recommended_products = await _get_product_recommendations(
                 analysis, db, user_message=request.message, limit=10,
                 user_id=session.user_id, session_id=session_id
             )
+        else:
+            # Fallback: get basic recommendations when analysis parsing fails
+            logger.warning(f"Analysis is None for session {session_id}, using fallback recommendations")
+            # Create a minimal analysis object for fallback
+            from api.schemas.chat import DesignAnalysisSchema
+            fallback_analysis = DesignAnalysisSchema(
+                design_analysis={},
+                product_matching_criteria={},
+                visualization_guidance={},
+                confidence_scores={},
+                recommendations={}
+            )
+            recommended_products = await _get_basic_product_recommendations(
+                fallback_analysis, db, limit=10
+            )
 
-        # Check if user is requesting text-based visualization
+        # Smart 3-mode visualization detection
         visualization_image = None
-        if request.image and request.message:
-            # Use NLP to detect visualization intent
-            intent_result = await design_nlp_processor.classify_intent(request.message)
 
+        # Get conversation messages from database for context (MOVED BEFORE USE)
+        messages_query = select(ChatMessage).where(
+            ChatMessage.session_id == session_id
+        ).order_by(ChatMessage.timestamp)
+        messages_result = await db.execute(messages_query)
+        messages = list(messages_result.scalars().all())
+
+        # Use NLP to detect user intent
+        intent_result = await design_nlp_processor.classify_intent(request.message)
+
+        # Helper function to find last generated visualization in conversation
+        def find_last_generated_visualization():
+            """Find the most recent AI-generated visualization image"""
+            # Get messages from database in reverse order
+            for msg in reversed(messages):
+                # Check if message has an image URL that's a data URI (AI-generated)
+                if msg.image_url and msg.image_url.startswith('data:image'):
+                    return msg.image_url
+            return None
+
+        # MODE 3: Iterative Improvement - User modifying existing generated image
+        if intent_result.primary_intent == "image_modification":
+            last_viz = find_last_generated_visualization()
+            if last_viz:
+                logger.info(f"Detected image modification intent: {request.message[:50]}...")
+                try:
+                    # Extract lighting conditions from analysis if available
+                    lighting_conditions = "mixed"
+                    if analysis and hasattr(analysis, 'design_analysis') and analysis.design_analysis:
+                        space_analysis = analysis.design_analysis.get('space_analysis', {})
+                        if isinstance(space_analysis, dict):
+                            lighting_conditions = space_analysis.get('lighting_conditions', 'mixed')
+
+                    # Generate iterative visualization
+                    viz_result = await google_ai_service.generate_iterative_visualization(
+                        base_image=last_viz,
+                        modification_request=request.message,
+                        lighting_conditions=lighting_conditions,
+                        render_quality="high"
+                    )
+
+                    visualization_image = viz_result.rendered_image
+                    logger.info("Successfully generated iterative visualization")
+                except Exception as viz_error:
+                    logger.error(f"Failed to generate iterative visualization: {viz_error}")
+            else:
+                logger.info("Image modification intent detected but no previous visualization found")
+
+        # MODE 2: Full Transformation - User uploaded image + wants transformation
+        elif request.image and request.message:
             # Visualization keywords that indicate user wants image transformation
             visualization_keywords = [
-                'visualize', 'transform', 'make', 'change', 'redesign', 'update',
-                'modernize', 'show', 'see how', 'would look', 'convert', 'turn into'
+                'visualize', 'transform', 'make this', 'redesign',
+                'modernize', 'see how', 'would look', 'convert', 'turn into'
             ]
 
             message_lower = request.message.lower()
@@ -143,7 +207,7 @@ async def send_message(
 
             # If visualization intent detected with image, generate visualization
             if has_visualization_intent:
-                logger.info(f"Detected visualization intent in message: {request.message[:50]}...")
+                logger.info(f"Detected full transformation intent: {request.message[:50]}...")
                 try:
                     # Extract lighting conditions from analysis if available
                     lighting_conditions = "mixed"
@@ -165,6 +229,9 @@ async def send_message(
                 except Exception as viz_error:
                     logger.error(f"Failed to generate text-based visualization: {viz_error}")
 
+        # MODE 1: Product Recommendations - Default behavior when no visualization needed
+        # This happens automatically below when recommended_products are fetched
+
         # Create response message schema
         message_schema = ChatMessageSchema(
             id=assistant_message_id,
@@ -185,8 +252,13 @@ async def send_message(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error processing message: {e}")
-        raise HTTPException(status_code=500, detail="Error processing message")
+        import traceback
+        error_traceback = traceback.format_exc()
+        logger.error(f"Error processing message: {e}\n{error_traceback}")
+        # Include detailed error information for debugging
+        error_type = type(e).__name__
+        error_detail = f"{error_type}: {str(e)}"
+        raise HTTPException(status_code=500, detail=error_detail)
 
 
 @router.get("/sessions/{session_id}/history", response_model=ChatHistoryResponse)
@@ -248,8 +320,10 @@ async def get_chat_history(session_id: str, db: AsyncSession = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching chat history: {e}")
-        raise HTTPException(status_code=500, detail="Error fetching chat history")
+        import traceback
+        logger.error(f"Error fetching chat history: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
 
 
 @router.post("/sessions/{session_id}/visualize")
@@ -272,12 +346,87 @@ async def visualize_room(
         base_image = request.get('image')
         products = request.get('products', [])
         analysis = request.get('analysis')
+        user_action = request.get('action')  # "replace_one", "replace_all", "add", or None
 
         if not base_image:
             raise HTTPException(status_code=400, detail="Image is required")
 
         if not products:
             raise HTTPException(status_code=400, detail="At least one product must be selected")
+
+        # Detect existing furniture in the room if not yet done
+        existing_furniture = request.get('existing_furniture')
+        if not existing_furniture:
+            logger.info("Detecting existing furniture in room image...")
+            objects = await google_ai_service.detect_objects_in_room(base_image)
+            existing_furniture = objects
+
+        # Check if selected product matches existing furniture category
+        selected_product_types = set()
+        for product in products:
+            product_name = product.get('name', '').lower()
+            # Extract furniture type
+            if 'sofa' in product_name or 'couch' in product_name:
+                selected_product_types.add('sofa')
+            elif 'table' in product_name and ('coffee' in product_name or 'center' in product_name):
+                selected_product_types.add('coffee_table')
+            elif 'table' in product_name:
+                selected_product_types.add('table')
+            elif 'chair' in product_name or 'armchair' in product_name:
+                selected_product_types.add('chair')
+            elif 'lamp' in product_name:
+                selected_product_types.add('lamp')
+            # Add more categories as needed
+
+        # Find matching existing furniture
+        matching_existing = []
+        for obj in existing_furniture:
+            obj_type = obj.get('object_type', '').lower()
+            if any(obj_type == ptype or ptype in obj_type for ptype in selected_product_types):
+                matching_existing.append(obj)
+
+        # If we found matching furniture and user hasn't specified action yet, ask for clarification
+        if matching_existing and not user_action:
+            product_type_display = list(selected_product_types)[0].replace('_', ' ')
+            count = len(matching_existing)
+            plural = 's' if count > 1 else ''
+
+            clarification_message = f"I see there {'are' if count > 1 else 'is'} {count} {product_type_display}{plural} in your room. Would you like me to:\n\n"
+
+            if count == 1:
+                clarification_message += f"a) Replace the existing {product_type_display} with the selected {product_type_display}\n"
+                clarification_message += f"b) Add the selected {product_type_display} to the room (keep existing {product_type_display})\n"
+            else:
+                clarification_message += f"a) Replace one of the existing {product_type_display}{plural} with the selected {product_type_display}\n"
+                clarification_message += f"b) Replace all {count} {product_type_display}{plural} with the selected {product_type_display}\n"
+                clarification_message += f"c) Add the selected {product_type_display} to the room (keep all existing {product_type_display}{plural})\n"
+
+            clarification_message += "\nPlease respond with your choice (a, b, or c)."
+
+            return {
+                "needs_clarification": True,
+                "message": clarification_message,
+                "existing_furniture": existing_furniture,
+                "matching_count": count,
+                "product_type": product_type_display
+            }
+
+        # If user provided action, prepare visualization instruction
+        visualization_instruction = ""
+        if user_action:
+            product_type_display = list(selected_product_types)[0].replace('_', ' ') if selected_product_types else "furniture"
+
+            if user_action == "replace_one":
+                visualization_instruction = f"Replace ONE of the existing {product_type_display}s with the selected product. Keep all other furniture unchanged."
+            elif user_action == "replace_all":
+                visualization_instruction = f"Replace ALL existing {product_type_display}s with the selected product. Remove all {product_type_display}s currently in the room and place only the new one."
+            elif user_action == "add":
+                visualization_instruction = f"Add the selected {product_type_display} to the room. Keep all existing {product_type_display}s in their current positions."
+            else:
+                visualization_instruction = "Place the selected product naturally in the room."
+        else:
+            # No matching furniture found, proceed normally
+            visualization_instruction = "Place the selected product naturally in an appropriate location in the room."
 
         # Get full product details with images from database
         product_ids = [p.get('id') for p in products if p.get('id')]
@@ -297,7 +446,7 @@ async def visualize_room(
                         product['full_name'] = db_product.name
 
         # Get user's style description from analysis
-        user_style_description = ""
+        user_style_description = visualization_instruction  # Use the clarification-based instruction
         lighting_conditions = "mixed"
 
         if analysis:
@@ -309,7 +458,7 @@ async def visualize_room(
                     primary_style = style_prefs.get('primary_style', '')
                     style_keywords = style_prefs.get('style_keywords', [])
                     if primary_style:
-                        user_style_description += f"{primary_style} style. "
+                        user_style_description += f" {primary_style} style. "
                     if style_keywords:
                         user_style_description += f"Style keywords: {', '.join(style_keywords)}. "
 
@@ -317,6 +466,8 @@ async def visualize_room(
                 space_analysis = design_analysis.get('space_analysis', {})
                 if isinstance(space_analysis, dict):
                     lighting_conditions = space_analysis.get('lighting_conditions', 'mixed')
+
+        logger.info(f"Generating visualization with instruction: {user_style_description}")
 
         # Create visualization request
         viz_request = VisualizationRequest(
@@ -332,9 +483,15 @@ async def visualize_room(
         # Generate visualization using Google AI Studio
         viz_result = await google_ai_service.generate_room_visualization(viz_request)
 
+        # Note: Due to AI model limitations, the visualization shows a design concept
+        # The room structure may vary from the original as generative models create new images
+        # rather than editing existing ones. For pixel-perfect preservation, an inpainting model
+        # would be required. See VISUALIZATION_ANALYSIS.md for technical details.
+
         return {
             "rendered_image": viz_result.rendered_image,
-            "message": "Visualization generated successfully"
+            "message": "Visualization generated successfully. Note: This shows a design concept with your selected products.",
+            "technical_note": "Generative AI models create new images rather than edit existing ones. Some variation in room structure is expected."
         }
 
     except HTTPException:
@@ -376,8 +533,10 @@ async def delete_chat_session(session_id: str, db: AsyncSession = Depends(get_db
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting chat session: {e}")
-        raise HTTPException(status_code=500, detail="Error deleting chat session")
+        import traceback
+        logger.error(f"Error deleting chat session: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
 
 
 def _extract_product_keywords(user_message: str) -> List[str]:
@@ -456,11 +615,13 @@ async def _get_product_recommendations(
                 if isinstance(func_reqs, dict):
                     functional_requirements = func_reqs.get('primary_functions', [])
 
-                # Budget indicators
+                # Budget indicators - ONLY set if explicitly provided
                 budget_indicators = design_analysis.get('budget_indicators', {})
                 if isinstance(budget_indicators, dict):
-                    price_range = budget_indicators.get('price_range', 'mid-range')
-                    budget_range = _map_budget_range(price_range)
+                    price_range = budget_indicators.get('price_range')
+                    if price_range:  # Only map if actually specified
+                        budget_range = _map_budget_range(price_range)
+                        logger.info(f"Budget range from analysis: {price_range} -> ₹{budget_range[0]}-₹{budget_range[1]}")
 
                 # Room context
                 space_analysis = design_analysis.get('space_analysis', {})
@@ -471,13 +632,62 @@ async def _get_product_recommendations(
                         'layout_type': space_analysis.get('layout_type', 'open')
                     }
 
-        # Extract material preferences from product matching criteria
+        # Extract material and product type preferences from product matching criteria
         if hasattr(analysis, 'product_matching_criteria') and analysis.product_matching_criteria:
             criteria = analysis.product_matching_criteria
             if isinstance(criteria, dict):
                 filtering = criteria.get('filtering_keywords', {})
                 if isinstance(filtering, dict):
                     user_preferences['materials'] = filtering.get('material_preferences', [])
+
+                # PRIMARY: Extract product type keywords (e.g., "table", "sofa", "chair") - TOP PRIORITY
+                product_types = criteria.get('product_types', [])
+                if product_types:
+                    user_preferences['product_keywords'] = product_types
+                    logger.info(f"Extracted product_types from analysis: {product_types}")
+
+                # SECONDARY: Also check for category names
+                categories = criteria.get('categories', [])
+                if categories:
+                    if 'product_keywords' in user_preferences:
+                        user_preferences['product_keywords'].extend(categories)
+                    else:
+                        user_preferences['product_keywords'] = categories
+                    logger.info(f"Extracted categories from analysis: {categories}")
+
+                # TERTIARY: Check for search terms
+                search_terms = criteria.get('search_terms', [])
+                if search_terms:
+                    # Add search terms to product keywords as well for maximum matching
+                    if 'product_keywords' in user_preferences:
+                        user_preferences['product_keywords'].extend(search_terms)
+                    else:
+                        user_preferences['product_keywords'] = search_terms
+
+                    # Also add to description keywords
+                    if 'description_keywords' not in user_preferences:
+                        user_preferences['description_keywords'] = []
+                    user_preferences['description_keywords'].extend(search_terms)
+                    logger.info(f"Extracted search_terms from analysis: {search_terms}")
+
+        # FALLBACK: If no product keywords extracted from analysis, try to extract from original message
+        if 'product_keywords' not in user_preferences or not user_preferences['product_keywords']:
+            # Extract furniture keywords from the conversation context if available
+            import re
+            furniture_pattern = r'\b(sofa|table|chair|bed|desk|cabinet|shelf|dresser|nightstand|ottoman|bench|couch|sectional|sideboard|console|bookcase|armchair|stool|vanity|wardrobe|chest|mirror|lamp|chandelier)\b'
+
+            # Get last user message from session_id context
+            if session_id:
+                context = chatgpt_service.get_conversation_context(session_id)
+                if context:
+                    last_message = context[-1] if context else ""
+                    if isinstance(last_message, dict):
+                        last_message = last_message.get('content', '')
+
+                    matches = re.findall(furniture_pattern, last_message.lower())
+                    if matches:
+                        user_preferences['product_keywords'] = list(set(matches))
+                        logger.info(f"Extracted product keywords from message: {matches}")
 
         # Create recommendation request
         recommendation_request = RecommendationRequest(
@@ -538,13 +748,19 @@ async def _get_product_recommendations(
                     }
                     product_recommendations.append(product_dict)
 
-        # If advanced recommendations failed or returned few results, fall back to basic search
-        if len(product_recommendations) < limit // 2:
-            logger.info("Using fallback recommendation method")
+        # IMPORTANT: Only use fallback if NO specific product keywords were requested
+        # If user asked for "vases" but we have no vases, show empty list instead of random products
+        has_specific_keywords = 'product_keywords' in user_preferences and user_preferences['product_keywords']
+
+        if len(product_recommendations) < limit // 2 and not has_specific_keywords:
+            logger.info("Using fallback recommendation method (no specific keywords)")
             fallback_recommendations = await _get_basic_product_recommendations(
                 analysis, db, limit - len(product_recommendations)
             )
             product_recommendations.extend(fallback_recommendations)
+        elif len(product_recommendations) == 0 and has_specific_keywords:
+            logger.info(f"No products found matching keywords: {user_preferences['product_keywords']}")
+            # Return empty list - frontend should display "No products found"
 
         return product_recommendations[:limit]
 
@@ -574,10 +790,23 @@ async def _get_basic_product_recommendations(
     try:
         # Simple keyword-based search (eagerly load images)
         from sqlalchemy.orm import selectinload
+        from sqlalchemy import func
 
-        query = select(Product).options(selectinload(Product.images)).where(Product.is_available == True).limit(limit)
+        # Use random ordering and exclude small accessories for variety
+        query = (
+            select(Product)
+            .options(selectinload(Product.images))
+            .where(
+                Product.is_available == True,
+                ~Product.name.ilike('%pillow%'),
+                ~Product.name.ilike('%cushion%'),
+                ~Product.name.ilike('%throw%')
+            )
+            .order_by(func.random())
+            .limit(limit * 2)  # Get more candidates for variety
+        )
         result = await db.execute(query)
-        products = result.scalars().all()
+        products = list(result.scalars().all())[:limit]  # Take first 'limit' results
 
         product_recommendations = []
         for product in products:
@@ -627,8 +856,10 @@ async def get_conversation_context(session_id: str):
             "context_length": len(context)
         }
     except Exception as e:
-        logger.error(f"Error getting conversation context: {e}")
-        raise HTTPException(status_code=500, detail="Error getting conversation context")
+        import traceback
+        logger.error(f"Error getting conversation context: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
 
 
 @router.delete("/sessions/{session_id}/context")
@@ -638,8 +869,10 @@ async def clear_conversation_context(session_id: str):
         chatgpt_service.clear_conversation_context(session_id)
         return {"message": f"Conversation context cleared for session {session_id}"}
     except Exception as e:
-        logger.error(f"Error clearing conversation context: {e}")
-        raise HTTPException(status_code=500, detail="Error clearing conversation context")
+        import traceback
+        logger.error(f"Error clearing conversation context: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
 
 
 @router.get("/health")
@@ -663,8 +896,10 @@ async def get_usage_statistics():
         stats = chatgpt_service.get_usage_stats()
         return stats
     except Exception as e:
-        logger.error(f"Error getting usage stats: {e}")
-        raise HTTPException(status_code=500, detail="Error getting usage statistics")
+        import traceback
+        logger.error(f"Error getting usage stats: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
 
 
 @router.post("/usage-stats/reset")
@@ -674,8 +909,10 @@ async def reset_usage_statistics():
         chatgpt_service.reset_usage_stats()
         return {"message": "Usage statistics reset successfully"}
     except Exception as e:
-        logger.error(f"Error resetting usage stats: {e}")
-        raise HTTPException(status_code=500, detail="Error resetting usage statistics")
+        import traceback
+        logger.error(f"Error resetting usage stats: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
 
 
 @router.post("/sessions/{session_id}/analyze-preference")
@@ -705,8 +942,10 @@ async def analyze_user_preference(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error analyzing user preference: {e}")
-        raise HTTPException(status_code=500, detail="Error analyzing user preference")
+        import traceback
+        logger.error(f"Error analyzing user preference: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
 
 
 @router.post("/sessions/{session_id}/generate-style-guide")
@@ -753,5 +992,7 @@ async def generate_style_guide(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating style guide: {e}")
-        raise HTTPException(status_code=500, detail="Error generating style guide")
+        import traceback
+        logger.error(f"Error generating style guide: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")

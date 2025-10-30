@@ -79,8 +79,8 @@ class ChatGPTService:
         # Enhanced authentication and configuration
         self.client = openai.AsyncOpenAI(
             api_key=settings.openai_api_key,
-            timeout=30.0,  # 30 second timeout
-            max_retries=0  # We handle retries manually
+            timeout=60.0,  # 60 second timeout (increased from 30s to reduce false timeouts on first request)
+            max_retries=2  # Retry up to 2 times before showing fallback (was 0)
         )
         self.system_prompt = self._load_system_prompt()
         self.conversation_memory = {}  # Legacy - kept for compatibility
@@ -173,6 +173,9 @@ CRITICAL: You MUST respond with a valid JSON object. Always return your response
     }
   },
   "product_matching_criteria": {
+    "product_types": ["string"],
+    "categories": ["string"],
+    "search_terms": ["string"],
     "furniture_categories": {
       "seating": {
         "types": ["string"],
@@ -209,6 +212,11 @@ CRITICAL: You MUST respond with a valid JSON object. Always return your response
       "style_tags": ["string"]
     }
   },
+  "visualization_mode": {
+    "mode_type": "product_placement|style_redesign|iterative_refinement",
+    "user_intent": "string describing what user wants",
+    "instructions_for_viz_module": "specific instructions for Google AI visualization"
+  },
   "visualization_guidance": {
     "layout_recommendations": {
       "furniture_placement": "string",
@@ -240,17 +248,98 @@ CRITICAL: You MUST respond with a valid JSON object. Always return your response
   "user_friendly_response": "A conversational response that explains your analysis in a friendly, helpful way"
 }
 
+🔴 CRITICAL PRODUCT EXTRACTION RULES 🔴
+When the user mentions ANY furniture or product (table, sofa, chair, bed, lamp, mirror, etc.), you MUST populate product_matching_criteria with:
+1. product_types: Array of generic product types mentioned (MANDATORY)
+2. categories: Array of specific categories or variations
+3. search_terms: Array of searchable terms from user message
+
+IMPORTANT: DO NOT set budget_indicators.price_range UNLESS the user explicitly mentions a budget or price range. Leave it empty if not mentioned.
+
+PRODUCT EXTRACTION EXAMPLES:
+- User: "I need center tables" →
+  "product_matching_criteria": {
+    "product_types": ["table"],
+    "categories": ["coffee_table", "center_table", "living_room_table"],
+    "search_terms": ["center table", "coffee table", "living room table"]
+  }
+
+- User: "Show me sofas under ₹50000" →
+  "product_matching_criteria": {
+    "product_types": ["sofa"],
+    "categories": ["sectional", "loveseat", "couch"],
+    "search_terms": ["sofa", "couch", "sectional"]
+  },
+  "budget_indicators": {
+    "price_range": "luxury"
+  }
+
+- User: "I want a modern dining table with chairs" →
+  "product_matching_criteria": {
+    "product_types": ["table", "chair"],
+    "categories": ["dining_table", "dining_chair"],
+    "search_terms": ["dining table", "modern table", "dining chair"]
+  }
+
+- User: "Suggest single seater sofas that go well with my room" →
+  "product_matching_criteria": {
+    "product_types": ["chair"],
+    "categories": ["accent_chair", "armchair", "lounge_chair", "single_chair"],
+    "search_terms": ["single seater", "one seater", "chair", "accent chair", "armchair"]
+  }
+
+🎨 VISUALIZATION MODE DETECTION 🎨
+Detect which visualization mode the user wants:
+
+MODE 1 - Product Placement: "Show this chair in my room", "How would this look in my space"
+→ "visualization_mode": {
+    "mode_type": "product_placement",
+    "user_intent": "user wants to see specific products placed in their existing room",
+    "instructions_for_viz_module": "Place ONLY the specified products in the existing room. DO NOT redesign the room structure, walls, floors, or lighting. ONLY add the products while preserving the exact room layout."
+  }
+
+MODE 2 - Style Redesign: "Create a modern living room", "Design my space in minimalist style"
+→ "visualization_mode": {
+    "mode_type": "style_redesign",
+    "user_intent": "user wants a complete room design in a specific style",
+    "instructions_for_viz_module": "Create a new room design in [USER_SPECIFIED_STYLE] featuring the recommended products with complementary furniture and decor."
+  }
+
+MODE 3 - Iterative Refinement: "Make it brighter", "Add more plants", "Change the wall color"
+→ "visualization_mode": {
+    "mode_type": "iterative_refinement",
+    "user_intent": "user wants to modify previous visualization",
+    "instructions_for_viz_module": "Modify the previous visualization with these specific changes: [USER_REQUESTED_MODIFICATIONS]"
+  }
+
+🔴 CRITICAL: AFFIRMATIVE RESPONSE HANDLING 🔴
+When user responds with affirmative words like "yes", "sure", "ok", "okay", "please", "go ahead", "show me", you MUST:
+1. Check the previous assistant message
+2. If it asked a question like "would you like recommendations?" → PROVIDE RECOMMENDATIONS NOW
+3. If it asked "shall I show you similar items?" → SHOW SIMILAR ITEMS NOW
+4. DO NOT repeat the question or ask again
+5. Take immediate action based on the confirmed request
+
+Example:
+Assistant: "I couldn't find any sofa in your budget. Would you like recommendations for similar items?"
+User: "yes"
+→ CORRECT: Immediately provide product recommendations
+→ WRONG: "Would you like me to show you recommendations?" (DO NOT REPEAT QUESTION!)
+
 Analysis Instructions:
 1. Extract explicit design preferences and style mentions
 2. Identify implied preferences through descriptive language
 3. Recognize functional requirements and constraints
-4. Detect budget indicators and investment priorities
+4. Detect budget indicators ONLY when explicitly mentioned by user
 5. Parse spatial requirements and room characteristics
 6. For images: assess dimensions, existing elements, lighting, color palette
-7. Generate specific search terms for product matching
-8. Provide actionable filtering criteria for product databases
-9. Ensure all recommendations align with identified style
-10. Include confidence scores (0-100) for analysis quality"""
+7. ALWAYS extract product_types when furniture is mentioned
+8. Generate specific search terms for product matching
+9. Provide actionable filtering criteria for product databases
+10. Ensure all recommendations align with identified style
+11. Include confidence scores (0-100) for analysis quality
+12. Detect visualization mode when user wants to see products in their space
+13. Recognize affirmative responses and take immediate action without repeating questions"""
 
             return system_prompt
 
@@ -358,11 +447,24 @@ Analysis Instructions:
             import traceback
             traceback.print_exc()
             logger.error(f"Error in ChatGPT analysis: {e}", exc_info=True)
-            fallback_response = "I apologize, but I'm having trouble analyzing your request right now. Could you please try rephrasing your interior design needs?"
+
+            # Provide specific error messages based on error type
+            error_message = str(e).lower()
+            if "connection" in error_message or "timeout" in error_message:
+                fallback_response = "I'm having trouble connecting to the OpenAI service right now. Please check your internet connection and try again in a moment."
+            elif "image processing not supported" in error_message or "image" in error_message:
+                fallback_response = "The image you provided couldn't be processed. Please try uploading a different image format (JPG or PNG) or ensure the image size is under 5MB."
+            elif "rate limit" in error_message or "quota" in error_message or "429" in error_message:
+                fallback_response = "The OpenAI API has reached its rate limit or quota. Please try again in a few moments."
+            elif "authentication" in error_message or "api key" in error_message or "401" in error_message:
+                fallback_response = "There's an issue with the OpenAI API authentication. Please contact the administrator to verify the API key configuration."
+            else:
+                fallback_response = f"I encountered an error while analyzing your request: {type(e).__name__}. Please try rephrasing your interior design needs or contact support if this persists."
+
             return fallback_response, None
 
     async def _call_chatgpt(self, messages: List[Dict[str, Any]]) -> str:
-        """Call ChatGPT API with the prepared messages"""
+        """Call ChatGPT API with the prepared messages with retry logic for empty responses"""
         print(f"[DEBUG] _call_chatgpt started")
         # Apply rate limiting
         await self.rate_limiter.acquire()
@@ -375,30 +477,73 @@ Analysis Instructions:
         if hasattr(self, 'demo_mode') and self.demo_mode:
             return await self._simulate_chatgpt_response(messages)
 
+        # Retry logic for empty responses (separate from connection errors)
+        max_retries = 3
+        retry_delay = 2.0  # seconds
+
         try:
-            start_time = time.time()
-            print(f"[DEBUG] About to call OpenAI API with model: {settings.openai_model}")
-            print(f"[DEBUG] API Key (first 10 chars): {settings.openai_api_key[:10] if settings.openai_api_key else 'None'}")
+            for attempt in range(max_retries):
+                try:
+                    start_time = time.time()
+                    print(f"[DEBUG] OpenAI API call attempt {attempt + 1}/{max_retries}")
+                    print(f"[DEBUG] About to call OpenAI API with model: {settings.openai_model}")
+                    if attempt == 0:
+                        print(f"[DEBUG] API Key (first 10 chars): {settings.openai_api_key[:10] if settings.openai_api_key else 'None'}")
 
-            response = await self.client.chat.completions.create(
-                model=settings.openai_model,
-                messages=messages,
-                max_tokens=settings.openai_max_tokens,
-                temperature=settings.openai_temperature,
-                response_format={"type": "json_object"}
-            )
-            print(f"[DEBUG] OpenAI API call succeeded!")
+                    response = await self.client.chat.completions.create(
+                        model=settings.openai_model,
+                        messages=messages,
+                        max_tokens=settings.openai_max_tokens,
+                        temperature=settings.openai_temperature,
+                        response_format={"type": "json_object"}
+                    )
+                    print(f"[DEBUG] OpenAI API call succeeded!")
 
-            # Update successful request stats
-            self.api_usage_stats["successful_requests"] += 1
-            if hasattr(response, 'usage') and response.usage:
-                self.api_usage_stats["total_tokens"] += response.usage.total_tokens
+                    # Extract response content
+                    response_content = response.choices[0].message.content if response.choices else None
 
-            response_time = time.time() - start_time
-            logger.info(f"ChatGPT API call successful - Response time: {response_time:.2f}s, "
-                       f"Tokens: {response.usage.total_tokens if hasattr(response, 'usage') and response.usage else 'N/A'}")
+                    # Check if response is empty or None (timeout/error case)
+                    if not response_content:
+                        print(f"[DEBUG] OpenAI returned empty response on attempt {attempt + 1}/{max_retries}")
+                        logger.warning(f"OpenAI API returned empty response - attempt {attempt + 1}/{max_retries}")
 
-            return response.choices[0].message.content
+                        # If this is not the last attempt, retry after delay
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (attempt + 1)  # Incremental backoff: 2s, 4s
+                            print(f"[DEBUG] Retrying after {wait_time}s delay...")
+                            await asyncio.sleep(wait_time)
+                            continue
+                        else:
+                            # Last attempt failed - return fallback
+                            print(f"[DEBUG] All {max_retries} attempts returned empty response - returning fallback")
+                            logger.error(f"OpenAI API returned empty response after {max_retries} attempts")
+                            self.api_usage_stats["failed_requests"] += 1
+                            return self._get_structured_fallback(messages, error_type="timeout", error_message="API returned empty response after retries")
+
+                    # If we got valid content, update successful request stats and return
+                    self.api_usage_stats["successful_requests"] += 1
+                    if hasattr(response, 'usage') and response.usage:
+                        self.api_usage_stats["total_tokens"] += response.usage.total_tokens
+
+                    response_time = time.time() - start_time
+                    logger.info(f"ChatGPT API call successful - Response time: {response_time:.2f}s, "
+                               f"Tokens: {response.usage.total_tokens if hasattr(response, 'usage') and response.usage else 'N/A'}")
+
+                    return response_content
+
+                except openai.APIError as e:
+                    print(f"[DEBUG] OpenAI APIError on attempt {attempt + 1}/{max_retries}: {type(e).__name__}: {str(e)}")
+                    # On API errors, break out of retry loop and handle in outer exception handlers
+                    raise
+                except Exception as inner_e:
+                    print(f"[DEBUG] Exception on attempt {attempt + 1}/{max_retries}: {type(inner_e).__name__}: {str(inner_e)}")
+                    # On other exceptions, break out of retry loop and handle in outer exception handlers
+                    raise
+
+            # If all retries exhausted without success (shouldn't reach here due to returns above)
+            logger.error("Retry loop completed without returning - this shouldn't happen")
+            self.api_usage_stats["failed_requests"] += 1
+            return self._get_structured_fallback(messages, error_type="unknown", error_message="Retry logic failed unexpectedly")
 
         except openai.APIError as e:
             print(f"[DEBUG] OpenAI APIError: {type(e).__name__}: {str(e)}")
@@ -410,30 +555,101 @@ Analysis Instructions:
             if "429" in error_message or "quota" in error_message.lower() or "insufficient_quota" in error_message.lower():
                 print(f"[DEBUG] Quota error detected, returning fallback")
                 logger.warning("OpenAI quota exceeded - returning structured fallback response")
-                return self._get_structured_fallback(messages)
-            raise
+                return self._get_structured_fallback(messages, error_type="rate_limit")
+
+            # Return structured fallback for other API errors
+            return self._get_structured_fallback(messages, error_type="api_error", error_message=error_message)
         except openai.RateLimitError as e:
             print(f"[DEBUG] OpenAI RateLimitError: {str(e)}")
             self.api_usage_stats["failed_requests"] += 1
             logger.warning(f"Rate limit exceeded - returning structured fallback: {e}")
-            return self._get_structured_fallback(messages)
+            return self._get_structured_fallback(messages, error_type="rate_limit")
         except openai.AuthenticationError as e:
             print(f"[DEBUG] OpenAI AuthenticationError: {str(e)}")
             self.api_usage_stats["failed_requests"] += 1
             logger.error(f"Authentication failed: {e}")
-            raise
+            return self._get_structured_fallback(messages, error_type="authentication")
         except Exception as e:
             print(f"[DEBUG] Generic exception in _call_chatgpt: {type(e).__name__}: {str(e)}")
             import traceback
             traceback.print_exc()
             self.api_usage_stats["failed_requests"] += 1
             logger.error(f"ChatGPT API call failed: {e}", exc_info=True)
-            # Return a structured fallback response for any other errors
-            return self._get_structured_fallback(messages)
 
-    def _get_structured_fallback(self, messages: List[Dict[str, Any]]) -> str:
+            # Categorize the error
+            error_message = str(e).lower()
+            if "connection" in error_message or "timeout" in error_message:
+                error_type = "connection"
+            elif "image" in error_message:
+                error_type = "image_processing"
+            else:
+                error_type = "unknown"
+
+            # Return a structured fallback response for any other errors
+            return self._get_structured_fallback(messages, error_type=error_type, error_message=str(e))
+
+    async def analyze_image_with_vision(self, image_url: str, prompt: str) -> Optional[str]:
+        """
+        Analyze image using ChatGPT Vision (GPT-4V)
+
+        Args:
+            image_url: URL to image
+            prompt: Analysis instructions
+
+        Returns: Vision analysis result
+        """
+        try:
+            logger.info(f"ChatGPT Vision: Analyzing image from {image_url[:100]}...")
+
+            # Apply rate limiting
+            await self.rate_limiter.acquire()
+
+            # Demo mode simulation
+            if hasattr(self, 'demo_mode') and self.demo_mode:
+                logger.info("Demo mode: Simulating Vision analysis")
+                return "A modern furniture piece with clean lines and neutral tones"
+
+            # Create vision message
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": image_url, "detail": "high"}}
+                    ]
+                }
+            ]
+
+            # Call OpenAI Vision API (use gpt-4o for vision - gpt-4-vision-preview was deprecated)
+            response = await self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=messages,
+                max_tokens=500,
+                temperature=0.3
+            )
+
+            # Extract response content
+            response_content = response.choices[0].message.content if response.choices else None
+
+            if response_content:
+                logger.info(f"ChatGPT Vision analysis successful: {response_content[:100]}...")
+                self.api_usage_stats["successful_requests"] += 1
+                if hasattr(response, 'usage') and response.usage:
+                    self.api_usage_stats["total_tokens"] += response.usage.total_tokens
+                return response_content
+
+            logger.warning("ChatGPT Vision returned empty response")
+            self.api_usage_stats["failed_requests"] += 1
+            return None
+
+        except Exception as e:
+            logger.error(f"ChatGPT Vision analysis failed: {e}", exc_info=True)
+            self.api_usage_stats["failed_requests"] += 1
+            return None
+
+    def _get_structured_fallback(self, messages: List[Dict[str, Any]], error_type: str = "unknown", error_message: str = "") -> str:
         """Get structured fallback response when API fails"""
-        print(f"[DEBUG] _get_structured_fallback called")
+        print(f"[DEBUG] _get_structured_fallback called with error_type: {error_type}")
         # Extract user message for contextual response
         user_message = ""
         has_image = False
@@ -524,15 +740,30 @@ Analysis Instructions:
                     "alternative_options": ["different styles available"],
                     "phased_approach": ["start with essentials"]
                 },
-                "user_friendly_response": self._build_fallback_message(user_message, has_image)
+                "user_friendly_response": self._build_fallback_message(user_message, has_image, error_type, error_message)
         }
         return json.dumps(fallback)
 
-    def _build_fallback_message(self, user_message: str, has_image: bool) -> str:
+    def _build_fallback_message(self, user_message: str, has_image: bool, error_type: str = "unknown", error_message: str = "") -> str:
         """Build fallback message for API failures"""
-        action = "transform your space" if has_image else "find the perfect pieces"
-        user_request_part = f'Based on your request for "{user_message[:100]}", ' if user_message else ''
-        return f"Thank you for your request! I'm experiencing high demand right now, but I can still help you {action}. {user_request_part}I'll show you some beautiful design options and product recommendations that match your style. Let's create something amazing together!"
+        # Provide specific error messages based on error type
+        if error_type == "connection":
+            return "I'm having trouble connecting to the OpenAI service right now. Please check your internet connection and try again in a moment. In the meantime, I'll show you some product recommendations."
+        elif error_type == "image_processing":
+            return "The image you provided couldn't be processed by the AI service. Please try uploading a different image format (JPG or PNG) or ensure the image size is under 5MB. I'll still show you some product recommendations based on your request."
+        elif error_type == "rate_limit":
+            return "The OpenAI API has reached its rate limit. Please try again in a few moments. I'll show you some product recommendations in the meantime."
+        elif error_type == "authentication":
+            return "There's an issue with the OpenAI API authentication. Please contact the administrator to verify the API key configuration. I'll show you some product recommendations for now."
+        elif error_type == "timeout":
+            return "The AI analysis is taking longer than expected. I'll show you some product recommendations while the system processes your request. You can try your request again in a moment."
+        elif error_type == "api_error":
+            return "I'm currently experiencing high demand. I'll show you some product recommendations based on your preferences while the system catches up."
+        else:
+            # Generic fallback with more helpful context
+            action = "transform your space" if has_image else "find the perfect pieces"
+            user_request_part = f'Based on your request for "{user_message[:100]}", ' if user_message else ''
+            return f"Thank you for your request! {user_request_part}I'll show you some beautiful design options and product recommendations that match your style. Let's create something amazing together!"
 
     def _parse_response(self, response: str) -> Tuple[str, Optional[DesignAnalysisSchema]]:
         """Parse ChatGPT response into conversational text and structured analysis"""
@@ -543,21 +774,25 @@ Analysis Instructions:
             response_data = json.loads(response)
             print(f"[DEBUG] JSON parsed successfully, keys: {list(response_data.keys())}")
 
-            # Extract user-friendly response - check both possible key names
+            # Extract user-friendly response - check all possible key names
             conversational_response = (
                 response_data.get("user_friendly_response") or
+                response_data.get("user_friendly_message") or  # OpenAI might return this key
                 response_data.get("message") or
                 "I've analyzed your request and found some great recommendations for you!"
             )
             print(f"[DEBUG] Extracted conversational_response: {conversational_response[:100]}")
 
             # Normalize the response data to match schema
-            # If OpenAI returns 'message', map it to 'user_friendly_response'
+            # If OpenAI returns 'message' or 'user_friendly_message', map it to 'user_friendly_response'
             if "message" in response_data and "user_friendly_response" not in response_data:
                 response_data["user_friendly_response"] = response_data["message"]
+            if "user_friendly_message" in response_data and "user_friendly_response" not in response_data:
+                response_data["user_friendly_response"] = response_data["user_friendly_message"]
 
             # Ensure all optional fields have defaults
             response_data.setdefault("product_matching_criteria", {})
+            response_data.setdefault("visualization_mode", {})
             response_data.setdefault("visualization_guidance", {})
             response_data.setdefault("confidence_scores", {})
             response_data.setdefault("recommendations", {})
@@ -1056,6 +1291,141 @@ Analysis Instructions:
                 "api_key_valid": bool(settings.openai_api_key),
                 "usage_stats": self.get_usage_stats()
             }
+    async def detect_furniture_with_bounding_boxes(self, image_data: str) -> List[Dict[str, Any]]:
+        """
+        Use ChatGPT-4 Vision to detect furniture and return bounding box coordinates
+
+        Args:
+            image_data: Base64 encoded image data (with or without data URI prefix)
+
+        Returns:
+            List of detected furniture with normalized bounding boxes (0-1 range)
+        """
+        try:
+            logger.info("Detecting furniture with ChatGPT-4 Vision...")
+
+            # Process image
+            processed_image = self._process_image(image_data)
+            if not processed_image:
+                logger.error("Failed to process image for furniture detection")
+                return []
+
+            # Build detection prompt
+            detection_prompt = """Analyze this room image and identify all furniture and decor objects.
+
+For EACH object you find, provide:
+1. Object type (sofa, chair, table, lamp, etc.)
+2. Normalized bounding box coordinates (0.0 to 1.0 range)
+3. Position description
+4. Approximate size
+5. Visual characteristics
+
+CRITICAL: Bounding box format must be:
+- x1, y1: top-left corner (as fraction of image width/height)
+- x2, y2: bottom-right corner (as fraction of image width/height)
+- Coordinates MUST be between 0.0 and 1.0
+- x1 < x2 and y1 < y2 (valid rectangle)
+
+Return as JSON array:
+{
+  "detected_objects": [
+    {
+      "object_type": "sofa",
+      "bounding_box": {"x1": 0.15, "y1": 0.35, "x2": 0.75, "y2": 0.85},
+      "position": "center-left",
+      "size": "large",
+      "style": "modern",
+      "color": "gray",
+      "material": "fabric",
+      "confidence": 0.95
+    }
+  ]
+}
+
+EXTREMELY IMPORTANT - Bounding Box Precision Rules:
+1. Draw TIGHT boxes around ONLY the furniture item itself
+2. DO NOT include floor area, carpet, or surrounding space
+3. DO NOT include other furniture items in the same box
+4. DO NOT create boxes that cover entire halves/quadrants of the room
+5. Each sofa/chair/table should have its OWN separate tight box
+6. The box should closely hug the visible edges of the furniture
+7. Example: A sofa on the left should be x1=0.05, x2=0.45 (NOT x1=0.0, x2=0.5)
+8. Example: A sofa in bottom half should be y1=0.55, y2=0.88 (NOT y1=0.5, y2=1.0)
+
+BAD (too large): {"x1": 0.0, "y1": 0.5, "x2": 0.5, "y2": 1.0}  ← Covers entire quadrant!
+GOOD (tight fit): {"x1": 0.05, "y1": 0.55, "x2": 0.48, "y2": 0.92}  ← Just the sofa!"""
+
+            # Prepare messages
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": detection_prompt
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{processed_image}",
+                                "detail": "high"
+                            }
+                        }
+                    ]
+                }
+            ]
+
+            # Call ChatGPT with JSON mode
+            await self.rate_limiter.acquire()
+            self.api_usage_stats["total_requests"] += 1
+
+            start_time = time.time()
+            response = await self.client.chat.completions.create(
+                model=settings.openai_model,
+                messages=messages,
+                max_tokens=2000,
+                temperature=0.2,  # Low temperature for factual detection
+                response_format={"type": "json_object"}
+            )
+
+            response_time = time.time() - start_time
+
+            # Parse response
+            response_content = response.choices[0].message.content if response.choices else None
+            if not response_content:
+                logger.warning("ChatGPT returned empty response for furniture detection")
+                return []
+
+            # Extract detected objects
+            result = json.loads(response_content)
+            detected_objects = result.get("detected_objects", [])
+
+            # Validate and log results
+            valid_objects = []
+            for obj in detected_objects:
+                bbox = obj.get('bounding_box')
+                if bbox and all(key in bbox for key in ['x1', 'y1', 'x2', 'y2']):
+                    # Validate coordinates
+                    x1, y1, x2, y2 = bbox['x1'], bbox['y1'], bbox['x2'], bbox['y2']
+                    if 0 <= x1 < x2 <= 1 and 0 <= y1 < y2 <= 1:
+                        valid_objects.append(obj)
+                        logger.info(f"Detected {obj.get('object_type')}: bbox={bbox}")
+                    else:
+                        logger.warning(f"Invalid bbox for {obj.get('object_type')}: {bbox}")
+                else:
+                    logger.warning(f"Missing bbox for {obj.get('object_type')}")
+
+            self.api_usage_stats["successful_requests"] += 1
+            if hasattr(response, 'usage') and response.usage:
+                self.api_usage_stats["total_tokens"] += response.usage.total_tokens
+
+            logger.info(f"ChatGPT furniture detection completed in {response_time:.2f}s - Found {len(valid_objects)} valid objects")
+            return valid_objects
+
+        except Exception as e:
+            self.api_usage_stats["failed_requests"] += 1
+            logger.error(f"Error in ChatGPT furniture detection: {e}", exc_info=True)
+            return []
 
 
 # Global service instance
