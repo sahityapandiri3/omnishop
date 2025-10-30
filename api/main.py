@@ -133,25 +133,25 @@ async def root():
 # Include routers
 app.include_router(
     products.router,
-    prefix="/api/products",
+    prefix="/api",
     tags=["products"]
 )
 
 app.include_router(
     categories.router,
-    prefix="/api/categories",
+    prefix="/api",
     tags=["categories"]
 )
 
 app.include_router(
     chat.router,
-    prefix="/api/chat",
+    prefix="/api",
     tags=["chat"]
 )
 
 app.include_router(
     visualization.router,
-    prefix="/api/visualization",
+    prefix="/api",
     tags=["visualization"]
 )
 

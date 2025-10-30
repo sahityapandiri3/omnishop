@@ -25,6 +25,7 @@ class ConversationContext:
     last_updated: datetime
     total_interactions: int
     last_uploaded_image: Optional[str] = None  # Store last uploaded image for transformations
+    pending_action_options: Optional[Dict[str, Any]] = None  # Store pending action options (A, B, C, etc.)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization"""
@@ -40,6 +41,8 @@ class ConversationContext:
         # Handle backward compatibility for new fields
         if "last_uploaded_image" not in data:
             data["last_uploaded_image"] = None
+        if "pending_action_options" not in data:
+            data["pending_action_options"] = None
         return cls(**data)
 
 
@@ -153,6 +156,35 @@ class ConversationContextManager:
         """Get last uploaded image from conversation context"""
         context = self.get_or_create_context(session_id)
         return context.last_uploaded_image
+
+    def store_pending_action_options(self, session_id: str, action_options: Dict[str, Any],
+                                     detected_furniture: list, selected_product_id: str,
+                                     room_image: str) -> ConversationContext:
+        """Store pending action options with associated data for letter choice detection"""
+        context = self.get_or_create_context(session_id)
+        context.pending_action_options = {
+            "action_options": action_options,
+            "detected_furniture": detected_furniture,
+            "selected_product_id": selected_product_id,
+            "room_image": room_image,
+            "timestamp": datetime.now().isoformat()
+        }
+        context.last_updated = datetime.now()
+        logger.info(f"Stored pending action options for session {session_id}")
+        return context
+
+    def get_pending_action_options(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Get pending action options if available"""
+        context = self.get_or_create_context(session_id)
+        return context.pending_action_options
+
+    def clear_pending_action_options(self, session_id: str) -> ConversationContext:
+        """Clear pending action options after they've been used"""
+        context = self.get_or_create_context(session_id)
+        context.pending_action_options = None
+        context.last_updated = datetime.now()
+        logger.info(f"Cleared pending action options for session {session_id}")
+        return context
 
     def get_context_for_ai(self, session_id: str, include_system_prompt: bool = True) -> List[Dict[str, Any]]:
         """Get formatted context for AI model"""
@@ -276,9 +308,14 @@ class ConversationContextManager:
         try:
             design_analysis = analysis.get("design_analysis", {})
 
+            # Skip if design_analysis is not a dictionary
+            if not isinstance(design_analysis, dict):
+                logger.debug(f"design_analysis is not a dict, skipping preference extraction (type: {type(design_analysis)})")
+                return
+
             # Extract style preferences
             style_prefs = design_analysis.get("style_preferences", {})
-            if style_prefs:
+            if style_prefs and isinstance(style_prefs, dict):
                 # Convert to set even if it's already stored as a list
                 existing_styles = context.user_preferences.get("styles", [])
                 styles = set(existing_styles) if isinstance(existing_styles, list) else existing_styles
@@ -290,7 +327,7 @@ class ConversationContextManager:
 
             # Extract color preferences
             color_scheme = design_analysis.get("color_scheme", {})
-            if color_scheme:
+            if color_scheme and isinstance(color_scheme, dict):
                 # Convert to set even if it's already stored as a list
                 existing_colors = context.user_preferences.get("colors", [])
                 colors = set(existing_colors) if isinstance(existing_colors, list) else existing_colors
@@ -302,11 +339,15 @@ class ConversationContextManager:
 
             # Extract budget indicators
             budget = design_analysis.get("budget_indicators", {})
-            if budget:
+            if budget and isinstance(budget, dict):
                 context.user_preferences["budget_range"] = budget.get("price_range", "unknown")
 
             # Update confidence and timestamp
-            context.user_preferences["confidence_score"] = analysis.get("confidence_scores", {}).get("overall_analysis", 0)
+            confidence_scores = analysis.get("confidence_scores", {})
+            if isinstance(confidence_scores, dict):
+                context.user_preferences["confidence_score"] = confidence_scores.get("overall_analysis", 0)
+            else:
+                context.user_preferences["confidence_score"] = 0
             context.user_preferences["last_updated"] = datetime.now().isoformat()
 
         except Exception as e:

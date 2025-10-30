@@ -58,6 +58,9 @@ class ChatMessageRequest(BaseModel):
     message: str = Field(..., max_length=2000)
     session_id: Optional[str] = None
     image: Optional[str] = None  # Base64 encoded image
+    selected_product_id: Optional[str] = None  # Product ID user wants to visualize
+    user_action: Optional[str] = None  # "add", "replace_selected", "replace_all"
+    furniture_ids_to_replace: Optional[List[str]] = None  # Specific furniture IDs to replace (when user_action="replace_selected")
 
 
 class ChatMessageResponse(BaseModel):
@@ -65,6 +68,10 @@ class ChatMessageResponse(BaseModel):
     message: ChatMessageSchema
     analysis: Optional[DesignAnalysisSchema] = None
     recommended_products: Optional[List[Dict[str, Any]]] = None
+    detected_furniture: Optional[List[Dict[str, Any]]] = None  # All furniture detected in uploaded image
+    similar_furniture_items: Optional[List[Dict[str, Any]]] = None  # Similar furniture to selected product (for replacement)
+    requires_action_choice: bool = False  # True if user needs to choose add/replace
+    action_options: Optional[Dict[str, Any]] = None  # Available actions: {"add": true, "replace": {"count": 3, "items": [...]}
 
 
 class ChatHistoryResponse(BaseModel):

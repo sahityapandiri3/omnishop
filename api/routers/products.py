@@ -4,6 +4,7 @@ Product API routes
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
+from sqlalchemy.orm import selectinload
 from typing import Optional, List
 import logging
 
@@ -37,8 +38,11 @@ async def get_products(
 ):
     """Get paginated product list with filtering and search"""
     try:
+        logger.info("Starting get_products endpoint")
+
         # Build base query
-        query = select(Product).join(ProductImage, Product.id == ProductImage.product_id, isouter=True)
+        query = select(Product).options(selectinload(Product.category), selectinload(Product.images))
+        logger.info("Base query built with eager loading")
 
         # Apply filters
         if search:
@@ -99,16 +103,20 @@ async def get_products(
                 )
             )
 
+        logger.info("Executing count query")
         total_result = await db.execute(count_query)
         total = total_result.scalar()
+        logger.info(f"Total products found: {total}")
 
         # Apply pagination
         offset = (page - 1) * size
         query = query.offset(offset).limit(size)
 
         # Execute query
+        logger.info(f"Executing main query with offset={offset}, limit={size}")
         result = await db.execute(query)
         products = result.scalars().unique().all()
+        logger.info(f"Retrieved {len(products)} products from database")
 
         # Calculate pagination info
         pages = (total + size - 1) // size
@@ -116,25 +124,40 @@ async def get_products(
         has_prev = page > 1
 
         # Convert to summary schemas
+        logger.info("Converting products to summary schemas")
         product_summaries = []
-        for product in products:
-            primary_image = None
-            if product.images:
-                primary_image = next((img for img in product.images if img.is_primary), product.images[0])
+        for idx, product in enumerate(products):
+            try:
+                logger.info(f"Processing product {idx+1}/{len(products)}: {product.id}")
 
-            product_summaries.append(ProductSummarySchema(
-                id=product.id,
-                name=product.name,
-                price=product.price,
-                original_price=product.original_price,
-                currency=product.currency,
-                brand=product.brand,
-                source_website=product.source_website,
-                is_available=product.is_available,
-                is_on_sale=product.is_on_sale,
-                primary_image=primary_image,
-                category=product.category
-            ))
+                primary_image = None
+                logger.info(f"  - Accessing product.images for product {product.id}")
+                if product.images:
+                    primary_image = next((img for img in product.images if img.is_primary), product.images[0])
+                    logger.info(f"  - Found primary image: {primary_image.id if primary_image else None}")
+
+                logger.info(f"  - Accessing product.category for product {product.id}")
+                category = product.category
+                logger.info(f"  - Category: {category.name if category else None}")
+
+                logger.info(f"  - Creating ProductSummarySchema for product {product.id}")
+                product_summaries.append(ProductSummarySchema(
+                    id=product.id,
+                    name=product.name,
+                    price=product.price,
+                    original_price=product.original_price,
+                    currency=product.currency,
+                    brand=product.brand,
+                    source_website=product.source_website,
+                    is_available=product.is_available,
+                    is_on_sale=product.is_on_sale,
+                    primary_image=primary_image,
+                    category=category
+                ))
+                logger.info(f"  - Successfully processed product {product.id}")
+            except Exception as e:
+                logger.error(f"Error processing product {product.id}: {e}", exc_info=True)
+                raise
 
         return ProductSearchResponse(
             items=product_summaries,

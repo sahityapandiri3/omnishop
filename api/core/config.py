@@ -39,9 +39,15 @@ class Settings(BaseSettings):
 
     # Google AI Studio
     google_ai_api_key: str = ""
-    google_ai_model: str = "gemini-1.5-pro"
+    google_ai_model: str = "gemini-2.5-pro"
     google_ai_max_tokens: int = 2048
     google_ai_temperature: float = 0.3
+
+    # Replicate (for SDXL Inpainting)
+    replicate_api_key: str = ""
+    replicate_model_sdxl_inpaint: str = "stability-ai/sdxl:39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b"
+    replicate_model_interior_design: str = "adirik/interior-design:76604baddc85b1b4616e1c6475eca080da339c8875bd4996705440484a6879c2"
+    replicate_model_ip_adapter_sdxl: str = "ostris/ip-adapter-sdxl:7d00780da0e4fc2a8d8a89c3c4b89d5f99ebb04be6bd3e9c8c6b8e31b8c5e5b2"
 
     # File upload
     upload_path: str = "../data/uploads"

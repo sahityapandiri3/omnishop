@@ -142,7 +142,7 @@ export const startChatSession = async (data?: { user_id?: string }) => {
   }
 };
 
-export const sendChatMessage = async (sessionId: string, data: { message: string; image?: string }) => {
+export const sendChatMessage = async (sessionId: string, data: { message: string; image?: string; selected_product_id?: string }) => {
   try {
     const response = await api.post(`/api/chat/sessions/${sessionId}/messages`, data);
     return response.data;
@@ -159,6 +159,23 @@ export const getChatHistory = async (sessionId: string) => {
   } catch (error) {
     console.error('Error fetching chat history:', error);
     throw error; // Don't fall back to empty messages, let the frontend handle the error
+  }
+};
+
+export const visualizeRoom = async (sessionId: string, data: {
+  image: string;
+  products: any[];
+  analysis?: any;
+  user_action: string;
+  detected_furniture?: any[];
+  furniture_ids_to_replace?: string[];
+}) => {
+  try {
+    const response = await api.post(`/api/chat/sessions/${sessionId}/visualize`, data);
+    return response.data;
+  } catch (error) {
+    console.error('Error visualizing room:', error);
+    throw error;
   }
 };
 

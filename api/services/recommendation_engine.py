@@ -4,6 +4,7 @@ Advanced Product Recommendation Engine for Interior Design
 import logging
 import numpy as np
 import asyncio
+import re
 from typing import Dict, List, Optional, Any, Tuple, Set
 from dataclasses import dataclass
 from collections import defaultdict, Counter
@@ -200,10 +201,14 @@ class AdvancedRecommendationEngine:
         if request.product_keywords:
             logger.info(f"Filtering products by keywords: {request.product_keywords}")
             # Create OR conditions for each keyword (case-insensitive)
+            # Use word boundary matching to avoid partial matches (e.g., "bed" won't match "bedside")
             keyword_conditions = []
             for keyword in request.product_keywords:
-                keyword_conditions.append(Product.name.ilike(f'%{keyword}%'))
-                keyword_conditions.append(Product.description.ilike(f'%{keyword}%'))
+                # Use PostgreSQL regex with word boundaries (\y)
+                # ~* is case-insensitive regex operator
+                escaped_keyword = re.escape(keyword)
+                keyword_conditions.append(Product.name.op('~*')(rf'\y{escaped_keyword}\y'))
+                keyword_conditions.append(Product.description.op('~*')(rf'\y{escaped_keyword}\y'))
 
             if keyword_conditions:
                 query = query.where(or_(*keyword_conditions))

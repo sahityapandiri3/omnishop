@@ -28,7 +28,7 @@ class DemoSettings(BaseSettings):
 
     # Google AI Studio Configuration
     google_ai_api_key: str = Field(default="demo_key_for_localhost")
-    google_ai_model: str = Field(default="gemini-1.5-pro")
+    google_ai_model: str = Field(default="gemini-2.5-pro")
     google_ai_max_tokens: int = Field(default=2048)
     google_ai_temperature: float = Field(default=0.3)
 

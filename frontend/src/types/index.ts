@@ -108,6 +108,9 @@ export interface ChatMessage {
   image_url?: string;
   recommendations?: any[]; // For compatibility with backend
   analysis?: any; // For backend analysis data
+  detected_furniture?: DetectedFurniture[];
+  action_options?: ActionOptions;
+  requires_action_choice?: boolean;
 }
 
 export interface ChatSession {
@@ -246,6 +249,36 @@ export interface ChatMessageRequest {
   image_data?: string;
 }
 
+export interface DetectedFurniture {
+  object_type: string;
+  position: string;
+  size: string;
+  style: string;
+  color: string;
+  material: string;
+  condition: string;
+  confidence: number;
+  furniture_id: string;
+}
+
+export interface ActionOptions {
+  add?: {
+    available: boolean;
+    description: string;
+  };
+  replace?: {
+    available: boolean;
+    count?: number;
+    items?: Array<{
+      furniture_id: string;
+      type: string;
+      position: string;
+      description: string;
+    }>;
+    description: string;
+  };
+}
+
 export interface ChatMessageResponse {
   id: string;
   message_id?: string;
@@ -257,5 +290,11 @@ export interface ChatMessageResponse {
   analysis?: any;
   recommendations?: any[];
   products?: any[];
+  recommended_products?: any[];
+  detected_furniture?: DetectedFurniture[];
+  similar_furniture_items?: DetectedFurniture[];
+  action_options?: ActionOptions;
+  requires_action_choice?: boolean;
   processing_time?: number;
+  message?: any;
 }
