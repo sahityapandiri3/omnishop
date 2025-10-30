@@ -83,7 +83,7 @@ async def test_replace_workflow():
         print("─" * 80)
 
         async with session.post(
-            f"{API_BASE_URL}/api/chat/sessions",
+            f"{API_BASE_URL}/api/sessions",
             json={}
         ) as response:
             session_data = await response.json()
@@ -104,7 +104,7 @@ async def test_replace_workflow():
 
         print("Sending initial request...")
         async with session.post(
-            f"{API_BASE_URL}/api/chat/sessions/{chat_session_id}/messages",
+            f"{API_BASE_URL}/api/sessions/{chat_session_id}/messages",
             json=step1_payload
         ) as response:
             step1_data = await response.json()
@@ -162,7 +162,7 @@ async def test_replace_workflow():
 
         print("Sending visualize request...")
         async with session.post(
-            f"{API_BASE_URL}/api/chat/sessions/{chat_session_id}/messages",
+            f"{API_BASE_URL}/api/sessions/{chat_session_id}/messages",
             json=step2_payload
         ) as response:
             step2_data = await response.json()
@@ -172,8 +172,8 @@ async def test_replace_workflow():
             print(f"Response text: {step2_data.get('content', '')[:200]}...")
 
             # Extract furniture detection results
-            detected_furniture = step2_data.get('detected_furniture', [])
-            similar_furniture = step2_data.get('similar_furniture_items', [])
+            detected_furniture = step2_data.get('detected_furniture') or []
+            similar_furniture = step2_data.get('similar_furniture_items') or []
             action_options = step2_data.get('action_options', [])
             requires_choice = step2_data.get('requires_action_choice', False)
 
@@ -213,7 +213,7 @@ async def test_replace_workflow():
 
         print("Sending replace action request...")
         async with session.post(
-            f"{API_BASE_URL}/api/chat/sessions/{chat_session_id}/messages",
+            f"{API_BASE_URL}/api/sessions/{chat_session_id}/messages",
             json=step3_payload
         ) as response:
             step3_data = await response.json()

@@ -4,6 +4,7 @@ Chat API routes for interior design assistance
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
+from sqlalchemy.orm import selectinload
 from typing import List, Optional, Tuple
 import logging
 import uuid
@@ -117,120 +118,166 @@ async def send_message(
 
         await db.commit()
 
-        # Get product recommendations (always try, even if analysis is None)
+        # Initialize response fields
         recommended_products = []
-        if analysis:
-            recommended_products = await _get_product_recommendations(
-                analysis, db, user_message=request.message, limit=10,
-                user_id=session.user_id, session_id=session_id
-            )
-        else:
-            # Fallback: get basic recommendations when analysis parsing fails
-            logger.warning(f"Analysis is None for session {session_id}, using fallback recommendations")
-            # Create a minimal analysis object for fallback
-            from api.schemas.chat import DesignAnalysisSchema
-            fallback_analysis = DesignAnalysisSchema(
-                design_analysis={},
-                product_matching_criteria={},
-                visualization_guidance={},
-                confidence_scores={},
-                recommendations={}
-            )
-            recommended_products = await _get_basic_product_recommendations(
-                fallback_analysis, db, limit=10
-            )
-
-        # Smart 3-mode visualization detection
+        detected_furniture = None
+        similar_furniture_items = None
+        action_options = None
+        requires_action_choice = False
         visualization_image = None
 
-        # Get conversation messages from database for context (MOVED BEFORE USE)
-        messages_query = select(ChatMessage).where(
-            ChatMessage.session_id == session_id
-        ).order_by(ChatMessage.timestamp)
-        messages_result = await db.execute(messages_query)
-        messages = list(messages_result.scalars().all())
+        # =================================================================
+        # STEP 1: Initial Request (image + message, no product selected)
+        # =================================================================
+        if request.image and request.message and not request.selected_product_id and not request.user_action:
+            logger.info("STEP 1: Initial request - detecting furniture and getting product recommendations")
 
-        # Use NLP to detect user intent
-        intent_result = await design_nlp_processor.classify_intent(request.message)
+            # Detect furniture in the uploaded image
+            try:
+                detected_furniture = await google_ai_service.detect_furniture_in_image(request.image)
+                logger.info(f"Detected {len(detected_furniture) if detected_furniture else 0} furniture items")
+            except Exception as e:
+                logger.error(f"Error detecting furniture: {e}")
+                detected_furniture = []
 
-        # Helper function to find last generated visualization in conversation
-        def find_last_generated_visualization():
-            """Find the most recent AI-generated visualization image"""
-            # Get messages from database in reverse order
-            for msg in reversed(messages):
-                # Check if message has an image URL that's a data URI (AI-generated)
-                if msg.image_url and msg.image_url.startswith('data:image'):
-                    return msg.image_url
-            return None
-
-        # MODE 3: Iterative Improvement - User modifying existing generated image
-        if intent_result.primary_intent == "image_modification":
-            last_viz = find_last_generated_visualization()
-            if last_viz:
-                logger.info(f"Detected image modification intent: {request.message[:50]}...")
-                try:
-                    # Extract lighting conditions from analysis if available
-                    lighting_conditions = "mixed"
-                    if analysis and hasattr(analysis, 'design_analysis') and analysis.design_analysis:
-                        space_analysis = analysis.design_analysis.get('space_analysis', {})
-                        if isinstance(space_analysis, dict):
-                            lighting_conditions = space_analysis.get('lighting_conditions', 'mixed')
-
-                    # Generate iterative visualization
-                    viz_result = await google_ai_service.generate_iterative_visualization(
-                        base_image=last_viz,
-                        modification_request=request.message,
-                        lighting_conditions=lighting_conditions,
-                        render_quality="high"
-                    )
-
-                    visualization_image = viz_result.rendered_image
-                    logger.info("Successfully generated iterative visualization")
-                except Exception as viz_error:
-                    logger.error(f"Failed to generate iterative visualization: {viz_error}")
+            # Get product recommendations
+            if analysis:
+                recommended_products = await _get_product_recommendations(
+                    analysis, db, user_message=request.message, limit=10,
+                    user_id=session.user_id, session_id=session_id
+                )
             else:
-                logger.info("Image modification intent detected but no previous visualization found")
+                logger.warning(f"Analysis is None for session {session_id}, using fallback recommendations")
+                from api.schemas.chat import DesignAnalysisSchema
+                fallback_analysis = DesignAnalysisSchema(
+                    design_analysis={},
+                    product_matching_criteria={},
+                    visualization_guidance={},
+                    confidence_scores={},
+                    recommendations={}
+                )
+                recommended_products = await _get_basic_product_recommendations(
+                    fallback_analysis, db, limit=10
+                )
 
-        # MODE 2: Full Transformation - User uploaded image + wants transformation
-        elif request.image and request.message:
-            # Visualization keywords that indicate user wants image transformation
-            visualization_keywords = [
-                'visualize', 'transform', 'make this', 'redesign',
-                'modernize', 'see how', 'would look', 'convert', 'turn into'
-            ]
+        # =================================================================
+        # STEP 2: Visualize Request (product selected, no action yet)
+        # =================================================================
+        elif request.selected_product_id and not request.user_action:
+            logger.info("STEP 2: Visualize request - checking if furniture exists for ADD/REPLACE options")
 
-            message_lower = request.message.lower()
-            has_visualization_intent = (
-                intent_result.primary_intent == "visualization" or
-                any(keyword in message_lower for keyword in visualization_keywords)
-            )
+            # Get product from DB
+            product_query = select(Product).where(Product.id == int(request.selected_product_id))
+            result = await db.execute(product_query)
+            product = result.scalar_one_or_none()
 
-            # If visualization intent detected with image, generate visualization
-            if has_visualization_intent:
-                logger.info(f"Detected full transformation intent: {request.message[:50]}...")
+            if not product:
+                raise HTTPException(status_code=404, detail="Product not found")
+
+            # Determine furniture type from product name
+            furniture_type = _extract_furniture_type(product.name)
+            logger.info(f"Extracted furniture type: {furniture_type} from product: {product.name}")
+
+            # Get stored room image from conversation context
+            stored_image = conversation_context_manager.get_last_image(session_id)
+
+            if stored_image:
+                # Check if similar furniture exists in the image
                 try:
-                    # Extract lighting conditions from analysis if available
-                    lighting_conditions = "mixed"
-                    if analysis and hasattr(analysis, 'design_analysis') and analysis.design_analysis:
-                        space_analysis = analysis.design_analysis.get('space_analysis', {})
-                        if isinstance(space_analysis, dict):
-                            lighting_conditions = space_analysis.get('lighting_conditions', 'mixed')
-
-                    # Generate text-based visualization
-                    viz_result = await google_ai_service.generate_text_based_visualization(
-                        base_image=request.image,
-                        user_request=request.message,
-                        lighting_conditions=lighting_conditions,
-                        render_quality="high"
+                    exists, matching_items = await google_ai_service.check_furniture_exists(
+                        stored_image, furniture_type
                     )
 
-                    visualization_image = viz_result.rendered_image
-                    logger.info("Successfully generated text-based visualization")
-                except Exception as viz_error:
-                    logger.error(f"Failed to generate text-based visualization: {viz_error}")
+                    similar_furniture_items = matching_items if exists else []
 
-        # MODE 1: Product Recommendations - Default behavior when no visualization needed
-        # This happens automatically below when recommended_products are fetched
+                    if exists and matching_items:
+                        # Furniture exists - user can ADD or REPLACE
+                        action_options = ["add", "replace"]
+                        requires_action_choice = True
+                        logger.info(f"Found {len(matching_items)} matching {furniture_type} items - user can ADD or REPLACE")
+                    else:
+                        # No matching furniture - user can only ADD
+                        action_options = ["add"]
+                        requires_action_choice = False
+                        logger.info(f"No matching {furniture_type} found - user can only ADD")
+                except Exception as e:
+                    logger.error(f"Error checking furniture existence: {e}")
+                    # Default to ADD only on error
+                    similar_furniture_items = []
+                    action_options = ["add"]
+                    requires_action_choice = False
+            else:
+                logger.warning("No stored image found in conversation context")
+                # Default to ADD only if no image
+                similar_furniture_items = []
+                action_options = ["add"]
+                requires_action_choice = False
+
+        # =================================================================
+        # STEP 3: Action Execution (product selected + action specified)
+        # =================================================================
+        elif request.selected_product_id and request.user_action:
+            logger.info(f"STEP 3: Executing {request.user_action} action for product {request.selected_product_id}")
+
+            # Get product from DB with images
+            product_query = select(Product).options(selectinload(Product.images)).where(
+                Product.id == int(request.selected_product_id)
+            )
+            result = await db.execute(product_query)
+            product = result.scalar_one_or_none()
+
+            if not product:
+                raise HTTPException(status_code=404, detail="Product not found")
+
+            # Get product image URL
+            product_image_url = None
+            if product.images:
+                primary_img = next((img for img in product.images if img.is_primary), product.images[0])
+                product_image_url = primary_img.original_url if primary_img else None
+
+            # Get stored room image from conversation context
+            room_image = conversation_context_manager.get_last_image(session_id)
+            if not room_image:
+                raise HTTPException(status_code=400, detail="No room image found in conversation. Please upload an image first.")
+
+            # Extract furniture type
+            furniture_type = _extract_furniture_type(product.name)
+
+            # Generate visualization based on action
+            try:
+                if request.user_action == "add":
+                    logger.info(f"Generating ADD visualization for {product.name}")
+                    visualization_image = await google_ai_service.generate_add_visualization(
+                        room_image=room_image,
+                        product_name=product.name,
+                        product_image=product_image_url
+                    )
+                elif request.user_action == "replace":
+                    logger.info(f"Generating REPLACE visualization for {product.name} (replacing {furniture_type})")
+                    visualization_image = await google_ai_service.generate_replace_visualization(
+                        room_image=room_image,
+                        product_name=product.name,
+                        furniture_type=furniture_type,
+                        product_image=product_image_url
+                    )
+                else:
+                    raise HTTPException(status_code=400, detail=f"Invalid action: {request.user_action}. Must be 'add' or 'replace'")
+
+                logger.info("Visualization generated successfully")
+            except Exception as viz_error:
+                logger.error(f"Error generating visualization: {viz_error}")
+                raise HTTPException(status_code=500, detail=f"Failed to generate visualization: {str(viz_error)}")
+
+        # =================================================================
+        # Default: No special workflow triggered
+        # =================================================================
+        else:
+            # Get product recommendations for default responses
+            if analysis:
+                recommended_products = await _get_product_recommendations(
+                    analysis, db, user_message=request.message, limit=10,
+                    user_id=session.user_id, session_id=session_id
+                )
 
         # Create response message schema
         message_schema = ChatMessageSchema(
@@ -240,13 +287,17 @@ async def send_message(
             timestamp=assistant_message.timestamp,
             session_id=session_id,
             products=recommended_products,
-            image_url=visualization_image  # Include visualization if generated
+            image_url=visualization_image
         )
 
         return ChatMessageResponse(
             message=message_schema,
             analysis=analysis,
-            recommended_products=recommended_products
+            recommended_products=recommended_products,
+            detected_furniture=detected_furniture,
+            similar_furniture_items=similar_furniture_items,
+            requires_action_choice=requires_action_choice,
+            action_options=action_options
         )
 
     except HTTPException:
@@ -537,6 +588,37 @@ async def delete_chat_session(session_id: str, db: AsyncSession = Depends(get_db
         logger.error(f"Error deleting chat session: {e}\n{traceback.format_exc()}")
         error_type = type(e).__name__
         raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
+
+
+def _extract_furniture_type(product_name: str) -> str:
+    """Extract furniture type from product name"""
+    name_lower = product_name.lower()
+
+    if 'sofa' in name_lower or 'couch' in name_lower or 'sectional' in name_lower:
+        return 'sofa'
+    elif 'chair' in name_lower or 'armchair' in name_lower:
+        return 'chair'
+    elif 'table' in name_lower:
+        if 'coffee' in name_lower or 'center' in name_lower:
+            return 'coffee table'
+        elif 'dining' in name_lower:
+            return 'dining table'
+        elif 'side' in name_lower or 'end' in name_lower:
+            return 'side table'
+        return 'table'
+    elif 'bed' in name_lower:
+        return 'bed'
+    elif 'lamp' in name_lower:
+        return 'lamp'
+    elif 'desk' in name_lower:
+        return 'desk'
+    elif 'cabinet' in name_lower or 'dresser' in name_lower:
+        return 'cabinet'
+    elif 'shelf' in name_lower or 'bookcase' in name_lower:
+        return 'shelf'
+    else:
+        # Default: extract first word
+        return name_lower.split()[0] if name_lower.split() else 'furniture'
 
 
 def _extract_product_keywords(user_message: str) -> List[str]:

@@ -406,6 +406,345 @@ Return results as JSON array:
             logger.error(f"Error in object detection: {e}")
             return []
 
+    async def detect_furniture_in_image(self, image_data: str) -> List[Dict[str, Any]]:
+        """
+        Detect all furniture items in the image
+        Returns: [{"furniture_type": "sofa", "confidence": 0.95}, ...]
+        """
+        try:
+            processed_image = self._preprocess_image(image_data)
+
+            payload = {
+                "contents": [{
+                    "parts": [
+                        {
+                            "text": """List all furniture items visible in this room image.
+For each item, provide:
+- furniture_type (e.g., "sofa", "chair", "table", "bed", "lamp", "cabinet")
+- confidence (0-1 scale indicating how certain you are)
+
+Return results as JSON array:
+[
+  {
+    "furniture_type": "sofa",
+    "confidence": 0.95
+  },
+  {
+    "furniture_type": "coffee_table",
+    "confidence": 0.88
+  }
+]
+
+IMPORTANT: Only include actual furniture pieces. Do not include decorative items, walls, windows, or structural elements."""
+                        },
+                        {
+                            "inline_data": {
+                                "mime_type": "image/jpeg",
+                                "data": processed_image
+                            }
+                        }
+                    ]
+                }],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "maxOutputTokens": 1024,
+                    "responseMimeType": "application/json"
+                }
+            }
+
+            result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
+
+            content = result.get("candidates", [{}])[0].get("content", {})
+            text_response = content.get("parts", [{}])[0].get("text", "[]")
+
+            try:
+                furniture_list = json.loads(text_response)
+                return furniture_list if isinstance(furniture_list, list) else []
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse furniture detection response")
+                return []
+
+        except Exception as e:
+            logger.error(f"Error in furniture detection: {e}")
+            return []
+
+    async def check_furniture_exists(self, image_data: str, furniture_type: str) -> Tuple[bool, List[Dict]]:
+        """
+        Check if specific furniture type exists in image
+        Returns: (exists: bool, matching_items: List[Dict])
+        """
+        try:
+            processed_image = self._preprocess_image(image_data)
+
+            payload = {
+                "contents": [{
+                    "parts": [
+                        {
+                            "text": f"""Analyze this room image and determine if there is a "{furniture_type}" (or similar furniture) present.
+
+Return a JSON response with:
+- exists: true/false (whether the furniture type exists)
+- matching_items: array of matching furniture items with details
+
+Example response:
+{{
+  "exists": true,
+  "matching_items": [
+    {{
+      "furniture_type": "sofa",
+      "position": "center-left",
+      "description": "Gray sectional sofa with chaise",
+      "confidence": 0.95
+    }}
+  ]
+}}
+
+If the furniture type does NOT exist, return:
+{{
+  "exists": false,
+  "matching_items": []
+}}
+
+Furniture type to look for: {furniture_type}
+
+Be flexible with matching - for example:
+- "sofa" matches: sofa, couch, sectional
+- "table" matches: coffee table, side table, end table
+- "chair" matches: armchair, dining chair, accent chair"""
+                        },
+                        {
+                            "inline_data": {
+                                "mime_type": "image/jpeg",
+                                "data": processed_image
+                            }
+                        }
+                    ]
+                }],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "maxOutputTokens": 512,
+                    "responseMimeType": "application/json"
+                }
+            }
+
+            result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
+
+            content = result.get("candidates", [{}])[0].get("content", {})
+            text_response = content.get("parts", [{}])[0].get("text", "{}")
+
+            try:
+                response_data = json.loads(text_response)
+                exists = response_data.get("exists", False)
+                matching_items = response_data.get("matching_items", [])
+                return (exists, matching_items)
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse furniture existence check response")
+                return (False, [])
+
+        except Exception as e:
+            logger.error(f"Error checking furniture existence: {e}")
+            return (False, [])
+
+    async def generate_add_visualization(
+        self,
+        room_image: str,
+        product_name: str,
+        product_image: Optional[str] = None
+    ) -> str:
+        """
+        Generate visualization with product ADDED to room
+        Returns: base64 image data
+        """
+        try:
+            processed_room = self._preprocess_image(room_image)
+
+            # Download product image if URL provided
+            product_image_data = None
+            if product_image:
+                try:
+                    product_image_data = await self._download_image(product_image)
+                except Exception as e:
+                    logger.warning(f"Failed to download product image: {e}")
+
+            # Build prompt for ADD action
+            prompt = f"""ADD the following product to this room in an appropriate location WITHOUT removing any existing furniture:
+
+Product to add: {product_name}
+
+🔒 CRITICAL PRESERVATION RULES:
+1. KEEP ALL EXISTING FURNITURE: Do NOT remove or replace any furniture currently in the room
+2. FIND APPROPRIATE SPACE: Identify a suitable empty space to place the new furniture
+3. PRESERVE THE ROOM: Keep the same walls, windows, floors, ceiling, lighting, and camera angle
+4. NATURAL PLACEMENT: Place the product naturally where it would logically fit in this room layout
+
+✅ YOUR TASK:
+- Add the {product_name} to this room
+- Place it in an appropriate empty location
+- Do NOT remove or replace any existing furniture
+- Keep the room structure 100% identical
+- Ensure the product looks naturally integrated with proper lighting and shadows
+
+PLACEMENT GUIDELINES:
+- If it's a sofa/chair: place along a wall or in conversation area
+- If it's a table: place in center or beside seating
+- If it's a lamp: place on an existing table or floor
+- If it's a bed: place against a wall
+- Maintain realistic spacing and proportions
+
+OUTPUT: One photorealistic image showing THE SAME ROOM with the {product_name} added naturally."""
+
+            # Build parts list
+            parts = [types.Part.from_text(text=prompt)]
+            parts.append(types.Part(
+                inline_data=types.Blob(
+                    mime_type="image/jpeg",
+                    data=base64.b64decode(processed_room)
+                )
+            ))
+
+            # Add product reference image if available
+            if product_image_data:
+                parts.append(types.Part.from_text(text=f"\nProduct reference image ({product_name}):"))
+                parts.append(types.Part(
+                    inline_data=types.Blob(
+                        mime_type="image/jpeg",
+                        data=base64.b64decode(product_image_data)
+                    )
+                ))
+
+            contents = [types.Content(role="user", parts=parts)]
+
+            # Generate visualization with Gemini 2.5 Flash Image
+            generate_content_config = types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                temperature=0.3
+            )
+
+            generated_image = None
+            for chunk in self.genai_client.models.generate_content_stream(
+                model="gemini-2.5-flash-image",
+                contents=contents,
+                config=generate_content_config,
+            ):
+                if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+                    for part in chunk.candidates[0].content.parts:
+                        if part.inline_data and part.inline_data.data:
+                            image_bytes = part.inline_data.data
+                            mime_type = part.inline_data.mime_type or "image/png"
+                            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                            generated_image = f"data:{mime_type};base64,{image_base64}"
+                            logger.info(f"Generated ADD visualization ({len(image_bytes)} bytes)")
+
+            return generated_image if generated_image else room_image
+
+        except Exception as e:
+            logger.error(f"Error generating ADD visualization: {e}")
+            return room_image
+
+    async def generate_replace_visualization(
+        self,
+        room_image: str,
+        product_name: str,
+        furniture_type: str,
+        product_image: Optional[str] = None
+    ) -> str:
+        """
+        Generate visualization with furniture REPLACED
+        Returns: base64 image data
+        """
+        try:
+            processed_room = self._preprocess_image(room_image)
+
+            # Download product image if URL provided
+            product_image_data = None
+            if product_image:
+                try:
+                    product_image_data = await self._download_image(product_image)
+                except Exception as e:
+                    logger.warning(f"Failed to download product image: {e}")
+
+            # Build prompt for REPLACE action
+            prompt = f"""⚠️ FURNITURE REPLACEMENT TASK ⚠️
+
+YOU MUST PERFORM A REPLACEMENT OPERATION - NOT AN ADDITION!
+
+STEP-BY-STEP INSTRUCTIONS (FOLLOW IN ORDER):
+
+STEP 1: LOCATE THE EXISTING FURNITURE
+- Identify the {furniture_type} currently in this room image
+- Note its exact position, size, and location
+
+STEP 2: COMPLETELY REMOVE THE OLD FURNITURE
+- DELETE the entire existing {furniture_type} from the image
+- Remove it completely - DO NOT keep it in the image
+- The space where it was should be empty (show wall/floor behind it)
+
+STEP 3: ADD THE NEW PRODUCT IN THE SAME LOCATION
+- Place this product where the old {furniture_type} was: {product_name}
+- Position it in approximately the same location
+- Make it look natural and realistic
+
+STEP 4: PRESERVE ALL OTHER ELEMENTS
+- Keep ALL other furniture items exactly as they are
+- Do NOT add, remove, or modify any other furniture
+- Maintain the exact room structure (walls, floor, ceiling, windows, doors)
+- Preserve lighting, shadows, and overall ambiance
+
+🎯 WHAT YOU ARE REPLACING: {furniture_type}
+🎯 WHAT TO PLACE INSTEAD: {product_name}
+
+CRITICAL: This is a REPLACEMENT operation. The old {furniture_type} must be GONE and the new {product_name} must be in its place. DO NOT show both the old and new furniture together.
+
+OUTPUT: Generate ONE photorealistic image of the SAME room where the old {furniture_type} has been removed and replaced with the {product_name}."""
+
+            # Build parts list
+            parts = [types.Part.from_text(text=prompt)]
+            parts.append(types.Part(
+                inline_data=types.Blob(
+                    mime_type="image/jpeg",
+                    data=base64.b64decode(processed_room)
+                )
+            ))
+
+            # Add product reference image if available
+            if product_image_data:
+                parts.append(types.Part.from_text(text=f"\nProduct reference image ({product_name}):"))
+                parts.append(types.Part(
+                    inline_data=types.Blob(
+                        mime_type="image/jpeg",
+                        data=base64.b64decode(product_image_data)
+                    )
+                ))
+
+            contents = [types.Content(role="user", parts=parts)]
+
+            # Generate visualization with Gemini 2.5 Flash Image
+            generate_content_config = types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                temperature=0.3
+            )
+
+            generated_image = None
+            for chunk in self.genai_client.models.generate_content_stream(
+                model="gemini-2.5-flash-image",
+                contents=contents,
+                config=generate_content_config,
+            ):
+                if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+                    for part in chunk.candidates[0].content.parts:
+                        if part.inline_data and part.inline_data.data:
+                            image_bytes = part.inline_data.data
+                            mime_type = part.inline_data.mime_type or "image/png"
+                            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                            generated_image = f"data:{mime_type};base64,{image_base64}"
+                            logger.info(f"Generated REPLACE visualization ({len(image_bytes)} bytes)")
+
+            return generated_image if generated_image else room_image
+
+        except Exception as e:
+            logger.error(f"Error generating REPLACE visualization: {e}")
+            return room_image
+
     async def generate_room_visualization(self, visualization_request: VisualizationRequest) -> VisualizationResult:
         """
         Generate photorealistic room visualization using a HYBRID approach:
