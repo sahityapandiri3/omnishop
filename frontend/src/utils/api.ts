@@ -179,6 +179,26 @@ export const visualizeRoom = async (sessionId: string, data: {
   }
 };
 
+export const undoVisualization = async (sessionId: string) => {
+  try {
+    const response = await api.post(`/api/chat/sessions/${sessionId}/visualization/undo`);
+    return response.data;
+  } catch (error) {
+    console.error('Error undoing visualization:', error);
+    throw error;
+  }
+};
+
+export const redoVisualization = async (sessionId: string) => {
+  try {
+    const response = await api.post(`/api/chat/sessions/${sessionId}/visualization/redo`);
+    return response.data;
+  } catch (error) {
+    console.error('Error redoing visualization:', error);
+    throw error;
+  }
+};
+
 // Legacy support - export the old structure for existing components
 export { api as default };
 

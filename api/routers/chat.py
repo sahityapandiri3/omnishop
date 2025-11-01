@@ -143,7 +143,7 @@ async def send_message(
             # Get product recommendations
             if analysis:
                 recommended_products = await _get_product_recommendations(
-                    analysis, db, user_message=request.message, limit=10,
+                    analysis, db, user_message=request.message, limit=30,
                     user_id=session.user_id, session_id=session_id
                 )
             else:
@@ -157,7 +157,7 @@ async def send_message(
                     recommendations={}
                 )
                 recommended_products = await _get_basic_product_recommendations(
-                    fallback_analysis, db, limit=10
+                    fallback_analysis, db, limit=30
                 )
 
         # =================================================================
@@ -275,7 +275,7 @@ async def send_message(
             # Get product recommendations for default responses
             if analysis:
                 recommended_products = await _get_product_recommendations(
-                    analysis, db, user_message=request.message, limit=10,
+                    analysis, db, user_message=request.message, limit=30,
                     user_id=session.user_id, session_id=session_id
                 )
 
@@ -416,25 +416,60 @@ async def visualize_room(
         selected_product_types = set()
         for product in products:
             product_name = product.get('name', '').lower()
-            # Extract furniture type
+            # Extract furniture type - order matters!
             if 'sofa' in product_name or 'couch' in product_name:
                 selected_product_types.add('sofa')
-            elif 'table' in product_name and ('coffee' in product_name or 'center' in product_name):
-                selected_product_types.add('coffee_table')
             elif 'table' in product_name:
-                selected_product_types.add('table')
+                # Distinguish between center tables and side tables
+                if 'coffee' in product_name or 'center' in product_name or 'centre' in product_name:
+                    selected_product_types.add('center_table')
+                elif 'side' in product_name or 'end' in product_name or 'nightstand' in product_name or 'bedside' in product_name:
+                    selected_product_types.add('side_table')
+                elif 'dining' in product_name:
+                    selected_product_types.add('dining_table')
+                elif 'console' in product_name:
+                    selected_product_types.add('console_table')
+                else:
+                    selected_product_types.add('table')
             elif 'chair' in product_name or 'armchair' in product_name:
                 selected_product_types.add('chair')
             elif 'lamp' in product_name:
                 selected_product_types.add('lamp')
             # Add more categories as needed
 
-        # Find matching existing furniture
+        # Find matching existing furniture - STRICT MATCHING for tables
         matching_existing = []
         for obj in existing_furniture:
             obj_type = obj.get('object_type', '').lower()
-            if any(obj_type == ptype or ptype in obj_type for ptype in selected_product_types):
-                matching_existing.append(obj)
+
+            # Strict table matching - center tables don't match side tables
+            for ptype in selected_product_types:
+                matched = False
+
+                if ptype == 'center_table':
+                    # Center table only matches center_table, coffee_table
+                    if obj_type in ['center_table', 'coffee_table', 'centre_table']:
+                        matched = True
+                elif ptype == 'side_table':
+                    # Side table only matches side_table, end_table, nightstand
+                    if obj_type in ['side_table', 'end_table', 'nightstand', 'bedside_table']:
+                        matched = True
+                elif ptype == 'dining_table':
+                    # Dining table only matches dining_table
+                    if obj_type == 'dining_table':
+                        matched = True
+                elif ptype == 'console_table':
+                    # Console table only matches console_table
+                    if obj_type == 'console_table':
+                        matched = True
+                else:
+                    # For non-table furniture, use existing matching logic
+                    if obj_type == ptype or ptype in obj_type:
+                        matched = True
+
+                if matched:
+                    matching_existing.append(obj)
+                    break
 
         # If we found matching furniture and user hasn't specified action yet, ask for clarification
         if matching_existing and not user_action:
@@ -539,6 +574,27 @@ async def visualize_room(
         # rather than editing existing ones. For pixel-perfect preservation, an inpainting model
         # would be required. See VISUALIZATION_ANALYSIS.md for technical details.
 
+        # Push visualization to history for undo/redo support
+        # First, push the ORIGINAL state if history is empty (first visualization)
+        context = conversation_context_manager.get_or_create_context(session_id)
+        if context.visualization_history is None or len(context.visualization_history) == 0:
+            original_state = {
+                "rendered_image": base_image,
+                "products": [],
+                "user_action": None,
+                "existing_furniture": existing_furniture
+            }
+            conversation_context_manager.push_visualization_state(session_id, original_state)
+
+        # Then push the NEW visualization state
+        visualization_data = {
+            "rendered_image": viz_result.rendered_image,
+            "products": products,
+            "user_action": user_action,
+            "existing_furniture": existing_furniture
+        }
+        conversation_context_manager.push_visualization_state(session_id, visualization_data)
+
         return {
             "rendered_image": viz_result.rendered_image,
             "message": "Visualization generated successfully. Note: This shows a design concept with your selected products.",
@@ -550,6 +606,64 @@ async def visualize_room(
     except Exception as e:
         logger.error(f"Error generating visualization: {e}")
         raise HTTPException(status_code=500, detail=f"Error generating visualization: {str(e)}")
+
+
+@router.post("/sessions/{session_id}/visualization/undo")
+async def undo_visualization(session_id: str):
+    """Undo last visualization and return previous state"""
+    try:
+        # Get previous visualization state from context manager
+        previous_state = conversation_context_manager.undo_visualization(session_id)
+
+        if previous_state is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot undo: No previous visualization available"
+            )
+
+        logger.info(f"Undid visualization for session {session_id}")
+
+        return {
+            "visualization": previous_state,
+            "message": "Successfully undid last visualization",
+            "can_undo": conversation_context_manager.can_undo(session_id),
+            "can_redo": conversation_context_manager.can_redo(session_id)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error undoing visualization: {e}")
+        raise HTTPException(status_code=500, detail=f"Error undoing visualization: {str(e)}")
+
+
+@router.post("/sessions/{session_id}/visualization/redo")
+async def redo_visualization(session_id: str):
+    """Redo visualization and return next state"""
+    try:
+        # Get next visualization state from context manager
+        next_state = conversation_context_manager.redo_visualization(session_id)
+
+        if next_state is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot redo: No next visualization available"
+            )
+
+        logger.info(f"Redid visualization for session {session_id}")
+
+        return {
+            "visualization": next_state,
+            "message": "Successfully redid visualization",
+            "can_undo": conversation_context_manager.can_undo(session_id),
+            "can_redo": conversation_context_manager.can_redo(session_id)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error redoing visualization: {e}")
+        raise HTTPException(status_code=500, detail=f"Error redoing visualization: {str(e)}")
 
 
 @router.delete("/sessions/{session_id}")
@@ -591,7 +705,7 @@ async def delete_chat_session(session_id: str, db: AsyncSession = Depends(get_db
 
 
 def _extract_furniture_type(product_name: str) -> str:
-    """Extract furniture type from product name"""
+    """Extract furniture type from product name with specific table categorization"""
     name_lower = product_name.lower()
 
     if 'sofa' in name_lower or 'couch' in name_lower or 'sectional' in name_lower:
@@ -599,13 +713,16 @@ def _extract_furniture_type(product_name: str) -> str:
     elif 'chair' in name_lower or 'armchair' in name_lower:
         return 'chair'
     elif 'table' in name_lower:
-        if 'coffee' in name_lower or 'center' in name_lower:
-            return 'coffee table'
+        # Prioritize specific table types - order matters!
+        if 'coffee' in name_lower or 'center' in name_lower or 'centre' in name_lower:
+            return 'center table'  # For placement in front of sofa
+        elif 'side' in name_lower or 'end' in name_lower or 'nightstand' in name_lower or 'bedside' in name_lower:
+            return 'side table'  # For placement beside furniture
         elif 'dining' in name_lower:
             return 'dining table'
-        elif 'side' in name_lower or 'end' in name_lower:
-            return 'side table'
-        return 'table'
+        elif 'console' in name_lower:
+            return 'console table'
+        return 'table'  # Generic fallback
     elif 'bed' in name_lower:
         return 'bed'
     elif 'lamp' in name_lower:
@@ -622,32 +739,114 @@ def _extract_furniture_type(product_name: str) -> str:
 
 
 def _extract_product_keywords(user_message: str) -> List[str]:
-    """Extract product type keywords from user message"""
-    # Common furniture/product keywords to look for
-    product_types = [
-        'sofa', 'sofas', 'couch', 'sectional', 'loveseat',
-        'chair', 'chairs', 'armchair', 'recliner', 'accent chair',
-        'table', 'tables', 'coffee table', 'dining table', 'side table', 'end table',
-        'bed', 'beds', 'mattress', 'headboard',
-        'desk', 'desks', 'workstation',
-        'dresser', 'dressers', 'chest', 'cabinet', 'cabinets',
-        'bookshelf', 'bookshelves', 'shelving',
-        'lamp', 'lamps', 'lighting', 'chandelier', 'pendant',
-        'rug', 'rugs', 'carpet',
-        'mirror', 'mirrors',
-        'ottoman', 'bench', 'stool', 'stools'
+    """Extract product type keywords from user message with category awareness"""
+
+    # Product keywords with synonyms and related terms - ORDER MATTERS (longer phrases first)
+    # Format: (search_term, [keywords_to_return])
+    product_patterns = [
+        # Lighting - ceiling/overhead
+        ('ceiling lamp', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier']),
+        ('ceiling light', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier']),
+        ('pendant light', ['pendant', 'ceiling lamp', 'ceiling light', 'chandelier']),
+        ('pendant lamp', ['pendant', 'ceiling lamp', 'ceiling light', 'chandelier']),
+        ('chandelier', ['chandelier', 'ceiling lamp', 'ceiling light', 'pendant']),
+        ('overhead light', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier']),
+
+        # Lighting - table/desk
+        ('table lamp', ['table lamp', 'desk lamp']),
+        ('desk lamp', ['desk lamp', 'table lamp']),
+
+        # Lighting - floor
+        ('floor lamp', ['floor lamp']),
+
+        # Lighting - wall
+        ('wall lamp', ['wall lamp', 'sconce', 'wall light']),
+        ('sconce', ['sconce', 'wall lamp', 'wall light']),
+
+        # Multi-word furniture - tables
+        ('center table', ['coffee table', 'center table']),
+        ('centre table', ['coffee table', 'center table']),
+        ('coffee table', ['coffee table', 'center table']),
+        ('dining table', ['dining table']),
+        ('side table', ['side table', 'end table', 'nightstand']),
+        ('end table', ['end table', 'side table']),
+        ('nightstand', ['nightstand', 'side table', 'bedside table']),
+        ('console table', ['console table', 'entry table']),
+
+        # Multi-word furniture - chairs
+        ('accent chair', ['accent chair', 'armchair']),
+        ('dining chair', ['dining chair']),
+        ('office chair', ['office chair', 'desk chair']),
+        ('lounge chair', ['lounge chair', 'armchair']),
+
+        # Multi-word furniture - sofas
+        ('sectional sofa', ['sectional', 'sectional sofa']),
+        ('leather sofa', ['sofa', 'couch']),
+
+        # Single word furniture - only after checking multi-word
+        ('sofa', ['sofa', 'couch', 'sectional']),
+        ('couch', ['couch', 'sofa', 'sectional']),
+        ('sectional', ['sectional', 'sofa', 'couch']),
+        ('loveseat', ['loveseat', 'sofa']),
+        ('chair', ['chair']),
+        ('armchair', ['armchair', 'accent chair']),
+        ('recliner', ['recliner']),
+        ('table', ['table']),
+        ('bed', ['bed']),
+        ('mattress', ['mattress', 'bed']),
+        ('headboard', ['headboard']),
+        ('desk', ['desk']),
+        ('workstation', ['desk', 'workstation']),
+        ('dresser', ['dresser', 'chest']),
+        ('chest', ['chest', 'dresser']),
+        ('cabinet', ['cabinet']),
+        ('bookshelf', ['bookshelf', 'shelving']),
+        ('shelving', ['shelving', 'bookshelf', 'shelf']),
+        ('shelf', ['shelf', 'shelving', 'bookshelf']),
+
+        # Lighting - generic (only after specific types checked)
+        ('lamp', ['lamp']),
+        ('lighting', ['lighting']),
+
+        # Other
+        ('rug', ['rug', 'carpet']),
+        ('carpet', ['carpet', 'rug']),
+        ('mirror', ['mirror']),
+        ('ottoman', ['ottoman']),
+        ('bench', ['bench']),
+        ('stool', ['stool']),
     ]
 
     message_lower = user_message.lower()
     found_keywords = []
+    matched_phrases = set()  # Track which phrases we've already matched
 
-    for product_type in product_types:
-        if product_type in message_lower:
-            # Extract the base word (singular form)
-            base_word = product_type.replace('s', '') if product_type.endswith('s') else product_type
-            if base_word not in found_keywords:
-                found_keywords.append(product_type)
+    # Check patterns in order (longer phrases first due to order above)
+    for search_term, keywords in product_patterns:
+        if search_term in message_lower:
+            # Check if this phrase overlaps with an already matched phrase
+            # This prevents "lamp" from matching after "ceiling lamp" already matched
+            overlaps = False
+            for matched in matched_phrases:
+                if search_term in matched or matched in search_term:
+                    # If the new match is longer, replace the old match
+                    if len(search_term) > len(matched):
+                        overlaps = False
+                        matched_phrases.discard(matched)
+                        # Remove keywords from the old match
+                        # (we'll add the new ones below)
+                        break
+                    else:
+                        overlaps = True
+                        break
 
+            if not overlaps:
+                matched_phrases.add(search_term)
+                for keyword in keywords:
+                    if keyword not in found_keywords:
+                        found_keywords.append(keyword)
+
+    logger.info(f"Extracted keywords from '{user_message}': {found_keywords}")
     return found_keywords
 
 
@@ -655,7 +854,7 @@ async def _get_product_recommendations(
     analysis: DesignAnalysisSchema,
     db: AsyncSession,
     user_message: str = "",
-    limit: int = 10,
+    limit: int = 30,
     user_id: Optional[str] = None,
     session_id: Optional[str] = None
 ) -> List[dict]:
@@ -866,7 +1065,7 @@ def _map_budget_range(price_range: str) -> Tuple[float, float]:
 async def _get_basic_product_recommendations(
     analysis: DesignAnalysisSchema,
     db: AsyncSession,
-    limit: int = 10
+    limit: int = 30
 ) -> List[dict]:
     """Basic product recommendations as fallback"""
     try:

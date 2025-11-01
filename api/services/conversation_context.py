@@ -26,6 +26,8 @@ class ConversationContext:
     total_interactions: int
     last_uploaded_image: Optional[str] = None  # Store last uploaded image for transformations
     pending_action_options: Optional[Dict[str, Any]] = None  # Store pending action options (A, B, C, etc.)
+    visualization_history: List[Dict[str, Any]] = None  # Stack of visualization states for undo/redo
+    visualization_redo_stack: List[Dict[str, Any]] = None  # Stack for redo operations
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization"""
@@ -43,6 +45,10 @@ class ConversationContext:
             data["last_uploaded_image"] = None
         if "pending_action_options" not in data:
             data["pending_action_options"] = None
+        if "visualization_history" not in data:
+            data["visualization_history"] = []
+        if "visualization_redo_stack" not in data:
+            data["visualization_redo_stack"] = []
         return cls(**data)
 
 
@@ -80,7 +86,9 @@ class ConversationContextManager:
             conversation_state="new",
             last_updated=datetime.now(),
             total_interactions=0,
-            last_uploaded_image=None
+            last_uploaded_image=None,
+            visualization_history=[],
+            visualization_redo_stack=[]
         )
 
         self.contexts[session_id] = context
@@ -185,6 +193,101 @@ class ConversationContextManager:
         context.last_updated = datetime.now()
         logger.info(f"Cleared pending action options for session {session_id}")
         return context
+
+    def push_visualization_state(self, session_id: str, visualization_data: Dict[str, Any]) -> ConversationContext:
+        """Push visualization state to history for undo/redo support"""
+        context = self.get_or_create_context(session_id)
+
+        # Initialize if None
+        if context.visualization_history is None:
+            context.visualization_history = []
+        if context.visualization_redo_stack is None:
+            context.visualization_redo_stack = []
+
+        # Add timestamp to visualization data
+        vis_state = {
+            **visualization_data,
+            "timestamp": datetime.now().isoformat()
+        }
+
+        # Push to history stack
+        context.visualization_history.append(vis_state)
+
+        # Clear redo stack when new visualization is added
+        context.visualization_redo_stack = []
+
+        # Limit history size to prevent memory issues (keep last 20 states)
+        if len(context.visualization_history) > 20:
+            context.visualization_history = context.visualization_history[-20:]
+
+        context.last_updated = datetime.now()
+        logger.info(f"Pushed visualization state to history for session {session_id}. History size: {len(context.visualization_history)}")
+        return context
+
+    def undo_visualization(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Undo last visualization and return previous state"""
+        context = self.get_or_create_context(session_id)
+
+        # Initialize if None
+        if context.visualization_history is None:
+            context.visualization_history = []
+        if context.visualization_redo_stack is None:
+            context.visualization_redo_stack = []
+
+        # Need at least 2 items (current + previous) to undo
+        if len(context.visualization_history) < 2:
+            logger.info(f"Cannot undo: insufficient history for session {session_id}")
+            return None
+
+        # Pop current state and move to redo stack
+        current_state = context.visualization_history.pop()
+        context.visualization_redo_stack.append(current_state)
+
+        # Get previous state (now at top of history)
+        previous_state = context.visualization_history[-1]
+
+        context.last_updated = datetime.now()
+        logger.info(f"Undo visualization for session {session_id}. History: {len(context.visualization_history)}, Redo: {len(context.visualization_redo_stack)}")
+
+        return previous_state
+
+    def redo_visualization(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Redo visualization and return next state"""
+        context = self.get_or_create_context(session_id)
+
+        # Initialize if None
+        if context.visualization_history is None:
+            context.visualization_history = []
+        if context.visualization_redo_stack is None:
+            context.visualization_redo_stack = []
+
+        # Need at least 1 item in redo stack
+        if len(context.visualization_redo_stack) == 0:
+            logger.info(f"Cannot redo: empty redo stack for session {session_id}")
+            return None
+
+        # Pop from redo stack and push back to history
+        next_state = context.visualization_redo_stack.pop()
+        context.visualization_history.append(next_state)
+
+        context.last_updated = datetime.now()
+        logger.info(f"Redo visualization for session {session_id}. History: {len(context.visualization_history)}, Redo: {len(context.visualization_redo_stack)}")
+
+        return next_state
+
+    def can_undo(self, session_id: str) -> bool:
+        """Check if undo is available"""
+        context = self.get_or_create_context(session_id)
+        if context.visualization_history is None:
+            return False
+        return len(context.visualization_history) >= 2
+
+    def can_redo(self, session_id: str) -> bool:
+        """Check if redo is available"""
+        context = self.get_or_create_context(session_id)
+        if context.visualization_redo_stack is None:
+            return False
+        return len(context.visualization_redo_stack) > 0
 
     def get_context_for_ai(self, session_id: str, include_system_prompt: bool = True) -> List[Dict[str, Any]]:
         """Get formatted context for AI model"""

@@ -1013,9 +1013,12 @@ class CloudInpaintingService:
         products: List[Dict[str, Any]],
         user_action: str
     ) -> str:
-        """Build prompt for inpainting (enhanced with ChatGPT Vision descriptions)"""
+        """Build prompt for inpainting (enhanced with ChatGPT Vision descriptions and table-specific placement)"""
         product = products[0] if products else {}
         product_name = product.get('full_name') or product.get('name', 'furniture')
+
+        # Determine placement instruction based on furniture type
+        placement_instruction = self._get_placement_instruction(product_name)
 
         # Check if we have ChatGPT Vision description
         visual_desc = product.get('visual_description')
@@ -1024,30 +1027,46 @@ class CloudInpaintingService:
             # ENHANCED: Use ChatGPT Vision-generated detailed description
             prompt = (
                 f"A photorealistic interior photograph with a {product_name} "
-                f"naturally placed in the room. "
+                f"{placement_instruction}. "
                 f"The furniture has the following exact characteristics: {visual_desc}. "
                 f"Realistic lighting that matches the room's existing light sources, "
                 f"proper shadows on the floor, correct perspective and scale for the room dimensions, "
                 f"seamless integration with the room environment. "
-                f"Professional interior photography, high quality, natural placement. "
+                f"Professional interior photography, high quality. "
                 f"The room structure, walls, floor, windows, and doors remain completely unchanged."
             )
-            logger.info("Using ChatGPT Vision-enhanced prompt")
+            logger.info(f"Using ChatGPT Vision-enhanced prompt with {placement_instruction}")
         else:
             # FALLBACK: Basic text prompt
             prompt = (
                 f"A photorealistic interior photograph with a {product_name} "
-                f"naturally placed in the room. "
+                f"{placement_instruction}. "
                 f"The furniture should have realistic lighting that matches the room's existing light sources, "
                 f"proper shadows on the floor, correct perspective and scale for the room dimensions, "
                 f"seamless integration with the room environment. "
-                f"Professional interior photography, high quality, natural placement, "
+                f"Professional interior photography, high quality, "
                 f"accurate materials and textures. "
                 f"The room structure, walls, floor, windows, and doors remain completely unchanged."
             )
-            logger.info("Using basic text prompt (no Vision description)")
+            logger.info(f"Using basic text prompt (no Vision description) with {placement_instruction}")
 
         return prompt
+
+    def _get_placement_instruction(self, product_name: str) -> str:
+        """Get table-specific placement instructions based on furniture type"""
+        name_lower = product_name.lower()
+
+        # Center tables (coffee tables) - placed in front of sofa
+        if 'coffee' in name_lower or 'center' in name_lower or 'centre' in name_lower:
+            return "placed in the center of the room, in front of the sofa or seating area"
+
+        # Side tables - placed beside furniture
+        elif 'side' in name_lower or 'end' in name_lower or 'nightstand' in name_lower or 'bedside' in name_lower:
+            return "placed on the side, next to the sofa, chair, or bed"
+
+        # Default for other furniture
+        else:
+            return "naturally placed in the room"
 
     def _build_negative_prompt(self) -> str:
         """Build negative prompt"""

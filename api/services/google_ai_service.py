@@ -420,8 +420,14 @@ Return results as JSON array:
                         {
                             "text": """List all furniture items visible in this room image.
 For each item, provide:
-- furniture_type (e.g., "sofa", "chair", "table", "bed", "lamp", "cabinet")
+- furniture_type (e.g., "sofa", "chair", "bed", "lamp", "cabinet")
 - confidence (0-1 scale indicating how certain you are)
+
+IMPORTANT TABLE CATEGORIZATION:
+- If the table is positioned IN FRONT OF or IN THE CENTER in front of seating (sofa/chairs), use: "center_table" or "coffee_table"
+- If the table is positioned BESIDE or NEXT TO seating (sofa/chairs/bed), use: "side_table" or "end_table"
+- For dining tables, use: "dining_table"
+- For console tables against walls, use: "console_table"
 
 Return results as JSON array:
 [
@@ -430,12 +436,17 @@ Return results as JSON array:
     "confidence": 0.95
   },
   {
-    "furniture_type": "coffee_table",
+    "furniture_type": "center_table",
     "confidence": 0.88
+  },
+  {
+    "furniture_type": "side_table",
+    "confidence": 0.85
   }
 ]
 
-IMPORTANT: Only include actual furniture pieces. Do not include decorative items, walls, windows, or structural elements."""
+IMPORTANT: Only include actual furniture pieces. Do not include decorative items, walls, windows, or structural elements.
+CRITICAL: Distinguish between center_table (in front of seating) and side_table (beside seating) based on position."""
                         },
                         {
                             "inline_data": {
@@ -586,7 +597,8 @@ Product to add: {product_name}
 
 PLACEMENT GUIDELINES:
 - If it's a sofa/chair: place along a wall or in conversation area
-- If it's a table: place in center or beside seating
+- If it's a CENTER TABLE / COFFEE TABLE: place IN FRONT OF the sofa or seating area, in the center
+- If it's a SIDE TABLE / END TABLE: place BESIDE or NEXT TO the sofa, chair, or bed (on the side, not in front)
 - If it's a lamp: place on an existing table or floor
 - If it's a bed: place against a wall
 - Maintain realistic spacing and proportions

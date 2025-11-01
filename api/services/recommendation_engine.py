@@ -191,8 +191,46 @@ class AdvancedRecommendationEngine:
                 diversity_score=0.0
             )
 
+    def _categorize_keywords(self, keywords: List[str]) -> Dict[str, List[str]]:
+        """Categorize keywords into product categories to enable strict filtering"""
+
+        # Define mutually exclusive product categories
+        categories = {
+            'ceiling_lighting': ['ceiling lamp', 'ceiling light', 'chandelier', 'pendant', 'overhead light', 'pendant light'],
+            'portable_lighting': ['table lamp', 'desk lamp', 'floor lamp'],
+            'wall_lighting': ['wall lamp', 'sconce', 'wall light'],
+            'seating_furniture': ['sofa', 'couch', 'sectional', 'loveseat', 'chair', 'armchair', 'recliner', 'bench', 'stool', 'ottoman'],
+            'center_tables': ['coffee table', 'center table', 'centre table'],  # Placed in front of sofa
+            'side_tables': ['side table', 'end table', 'nightstand', 'bedside table'],  # Placed beside furniture
+            'dining_tables': ['dining table'],  # Separate category for dining tables
+            'other_tables': ['console table', 'desk', 'table'],  # Generic tables
+            'storage_furniture': ['dresser', 'chest', 'cabinet', 'bookshelf', 'shelving', 'shelf', 'wardrobe'],
+            'bedroom_furniture': ['bed', 'mattress', 'headboard'],
+            'decor': ['mirror', 'rug', 'carpet', 'mat'],
+            'general_lighting': ['lamp', 'lighting'],  # Catch-all for generic lighting terms
+        }
+
+        # Map keywords to their categories
+        keyword_to_category = {}
+        for category, terms in categories.items():
+            for term in terms:
+                keyword_to_category[term] = category
+
+        # Group keywords by category
+        categorized = defaultdict(list)
+        for keyword in keywords:
+            category = keyword_to_category.get(keyword.lower())
+            if category:
+                categorized[category].append(keyword)
+            else:
+                # Unknown keyword - put in its own category
+                categorized['other'].append(keyword)
+
+        logger.info(f"Categorized keywords: {dict(categorized)}")
+        return dict(categorized)
+
     async def _get_candidate_products(self, request: RecommendationRequest, db: AsyncSession) -> List[Product]:
-        """Get candidate products based on basic criteria"""
+        """Get candidate products based on basic criteria with strict category filtering"""
         from sqlalchemy.orm import selectinload
 
         query = select(Product).where(Product.is_available == True)
@@ -200,18 +238,41 @@ class AdvancedRecommendationEngine:
         # Apply product keyword filter (MOST IMPORTANT - filter by what user asked for)
         if request.product_keywords:
             logger.info(f"Filtering products by keywords: {request.product_keywords}")
-            # Create OR conditions for each keyword (case-insensitive)
-            # Use word boundary matching to avoid partial matches (e.g., "bed" won't match "bedside")
-            keyword_conditions = []
-            for keyword in request.product_keywords:
-                # Use PostgreSQL regex with word boundaries (\y)
-                # ~* is case-insensitive regex operator
-                escaped_keyword = re.escape(keyword)
-                keyword_conditions.append(Product.name.op('~*')(rf'\y{escaped_keyword}\y'))
-                keyword_conditions.append(Product.description.op('~*')(rf'\y{escaped_keyword}\y'))
 
-            if keyword_conditions:
-                query = query.where(or_(*keyword_conditions))
+            # STEP 1: Categorize keywords to determine product category
+            categorized_keywords = self._categorize_keywords(request.product_keywords)
+
+            # STEP 2: Build category-aware query
+            # If all keywords belong to the same category, we can use strict filtering
+            # to prevent cross-category contamination (e.g., "lamp" matching non-lighting products)
+
+            category_conditions = []
+            for category, keywords in categorized_keywords.items():
+                # Build OR condition within this category
+                keyword_conditions = []
+                for keyword in keywords:
+                    # Use PostgreSQL regex with word boundaries (\y)
+                    # ~* is case-insensitive regex operator
+                    escaped_keyword = re.escape(keyword)
+                    keyword_conditions.append(Product.name.op('~*')(rf'\y{escaped_keyword}\y'))
+                    keyword_conditions.append(Product.description.op('~*')(rf'\y{escaped_keyword}\y'))
+
+                if keyword_conditions:
+                    # Combine keywords within category with OR
+                    category_conditions.append(or_(*keyword_conditions))
+
+            # STEP 3: Combine category conditions
+            # If keywords span multiple categories, OR them together
+            # This allows "sofa or lamp" queries while preventing unrelated matches
+            if category_conditions:
+                if len(category_conditions) == 1:
+                    # Single category - strict filtering
+                    query = query.where(category_conditions[0])
+                else:
+                    # Multiple categories - OR them but still category-aware
+                    query = query.where(or_(*category_conditions))
+
+            logger.info(f"Applied category-aware filtering for {len(category_conditions)} categories")
         else:
             logger.warning("No product keywords provided - returning all products")
 

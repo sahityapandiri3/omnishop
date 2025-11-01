@@ -386,7 +386,7 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
     try {
       const response = await undoVisualization(sessionId)
 
-      if (response.success) {
+      if (response.visualization) {
         // Add new message showing the undone visualization
         const undoMessage: ChatMessage = {
           id: `undo-${Date.now()}`,
@@ -394,7 +394,7 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
           content: `↩️ ${response.message}`,
           timestamp: new Date(),
           session_id: sessionId || undefined,
-          image_url: response.rendered_image
+          image_url: response.visualization.rendered_image
         }
 
         setMessages(prev => [...prev, undoMessage])
@@ -416,7 +416,7 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
     try {
       const response = await redoVisualization(sessionId)
 
-      if (response.success) {
+      if (response.visualization) {
         // Add new message showing the redone visualization
         const redoMessage: ChatMessage = {
           id: `redo-${Date.now()}`,
@@ -424,7 +424,7 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
           content: `↪️ ${response.message}`,
           timestamp: new Date(),
           session_id: sessionId || undefined,
-          image_url: response.rendered_image
+          image_url: response.visualization.rendered_image
         }
 
         setMessages(prev => [...prev, redoMessage])
