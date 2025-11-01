@@ -83,7 +83,7 @@ async def test_replace_workflow():
         print("─" * 80)
 
         async with session.post(
-            f"{API_BASE_URL}/api/sessions",
+            f"{API_BASE_URL}/api/chat/sessions",
             json={}
         ) as response:
             session_data = await response.json()
@@ -104,7 +104,7 @@ async def test_replace_workflow():
 
         print("Sending initial request...")
         async with session.post(
-            f"{API_BASE_URL}/api/sessions/{chat_session_id}/messages",
+            f"{API_BASE_URL}/api/chat/sessions/{chat_session_id}/messages",
             json=step1_payload
         ) as response:
             step1_data = await response.json()
@@ -122,16 +122,39 @@ async def test_replace_workflow():
                 print("❌ ERROR: No product recommendations received!")
                 return
 
-            # Select first actual sofa product (skip swatches/samples)
+            # Select a sectional or L-shaped sofa for better replacement testing
             selected_product = None
+
+            # First try: Look for sectional or L-shaped sofas
             for product in recommendations:
                 name_lower = product.get('name', '').lower()
-                # Skip swatch/sample products
                 if 'swatch' in name_lower or 'sample' in name_lower:
-                    print(f"⏭️  Skipping: {product.get('name')} (swatch/sample)")
                     continue
-                selected_product = product
-                break
+                if 'sectional' in name_lower or 'l-shaped' in name_lower:
+                    selected_product = product
+                    print(f"✓ Found sectional: {product.get('name')}")
+                    break
+
+            # Second try: Look for 2-seater sofas
+            if not selected_product:
+                for product in recommendations:
+                    name_lower = product.get('name', '').lower()
+                    if 'swatch' in name_lower or 'sample' in name_lower:
+                        continue
+                    if '2 seater' in name_lower or 'two seater' in name_lower:
+                        selected_product = product
+                        print(f"✓ Found 2-seater: {product.get('name')}")
+                        break
+
+            # Last resort: Take first non-swatch product
+            if not selected_product:
+                for product in recommendations:
+                    name_lower = product.get('name', '').lower()
+                    if 'swatch' in name_lower or 'sample' in name_lower:
+                        print(f"⏭️  Skipping: {product.get('name')} (swatch/sample)")
+                        continue
+                    selected_product = product
+                    break
 
             if not selected_product:
                 print("❌ ERROR: No actual furniture products found (all are swatches)!")
@@ -162,7 +185,7 @@ async def test_replace_workflow():
 
         print("Sending visualize request...")
         async with session.post(
-            f"{API_BASE_URL}/api/sessions/{chat_session_id}/messages",
+            f"{API_BASE_URL}/api/chat/sessions/{chat_session_id}/messages",
             json=step2_payload
         ) as response:
             step2_data = await response.json()
@@ -213,7 +236,7 @@ async def test_replace_workflow():
 
         print("Sending replace action request...")
         async with session.post(
-            f"{API_BASE_URL}/api/sessions/{chat_session_id}/messages",
+            f"{API_BASE_URL}/api/chat/sessions/{chat_session_id}/messages",
             json=step3_payload
         ) as response:
             step3_data = await response.json()

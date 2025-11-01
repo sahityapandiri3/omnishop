@@ -663,39 +663,12 @@ OUTPUT: One photorealistic image showing THE SAME ROOM with the {product_name} a
                 except Exception as e:
                     logger.warning(f"Failed to download product image: {e}")
 
-            # Build prompt for REPLACE action
-            prompt = f"""⚠️ FURNITURE REPLACEMENT TASK ⚠️
+            # Build prompt for REPLACE action - simple and direct like Google AI Studio
+            prompt = f"""Replace the {furniture_type} in the first image with the {product_name} shown in the second image.
 
-YOU MUST PERFORM A REPLACEMENT OPERATION - NOT AN ADDITION!
+Keep everything else in the room exactly the same - the walls, floor, windows, curtains, and all other furniture and decor should remain unchanged.
 
-STEP-BY-STEP INSTRUCTIONS (FOLLOW IN ORDER):
-
-STEP 1: LOCATE THE EXISTING FURNITURE
-- Identify the {furniture_type} currently in this room image
-- Note its exact position, size, and location
-
-STEP 2: COMPLETELY REMOVE THE OLD FURNITURE
-- DELETE the entire existing {furniture_type} from the image
-- Remove it completely - DO NOT keep it in the image
-- The space where it was should be empty (show wall/floor behind it)
-
-STEP 3: ADD THE NEW PRODUCT IN THE SAME LOCATION
-- Place this product where the old {furniture_type} was: {product_name}
-- Position it in approximately the same location
-- Make it look natural and realistic
-
-STEP 4: PRESERVE ALL OTHER ELEMENTS
-- Keep ALL other furniture items exactly as they are
-- Do NOT add, remove, or modify any other furniture
-- Maintain the exact room structure (walls, floor, ceiling, windows, doors)
-- Preserve lighting, shadows, and overall ambiance
-
-🎯 WHAT YOU ARE REPLACING: {furniture_type}
-🎯 WHAT TO PLACE INSTEAD: {product_name}
-
-CRITICAL: This is a REPLACEMENT operation. The old {furniture_type} must be GONE and the new {product_name} must be in its place. DO NOT show both the old and new furniture together.
-
-OUTPUT: Generate ONE photorealistic image of the SAME room where the old {furniture_type} has been removed and replaced with the {product_name}."""
+Generate a photorealistic image of the room with the {product_name} replacing the {furniture_type}."""
 
             # Build parts list
             parts = [types.Part.from_text(text=prompt)]
@@ -707,8 +680,9 @@ OUTPUT: Generate ONE photorealistic image of the SAME room where the old {furnit
             ))
 
             # Add product reference image if available
+            # IMPORTANT: Do NOT add text labels between images - this confuses the model
+            # Send images directly back-to-back like Google AI Studio does
             if product_image_data:
-                parts.append(types.Part.from_text(text=f"\nProduct reference image ({product_name}):"))
                 parts.append(types.Part(
                     inline_data=types.Blob(
                         mime_type="image/jpeg",
@@ -719,9 +693,10 @@ OUTPUT: Generate ONE photorealistic image of the SAME room where the old {furnit
             contents = [types.Content(role="user", parts=parts)]
 
             # Generate visualization with Gemini 2.5 Flash Image
+            # Use temperature 0.4 to match Google AI Studio's default
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
-                temperature=0.3
+                temperature=0.4
             )
 
             generated_image = None
@@ -1351,8 +1326,9 @@ QUALITY REQUIREMENTS:
                     if image.mode != 'RGB':
                         image = image.convert('RGB')
 
-                    # Resize for optimal processing (max 512px for product images)
-                    max_size = 512
+                    # Resize for optimal processing (max 1024px for product images)
+                    # Increased from 512px to preserve more product detail
+                    max_size = 1024
                     if image.width > max_size or image.height > max_size:
                         image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
 
