@@ -190,14 +190,27 @@ async def send_message(
 
                     similar_furniture_items = matching_items if exists else []
 
-                    if exists and matching_items:
-                        # Furniture exists - user can ADD or REPLACE
+                    # Define furniture types that are additive-only (no replace)
+                    additive_only_types = ['chair', 'armchair', 'accent chair', 'side chair', 'sofa chair',
+                                          'dining chair', 'recliner', 'bench', 'stool', 'ottoman',
+                                          'lamp', 'table lamp', 'desk lamp', 'floor lamp', 'wall lamp',
+                                          'ceiling lamp', 'pendant', 'chandelier', 'sconce', 'lighting',
+                                          'bookshelf', 'shelving', 'shelf', 'dresser', 'cabinet', 'wardrobe',
+                                          'chest', 'storage', 'mirror', 'rug', 'carpet', 'decor']
+
+                    # Check if this furniture type is additive-only
+                    is_additive_only = any(additive_type in furniture_type.lower() for additive_type in additive_only_types)
+
+                    if exists and matching_items and not is_additive_only:
+                        # Furniture exists AND it's replaceable (like sofas) - user can ADD or REPLACE
                         action_options = ["add", "replace"]
                         requires_action_choice = True
                         logger.info(f"Found {len(matching_items)} matching {furniture_type} items - user can ADD or REPLACE")
                     else:
-                        # No matching furniture - user can only ADD
+                        # No matching furniture OR it's additive-only (chairs, etc.) - user can only ADD
                         action_options = ["add"]
+                        if is_additive_only:
+                            logger.info(f"{furniture_type} is additive-only - user can only ADD (no replace option)")
                         requires_action_choice = False
                         logger.info(f"No matching {furniture_type} found - user can only ADD")
                 except Exception as e:
@@ -744,23 +757,34 @@ def _extract_product_keywords(user_message: str) -> List[str]:
     # Product keywords with synonyms and related terms - ORDER MATTERS (longer phrases first)
     # Format: (search_term, [keywords_to_return])
     product_patterns = [
-        # Lighting - ceiling/overhead
+        # Lighting - ceiling/overhead (check both singular and plural)
+        ('ceiling lights', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier']),
+        ('ceiling lamps', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier']),
         ('ceiling lamp', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier']),
         ('ceiling light', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier']),
+        ('pendant lights', ['pendant', 'ceiling lamp', 'ceiling light', 'chandelier']),
+        ('pendant lamps', ['pendant', 'ceiling lamp', 'ceiling light', 'chandelier']),
         ('pendant light', ['pendant', 'ceiling lamp', 'ceiling light', 'chandelier']),
         ('pendant lamp', ['pendant', 'ceiling lamp', 'ceiling light', 'chandelier']),
+        ('chandeliers', ['chandelier', 'ceiling lamp', 'ceiling light', 'pendant']),
         ('chandelier', ['chandelier', 'ceiling lamp', 'ceiling light', 'pendant']),
+        ('overhead lights', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier']),
         ('overhead light', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier']),
 
-        # Lighting - table/desk
+        # Lighting - table/desk (check both singular and plural)
+        ('table lamps', ['table lamp', 'desk lamp']),
         ('table lamp', ['table lamp', 'desk lamp']),
+        ('desk lamps', ['desk lamp', 'table lamp']),
         ('desk lamp', ['desk lamp', 'table lamp']),
 
-        # Lighting - floor
+        # Lighting - floor (check both singular and plural)
+        ('floor lamps', ['floor lamp']),
         ('floor lamp', ['floor lamp']),
 
-        # Lighting - wall
+        # Lighting - wall (check both singular and plural)
+        ('wall lamps', ['wall lamp', 'sconce', 'wall light']),
         ('wall lamp', ['wall lamp', 'sconce', 'wall light']),
+        ('sconces', ['sconce', 'wall lamp', 'wall light']),
         ('sconce', ['sconce', 'wall lamp', 'wall light']),
 
         # Multi-word furniture - tables
@@ -805,6 +829,7 @@ def _extract_product_keywords(user_message: str) -> List[str]:
         ('shelf', ['shelf', 'shelving', 'bookshelf']),
 
         # Lighting - generic (only after specific types checked)
+        ('lamps', ['lamp']),
         ('lamp', ['lamp']),
         ('lighting', ['lighting']),
 

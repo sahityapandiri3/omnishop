@@ -120,6 +120,22 @@ class AdvancedRecommendationEngine:
             "dining": {
                 "dining_room": 1.0, "kitchen": 0.8, "living_room": 0.3, "office": 0.2,
                 "bedroom": 0.1, "bathroom": 0.0, "entryway": 0.1
+            },
+            "sleeping": {
+                "bedroom": 1.0, "living_room": 0.2, "office": 0.1, "dining_room": 0.0,
+                "kitchen": 0.0, "bathroom": 0.0, "entryway": 0.0
+            },
+            "workspace": {
+                "office": 1.0, "bedroom": 0.6, "living_room": 0.5, "dining_room": 0.3,
+                "kitchen": 0.2, "bathroom": 0.0, "entryway": 0.1
+            },
+            "accessory": {
+                "living_room": 0.9, "bedroom": 0.9, "office": 0.7, "dining_room": 0.8,
+                "kitchen": 0.6, "bathroom": 0.7, "entryway": 0.8
+            },
+            "decoration": {
+                "living_room": 0.8, "bedroom": 0.8, "office": 0.6, "dining_room": 0.7,
+                "kitchen": 0.5, "bathroom": 0.6, "entryway": 0.7
             }
         }
 
@@ -199,7 +215,9 @@ class AdvancedRecommendationEngine:
             'ceiling_lighting': ['ceiling lamp', 'ceiling light', 'chandelier', 'pendant', 'overhead light', 'pendant light'],
             'portable_lighting': ['table lamp', 'desk lamp', 'floor lamp'],
             'wall_lighting': ['wall lamp', 'sconce', 'wall light'],
-            'seating_furniture': ['sofa', 'couch', 'sectional', 'loveseat', 'chair', 'armchair', 'recliner', 'bench', 'stool', 'ottoman'],
+            'sofas': ['sofa', 'couch', 'sectional', 'loveseat'],  # Sofas - replaceable items
+            'chairs': ['chair', 'armchair', 'accent chair', 'side chair', 'sofa chair', 'recliner', 'dining chair'],  # Chairs - additive items only
+            'other_seating': ['bench', 'stool', 'ottoman'],  # Other seating - additive items
             'center_tables': ['coffee table', 'center table', 'centre table'],  # Placed in front of sofa
             'side_tables': ['side table', 'end table', 'nightstand', 'bedside table'],  # Placed beside furniture
             'dining_tables': ['dining table'],  # Separate category for dining tables
@@ -657,11 +675,23 @@ class AdvancedRecommendationEngine:
     def _extract_product_function(self, product: Product) -> str:
         """Extract primary function from product"""
         # Map product categories/names to functions
+        # Order matters: check more specific terms first
         function_map = {
-            "sofa": "seating", "chair": "seating", "armchair": "seating",
-            "table": "dining", "desk": "workspace", "bed": "sleeping",
-            "dresser": "storage", "bookshelf": "storage", "cabinet": "storage",
-            "lamp": "lighting", "chandelier": "lighting"
+            # Lighting (check before 'table')
+            "lamp": "lighting", "chandelier": "lighting", "light": "lighting",
+            # Seating
+            "sofa": "seating", "chair": "seating", "armchair": "seating", "bench": "seating",
+            # Sleeping
+            "bed": "sleeping", "mattress": "sleeping",
+            # Storage
+            "dresser": "storage", "bookshelf": "storage", "cabinet": "storage", "wardrobe": "storage",
+            # Workspace
+            "desk": "workspace", "office": "workspace",
+            # Dining (check after lamp to avoid 'table lamp' matching as dining)
+            "dining table": "dining", "table": "dining",
+            # Accessories
+            "pillow": "accessory", "cushion": "accessory", "throw": "accessory",
+            "vase": "accessory", "mirror": "accessory", "rug": "accessory"
         }
 
         product_name = product.name.lower()

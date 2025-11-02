@@ -423,11 +423,25 @@ For each item, provide:
 - furniture_type (e.g., "sofa", "chair", "bed", "lamp", "cabinet")
 - confidence (0-1 scale indicating how certain you are)
 
-IMPORTANT TABLE CATEGORIZATION:
+IMPORTANT FURNITURE CATEGORIZATION:
+
+SEATING:
+- For SOFAS (couch, sectional, loveseat), use: "sofa"
+- For CHAIRS (accent chair, side chair, armchair, sofa chair, dining chair, recliner), use: "chair" or be specific like "accent_chair", "armchair", etc.
+- Keep sofas and chairs SEPARATE - they are different categories
+
+TABLES (NOT lamps):
 - If the table is positioned IN FRONT OF or IN THE CENTER in front of seating (sofa/chairs), use: "center_table" or "coffee_table"
 - If the table is positioned BESIDE or NEXT TO seating (sofa/chairs/bed), use: "side_table" or "end_table"
 - For dining tables, use: "dining_table"
 - For console tables against walls, use: "console_table"
+- CRITICAL: Do NOT confuse table lamps with tables - they are LAMPS, not tables!
+
+LIGHTING:
+- For table lamps, desk lamps, floor lamps: use "lamp" or specific type like "table_lamp", "floor_lamp"
+- For ceiling lights, chandeliers, pendants: use "chandelier" or "ceiling_lamp"
+- For wall lights: use "wall_lamp" or "sconce"
+- CRITICAL: Lamps are LIGHTING, NOT tables or furniture!
 
 Return results as JSON array:
 [
@@ -519,9 +533,16 @@ If the furniture type does NOT exist, return:
 Furniture type to look for: {furniture_type}
 
 Be flexible with matching - for example:
-- "sofa" matches: sofa, couch, sectional
-- "table" matches: coffee table, side table, end table
-- "chair" matches: armchair, dining chair, accent chair"""
+- "sofa" matches: sofa, couch, sectional, loveseat (but NOT chairs)
+- "chair" matches: chair, armchair, dining chair, accent chair, side chair, sofa chair, recliner (but NOT sofas)
+- "table" matches: coffee table, side table, end table (but NOT table lamps - those are lamps!)
+- "lamp" matches: table lamp, desk lamp, floor lamp, wall lamp (but NOT tables with lamps on them!)
+
+CRITICAL: Keep sofas, chairs, tables, and lamps SEPARATE:
+- Sofas are larger seating pieces (couch, sectional)
+- Chairs are individual seating pieces (accent chair, armchair, side chair)
+- Tables are surfaces for placing items (coffee table, side table, dining table)
+- Lamps are lighting fixtures (table lamp, floor lamp, ceiling lamp) - NOT tables!"""
                         },
                         {
                             "inline_data": {
@@ -596,12 +617,41 @@ Product to add: {product_name}
 - Ensure the product looks naturally integrated with proper lighting and shadows
 
 PLACEMENT GUIDELINES:
-- If it's a sofa/chair: place along a wall or in conversation area
-- If it's a CENTER TABLE / COFFEE TABLE: place IN FRONT OF the sofa or seating area, in the center
-- If it's a SIDE TABLE / END TABLE: place BESIDE or NEXT TO the sofa, chair, or bed (on the side, not in front)
-- If it's a lamp: place on an existing table or floor
-- If it's a bed: place against a wall
+
+🪑 SOFAS:
+- Place along a wall or centered in the room as the main seating piece
+
+🪑 CHAIRS (accent chair, side chair, armchair, sofa chair, dining chair, recliner):
+- Position on ONE OF THE SIDES of the existing sofa (if sofa exists)
+- Angle the chair towards the sofa to create a conversation area
+- Maintain 18-30 inches spacing from the sofa
+- Style and orient the chair based on the sofa's position and facing direction
+- If no sofa exists, place along a wall or in a natural seating position
+
+🔲 CENTER TABLE / COFFEE TABLE:
+- Place DIRECTLY IN FRONT OF the sofa or seating area
+- Centered between the sofa and the opposite wall/furniture
+- Positioned in the "coffee table zone" (perpendicular to sofa's front face)
+
+🔲 SIDE TABLE / END TABLE:
+- ⚠️ CRITICAL: Place DIRECTLY ADJACENT to the sofa's SIDE (at the armrest)
+- ⚠️ The table must be FLUSH with the sofa's side, not in front or behind
+- Position at the SAME DEPTH as the sofa (aligned with sofa's length, not width)
+- Should be at ARM'S REACH from someone sitting on the sofa
+- Think: "side by side" positioning, not "in front and to the side"
+- ❌ INCORRECT: Placing table in front of the sofa but shifted to the side
+- ✅ CORRECT: Placing table directly touching or very close to sofa's side panel/armrest
+
+💡 LAMPS:
+- Place on an existing table or directly on the floor (for floor lamps)
+
+🛏️ BEDS:
+- Place against a wall
+
+📏 SPACING:
 - Maintain realistic spacing and proportions
+- Side tables should be 0-6 inches from sofa's side
+- Center tables should be 14-18 inches from sofa's front
 
 OUTPUT: One photorealistic image showing THE SAME ROOM with the {product_name} added naturally."""
 
@@ -860,9 +910,46 @@ PLACEMENT STRATEGY:
 4. Place products ON THE FLOOR of THIS room (not floating)
 5. Scale products proportionally based on estimated room size AND product's actual dimensions from reference image
 6. Maintain realistic proportions - a 36" coffee table should look appropriate in a 12x15 ft room
-7. Arrange products naturally (sofas along walls, tables centered, etc.)
+7. Arrange products according to type-specific placement rules (see below)
 8. Ensure products don't block doorways or windows
 9. Keep proper spacing between products (18-30 inches walking space)
+
+📍 TYPE-SPECIFIC PLACEMENT RULES:
+
+🪑 SOFAS:
+- Place along a wall or centered in the room as the main seating piece
+
+🪑 CHAIRS (accent chair, side chair, armchair):
+- Position on ONE OF THE SIDES of existing sofa (if sofa exists)
+- Angle towards sofa for conversation area
+- Maintain 18-30 inches spacing from sofa
+
+🔲 CENTER TABLE / COFFEE TABLE:
+- Place DIRECTLY IN FRONT OF the sofa or seating area
+- Centered between sofa and opposite wall
+- Perpendicular to sofa's front face
+- Distance: 14-18 inches from sofa's front
+
+🔲 SIDE TABLE / END TABLE:
+- ⚠️ CRITICAL: Place DIRECTLY ADJACENT to sofa's SIDE (at armrest)
+- ⚠️ Table must be FLUSH with sofa's side, not in front or behind
+- Position at SAME DEPTH as sofa (aligned with sofa's length, not width)
+- Should be at ARM'S REACH from someone sitting on sofa
+- Distance: 0-6 inches from sofa's side
+- ❌ INCORRECT: Placing in front of sofa but shifted to the side
+- ✅ CORRECT: Directly touching or very close to sofa's side panel/armrest
+
+📚 STORAGE (bookshelf, cabinet, dresser):
+- Place against walls, not blocking pathways
+- Leave space for doors to open
+
+💡 LAMPS:
+- Place on existing tables or floor
+- Near seating areas for task lighting
+
+🛏️ BEDS:
+- Place against longest wall
+- Leave walkway space on at least one side
 
 IMPORTANT FOR MULTIPLE PRODUCTS ({product_count} products):
 - When placing {product_count} products, the room STILL stays the same
