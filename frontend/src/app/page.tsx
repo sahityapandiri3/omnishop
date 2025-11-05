@@ -66,9 +66,19 @@ export default function HomePage() {
   // Navigate to design studio with image
   const handleContinueWithImage = () => {
     if (roomImage) {
-      // Store in sessionStorage for use in design page
-      sessionStorage.setItem('roomImage', roomImage);
-      router.push('/design');
+      try {
+        console.log('[HomePage] Storing room image and navigating to /design');
+        // Store in sessionStorage for use in design page
+        sessionStorage.setItem('roomImage', roomImage);
+        console.log('[HomePage] Image stored, navigating now...');
+        router.push('/design');
+      } catch (error) {
+        console.error('[HomePage] Error navigating to design page:', error);
+        alert('Failed to navigate. Please try again.');
+      }
+    } else {
+      console.warn('[HomePage] No room image to upload');
+      alert('Please upload a room image first');
     }
   };
 
