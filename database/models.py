@@ -133,7 +133,12 @@ class ProductAttribute(Base):
     attribute_value = Column(Text, nullable=False)
     attribute_type = Column(String(20), default="text")  # text, number, boolean, json
 
+    # Extraction metadata
+    confidence_score = Column(Float, nullable=True)  # 0.0 to 1.0
+    extraction_method = Column(String(50), nullable=True)  # gemini_vision, text_nlp, merged, manual
+
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     product = relationship("Product", back_populates="attributes")
@@ -141,6 +146,7 @@ class ProductAttribute(Base):
     # Indexes
     __table_args__ = (
         Index('idx_attribute_name_value', 'attribute_name', 'attribute_value'),
+        Index('idx_attribute_product_name', 'product_id', 'attribute_name'),
     )
 
     def __repr__(self):

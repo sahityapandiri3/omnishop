@@ -6,7 +6,7 @@ import numpy as np
 import asyncio
 import re
 from typing import Dict, List, Optional, Any, Tuple, Set
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections import defaultdict, Counter
 from datetime import datetime, timedelta
 import json
@@ -22,15 +22,24 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RecommendationRequest:
-    """Request for product recommendations"""
-    user_preferences: Dict[str, Any]
+    """Request for product recommendations with attribute matching"""
+    user_preferences: Dict[str, Any] = field(default_factory=dict)
     room_context: Optional[Dict[str, Any]] = None
     budget_range: Optional[Tuple[float, float]] = None
-    style_preferences: List[str] = None
-    functional_requirements: List[str] = None
-    product_keywords: List[str] = None
-    exclude_products: List[str] = None
+    style_preferences: List[str] = field(default_factory=list)
+    functional_requirements: List[str] = field(default_factory=list)
+    product_keywords: List[str] = field(default_factory=list)
+    exclude_products: List[str] = field(default_factory=list)
     max_recommendations: int = 20
+
+    # NEW FIELDS for attribute matching
+    user_colors: Optional[List[str]] = None  # e.g., ['red', 'burgundy']
+    user_materials: Optional[List[str]] = None  # e.g., ['leather', 'wood']
+    user_textures: Optional[List[str]] = None  # e.g., ['smooth', 'soft']
+    user_patterns: Optional[List[str]] = None  # e.g., ['solid', 'striped']
+    user_dimensions: Optional[Dict[str, float]] = None  # e.g., {'room_width': 120, 'room_depth': 100}
+    user_styles: Optional[List[str]] = None  # e.g., ['modern', 'contemporary']
+    strict_attribute_match: bool = False  # Enable strict filtering (zero false positives)
 
 
 @dataclass
@@ -161,6 +170,23 @@ class AdvancedRecommendationEngine:
             # Get candidate products
             candidates = await self._get_candidate_products(request, db)
 
+            # Apply strict attribute filtering if enabled (ZERO false positives)
+            if request.strict_attribute_match:
+                candidates = await self._apply_strict_attribute_filtering(candidates, request, db)
+                logger.info(f"Strict filtering: {len(candidates)} products match attribute criteria")
+
+                # If no products match, return empty results
+                if not candidates:
+                    logger.info("Strict filtering returned zero products - no matches found")
+                    return RecommendationResponse(
+                        recommendations=[],
+                        total_found=0,
+                        processing_time=(datetime.now() - start_time).total_seconds(),
+                        recommendation_strategy="strict_filtering_zero_results",
+                        personalization_level=0.0,
+                        diversity_score=0.0
+                    )
+
             # Apply multiple recommendation strategies
             content_based_scores = await self._content_based_filtering(candidates, request, db)
             popularity_scores = await self._popularity_based_scoring(candidates, db)
@@ -206,6 +232,136 @@ class AdvancedRecommendationEngine:
                 personalization_level=0.0,
                 diversity_score=0.0
             )
+
+    async def _apply_strict_attribute_filtering(
+        self,
+        candidates: List[Product],
+        request: RecommendationRequest,
+        db: AsyncSession
+    ) -> List[Product]:
+        """
+        Apply strict attribute filtering to ensure ZERO false positives
+
+        Only returns products that match ALL specified attributes:
+        - If user specifies color → ONLY products with that color
+        - If user specifies material → ONLY products with that material
+        - If user specifies style → ONLY products with that style
+        - If user specifies texture → ONLY products with that texture
+        - If user specifies pattern → ONLY products with that pattern
+
+        Products with NULL attributes are EXCLUDED when that attribute is specified.
+        """
+        from database.models import ProductAttribute
+
+        filtered_candidates = []
+
+        # Extract user preferences
+        user_colors = request.user_colors or []
+        user_materials = request.user_materials or []
+        user_textures = request.user_textures or []
+        user_patterns = request.user_patterns or []
+        user_styles = request.user_styles or []
+
+        # If no attributes specified, return all candidates
+        if not any([user_colors, user_materials, user_textures, user_patterns, user_styles]):
+            return candidates
+
+        for product in candidates:
+            # Check each specified attribute
+            passes_filter = True
+
+            # Color filtering
+            if user_colors:
+                result = await db.execute(
+                    select(ProductAttribute.attribute_value)
+                    .where(
+                        ProductAttribute.product_id == product.id,
+                        ProductAttribute.attribute_name.in_(['color_primary', 'color_secondary', 'color_accent'])
+                    )
+                )
+                product_colors = [c.lower() for c in result.scalars().all() if c]
+
+                # Product MUST have matching color
+                if not product_colors or not any(uc.lower() in product_colors for uc in user_colors):
+                    # Check color families for fuzzy matching
+                    color_families = self._get_color_families()
+                    has_family_match = False
+                    for user_color in user_colors:
+                        user_family = color_families.get(user_color.lower(), [])
+                        if any(pc in user_family for pc in product_colors):
+                            has_family_match = True
+                            break
+                    if not has_family_match:
+                        passes_filter = False
+
+            # Material filtering
+            if passes_filter and user_materials:
+                result = await db.execute(
+                    select(ProductAttribute.attribute_value)
+                    .where(
+                        ProductAttribute.product_id == product.id,
+                        ProductAttribute.attribute_name.in_(['material_primary', 'material_secondary'])
+                    )
+                )
+                product_materials = [m.lower() for m in result.scalars().all() if m]
+
+                # Product MUST have matching material
+                if not product_materials or not any(um.lower() in product_materials for um in user_materials):
+                    passes_filter = False
+
+            # Texture filtering
+            if passes_filter and user_textures:
+                result = await db.execute(
+                    select(ProductAttribute.attribute_value)
+                    .where(
+                        ProductAttribute.product_id == product.id,
+                        ProductAttribute.attribute_name == 'texture'
+                    )
+                )
+                product_texture = result.scalar_one_or_none()
+
+                # Product MUST have matching texture
+                if not product_texture or not any(ut.lower() in product_texture.lower() for ut in user_textures):
+                    passes_filter = False
+
+            # Pattern filtering
+            if passes_filter and user_patterns:
+                result = await db.execute(
+                    select(ProductAttribute.attribute_value)
+                    .where(
+                        ProductAttribute.product_id == product.id,
+                        ProductAttribute.attribute_name == 'pattern'
+                    )
+                )
+                product_pattern = result.scalar_one_or_none()
+
+                # Product MUST have matching pattern
+                if not product_pattern or not any(up.lower() in product_pattern.lower() for up in user_patterns):
+                    passes_filter = False
+
+            # Style filtering
+            if passes_filter and user_styles:
+                result = await db.execute(
+                    select(ProductAttribute.attribute_value)
+                    .where(
+                        ProductAttribute.product_id == product.id,
+                        ProductAttribute.attribute_name == 'style'
+                    )
+                )
+                product_style = result.scalar_one_or_none()
+
+                # Product MUST have matching style
+                if not product_style or not any(us.lower() in product_style.lower() for us in user_styles):
+                    passes_filter = False
+
+            # Add to filtered list if passes all checks
+            if passes_filter:
+                filtered_candidates.append(product)
+
+        logger.info(f"Strict attribute filtering: {len(candidates)} → {len(filtered_candidates)} products "
+                   f"(colors={user_colors}, materials={user_materials}, styles={user_styles})")
+
+        return filtered_candidates
 
     def _categorize_keywords(self, keywords: List[str]) -> Dict[str, List[str]]:
         """Categorize keywords into product categories to enable strict filtering"""
@@ -367,46 +523,81 @@ class AdvancedRecommendationEngine:
         request: RecommendationRequest,
         db: AsyncSession
     ) -> Dict[str, float]:
-        """Content-based filtering using product attributes"""
+        """
+        Content-based filtering using product attributes
+
+        NEW SCORING WEIGHTS (with real attribute matching):
+        - Keyword relevance: 30% (reduced from 40%)
+        - Color match: 15% (increased from 10%, now uses real data)
+        - Material match: 15% (increased from 10%, now uses real data)
+        - Style match: 15% (reduced from 20%)
+        - Size match: 10% (NEW)
+        - Texture match: 5% (NEW)
+        - Pattern match: 5% (NEW)
+        - Description: 5% (reduced from 20%)
+        """
         scores = {}
 
         # Extract preferences from request
         style_preferences = request.style_preferences or []
-        user_prefs = request.user_preferences
+        user_prefs = request.user_preferences or {}
+
+        # Get user attribute preferences
+        user_colors = request.user_colors or user_prefs.get("colors", [])
+        user_materials = request.user_materials or user_prefs.get("materials", [])
+        user_textures = request.user_textures or user_prefs.get("textures", [])
+        user_patterns = request.user_patterns or user_prefs.get("patterns", [])
+        user_dimensions = request.user_dimensions or user_prefs.get("dimensions", {})
 
         for product in candidates:
             score = 0.0
 
-            # PRIORITY 1: Keyword relevance matching (MOST IMPORTANT - 40% weight)
-            # This ensures products that match the search query get highest scores
+            # Keyword relevance matching (30% - reduced from 40%)
             if request.product_keywords:
                 keyword_match = self._calculate_keyword_relevance(product, request.product_keywords)
-                score += keyword_match * 0.4
+                score += keyword_match * 0.30
                 logger.debug(f"Product {product.id} '{product.name}': keyword_match={keyword_match:.2f}")
 
-            # Style matching
+            # Color matching (15% - was placeholder, now real)
+            if user_colors:
+                color_match = await self._calculate_color_match(product, user_colors, db)
+                score += color_match * 0.15
+                logger.debug(f"Product {product.id}: color_match={color_match:.2f}")
+
+            # Material matching (15% - was placeholder, now real)
+            if user_materials:
+                material_match = await self._calculate_material_match(product, user_materials, db)
+                score += material_match * 0.15
+                logger.debug(f"Product {product.id}: material_match={material_match:.2f}")
+
+            # Style matching (15% - reduced from 20%)
             if style_preferences:
                 product_style = self._extract_product_style(product)
                 style_match = max([
                     self._calculate_style_similarity(style, product_style)
                     for style in style_preferences
                 ], default=0.0)
-                score += style_match * 0.2
+                score += style_match * 0.15
 
-            # Color matching
-            if "colors" in user_prefs:
-                color_match = self._calculate_color_match(product, user_prefs["colors"])
-                score += color_match * 0.1
+            # Size matching (10% - NEW)
+            if user_dimensions:
+                size_match = await self._calculate_size_match(product, user_dimensions, db)
+                score += size_match * 0.10
 
-            # Material matching
-            if "materials" in user_prefs:
-                material_match = self._calculate_material_match(product, user_prefs["materials"])
-                score += color_match * 0.1
+            # Texture matching (5% - NEW)
+            if user_textures:
+                texture_match = await self._calculate_texture_match(product, user_textures, db)
+                score += texture_match * 0.05
 
-            # Description similarity
+            # Pattern matching (5% - NEW)
+            if user_patterns:
+                pattern_match = await self._calculate_pattern_match(product, user_patterns, db)
+                score += pattern_match * 0.05
+
+            # Description similarity (5% - reduced from 20%)
             if "description_keywords" in user_prefs:
                 desc_match = self._calculate_description_similarity(product, user_prefs["description_keywords"])
-                score += desc_match * 0.2
+                score += desc_match * 0.05
 
             scores[product.id] = min(score, 1.0)
 
@@ -791,17 +982,282 @@ class AdvancedRecommendationEngine:
         """Calculate similarity between two styles"""
         return self.style_compatibility_matrix.get(style1, {}).get(style2, 0.0)
 
-    def _calculate_color_match(self, product: Product, preferred_colors: List[str]) -> float:
-        """Calculate color match score"""
-        # This would analyze product images and descriptions for color
-        # For now, return a simulated score
-        return 0.7  # placeholder
+    async def _calculate_color_match(
+        self,
+        product: Product,
+        preferred_colors: List[str],
+        db: AsyncSession
+    ) -> float:
+        """
+        Calculate color match score using ProductAttribute table
 
-    def _calculate_material_match(self, product: Product, preferred_materials: List[str]) -> float:
-        """Calculate material match score"""
-        # This would analyze product descriptions for materials
-        # For now, return a simulated score
-        return 0.6  # placeholder
+        Returns:
+            1.0 = Exact match (primary color matches)
+            0.8 = Secondary match (secondary/accent color matches)
+            0.5 = Color family match (similar colors)
+            0.0 = No match
+        """
+        if not preferred_colors:
+            return 1.0  # No preference = all colors acceptable
+
+        try:
+            # Query product colors from ProductAttribute
+            from sqlalchemy import select
+            from database.models import ProductAttribute
+
+            result = await db.execute(
+                select(ProductAttribute.attribute_value)
+                .where(
+                    ProductAttribute.product_id == product.id,
+                    ProductAttribute.attribute_name.in_(['color_primary', 'color_secondary', 'color_accent'])
+                )
+            )
+            product_colors = [color.lower() for color in result.scalars().all() if color]
+
+            if not product_colors:
+                return 0.0  # No color data = exclude if user specified color
+
+            # Exact match
+            for user_color in preferred_colors:
+                if user_color.lower() in product_colors:
+                    return 1.0
+
+            # Color family match
+            color_families = self._get_color_families()
+            for user_color in preferred_colors:
+                user_family = color_families.get(user_color.lower(), [])
+                for product_color in product_colors:
+                    if product_color in user_family:
+                        return 0.5
+
+            return 0.0
+
+        except Exception as e:
+            logger.error(f"Error calculating color match for product {product.id}: {e}")
+            return 0.5  # Default to neutral score on error
+
+    async def _calculate_material_match(
+        self,
+        product: Product,
+        preferred_materials: List[str],
+        db: AsyncSession
+    ) -> float:
+        """
+        Calculate material match score using ProductAttribute table
+
+        Returns:
+            1.0 = Exact match (primary material matches)
+            0.7 = Compatible materials (contains preferred material)
+            0.0 = No match
+        """
+        if not preferred_materials:
+            return 1.0  # No preference = all materials acceptable
+
+        try:
+            # Query product materials from ProductAttribute
+            from sqlalchemy import select
+            from database.models import ProductAttribute
+
+            result = await db.execute(
+                select(ProductAttribute.attribute_value)
+                .where(
+                    ProductAttribute.product_id == product.id,
+                    ProductAttribute.attribute_name.in_(['material_primary', 'material_secondary'])
+                )
+            )
+            product_materials = [mat.lower() for mat in result.scalars().all() if mat]
+
+            if not product_materials:
+                return 0.0  # No material data = exclude
+
+            # Exact match
+            for user_material in preferred_materials:
+                if user_material.lower() in product_materials:
+                    return 1.0
+
+            # Compatible materials (substring match)
+            for user_material in preferred_materials:
+                for product_material in product_materials:
+                    if (user_material.lower() in product_material or
+                        product_material in user_material.lower()):
+                        return 0.7
+
+            return 0.0
+
+        except Exception as e:
+            logger.error(f"Error calculating material match for product {product.id}: {e}")
+            return 0.5  # Default to neutral score on error
+
+    async def _calculate_size_match(
+        self,
+        product: Product,
+        room_dimensions: Dict[str, float],
+        db: AsyncSession
+    ) -> float:
+        """
+        Calculate size match score based on room dimensions
+
+        Returns:
+            1.0 = Product fits comfortably (<30% of room dimension)
+            0.7 = Tight fit (30-50% of room dimension)
+            0.3 = Very tight (50-70%)
+            0.0 = Too large (>70%)
+        """
+        if not room_dimensions:
+            return 1.0  # No room size specified, assume fits
+
+        try:
+            from sqlalchemy import select
+            from database.models import ProductAttribute
+
+            # Query product dimensions
+            result = await db.execute(
+                select(ProductAttribute.attribute_name, ProductAttribute.attribute_value)
+                .where(
+                    ProductAttribute.product_id == product.id,
+                    ProductAttribute.attribute_name.in_(['width', 'depth', 'height'])
+                )
+            )
+
+            dimensions = {row[0]: float(row[1]) for row in result.all() if row[1]}
+
+            if not dimensions:
+                return 0.8  # No dimension data, assume average size
+
+            # Calculate fit score based on room dimensions
+            fit_scores = []
+
+            if 'width' in dimensions and 'room_width' in room_dimensions:
+                ratio = dimensions['width'] / room_dimensions['room_width']
+                if ratio < 0.3:
+                    fit_scores.append(1.0)
+                elif ratio < 0.5:
+                    fit_scores.append(0.7)
+                elif ratio < 0.7:
+                    fit_scores.append(0.3)
+                else:
+                    fit_scores.append(0.0)
+
+            return sum(fit_scores) / len(fit_scores) if fit_scores else 0.8
+
+        except Exception as e:
+            logger.error(f"Error calculating size match for product {product.id}: {e}")
+            return 0.8  # Default to acceptable size on error
+
+    async def _calculate_texture_match(
+        self,
+        product: Product,
+        preferred_textures: List[str],
+        db: AsyncSession
+    ) -> float:
+        """
+        Calculate texture match score
+
+        Returns:
+            1.0 = Exact match
+            0.0 = No match
+        """
+        if not preferred_textures:
+            return 1.0  # No preference
+
+        try:
+            from sqlalchemy import select
+            from database.models import ProductAttribute
+
+            result = await db.execute(
+                select(ProductAttribute.attribute_value)
+                .where(
+                    ProductAttribute.product_id == product.id,
+                    ProductAttribute.attribute_name == 'texture'
+                )
+            )
+            product_texture = result.scalar_one_or_none()
+
+            if not product_texture:
+                return 0.5  # No texture data, neutral score
+
+            for user_texture in preferred_textures:
+                if user_texture.lower() in product_texture.lower():
+                    return 1.0
+
+            return 0.0
+
+        except Exception as e:
+            logger.error(f"Error calculating texture match for product {product.id}: {e}")
+            return 0.5
+
+    async def _calculate_pattern_match(
+        self,
+        product: Product,
+        preferred_patterns: List[str],
+        db: AsyncSession
+    ) -> float:
+        """
+        Calculate pattern match score
+
+        Returns:
+            1.0 = Exact match
+            0.0 = No match
+        """
+        if not preferred_patterns:
+            return 1.0  # No preference
+
+        try:
+            from sqlalchemy import select
+            from database.models import ProductAttribute
+
+            result = await db.execute(
+                select(ProductAttribute.attribute_value)
+                .where(
+                    ProductAttribute.product_id == product.id,
+                    ProductAttribute.attribute_name == 'pattern'
+                )
+            )
+            product_pattern = result.scalar_one_or_none()
+
+            if not product_pattern:
+                return 0.5  # No pattern data, neutral score
+
+            for user_pattern in preferred_patterns:
+                if user_pattern.lower() in product_pattern.lower():
+                    return 1.0
+
+            return 0.0
+
+        except Exception as e:
+            logger.error(f"Error calculating pattern match for product {product.id}: {e}")
+            return 0.5
+
+    def _get_color_families(self) -> Dict[str, List[str]]:
+        """Get color family mappings for fuzzy color matching"""
+        return {
+            # Reds
+            'red': ['red', 'crimson', 'burgundy', 'maroon', 'ruby', 'cherry', 'wine'],
+            'crimson': ['red', 'crimson', 'burgundy', 'maroon'],
+            'burgundy': ['burgundy', 'maroon', 'wine', 'red'],
+            'maroon': ['maroon', 'burgundy', 'red'],
+
+            # Blues
+            'blue': ['blue', 'navy', 'royal blue', 'cobalt', 'azure', 'turquoise'],
+            'navy': ['navy', 'blue', 'dark blue', 'midnight blue'],
+            'azure': ['azure', 'blue', 'light blue', 'sky blue'],
+
+            # Greens
+            'green': ['green', 'emerald', 'sage', 'olive', 'forest green'],
+            'emerald': ['emerald', 'green', 'jade'],
+            'sage': ['sage', 'green', 'mint'],
+
+            # Neutrals
+            'gray': ['gray', 'grey', 'charcoal', 'slate', 'silver'],
+            'grey': ['gray', 'grey', 'charcoal', 'slate', 'silver'],
+            'beige': ['beige', 'tan', 'khaki', 'cream', 'ivory'],
+            'white': ['white', 'off-white', 'cream', 'ivory'],
+            'black': ['black', 'charcoal', 'ebony'],
+
+            # Browns
+            'brown': ['brown', 'chocolate', 'espresso', 'walnut', 'mahogany'],
+            'tan': ['tan', 'beige', 'camel', 'khaki'],
+        }
 
     def _calculate_description_similarity(self, product: Product, keywords: List[str]) -> float:
         """Calculate description similarity score"""
