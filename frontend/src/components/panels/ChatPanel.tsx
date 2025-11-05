@@ -195,21 +195,6 @@ export default function ChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Queue Indicator */}
-      {messageQueue.length > 0 && (
-        <div className="px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border-t border-blue-200 dark:border-blue-800">
-          <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
-            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <span>
-              {messageQueue.length} message{messageQueue.length !== 1 ? 's' : ''} queued
-            </span>
-          </div>
-        </div>
-      )}
-
       {/* Input Area */}
       <div className="p-4 border-t border-neutral-200 dark:border-neutral-700">
         <div className="flex gap-2">
