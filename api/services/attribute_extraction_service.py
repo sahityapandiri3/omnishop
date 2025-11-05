@@ -130,17 +130,46 @@ class AttributeExtractionService:
             # Create prompt for Gemini
             prompt = self._create_image_extraction_prompt()
 
+            # Build payload for Gemini API
+            payload = {
+                "contents": [{
+                    "parts": [
+                        {"text": prompt},
+                        {
+                            "inline_data": {
+                                "mime_type": "image/jpeg",
+                                "data": base64_image
+                            }
+                        }
+                    ]
+                }],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "maxOutputTokens": 2048,
+                    "responseMimeType": "application/json"
+                }
+            }
+
             # Call Gemini API
-            response = await self.google_ai_service._make_gemini_request(
-                prompt=prompt,
-                image_data=base64_image,
-                mime_type="image/jpeg",
-                temperature=0.2,
-                response_mime_type="application/json"
+            response = await self.google_ai_service._make_api_request(
+                "models/gemini-2.0-flash-exp:generateContent",
+                payload
             )
 
+            # Extract JSON response
+            content = response.get("candidates", [{}])[0].get("content", {})
+            text_response = content.get("parts", [{}])[0].get("text", "{}")
+
+            # Parse JSON
+            try:
+                import json
+                response_data = json.loads(text_response)
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Failed to parse Gemini response as JSON: {e}")
+                response_data = {}
+
             # Parse response
-            result = self._parse_gemini_response(response, "gemini_vision")
+            result = self._parse_gemini_response(response_data, "gemini_vision")
             result.success = True
             return result
 

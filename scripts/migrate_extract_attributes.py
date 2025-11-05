@@ -44,7 +44,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, selectinload
 
 from database.models import Product, ProductImage, ProductAttribute
-from api.services.google_ai_service import GoogleAIService, google_ai_service
+from api.services.google_ai_service import google_ai_service
 from api.services.attribute_extraction_service import AttributeExtractionService
 
 # Logging setup
@@ -277,9 +277,9 @@ async def run_migration(
     error_logger = ErrorLogger()
 
     # Database setup
-    from api.config import settings
+    from api.core.config import settings
     engine = create_async_engine(
-        settings.DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://'),
+        settings.database_url.replace('postgresql://', 'postgresql+asyncpg://'),
         echo=False
     )
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
