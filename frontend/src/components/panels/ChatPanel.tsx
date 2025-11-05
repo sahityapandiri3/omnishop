@@ -34,10 +34,6 @@ export default function ChatPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
-  // Message queue for handling multiple messages while waiting
-  const [messageQueue, setMessageQueue] = useState<string[]>([]);
-  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
-
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Initialize chat session
@@ -58,37 +54,27 @@ export default function ChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Process one message from the queue
-  const processNextMessage = useCallback(async () => {
-    if (messageQueue.length === 0 || isProcessingQueue) return;
-
-    // Wait for session to be initialized
-    if (!sessionId) {
-      console.log('Waiting for session to be initialized...');
-      return;
-    }
-
-    setIsProcessingQueue(true);
-    setIsLoading(true);
-
-    // Get the first message
-    const nextMessage = messageQueue[0];
+  const handleSend = async () => {
+    if (!input.trim() || isLoading || !sessionId) return;
 
     const userMessage: Message = {
       role: 'user',
-      content: nextMessage,
+      content: input,
       timestamp: new Date(),
     };
 
+    // Add user message to UI immediately
     setMessages((prev) => [...prev, userMessage]);
+    setInput('');
+    setIsLoading(true);
 
     try {
       const response = await sendChatMessage(sessionId, {
-        message: nextMessage,
+        message: userMessage.content,
         image: roomImage || undefined,
       });
 
-      // V1 APPROACH: Get products directly from chat response (same as ChatInterface.tsx)
+      // V1 APPROACH: Get products directly from chat response
       const messageData = response.message || response;
       const products = response.recommended_products || messageData.products || [];
 
@@ -100,7 +86,7 @@ export default function ChatPanel({
 
       setMessages((prev) => [...prev, assistantMessage]);
 
-      // Emit products to parent (V1 approach - products come directly from backend)
+      // Emit products to parent
       if (products && products.length > 0) {
         onProductRecommendations(products);
       }
@@ -113,26 +99,8 @@ export default function ChatPanel({
       };
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
-      // Remove processed message from queue
-      setMessageQueue((prev) => prev.slice(1));
-      setIsProcessingQueue(false);
       setIsLoading(false);
     }
-  }, [messageQueue, isProcessingQueue, sessionId, roomImage, onProductRecommendations]);
-
-  // Auto-process queue when messages are added or session becomes available
-  useEffect(() => {
-    if (messageQueue.length > 0 && !isProcessingQueue && sessionId) {
-      processNextMessage();
-    }
-  }, [messageQueue, isProcessingQueue, sessionId, processNextMessage]);
-
-  const handleSend = async () => {
-    if (!input.trim()) return;
-
-    // Add to queue
-    setMessageQueue((prev) => [...prev, input]);
-    setInput('');
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
