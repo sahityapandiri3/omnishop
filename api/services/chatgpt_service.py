@@ -371,22 +371,24 @@ Analysis Instructions:
             # Get or create conversation context
             if session_id:
                 context = self.context_manager.get_or_create_context(session_id, user_id)
-                # Add user message to context
+                # Add user message to context (text only, not image - to reduce context size)
                 self.context_manager.add_message(
                     session_id, "user", user_message,
                     {"has_image": image_data is not None}
                 )
 
-                # Get enhanced context for AI
+                # Get enhanced context for AI (text-only history)
                 messages = self.context_manager.get_context_for_ai(session_id)
             else:
                 # Fallback to basic system prompt
                 messages = [{"role": "system", "content": self.system_prompt}]
 
-            # Prepare user message content
+            # Prepare CURRENT user message content with image
+            # IMPORTANT: Only include image in the CURRENT message, not in conversation history
+            # to avoid exceeding OpenAI's context limits
             user_content = [{"type": "text", "text": user_message}]
 
-            # Add image if provided
+            # Add image if provided (only for current message)
             if image_data:
                 processed_image = self._process_image(image_data)
                 if processed_image:
@@ -398,8 +400,9 @@ Analysis Instructions:
                         }
                     })
 
-            # Update the last message with content including image
-            if messages and messages[-1]["role"] == "user":
+            # Replace the last message with the current message including image
+            # Remove the text-only version added by context manager and add the version with image
+            if messages and messages[-1]["role"] == "user" and messages[-1]["content"] == user_message:
                 messages[-1]["content"] = user_content
             else:
                 messages.append({"role": "user", "content": user_content})
@@ -843,14 +846,16 @@ Analysis Instructions:
             if image.mode != 'RGB':
                 image = image.convert('RGB')
 
-            # Resize if too large (max 1024x1024 for ChatGPT)
-            max_size = 1024
+            # Resize if too large (max 800x800 to reduce token usage)
+            # Smaller images = faster processing and lower risk of context limits
+            max_size = 800
             if image.width > max_size or image.height > max_size:
                 image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
 
             # Convert back to base64
+            # Use lower quality to reduce token usage (70 is still good quality)
             buffer = io.BytesIO()
-            image.save(buffer, format='JPEG', quality=85)
+            image.save(buffer, format='JPEG', quality=70)
             return base64.b64encode(buffer.getvalue()).decode()
 
         except Exception as e:
