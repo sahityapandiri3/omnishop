@@ -33,8 +33,10 @@ export default function ChatPanel({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [pendingMessages, setPendingMessages] = useState<string[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Initialize chat session
   useEffect(() => {
@@ -54,25 +56,45 @@ export default function ChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading || !sessionId) return;
+  // Process pending messages (ChatGPT-style: cancels previous, processes all pending)
+  const processPendingMessages = useCallback(async () => {
+    if (!sessionId || pendingMessages.length === 0) return;
 
-    const userMessage: Message = {
-      role: 'user',
-      content: input,
+    // Cancel any ongoing request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new abort controller for this request
+    abortControllerRef.current = new AbortController();
+
+    // Get all pending messages
+    const messagesToProcess = [...pendingMessages];
+    setPendingMessages([]);
+
+    // Add all user messages to UI
+    const newUserMessages = messagesToProcess.map(msg => ({
+      role: 'user' as const,
+      content: msg,
       timestamp: new Date(),
-    };
+    }));
+    setMessages(prev => [...prev, ...newUserMessages]);
 
-    // Add user message to UI immediately
-    setMessages((prev) => [...prev, userMessage]);
-    setInput('');
     setIsLoading(true);
 
     try {
+      // Combine all pending messages into one message for the backend
+      const combinedMessage = messagesToProcess.join('\n\n');
+
       const response = await sendChatMessage(sessionId, {
-        message: userMessage.content,
+        message: combinedMessage,
         image: roomImage || undefined,
       });
+
+      // Check if request was aborted
+      if (abortControllerRef.current?.signal.aborted) {
+        return;
+      }
 
       // V1 APPROACH: Get products directly from chat response
       const messageData = response.message || response;
@@ -90,7 +112,12 @@ export default function ChatPanel({
       if (products && products.length > 0) {
         onProductRecommendations(products);
       }
-    } catch (error) {
+    } catch (error: any) {
+      // Don't show error if request was aborted (user sent new message)
+      if (error.name === 'AbortError' || abortControllerRef.current?.signal.aborted) {
+        return;
+      }
+
       console.error('Chat error:', error);
       const errorMessage: Message = {
         role: 'assistant',
@@ -100,7 +127,23 @@ export default function ChatPanel({
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
+  }, [sessionId, pendingMessages, roomImage, onProductRecommendations]);
+
+  // Auto-process when new messages are added
+  useEffect(() => {
+    if (pendingMessages.length > 0 && !isLoading && sessionId) {
+      processPendingMessages();
+    }
+  }, [pendingMessages, isLoading, sessionId, processPendingMessages]);
+
+  const handleSend = () => {
+    if (!input.trim() || !sessionId) return;
+
+    // Add message to pending queue
+    setPendingMessages(prev => [...prev, input]);
+    setInput('');
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
