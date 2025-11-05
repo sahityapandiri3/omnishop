@@ -163,26 +163,39 @@ class DesignNLPProcessor:
         return {
             "browse_products": [
                 "show me", "find", "looking for", "need", "want", "browse",
-                "search", "recommend", "suggest", "options", "choices"
+                "search", "recommend", "suggest", "options", "choices",
+                "add furniture", "add some furniture"
             ],
             "design_consultation": [
                 "help with", "advice", "how to", "design", "decorate", "style",
-                "layout", "arrange", "ideas", "inspiration", "guidance"
+                "ideas", "inspiration", "guidance",
+                "what colors", "which colors", "what style", "which style",
+                "what would work", "what works best"
             ],
             "room_analysis": [
-                "analyze", "room", "space", "layout", "what do you think",
-                "feedback", "assessment", "evaluate", "opinion"
+                "analyze my", "analyze this", "analyze the",
+                "what do you think", "your opinion",
+                "feedback on", "assessment of", "evaluate my", "evaluate this"
             ],
             "visualization": [
-                "visualize", "see how", "would look", "place", "arrange",
-                "preview", "render", "show placement", "try out"
+                "visualize", "see how", "would look",
+                "preview", "render", "show in my", "try out"
             ],
             "image_modification": [
+                # Addition patterns
                 "add more", "add another", "add some", "add a", "add the",
-                "remove", "take away", "get rid of", "delete",
+                # Removal patterns (high priority)
+                "remove all", "remove everything", "remove the", "remove",
+                "take away", "get rid of", "delete", "clear the", "clear",
+                "empty the", "empty",
+                # Placement/movement patterns (high priority)
+                "place the", "place it", "put the", "put it",
+                "move the", "move it", "reposition", "relocate",
+                # Modification patterns
                 "make it", "make this", "change the", "change this",
                 "adjust", "tweak", "modify", "update", "edit",
                 "brighter", "darker", "bigger", "smaller", "lighter",
+                # Replacement patterns
                 "of the same kind", "similar to", "like this", "like these",
                 "more like", "less", "fewer", "replace with"
             ],
@@ -191,8 +204,8 @@ class DesignNLPProcessor:
                 "investment", "spend", "money", "financing"
             ],
             "style_guidance": [
-                "style", "aesthetic", "theme", "look", "vibe", "mood",
-                "feeling", "atmosphere", "character", "personality"
+                "style for", "aesthetic for", "theme for", "look for", "vibe for", "mood for",
+                "feeling for", "atmosphere for", "character for", "personality for"
             ]
         }
 

@@ -20,7 +20,7 @@ class ScrapingManager:
     """Manage scraping operations and scheduling"""
 
     def __init__(self):
-        self.spiders = ['pelicanessentials', 'sageliving']
+        self.spiders = ['pelicanessentials', 'sageliving', 'objectry']
         self.project_root = Path(__file__).parent.parent
 
     def run_spider(self, spider_name: str, **kwargs) -> Dict:
@@ -199,7 +199,8 @@ class ScrapingManager:
             'westelm': 'westelm.com',
             'orangetree': 'orangetree.com',
             'pelicanessentials': 'pelicanessentials.com',
-            'sageliving': 'sageliving.in'
+            'sageliving': 'sageliving.in',
+            'objectry': 'objectry.com'
         }
 
         with get_db_session() as session:

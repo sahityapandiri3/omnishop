@@ -10,6 +10,7 @@ const navigation = [
   { name: 'Products', href: '/products' },
   { name: 'Chat', href: '/chat' },
   { name: 'Visualize', href: '/visualize' },
+  { name: 'Design Studio', href: '/design', badge: 'New' },
 ]
 
 export function Navigation() {
@@ -45,13 +46,18 @@ export function Navigation() {
                   <Link
                     key={item.name}
                     href={item.href}
-                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2 ${
                       isActive
                         ? 'bg-blue-100 text-blue-700'
                         : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                     }`}
                   >
                     {item.name}
+                    {item.badge && (
+                      <span className="px-2 py-0.5 bg-gradient-to-r from-primary-500 to-secondary-500 text-white text-xs font-bold rounded-full">
+                        {item.badge}
+                      </span>
+                    )}
                   </Link>
                 )
               })}
@@ -92,7 +98,14 @@ export function Navigation() {
                     }`}
                     onClick={() => setMobileMenuOpen(false)}
                   >
-                    {item.name}
+                    <div className="flex items-center justify-between">
+                      <span>{item.name}</span>
+                      {item.badge && (
+                        <span className="px-2 py-0.5 bg-gradient-to-r from-primary-500 to-secondary-500 text-white text-xs font-bold rounded-full">
+                          {item.badge}
+                        </span>
+                      )}
+                    </div>
                   </Link>
                 )
               })}

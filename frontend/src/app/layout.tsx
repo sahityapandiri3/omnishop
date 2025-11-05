@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 import Navigation from '@/components/Navigation';
+import UIVersionToggle from '@/components/UIVersionToggle';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -84,6 +85,7 @@ export default function RootLayout({
         <Providers>
           <Navigation />
           {children}
+          <UIVersionToggle />
         </Providers>
       </body>
     </html>

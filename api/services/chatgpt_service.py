@@ -795,7 +795,16 @@ Analysis Instructions:
             response_data.setdefault("visualization_mode", {})
             response_data.setdefault("visualization_guidance", {})
             response_data.setdefault("confidence_scores", {})
-            response_data.setdefault("recommendations", {})
+
+            # Handle recommendations - ChatGPT might return it as a list of products
+            # but the schema expects a dict. Store the product list separately.
+            if "recommendations" in response_data:
+                if isinstance(response_data["recommendations"], list):
+                    # Store the list for later extraction, but set recommendations to {} for schema
+                    response_data["_product_list"] = response_data["recommendations"]
+                    response_data["recommendations"] = {}
+            else:
+                response_data.setdefault("recommendations", {})
 
             print(f"[DEBUG] Normalized response_data keys: {list(response_data.keys())}")
 

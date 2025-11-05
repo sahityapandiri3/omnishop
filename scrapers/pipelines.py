@@ -230,8 +230,19 @@ class DatabasePipeline:
             category_name = adapter.get('category')
             if category_name:
                 category = session.query(Category).filter_by(name=category_name).first()
-                if category:
-                    product.category_id = category.id
+                if not category:
+                    # Auto-create category if it doesn't exist
+                    import re
+                    slug = re.sub(r'[^\w\s-]', '', category_name.lower())
+                    slug = re.sub(r'[-\s]+', '-', slug).strip('-')
+                    category = Category(
+                        name=category_name,
+                        slug=slug
+                    )
+                    session.add(category)
+                    session.flush()  # Get the ID
+                    logger.info(f"Auto-created category: {category_name}")
+                product.category_id = category.id
 
             # Save product first to get ID
             if not existing_product:

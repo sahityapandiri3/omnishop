@@ -19,7 +19,7 @@ from api.schemas.chat import (
 from api.services.chatgpt_service import chatgpt_service
 from api.services.recommendation_engine import recommendation_engine, RecommendationRequest
 from api.services.ml_recommendation_model import ml_recommendation_model
-from api.services.google_ai_service import google_ai_service, VisualizationRequest
+from api.services.google_ai_service import google_ai_service, VisualizationRequest, VisualizationResult
 from api.services.conversation_context import conversation_context_manager
 from api.services.nlp_processor import design_nlp_processor
 from database.models import ChatSession, ChatMessage, Product
@@ -411,12 +411,21 @@ async def visualize_room(
         products = request.get('products', [])
         analysis = request.get('analysis')
         user_action = request.get('action')  # "replace_one", "replace_all", "add", or None
+        is_incremental = request.get('is_incremental', False)  # Smart re-visualization flag
+        force_reset = request.get('force_reset', False)  # Force fresh visualization
 
         if not base_image:
             raise HTTPException(status_code=400, detail="Image is required")
 
         if not products:
             raise HTTPException(status_code=400, detail="At least one product must be selected")
+
+        # Handle force reset - clear visualization history and start fresh
+        if force_reset:
+            logger.info(f"Force reset requested - clearing visualization history for session {session_id}")
+            context = conversation_context_manager.get_or_create_context(session_id)
+            context.visualization_history = []
+            context.visualization_redo_stack = []
 
         # Detect existing furniture in the room if not yet done
         existing_furniture = request.get('existing_furniture')
@@ -568,19 +577,54 @@ async def visualize_room(
 
         logger.info(f"Generating visualization with instruction: {user_style_description}")
 
-        # Create visualization request
-        viz_request = VisualizationRequest(
-            base_image=base_image,
-            products_to_place=products,
-            placement_positions=[],
-            lighting_conditions=lighting_conditions,
-            render_quality="high",
-            style_consistency=True,
-            user_style_description=user_style_description
-        )
+        # Handle incremental visualization (add new products to existing visualization)
+        if is_incremental:
+            logger.info(f"Incremental visualization: Adding {len(products)} new products to existing visualization")
 
-        # Generate visualization using Google AI Studio
-        viz_result = await google_ai_service.generate_room_visualization(viz_request)
+            # Use sequential add visualization for each product
+            current_image = base_image  # Start with previous visualization
+
+            for product in products:
+                product_name = product.get('full_name') or product.get('name')
+                product_image_url = product.get('image_url')
+
+                logger.info(f"  Adding product: {product_name}")
+
+                # Call add visualization for this product
+                add_result = await google_ai_service.generate_add_visualization(
+                    room_image=current_image,
+                    product_name=product_name,
+                    product_image_url=product_image_url,
+                    style_guidance=user_style_description
+                )
+
+                # Use the result as base for next product
+                if add_result and add_result.rendered_image:
+                    current_image = add_result.rendered_image
+                else:
+                    logger.warning(f"Failed to add product {product_name}, skipping")
+
+            # Final result
+            viz_result = VisualizationResult(
+                rendered_image=current_image,
+                success=True,
+                message=f"Successfully added {len(products)} products incrementally"
+            )
+        else:
+            # Standard visualization (all products at once)
+            # Create visualization request
+            viz_request = VisualizationRequest(
+                base_image=base_image,
+                products_to_place=products,
+                placement_positions=[],
+                lighting_conditions=lighting_conditions,
+                render_quality="high",
+                style_consistency=True,
+                user_style_description=user_style_description
+            )
+
+            # Generate visualization using Google AI Studio
+            viz_result = await google_ai_service.generate_room_visualization(viz_request)
 
         # Note: Due to AI model limitations, the visualization shows a design concept
         # The room structure may vary from the original as generative models create new images
@@ -751,103 +795,158 @@ def _extract_furniture_type(product_name: str) -> str:
         return name_lower.split()[0] if name_lower.split() else 'furniture'
 
 
-def _extract_product_keywords(user_message: str) -> List[str]:
-    """Extract product type keywords from user message with category awareness"""
+def _extract_product_keywords(user_message: str, style_context: Optional[str] = None) -> List[str]:
+    """
+    Extract product type keywords from user message with category awareness and style-based synonyms
 
+    Args:
+        user_message: User's search query
+        style_context: Optional design style (e.g., 'modern', 'traditional', 'rustic')
+
+    Returns:
+        List of keywords including base term and style-appropriate synonyms
+    """
+
+    # BASE SYNONYM PATTERNS - Universal across all styles
     # Product keywords with synonyms and related terms - ORDER MATTERS (longer phrases first)
-    # Format: (search_term, [keywords_to_return])
+    # Format: (search_term, [base_keywords], {style: [additional_keywords]})
     product_patterns = [
         # Lighting - ceiling/overhead (check both singular and plural)
-        ('ceiling lights', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier']),
-        ('ceiling lamps', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier']),
-        ('ceiling lamp', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier']),
-        ('ceiling light', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier']),
-        ('pendant lights', ['pendant', 'ceiling lamp', 'ceiling light', 'chandelier']),
-        ('pendant lamps', ['pendant', 'ceiling lamp', 'ceiling light', 'chandelier']),
-        ('pendant light', ['pendant', 'ceiling lamp', 'ceiling light', 'chandelier']),
-        ('pendant lamp', ['pendant', 'ceiling lamp', 'ceiling light', 'chandelier']),
-        ('chandeliers', ['chandelier', 'ceiling lamp', 'ceiling light', 'pendant']),
-        ('chandelier', ['chandelier', 'ceiling lamp', 'ceiling light', 'pendant']),
-        ('overhead lights', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier']),
-        ('overhead light', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier']),
+        ('ceiling lights', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier'], {}),
+        ('ceiling lamps', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier'], {}),
+        ('ceiling lamp', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier'], {}),
+        ('ceiling light', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier'], {}),
+        ('pendant lights', ['pendant', 'ceiling lamp', 'ceiling light', 'chandelier'], {}),
+        ('pendant lamps', ['pendant', 'ceiling lamp', 'ceiling light', 'chandelier'], {}),
+        ('pendant light', ['pendant', 'ceiling lamp', 'ceiling light', 'chandelier'], {}),
+        ('pendant lamp', ['pendant', 'ceiling lamp', 'ceiling light', 'chandelier'], {}),
+        ('chandeliers', ['chandelier', 'ceiling lamp', 'ceiling light', 'pendant'], {}),
+        ('chandelier', ['chandelier', 'ceiling lamp', 'ceiling light', 'pendant'], {}),
+        ('overhead lights', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier'], {}),
+        ('overhead light', ['ceiling lamp', 'ceiling light', 'pendant', 'chandelier'], {}),
 
         # Lighting - table/desk (check both singular and plural)
-        ('table lamps', ['table lamp', 'desk lamp']),
-        ('table lamp', ['table lamp', 'desk lamp']),
-        ('desk lamps', ['desk lamp', 'table lamp']),
-        ('desk lamp', ['desk lamp', 'table lamp']),
+        ('table lamps', ['table lamp', 'desk lamp', 'reading lamp'], {}),
+        ('table lamp', ['table lamp', 'desk lamp', 'reading lamp'], {}),
+        ('desk lamps', ['desk lamp', 'table lamp', 'task lamp'], {}),
+        ('desk lamp', ['desk lamp', 'table lamp', 'task lamp'], {}),
 
         # Lighting - floor (check both singular and plural)
-        ('floor lamps', ['floor lamp']),
-        ('floor lamp', ['floor lamp']),
+        ('floor lamps', ['floor lamp', 'standing lamp', 'torchiere'], {}),
+        ('floor lamp', ['floor lamp', 'standing lamp', 'torchiere'], {}),
 
         # Lighting - wall (check both singular and plural)
-        ('wall lamps', ['wall lamp', 'sconce', 'wall light']),
-        ('wall lamp', ['wall lamp', 'sconce', 'wall light']),
-        ('sconces', ['sconce', 'wall lamp', 'wall light']),
-        ('sconce', ['sconce', 'wall lamp', 'wall light']),
+        ('wall lamps', ['wall lamp', 'sconce', 'wall light', 'wall fixture'], {}),
+        ('wall lamp', ['wall lamp', 'sconce', 'wall light', 'wall fixture'], {}),
+        ('sconces', ['sconce', 'wall lamp', 'wall light'], {}),
+        ('sconce', ['sconce', 'wall lamp', 'wall light'], {}),
 
         # Multi-word furniture - tables
-        ('center table', ['coffee table', 'center table']),
-        ('centre table', ['coffee table', 'center table']),
-        ('coffee table', ['coffee table', 'center table']),
-        ('dining table', ['dining table']),
-        ('side table', ['side table', 'end table', 'nightstand']),
-        ('end table', ['end table', 'side table']),
-        ('nightstand', ['nightstand', 'side table', 'bedside table']),
-        ('console table', ['console table', 'entry table']),
+        ('center table', ['coffee table', 'center table', 'centre table', 'cocktail table'], {}),
+        ('centre table', ['coffee table', 'center table', 'centre table', 'cocktail table'], {}),
+        ('coffee table', ['coffee table', 'center table', 'centre table', 'cocktail table'], {}),
+        ('cocktail table', ['cocktail table', 'coffee table', 'center table'], {}),
+        ('dining table', ['dining table', 'dinner table', 'kitchen table'], {}),
+        ('side table', ['side table', 'end table', 'nightstand', 'bedside table', 'night table'], {}),
+        ('end table', ['end table', 'side table', 'accent table'], {}),
+        ('nightstand', ['nightstand', 'side table', 'bedside table', 'night table', 'bedside cabinet'], {}),
+        ('bedside table', ['bedside table', 'nightstand', 'night table', 'side table'], {}),
+        ('console table', ['console table', 'entry table', 'sofa table', 'hall table'], {}),
 
         # Multi-word furniture - chairs
-        ('accent chair', ['accent chair', 'armchair']),
-        ('dining chair', ['dining chair']),
-        ('office chair', ['office chair', 'desk chair']),
-        ('lounge chair', ['lounge chair', 'armchair']),
+        ('accent chair', ['accent chair', 'armchair', 'side chair', 'occasional chair'], {}),
+        ('dining chair', ['dining chair', 'kitchen chair', 'side chair'], {}),
+        ('office chair', ['office chair', 'desk chair', 'task chair', 'computer chair'], {}),
+        ('lounge chair', ['lounge chair', 'armchair', 'reading chair', 'club chair'], {}),
 
-        # Multi-word furniture - sofas
-        ('sectional sofa', ['sectional', 'sectional sofa']),
-        ('leather sofa', ['sofa', 'couch']),
+        # Multi-word furniture - sofas (WITH STYLE VARIANTS)
+        ('sectional sofa', ['sectional', 'sectional sofa'], {}),
+        ('leather sofa', ['sofa', 'couch', 'leather sofa'], {}),
 
-        # Single word furniture - only after checking multi-word
-        ('sofa', ['sofa', 'couch', 'sectional']),
-        ('couch', ['couch', 'sofa', 'sectional']),
-        ('sectional', ['sectional', 'sofa', 'couch']),
-        ('loveseat', ['loveseat', 'sofa']),
-        ('chair', ['chair']),
-        ('armchair', ['armchair', 'accent chair']),
-        ('recliner', ['recliner']),
-        ('table', ['table']),
-        ('bed', ['bed']),
-        ('mattress', ['mattress', 'bed']),
-        ('headboard', ['headboard']),
-        ('desk', ['desk']),
-        ('workstation', ['desk', 'workstation']),
-        ('dresser', ['dresser', 'chest']),
-        ('chest', ['chest', 'dresser']),
-        ('cabinet', ['cabinet']),
-        ('bookshelf', ['bookshelf', 'shelving']),
-        ('shelving', ['shelving', 'bookshelf', 'shelf']),
-        ('shelf', ['shelf', 'shelving', 'bookshelf']),
+        # Single word furniture - SOFAS WITH STYLE-AWARE SYNONYMS
+        ('sofa', ['sofa', 'couch', 'sectional', 'loveseat'], {
+            'traditional': ['settee', 'davenport', 'chesterfield', 'divan'],
+            'modern': ['sectional', 'modular sofa'],
+            'french': ['chaise', 'settee', 'canapé'],
+            'victorian': ['settee', 'davenport', 'chesterfield'],
+            'british': ['settee', 'chesterfield']
+        }),
+        ('couch', ['couch', 'sofa', 'sectional'], {}),
+        ('sectional', ['sectional', 'sofa', 'couch', 'modular sofa'], {}),
+        ('loveseat', ['loveseat', 'sofa', 'two-seater'], {}),
+
+        # Chairs with style variants
+        ('chair', ['chair', 'seat'], {}),
+        ('armchair', ['armchair', 'accent chair', 'club chair'], {
+            'traditional': ['wingback', 'bergère'],
+            'modern': ['accent chair', 'lounge chair']
+        }),
+        ('recliner', ['recliner', 'reclining chair', 'lounger'], {}),
+
+        # Tables with regional variants
+        ('table', ['table'], {}),
+
+        # Bedroom furniture with style variants
+        ('bed', ['bed', 'bedframe', 'bed frame'], {
+            'traditional': ['four-poster', 'sleigh bed', 'canopy bed'],
+            'modern': ['platform bed', 'low profile bed']
+        }),
+        ('mattress', ['mattress', 'bed mattress'], {}),
+        ('headboard', ['headboard', 'bed head'], {}),
+
+        # Workspace furniture
+        ('desk', ['desk', 'writing desk', 'work table'], {
+            'traditional': ['secretary desk', 'writing bureau'],
+            'modern': ['computer desk', 'standing desk']
+        }),
+        ('workstation', ['desk', 'workstation', 'work desk'], {}),
+
+        # Storage furniture with comprehensive synonyms
+        ('dresser', ['dresser', 'chest of drawers', 'bureau', 'chest'], {
+            'traditional': ['bureau', 'highboy', 'lowboy'],
+            'french': ['commode', 'armoire']
+        }),
+        ('chest', ['chest', 'chest of drawers', 'dresser', 'trunk'], {}),
+        ('cabinet', ['cabinet', 'cupboard', 'storage cabinet'], {}),
+        ('bookshelf', ['bookshelf', 'shelving', 'bookcase', 'shelf unit'], {}),
+        ('shelving', ['shelving', 'bookshelf', 'shelf', 'shelving unit'], {}),
+        ('shelf', ['shelf', 'shelving', 'bookshelf', 'wall shelf'], {}),
+        ('wardrobe', ['wardrobe', 'closet', 'armoire', 'clothes closet'], {}),
 
         # Lighting - generic (only after specific types checked)
-        ('lamps', ['lamp']),
-        ('lamp', ['lamp']),
-        ('lighting', ['lighting']),
+        ('lamps', ['lamp', 'light', 'lighting'], {}),
+        ('lamp', ['lamp', 'light'], {}),
+        ('lighting', ['lighting', 'lamp', 'light', 'fixture'], {}),
 
-        # Other
-        ('rug', ['rug', 'carpet']),
-        ('carpet', ['carpet', 'rug']),
-        ('mirror', ['mirror']),
-        ('ottoman', ['ottoman']),
-        ('bench', ['bench']),
-        ('stool', ['stool']),
+        # Textiles and soft furnishings
+        ('rug', ['rug', 'carpet', 'area rug', 'floor covering'], {}),
+        ('carpet', ['carpet', 'rug', 'floor covering'], {}),
+
+        # Decor and accessories
+        ('mirror', ['mirror', 'looking glass', 'wall mirror'], {}),
+        ('bench', ['bench', 'seat', 'seating bench'], {}),
+        ('stool', ['stool', 'bar stool'], {}),
+
+        # Ottoman - separate category (NOT a sofa, used as footrest/extra seating)
+        ('ottoman', ['ottoman', 'footstool', 'pouf', 'hassock'], {}),
     ]
 
     message_lower = user_message.lower()
     found_keywords = []
     matched_phrases = set()  # Track which phrases we've already matched
 
+    # Normalize style context for matching
+    style_lower = style_context.lower() if style_context else None
+
     # Check patterns in order (longer phrases first due to order above)
-    for search_term, keywords in product_patterns:
+    for pattern in product_patterns:
+        # Unpack pattern - now includes style variants
+        if len(pattern) == 3:
+            search_term, base_keywords, style_variants = pattern
+        else:
+            search_term, base_keywords = pattern
+            style_variants = {}
+
         if search_term in message_lower:
             # Check if this phrase overlaps with an already matched phrase
             # This prevents "lamp" from matching after "ceiling lamp" already matched
@@ -867,11 +966,34 @@ def _extract_product_keywords(user_message: str) -> List[str]:
 
             if not overlaps:
                 matched_phrases.add(search_term)
-                for keyword in keywords:
+
+                # Add base keywords
+                for keyword in base_keywords:
                     if keyword not in found_keywords:
                         found_keywords.append(keyword)
 
-    logger.info(f"Extracted keywords from '{user_message}': {found_keywords}")
+                # Add style-specific synonyms if style context matches
+                if style_lower and style_variants:
+                    # Check for exact style match
+                    if style_lower in style_variants:
+                        for keyword in style_variants[style_lower]:
+                            if keyword not in found_keywords:
+                                found_keywords.append(keyword)
+                                logger.info(f"Added style-aware synonym '{keyword}' for {style_lower} style")
+                    # Check for style keywords within the style context
+                    else:
+                        for style_key, style_keywords in style_variants.items():
+                            if style_key in style_lower:
+                                for keyword in style_keywords:
+                                    if keyword not in found_keywords:
+                                        found_keywords.append(keyword)
+                                        logger.info(f"Added style-aware synonym '{keyword}' for {style_key} style")
+
+    if style_context:
+        logger.info(f"Extracted keywords from '{user_message}' with style '{style_context}': {found_keywords}")
+    else:
+        logger.info(f"Extracted keywords from '{user_message}': {found_keywords}")
+
     return found_keywords
 
 
@@ -885,24 +1007,22 @@ async def _get_product_recommendations(
 ) -> List[dict]:
     """Get advanced product recommendations based on design analysis"""
     try:
-        # Extract product keywords from user message
-        product_keywords = _extract_product_keywords(user_message)
-
-        # Extract preferences from analysis
+        # Extract preferences from analysis first to get style context
         user_preferences = {}
         style_preferences = []
         functional_requirements = []
         budget_range = None
         room_context = None
+        primary_style = None  # For context-aware keyword extraction
 
         # Extract design analysis data
         if hasattr(analysis, 'design_analysis') and analysis.design_analysis:
             design_analysis = analysis.design_analysis
             if isinstance(design_analysis, dict):
-                # Style preferences
+                # Style preferences - extract primary style for context-aware synonyms
                 style_prefs = design_analysis.get('style_preferences', {})
                 if isinstance(style_prefs, dict):
-                    primary_style = style_prefs.get('primary_style', '')
+                    primary_style = style_prefs.get('primary_style', '')  # Save for keyword extraction
                     secondary_styles = style_prefs.get('secondary_styles', [])
                     if primary_style:
                         style_preferences.append(primary_style)
@@ -937,6 +1057,9 @@ async def _get_product_recommendations(
                         'dimensions': space_analysis.get('dimensions', ''),
                         'layout_type': space_analysis.get('layout_type', 'open')
                     }
+
+        # NOW extract product keywords WITH style context for intelligent synonym expansion
+        product_keywords = _extract_product_keywords(user_message, style_context=primary_style)
 
         # Extract material and product type preferences from product matching criteria
         if hasattr(analysis, 'product_matching_criteria') and analysis.product_matching_criteria:

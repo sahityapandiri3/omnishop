@@ -271,9 +271,10 @@ class AdvancedRecommendationEngine:
                 for keyword in keywords:
                     # Use PostgreSQL regex with word boundaries (\y)
                     # ~* is case-insensitive regex operator
+                    # IMPORTANT: Only match against product NAME, not description
+                    # Description matching causes false positives (e.g., "place next to a sofa" in table descriptions)
                     escaped_keyword = re.escape(keyword)
                     keyword_conditions.append(Product.name.op('~*')(rf'\y{escaped_keyword}\y'))
-                    keyword_conditions.append(Product.description.op('~*')(rf'\y{escaped_keyword}\y'))
 
                 if keyword_conditions:
                     # Combine keywords within category with OR
@@ -293,6 +294,32 @@ class AdvancedRecommendationEngine:
             logger.info(f"Applied category-aware filtering for {len(category_conditions)} categories")
         else:
             logger.warning("No product keywords provided - returning all products")
+
+        # CRITICAL: Exclude accessories and non-furniture items
+        # These terms indicate the product is NOT actual furniture (e.g., "Sofa Swatches" is not a sofa)
+        accessory_exclusions = [
+            'swatch', 'swatches', 'sample', 'samples',  # Fabric samples
+            'fabric', 'material', 'textile',  # Materials only
+            'cushion', 'pillow', 'throw pillow',  # Soft accessories
+            'cover', 'slipcover', 'protector',  # Covers
+            'accessory', 'accessories',  # Generic accessories
+            'part', 'parts', 'component',  # Replacement parts
+            'hardware', 'screw', 'nail', 'bolt',  # Hardware
+            'tool', 'tools', 'kit',  # Tools
+            'cleaner', 'polish', 'wax',  # Maintenance products
+            'manual', 'guide', 'instruction',  # Documentation
+        ]
+
+        # Build exclusion conditions
+        exclusion_conditions = []
+        for exclusion in accessory_exclusions:
+            escaped = re.escape(exclusion)
+            # Exclude if word appears in product name
+            exclusion_conditions.append(~Product.name.op('~*')(rf'\y{escaped}\y'))
+
+        if exclusion_conditions:
+            query = query.where(and_(*exclusion_conditions))
+            logger.info(f"Applied {len(accessory_exclusions)} accessory exclusions")
 
         # Apply budget filter
         if request.budget_range:
@@ -350,6 +377,13 @@ class AdvancedRecommendationEngine:
         for product in candidates:
             score = 0.0
 
+            # PRIORITY 1: Keyword relevance matching (MOST IMPORTANT - 40% weight)
+            # This ensures products that match the search query get highest scores
+            if request.product_keywords:
+                keyword_match = self._calculate_keyword_relevance(product, request.product_keywords)
+                score += keyword_match * 0.4
+                logger.debug(f"Product {product.id} '{product.name}': keyword_match={keyword_match:.2f}")
+
             # Style matching
             if style_preferences:
                 product_style = self._extract_product_style(product)
@@ -357,22 +391,22 @@ class AdvancedRecommendationEngine:
                     self._calculate_style_similarity(style, product_style)
                     for style in style_preferences
                 ], default=0.0)
-                score += style_match * 0.3
+                score += style_match * 0.2
 
             # Color matching
             if "colors" in user_prefs:
                 color_match = self._calculate_color_match(product, user_prefs["colors"])
-                score += color_match * 0.2
+                score += color_match * 0.1
 
             # Material matching
             if "materials" in user_prefs:
                 material_match = self._calculate_material_match(product, user_prefs["materials"])
-                score += material_match * 0.2
+                score += color_match * 0.1
 
             # Description similarity
             if "description_keywords" in user_prefs:
                 desc_match = self._calculate_description_similarity(product, user_prefs["description_keywords"])
-                score += desc_match * 0.3
+                score += desc_match * 0.2
 
             scores[product.id] = min(score, 1.0)
 
@@ -550,13 +584,13 @@ class AdvancedRecommendationEngine:
 
     def _calculate_algorithm_weights(self, request: RecommendationRequest, has_collaborative: bool) -> Dict[str, float]:
         """Calculate weights for different algorithms based on request"""
-        # Base weights
+        # Base weights - Content now includes keyword relevance, so boost it significantly
         weights = {
-            "content": 0.25,
-            "popularity": 0.15,
-            "style": 0.25,
-            "functional": 0.20,
-            "price": 0.15,
+            "content": 0.40,       # Increased from 0.25 - now includes keyword relevance
+            "popularity": 0.10,    # Decreased from 0.15
+            "style": 0.20,         # Decreased from 0.25
+            "functional": 0.20,    # Same
+            "price": 0.10,         # Decreased from 0.15
             "collaborative": 0.0
         }
 
@@ -566,6 +600,12 @@ class AdvancedRecommendationEngine:
             # Redistribute other weights
             for key in ["content", "popularity", "style"]:
                 weights[key] *= 0.8
+
+        # Boost content weight if specific product keywords provided (user knows what they want)
+        if request.product_keywords and len(request.product_keywords) > 0:
+            weights["content"] += 0.15  # Boost content score heavily for keyword searches
+            weights["popularity"] -= 0.10
+            weights["style"] -= 0.05
 
         # Boost style weight if strong style preferences
         if request.style_preferences and len(request.style_preferences) > 1:
@@ -577,6 +617,11 @@ class AdvancedRecommendationEngine:
         if request.room_context and len(request.functional_requirements or []) > 2:
             weights["functional"] += 0.1
             weights["popularity"] -= 0.1
+
+        # Normalize to ensure sum is 1.0
+        total = sum(weights.values())
+        if total > 0:
+            weights = {k: v / total for k, v in weights.items()}
 
         return weights
 
@@ -700,6 +745,47 @@ class AdvancedRecommendationEngine:
                 return function
 
         return "decoration"  # default
+
+    def _calculate_keyword_relevance(self, product: Product, keywords: List[str]) -> float:
+        """
+        Calculate how relevant a product is to the search keywords
+        Higher scores for exact matches in product name, especially at the beginning
+        """
+        if not keywords:
+            return 0.5  # Neutral score if no keywords
+
+        product_name = product.name.lower()
+        product_desc = (product.description or "").lower()
+
+        max_score = 0.0
+
+        for keyword in keywords:
+            keyword = keyword.lower().strip()
+            score = 0.0
+
+            # HIGHEST PRIORITY: Keyword at start of product name (e.g., "Sofa Bed" for "sofa")
+            if product_name.startswith(keyword + " ") or product_name == keyword:
+                score = 1.0
+
+            # HIGH PRIORITY: Keyword is a standalone word in product name (with word boundaries)
+            elif re.search(rf'\b{re.escape(keyword)}\b', product_name):
+                # Check position - earlier is better
+                match_pos = product_name.find(keyword)
+                # Score: 0.9 if in first half of name, 0.7 otherwise
+                score = 0.9 if match_pos < len(product_name) / 2 else 0.7
+
+            # MEDIUM PRIORITY: Keyword contained in a word (e.g., "sectional" contains "section")
+            elif keyword in product_name:
+                score = 0.5
+
+            # LOW PRIORITY: Keyword in description
+            elif re.search(rf'\b{re.escape(keyword)}\b', product_desc):
+                score = 0.3
+
+            # Keep the highest score across all keywords
+            max_score = max(max_score, score)
+
+        return max_score
 
     def _calculate_style_similarity(self, style1: str, style2: str) -> float:
         """Calculate similarity between two styles"""

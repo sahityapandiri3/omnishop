@@ -145,7 +145,7 @@ app.include_router(
 
 app.include_router(
     chat.router,
-    prefix="/api",
+    prefix="/api/chat",
     tags=["chat"]
 )
 
