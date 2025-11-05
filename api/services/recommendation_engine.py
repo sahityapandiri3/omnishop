@@ -14,7 +14,7 @@ import math
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 
-from database.models import Product, ProductImage, ChatSession, ChatMessage
+from database.models import Product, ProductImage, ProductAttribute, ChatSession, ChatMessage
 from api.services.nlp_processor import design_nlp_processor
 
 logger = logging.getLogger(__name__)
@@ -251,8 +251,6 @@ class AdvancedRecommendationEngine:
 
         Products with NULL attributes are EXCLUDED when that attribute is specified.
         """
-        from database.models import ProductAttribute
-
         filtered_candidates = []
 
         # Extract user preferences
@@ -1002,9 +1000,6 @@ class AdvancedRecommendationEngine:
 
         try:
             # Query product colors from ProductAttribute
-            from sqlalchemy import select
-            from database.models import ProductAttribute
-
             result = await db.execute(
                 select(ProductAttribute.attribute_value)
                 .where(
@@ -1055,9 +1050,6 @@ class AdvancedRecommendationEngine:
 
         try:
             # Query product materials from ProductAttribute
-            from sqlalchemy import select
-            from database.models import ProductAttribute
-
             result = await db.execute(
                 select(ProductAttribute.attribute_value)
                 .where(
@@ -1107,9 +1099,6 @@ class AdvancedRecommendationEngine:
             return 1.0  # No room size specified, assume fits
 
         try:
-            from sqlalchemy import select
-            from database.models import ProductAttribute
-
             # Query product dimensions
             result = await db.execute(
                 select(ProductAttribute.attribute_name, ProductAttribute.attribute_value)
@@ -1161,9 +1150,6 @@ class AdvancedRecommendationEngine:
             return 1.0  # No preference
 
         try:
-            from sqlalchemy import select
-            from database.models import ProductAttribute
-
             result = await db.execute(
                 select(ProductAttribute.attribute_value)
                 .where(
@@ -1203,9 +1189,6 @@ class AdvancedRecommendationEngine:
             return 1.0  # No preference
 
         try:
-            from sqlalchemy import select
-            from database.models import ProductAttribute
-
             result = await db.execute(
                 select(ProductAttribute.attribute_value)
                 .where(
