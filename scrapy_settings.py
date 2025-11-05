@@ -29,10 +29,15 @@ AUTOTHROTTLE_MAX_DELAY = 60
 AUTOTHROTTLE_TARGET_CONCURRENCY = 2.0
 AUTOTHROTTLE_DEBUG = False
 
-# Item pipelines
+# Item processing pipelines (order matters!)
 ITEM_PIPELINES = {
-    'scrapers.pipelines.ImagesPipeline': 300,
-    'scrapers.pipelines.DatabasePipeline': 400,
+    'scrapers.pipelines.ValidationPipeline': 100,           # Validate required fields
+    'scrapers.pipelines.DuplicatesPipeline': 200,           # Filter duplicates
+    'scrapers.pipelines.CategoryPipeline': 250,             # Process categories
+    'scrapers.pipelines.CustomImagesPipeline': 300,         # Download & process images
+    'scrapers.pipelines.AttributeExtractionPipeline': 350,  # Extract product attributes with Gemini AI
+    'scrapers.pipelines.DatabasePipeline': 400,             # Save to database
+    'scrapers.pipelines.StatsPipeline': 500,                # Collect statistics
 }
 
 # Image settings

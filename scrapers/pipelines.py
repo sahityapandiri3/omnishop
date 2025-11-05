@@ -170,6 +170,126 @@ class CategoryPipeline:
         return item
 
 
+class AttributeExtractionPipeline:
+    """Extract product attributes using Gemini AI"""
+
+    def __init__(self):
+        self.extraction_service = None
+        self.items_processed = 0
+        self.extractions_succeeded = 0
+        self.extractions_failed = 0
+
+    def open_spider(self, spider):
+        """Initialize attribute extraction service"""
+        try:
+            from api.services.google_ai_service import google_ai_service
+            from api.services.attribute_extraction_service import AttributeExtractionService
+
+            self.extraction_service = AttributeExtractionService(google_ai_service)
+            logger.info("AttributeExtractionPipeline initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize AttributeExtractionPipeline: {e}")
+            self.extraction_service = None
+
+    def process_item(self, item, spider):
+        """Extract attributes from product"""
+        if not isinstance(item, ProductItem):
+            return item
+
+        if not self.extraction_service:
+            logger.warning("Attribute extraction service not available, skipping extraction")
+            return item
+
+        adapter = ItemAdapter(item)
+        self.items_processed += 1
+
+        try:
+            # Get product info
+            product_name = adapter.get('name')
+            product_description = adapter.get('description', '')
+            image_urls = adapter.get('image_urls', [])
+            first_image_url = image_urls[0] if image_urls else None
+
+            # Extract attributes (synchronous call in Scrapy pipeline)
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            try:
+                result = loop.run_until_complete(
+                    self.extraction_service.extract_attributes(
+                        product_id=0,  # Not saved yet
+                        image_url=first_image_url,
+                        product_name=product_name,
+                        product_description=product_description
+                    )
+                )
+            finally:
+                loop.close()
+
+            if result.success:
+                # Build attributes dict for DatabasePipeline
+                attributes = {}
+
+                if result.furniture_type:
+                    attributes['furniture_type'] = result.furniture_type
+
+                if result.colors:
+                    if result.colors.get('primary'):
+                        attributes['color_primary'] = result.colors['primary']
+                    if result.colors.get('secondary'):
+                        attributes['color_secondary'] = result.colors['secondary']
+                    if result.colors.get('accent'):
+                        attributes['color_accent'] = result.colors['accent']
+
+                if result.materials:
+                    if result.materials.get('primary'):
+                        attributes['material_primary'] = result.materials['primary']
+                    if result.materials.get('secondary'):
+                        attributes['material_secondary'] = result.materials['secondary']
+
+                if result.style:
+                    attributes['style'] = result.style
+
+                if result.dimensions:
+                    if result.dimensions.get('width'):
+                        attributes['width'] = str(result.dimensions['width'])
+                    if result.dimensions.get('depth'):
+                        attributes['depth'] = str(result.dimensions['depth'])
+                    if result.dimensions.get('height'):
+                        attributes['height'] = str(result.dimensions['height'])
+
+                if result.texture:
+                    attributes['texture'] = result.texture
+
+                if result.pattern:
+                    attributes['pattern'] = result.pattern
+
+                # Add attributes to item
+                adapter['attributes'] = attributes
+
+                self.extractions_succeeded += 1
+                logger.info(f"✓ Extracted {len(attributes)} attributes for '{product_name[:50]}' "
+                           f"(confidence: {result.confidence_scores.get('overall', 0):.2f})")
+            else:
+                self.extractions_failed += 1
+                logger.warning(f"✗ Attribute extraction failed for '{product_name[:50]}': {result.error_message}")
+
+        except Exception as e:
+            self.extractions_failed += 1
+            logger.error(f"Error during attribute extraction for '{adapter.get('name', 'unknown')[:50]}': {e}")
+
+        return item
+
+    def close_spider(self, spider):
+        """Log final statistics"""
+        logger.info(f"AttributeExtractionPipeline finished. "
+                   f"Items: {self.items_processed}, "
+                   f"Succeeded: {self.extractions_succeeded}, "
+                   f"Failed: {self.extractions_failed}, "
+                   f"Success rate: {(self.extractions_succeeded/max(self.items_processed,1))*100:.1f}%")
+
+
 class DatabasePipeline:
     """Save items to database"""
 
