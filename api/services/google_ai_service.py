@@ -633,6 +633,13 @@ PLACEMENT GUIDELINES:
 - Centered between the sofa and the opposite wall/furniture
 - Positioned in the "coffee table zone" (perpendicular to sofa's front face)
 
+🔲 OTTOMAN:
+- Place DIRECTLY IN FRONT OF the sofa, similar to a coffee table
+- Can be centered or slightly offset based on room layout
+- Should be 14-18 inches from sofa's front edge
+- Ottomans are used as footrests or extra seating, NOT as sofa replacements
+- ⚠️ NEVER remove or replace the sofa when adding an ottoman
+
 🔲 SIDE TABLE / END TABLE:
 - ⚠️ CRITICAL: Place DIRECTLY ADJACENT to the sofa's SIDE (at the armrest)
 - ⚠️ The table must be FLUSH with the sofa's side, not in front or behind

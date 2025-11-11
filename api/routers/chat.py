@@ -93,11 +93,37 @@ async def send_message(
         db.add(user_message)
 
         # Get AI response
+        # Use active image (latest visualization OR original upload) for analysis
+        active_image = conversation_context_manager.get_active_image(session_id) if session_id else None
         conversational_response, analysis = await chatgpt_service.analyze_user_input(
             user_message=request.message,
             session_id=session_id,
-            image_data=request.image
+            image_data=active_image or request.image  # Use active image, fallback to request
         )
+
+        # Check if a timeout occurred (low confidence scores indicate fallback response)
+        is_timeout = False
+        background_task_id = None
+        if analysis and analysis.confidence_scores:
+            # Fallback responses have very low confidence scores (30-50)
+            overall_confidence = analysis.confidence_scores.get('overall_analysis', 100)
+            if overall_confidence < 60:
+                is_timeout = True
+                logger.info(f"Timeout detected (confidence: {overall_confidence}%) - starting background task")
+
+                # Start background task for real AI analysis
+                from api.tasks.chatgpt_tasks import analyze_user_input_async
+                task = analyze_user_input_async.delay(
+                    user_message=request.message,
+                    session_id=session_id,
+                    image_data=active_image or request.image,
+                    user_id=session.user_id
+                )
+                background_task_id = task.id
+                logger.info(f"Started background task {background_task_id}")
+
+                # Update conversational response to mention background processing
+                conversational_response = "I'm analyzing your request in detail. I'll show you some product recommendations now, and I'll refine them once the analysis is complete. You can refresh in a moment to see updated recommendations!"
 
         # Save assistant message
         assistant_message_id = str(uuid.uuid4())
@@ -159,6 +185,34 @@ async def send_message(
                 recommended_products = await _get_basic_product_recommendations(
                     fallback_analysis, db, limit=30
                 )
+
+            # Enhance conversational response based on whether products were found
+            if recommended_products and len(recommended_products) > 0:
+                # Products found - mention they're being shown
+                if " products" not in conversational_response.lower() and " showing" not in conversational_response.lower():
+                    conversational_response += f" I've found {len(recommended_products)} product{'s' if len(recommended_products) > 1 else ''} that match your request - check them out in the Products panel!"
+            else:
+                # No products found - update response to mention this
+                # Extract what they were searching for from the message
+                search_terms = []
+                materials_mentioned = []
+
+                # Check if specific materials or product types were mentioned
+                import re
+                message_lower = request.message.lower()
+
+                # Extract materials (wicker, leather, etc.)
+                material_patterns = ['wicker', 'leather', 'velvet', 'wood', 'metal', 'glass', 'rattan', 'bamboo']
+                for mat in material_patterns:
+                    if mat in message_lower:
+                        materials_mentioned.append(mat)
+
+                # Build a more specific message
+                if materials_mentioned:
+                    material_str = " and ".join(materials_mentioned)
+                    conversational_response = f"Unfortunately, I couldn't find any {material_str} products matching your request in our current inventory. However, you might want to try searching for similar items without the material specification, or check back later as we regularly add new products!"
+                else:
+                    conversational_response = f"Unfortunately, I couldn't find any products that exactly match your request in our current inventory. You might want to try a broader search or check back later as we regularly add new products!"
 
         # =================================================================
         # STEP 2: Visualize Request (product selected, no action yet)
@@ -310,7 +364,8 @@ async def send_message(
             detected_furniture=detected_furniture,
             similar_furniture_items=similar_furniture_items,
             requires_action_choice=requires_action_choice,
-            action_options=action_options
+            action_options=action_options,
+            background_task_id=background_task_id
         )
 
     except HTTPException:
@@ -323,6 +378,67 @@ async def send_message(
         error_type = type(e).__name__
         error_detail = f"{error_type}: {str(e)}"
         raise HTTPException(status_code=500, detail=error_detail)
+
+
+@router.get("/tasks/{task_id}/status")
+async def get_task_status(task_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Check the status of a background AI analysis task
+
+    Returns:
+        - status: PENDING, PROCESSING, SUCCESS, or FAILURE
+        - result: The analysis result when complete
+        - meta: Progress information
+    """
+    try:
+        from celery.result import AsyncResult
+        from api.celery_app import celery_app
+
+        task_result = AsyncResult(task_id, app=celery_app)
+
+        response = {
+            'task_id': task_id,
+            'status': task_result.state,
+            'ready': task_result.ready()
+        }
+
+        if task_result.state == 'PENDING':
+            response['message'] = 'Task is waiting to be processed...'
+        elif task_result.state == 'PROCESSING':
+            response['message'] = 'Analyzing your request with AI...'
+            response['meta'] = task_result.info
+        elif task_result.state == 'SUCCESS':
+            result = task_result.result
+            response['message'] = 'Analysis complete!'
+            response['result'] = result
+
+            # If successful, we can now get better product recommendations
+            if result.get('status') == 'success' and result.get('analysis'):
+                try:
+                    from api.schemas.chat import DesignAnalysisSchema
+                    analysis = DesignAnalysisSchema(**result['analysis'])
+
+                    # Get improved product recommendations
+                    recommended_products = await _get_product_recommendations(
+                        analysis, db,
+                        user_message=result.get('user_message', ''),
+                        limit=30
+                    )
+                    response['result']['recommended_products'] = recommended_products
+                except Exception as e:
+                    logger.error(f"Error getting improved recommendations: {e}")
+
+        elif task_result.state == 'FAILURE':
+            response['message'] = 'Analysis failed'
+            response['error'] = str(task_result.info)
+        else:
+            response['message'] = f'Task state: {task_result.state}'
+
+        return response
+
+    except Exception as e:
+        logger.error(f"Error checking task status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/sessions/{session_id}/history", response_model=ChatHistoryResponse)
@@ -575,6 +691,12 @@ async def visualize_room(
                 if isinstance(space_analysis, dict):
                     lighting_conditions = space_analysis.get('lighting_conditions', 'mixed')
 
+            # Add professional layout guidance from AI designer (new field)
+            layout_guidance = analysis.get('layout_guidance')
+            if layout_guidance:
+                user_style_description += f"\n\nLayout Guidance: {layout_guidance}"
+                logger.info(f"Using professional layout guidance: {layout_guidance[:100]}...")
+
         logger.info(f"Generating visualization with instruction: {user_style_description}")
 
         # Handle incremental visualization (add new products to existing visualization)
@@ -635,18 +757,8 @@ async def visualize_room(
         # would be required. See VISUALIZATION_ANALYSIS.md for technical details.
 
         # Push visualization to history for undo/redo support
-        # First, push the ORIGINAL state if history is empty (first visualization)
-        context = conversation_context_manager.get_or_create_context(session_id)
-        if context.visualization_history is None or len(context.visualization_history) == 0:
-            original_state = {
-                "rendered_image": base_image,
-                "products": [],
-                "user_action": None,
-                "existing_furniture": existing_furniture
-            }
-            conversation_context_manager.push_visualization_state(session_id, original_state)
-
-        # Then push the NEW visualization state
+        # Note: We only store states with furniture, not the empty original room
+        # This allows undo to work through furniture additions without going back to empty
         visualization_data = {
             "rendered_image": viz_result.rendered_image,
             "products": products,
@@ -768,7 +880,10 @@ def _extract_furniture_type(product_name: str) -> str:
     """Extract furniture type from product name with specific table categorization"""
     name_lower = product_name.lower()
 
-    if 'sofa' in name_lower or 'couch' in name_lower or 'sectional' in name_lower:
+    # Check ottoman FIRST (before sofa) to handle "Sofa Ottoman" products correctly
+    if 'ottoman' in name_lower:
+        return 'ottoman'
+    elif 'sofa' in name_lower or 'couch' in name_lower or 'sectional' in name_lower:
         return 'sofa'
     elif 'chair' in name_lower or 'armchair' in name_lower:
         return 'chair'
@@ -927,6 +1042,11 @@ def _extract_product_keywords(user_message: str, style_context: Optional[str] = 
 
         # Decor and accessories
         ('mirror', ['mirror', 'looking glass', 'wall mirror'], {}),
+        ('planter', ['planter', 'pot', 'plant pot', 'flower pot'], {}),
+        ('planters', ['planter', 'pot', 'plant pot', 'flower pot'], {}),
+        ('plants', ['planter', 'pot', 'plant pot', 'flower pot'], {}),  # "plants" maps to planters
+        ('plant', ['planter', 'pot', 'plant pot', 'flower pot'], {}),   # "plant" maps to planters
+        ('vase', ['vase', 'flower vase'], {}),
         ('bench', ['bench', 'seat', 'seating bench'], {}),
         ('stool', ['stool', 'bar stool'], {}),
 
@@ -1000,6 +1120,122 @@ def _extract_product_keywords(user_message: str, style_context: Optional[str] = 
     return found_keywords
 
 
+def _extract_color_modifiers(user_message: str) -> List[str]:
+    """
+    Extract color modifiers from user message for attribute filtering
+
+    Args:
+        user_message: User's search query
+
+    Returns:
+        List of color names found in the message
+    """
+    # Color patterns (longer phrases first)
+    color_patterns = [
+        'off-white', 'multi-color', 'multicolor',  # Multi-word colors first
+        'beige', 'cream', 'ivory', 'white', 'black', 'gray', 'grey',
+        'brown', 'tan', 'taupe', 'khaki', 'navy', 'blue', 'red', 'green',
+        'yellow', 'orange', 'purple', 'pink', 'burgundy', 'maroon', 'olive',
+        'charcoal', 'slate', 'espresso', 'chocolate', 'caramel', 'sand',
+        'natural', 'neutral', 'gold', 'silver',
+    ]
+
+    message_lower = user_message.lower()
+    found_colors = []
+
+    # Check for each color pattern
+    for color in color_patterns:
+        if color in message_lower:
+            # Avoid duplicates and overlapping colors
+            is_subset = False
+            for existing in found_colors:
+                if color in existing or existing in color:
+                    # Keep the longer, more specific term
+                    if len(color) > len(existing):
+                        found_colors.remove(existing)
+                        found_colors.append(color)
+                    is_subset = True
+                    break
+
+            if not is_subset:
+                found_colors.append(color)
+
+    return found_colors
+
+
+def _extract_material_modifiers(user_message: str) -> List[str]:
+    """
+    Extract material modifiers from user message for attribute filtering
+
+    Args:
+        user_message: User's search query
+
+    Returns:
+        List of material names found in the message
+    """
+    # Common furniture materials (longer phrases first)
+    material_patterns = [
+        # Fabrics and upholstery
+        'faux leather', 'genuine leather', 'synthetic fabric',  # Multi-word first
+        'velvet', 'leather', 'suede', 'linen',
+        'cotton', 'silk', 'wool', 'microfiber', 'chenille', 'canvas', 'denim',
+        'upholstered', 'fabric',
+
+        # Woven materials
+        'wicker', 'rattan', 'cane', 'seagrass', 'jute', 'bamboo', 'rush',
+
+        # Woods (specific types)
+        'mango wood', 'reclaimed wood', 'solid wood', 'engineered wood',  # Multi-word first
+        'teak', 'oak', 'walnut', 'maple', 'cherry', 'mahogany', 'pine',
+        'birch', 'ash', 'cedar', 'rosewood', 'acacia',
+        'wood', 'wooden', 'timber',
+
+        # Metals
+        'stainless steel', 'wrought iron',  # Multi-word first
+        'steel', 'iron', 'brass', 'bronze',
+        'copper', 'aluminum', 'chrome', 'metal', 'metallic',
+
+        # Glass and stone
+        'tempered glass',  # Multi-word first
+        'glass', 'marble', 'granite', 'stone', 'concrete',
+        'ceramic', 'porcelain', 'terracotta',
+
+        # Synthetics and composites
+        'particle board',  # Multi-word first
+        'plastic', 'acrylic', 'resin', 'fiberglass', 'composite',
+        'plywood', 'mdf',
+
+        # Natural fibers
+        'rope', 'twine', 'hemp',
+    ]
+
+    message_lower = user_message.lower()
+    found_materials = []
+
+    # Check for each material pattern (longer phrases first)
+    for material in material_patterns:
+        if material in message_lower:
+            # Avoid duplicates and overlapping materials
+            # e.g., if "faux leather" is found, don't also add "leather"
+            is_subset = False
+            for existing in found_materials:
+                if material in existing or existing in material:
+                    # Keep the longer, more specific term
+                    if len(material) > len(existing):
+                        found_materials.remove(existing)
+                        found_materials.append(material)
+                    is_subset = True
+                    break
+
+            if not is_subset:
+                found_materials.append(material)
+
+    if found_materials:
+        logger.info(f"Extracted materials from '{user_message}': {found_materials}")
+
+    return found_materials
+
+
 async def _get_product_recommendations(
     analysis: DesignAnalysisSchema,
     db: AsyncSession,
@@ -1009,6 +1245,7 @@ async def _get_product_recommendations(
     session_id: Optional[str] = None
 ) -> List[dict]:
     """Get advanced product recommendations based on design analysis"""
+    logger.info(f"[RECOMMENDATION ENTRY] _get_product_recommendations called with user_message='{user_message}', limit={limit}")
     try:
         # Extract preferences from analysis first to get style context
         user_preferences = {}
@@ -1062,7 +1299,17 @@ async def _get_product_recommendations(
                     }
 
         # NOW extract product keywords WITH style context for intelligent synonym expansion
+        logger.info(f"[EXTRACT DEBUG] About to call _extract_product_keywords with message: '{user_message}', style: '{primary_style}'")
         product_keywords = _extract_product_keywords(user_message, style_context=primary_style)
+        logger.info(f"[EXTRACT DEBUG] _extract_product_keywords returned: {product_keywords}")
+
+        # Extract color modifiers directly from user message (e.g., "beige", "gray", "blue")
+        user_colors_from_message = _extract_color_modifiers(user_message)
+        logger.info(f"COLOR EXTRACTION: From message '{user_message}' extracted colors: {user_colors_from_message}")
+
+        # Extract material modifiers directly from user message (e.g., "wicker", "leather", "velvet")
+        user_materials_from_message = _extract_material_modifiers(user_message)
+        logger.info(f"MATERIAL EXTRACTION: From message '{user_message}' extracted materials: {user_materials_from_message}")
 
         # Extract material and product type preferences from product matching criteria
         if hasattr(analysis, 'product_matching_criteria') and analysis.product_matching_criteria:
@@ -1104,33 +1351,87 @@ async def _get_product_recommendations(
 
         # FALLBACK: If no product keywords extracted from analysis, try to extract from original message
         if 'product_keywords' not in user_preferences or not user_preferences['product_keywords']:
-            # Extract furniture keywords from the conversation context if available
-            import re
-            furniture_pattern = r'\b(sofa|table|chair|bed|desk|cabinet|shelf|dresser|nightstand|ottoman|bench|couch|sectional|sideboard|console|bookcase|armchair|stool|vanity|wardrobe|chest|mirror|lamp|chandelier)\b'
+            # FIRST: Try using the result from _extract_product_keywords if available
+            if product_keywords:
+                user_preferences['product_keywords'] = product_keywords
+                logger.info(f"Using extracted product keywords: {product_keywords}")
+            else:
+                # Extract furniture keywords from the conversation context if available
+                import re
+                furniture_pattern = r'\b(sofa|table|chair|bed|desk|cabinet|shelf|dresser|nightstand|ottoman|bench|couch|sectional|sideboard|console|bookcase|armchair|stool|vanity|wardrobe|chest|mirror|lamp|chandelier|planter|vase|pot)\b'
 
-            # Get last user message from session_id context
-            if session_id:
-                context = chatgpt_service.get_conversation_context(session_id)
-                if context:
-                    last_message = context[-1] if context else ""
-                    if isinstance(last_message, dict):
-                        last_message = last_message.get('content', '')
+                # Get last user message from session_id context
+                if session_id:
+                    context = chatgpt_service.get_conversation_context(session_id)
+                    if context:
+                        last_message = context[-1] if context else ""
+                        if isinstance(last_message, dict):
+                            last_message = last_message.get('content', '')
 
-                    matches = re.findall(furniture_pattern, last_message.lower())
-                    if matches:
-                        user_preferences['product_keywords'] = list(set(matches))
-                        logger.info(f"Extracted product keywords from message: {matches}")
+                        matches = re.findall(furniture_pattern, last_message.lower())
+                        if matches:
+                            user_preferences['product_keywords'] = list(set(matches))
+                            logger.info(f"Extracted product keywords from message: {matches}")
+
+        # NEW: Extract professional designer fields from analysis
+        color_palette = None
+        styling_tips = None
+        if hasattr(analysis, 'color_palette') and analysis.color_palette:
+            color_palette = analysis.color_palette
+            logger.info(f"Using AI designer color palette: {color_palette}")
+
+        if hasattr(analysis, 'styling_tips') and analysis.styling_tips:
+            styling_tips = analysis.styling_tips
+            logger.info(f"Using AI designer styling tips: {styling_tips}")
+
+        # Merge materials from user message with materials from AI analysis
+        final_materials = list(user_materials_from_message)  # Start with materials from message
+        if 'materials' in user_preferences and user_preferences['materials']:
+            # Add materials from AI analysis that aren't already included
+            for material in user_preferences['materials']:
+                if material.lower() not in [m.lower() for m in final_materials]:
+                    final_materials.append(material)
+
+        # Prepare final colors (just from user message for now - most reliable)
+        final_colors = list(user_colors_from_message)
+
+        # Enable strict attribute matching if user specified specific materials OR colors
+        strict_match = bool(user_materials_from_message) or bool(user_colors_from_message)
+
+        if final_materials:
+            logger.info(f"Final materials for filtering: {final_materials} (strict_match={strict_match})")
+        if final_colors:
+            logger.info(f"Final colors for filtering: {final_colors} (strict_match={strict_match})")
+
+        # DEBUG: Log what keywords are being used
+        logger.info(f"[PLANTER DEBUG] product_keywords variable: {product_keywords}")
+        logger.info(f"[PLANTER DEBUG] user_preferences['product_keywords']: {user_preferences.get('product_keywords', [])}")
+        logger.info(f"[RECOMMENDATION DEBUG] About to create RecommendationRequest with product_keywords={product_keywords}")
 
         # Create recommendation request
+        # IMPORTANT: Use keywords from user_preferences, not the local product_keywords variable
+        # because the fallback logic stores the final keywords in user_preferences['product_keywords']
+        final_product_keywords = user_preferences.get('product_keywords', product_keywords) or []
+
         recommendation_request = RecommendationRequest(
             user_preferences=user_preferences,
             room_context=room_context,
             budget_range=budget_range,
             style_preferences=style_preferences,
             functional_requirements=functional_requirements,
-            product_keywords=product_keywords,
-            max_recommendations=limit
+            product_keywords=final_product_keywords,
+            max_recommendations=limit,
+            # NEW: Professional AI designer fields
+            color_palette=color_palette,
+            styling_tips=styling_tips,
+            # NEW: Color and Material attribute filtering
+            user_colors=final_colors if final_colors else None,
+            user_materials=final_materials if final_materials else None,
+            strict_attribute_match=strict_match
         )
+
+        logger.info(f"[RECOMMENDATION DEBUG] RecommendationRequest created with product_keywords={recommendation_request.product_keywords}")
+        logger.info(f"[RECOMMENDATION DEBUG] final_product_keywords={final_product_keywords}")
 
         # Get advanced recommendations
         recommendation_response = await recommendation_engine.get_recommendations(
@@ -1183,15 +1484,25 @@ async def _get_product_recommendations(
         # IMPORTANT: Only use fallback if NO specific product keywords were requested
         # If user asked for "vases" but we have no vases, show empty list instead of random products
         has_specific_keywords = 'product_keywords' in user_preferences and user_preferences['product_keywords']
+        has_specific_materials = final_materials and bool(user_materials_from_message)
 
-        if len(product_recommendations) < limit // 2 and not has_specific_keywords:
-            logger.info("Using fallback recommendation method (no specific keywords)")
+        if len(product_recommendations) < limit // 2 and not has_specific_keywords and not has_specific_materials:
+            logger.info("Using fallback recommendation method (no specific keywords or materials)")
             fallback_recommendations = await _get_basic_product_recommendations(
                 analysis, db, limit - len(product_recommendations)
             )
             product_recommendations.extend(fallback_recommendations)
-        elif len(product_recommendations) == 0 and has_specific_keywords:
-            logger.info(f"No products found matching keywords: {user_preferences['product_keywords']}")
+        elif len(product_recommendations) == 0:
+            # Log specific reason for zero results
+            if has_specific_materials and has_specific_keywords:
+                logger.warning(
+                    f"No products found matching keywords {product_keywords} "
+                    f"with materials {final_materials}"
+                )
+            elif has_specific_materials:
+                logger.warning(f"No products found with materials: {final_materials}")
+            elif has_specific_keywords:
+                logger.warning(f"No products found matching keywords: {product_keywords}")
             # Return empty list - frontend should display "No products found"
 
         return product_recommendations[:limit]

@@ -41,6 +41,10 @@ class RecommendationRequest:
     user_styles: Optional[List[str]] = None  # e.g., ['modern', 'contemporary']
     strict_attribute_match: bool = False  # Enable strict filtering (zero false positives)
 
+    # NEW FIELDS from professional AI designer
+    color_palette: Optional[List[str]] = None  # From AI designer: hex codes or color names to boost matching
+    styling_tips: Optional[List[str]] = None  # From AI designer: tips with product keywords for matching
+
 
 @dataclass
 class RecommendationResult:
@@ -260,8 +264,12 @@ class AdvancedRecommendationEngine:
         user_patterns = request.user_patterns or []
         user_styles = request.user_styles or []
 
+        logger.info(f"STRICT FILTERING: Checking {len(candidates)} candidates with user_colors={user_colors}, "
+                   f"user_materials={user_materials}, user_styles={user_styles}")
+
         # If no attributes specified, return all candidates
         if not any([user_colors, user_materials, user_textures, user_patterns, user_styles]):
+            logger.info("No attributes specified, returning all candidates")
             return candidates
 
         for product in candidates:
@@ -279,6 +287,8 @@ class AdvancedRecommendationEngine:
                 )
                 product_colors = [c.lower() for c in result.scalars().all() if c]
 
+                logger.debug(f"Product {product.id} '{product.name}': product_colors={product_colors}, user_colors={user_colors}")
+
                 # Product MUST have matching color
                 if not product_colors or not any(uc.lower() in product_colors for uc in user_colors):
                     # Check color families for fuzzy matching
@@ -290,7 +300,12 @@ class AdvancedRecommendationEngine:
                             has_family_match = True
                             break
                     if not has_family_match:
+                        logger.debug(f"Product {product.id} FILTERED OUT: no color match (product_colors={product_colors}, user_colors={user_colors})")
                         passes_filter = False
+                    else:
+                        logger.debug(f"Product {product.id} PASSED: color family match")
+                else:
+                    logger.debug(f"Product {product.id} PASSED: exact color match")
 
             # Material filtering
             if passes_filter and user_materials:
@@ -378,7 +393,7 @@ class AdvancedRecommendationEngine:
             'other_tables': ['console table', 'desk', 'table'],  # Generic tables
             'storage_furniture': ['dresser', 'chest', 'cabinet', 'bookshelf', 'shelving', 'shelf', 'wardrobe'],
             'bedroom_furniture': ['bed', 'mattress', 'headboard'],
-            'decor': ['mirror', 'rug', 'carpet', 'mat'],
+            'decor': ['mirror', 'rug', 'carpet', 'mat', 'planter', 'pot', 'vase'],
             'general_lighting': ['lamp', 'lighting'],  # Catch-all for generic lighting terms
         }
 
@@ -408,6 +423,7 @@ class AdvancedRecommendationEngine:
         query = select(Product).where(Product.is_available == True)
 
         # Apply product keyword filter (MOST IMPORTANT - filter by what user asked for)
+        logger.info(f"[CANDIDATE PRODUCTS DEBUG] request.product_keywords = {request.product_keywords}, type = {type(request.product_keywords)}")
         if request.product_keywords:
             logger.info(f"Filtering products by keywords: {request.product_keywords}")
 
@@ -547,20 +563,40 @@ class AdvancedRecommendationEngine:
         user_patterns = request.user_patterns or user_prefs.get("patterns", [])
         user_dimensions = request.user_dimensions or user_prefs.get("dimensions", {})
 
+        # NEW: Combine user_colors with AI designer's color_palette
+        combined_colors = list(user_colors) if user_colors else []
+        if request.color_palette:
+            # Convert hex codes from color_palette to color names
+            for hex_code in request.color_palette:
+                if hex_code.startswith('#'):
+                    color_name = self._hex_to_color_name(hex_code)
+                    combined_colors.append(color_name)
+                    logger.debug(f"Converted hex {hex_code} to color name: {color_name}")
+                else:
+                    # Already a color name, use directly
+                    combined_colors.append(hex_code)
+
+        # NEW: Extract keywords from AI designer's styling_tips
+        combined_keywords = list(request.product_keywords) if request.product_keywords else []
+        if request.styling_tips:
+            styling_keywords = self._extract_keywords_from_styling_tips(request.styling_tips)
+            combined_keywords.extend(styling_keywords)
+            logger.info(f"Added {len(styling_keywords)} styling tip keywords to product matching")
+
         for product in candidates:
             score = 0.0
 
-            # Keyword relevance matching (30% - reduced from 40%)
-            if request.product_keywords:
-                keyword_match = self._calculate_keyword_relevance(product, request.product_keywords)
+            # Keyword relevance matching (30% - now includes styling_tips keywords)
+            if combined_keywords:
+                keyword_match = self._calculate_keyword_relevance(product, combined_keywords)
                 score += keyword_match * 0.30
                 logger.debug(f"Product {product.id} '{product.name}': keyword_match={keyword_match:.2f}")
 
-            # Color matching (15% - was placeholder, now real)
-            if user_colors:
-                color_match = await self._calculate_color_match(product, user_colors, db)
+            # Color matching (15% - now includes AI designer's color_palette)
+            if combined_colors:
+                color_match = await self._calculate_color_match(product, combined_colors, db)
                 score += color_match * 0.15
-                logger.debug(f"Product {product.id}: color_match={color_match:.2f}")
+                logger.debug(f"Product {product.id}: color_match={color_match:.2f} (colors: {combined_colors})")
 
             # Material matching (15% - was placeholder, now real)
             if user_materials:
@@ -1211,6 +1247,144 @@ class AdvancedRecommendationEngine:
             logger.error(f"Error calculating pattern match for product {product.id}: {e}")
             return 0.5
 
+    def _extract_keywords_from_styling_tips(self, styling_tips: List[str]) -> List[str]:
+        """
+        Extract relevant keywords from AI designer's styling tips
+
+        Args:
+            styling_tips: List of styling tip strings from AI designer
+
+        Returns:
+            List of extracted keywords (materials, product types, descriptive terms)
+        """
+        if not styling_tips:
+            return []
+
+        keywords = []
+
+        # Common furniture and decor product types to look for
+        product_types = [
+            'rug', 'sofa', 'chair', 'table', 'lamp', 'vase', 'plant', 'throw', 'pillow',
+            'cushion', 'curtain', 'mirror', 'artwork', 'shelf', 'cabinet', 'ottoman',
+            'bench', 'stool', 'desk', 'bed', 'nightstand', 'dresser', 'bookshelf',
+            'coffee table', 'side table', 'accent chair', 'floor lamp', 'table lamp',
+            'wall art', 'decorative', 'decor', 'ceramic', 'sculpture', 'bowl'
+        ]
+
+        # Common materials and textures
+        materials = [
+            'wool', 'linen', 'cotton', 'silk', 'leather', 'velvet', 'wood', 'oak',
+            'walnut', 'teak', 'metal', 'brass', 'bronze', 'glass', 'ceramic',
+            'marble', 'stone', 'rattan', 'wicker', 'bamboo', 'jute', 'natural',
+            'woven', 'handcrafted', 'organic'
+        ]
+
+        # Style descriptors
+        style_terms = [
+            'modern', 'contemporary', 'traditional', 'minimal', 'minimalist',
+            'scandinavian', 'japandi', 'bohemian', 'industrial', 'rustic',
+            'vintage', 'mid-century', 'eclectic', 'coastal', 'farmhouse'
+        ]
+
+        # Color/tone descriptors
+        color_terms = [
+            'cream', 'beige', 'white', 'black', 'gray', 'grey', 'blue', 'green',
+            'brown', 'tan', 'natural', 'neutral', 'warm', 'cool', 'light', 'dark',
+            'soft', 'muted', 'earthy', 'natural-toned'
+        ]
+
+        # Combine all keyword lists for matching
+        all_keywords = product_types + materials + style_terms + color_terms
+
+        # Extract keywords from each tip
+        for tip in styling_tips:
+            tip_lower = tip.lower()
+            for keyword in all_keywords:
+                if keyword in tip_lower and keyword not in keywords:
+                    keywords.append(keyword)
+
+        logger.debug(f"Extracted {len(keywords)} keywords from styling tips: {keywords}")
+        return keywords
+
+    def _hex_to_color_name(self, hex_code: str) -> str:
+        """
+        Convert hex color code to nearest color name
+
+        Args:
+            hex_code: Hex color code (e.g., "#EDE6DA", "#D1C7B1")
+
+        Returns:
+            Color name string (e.g., "beige", "gray", "blue")
+        """
+        # Remove # if present
+        hex_code = hex_code.lstrip('#')
+
+        # Convert to RGB
+        try:
+            r = int(hex_code[0:2], 16)
+            g = int(hex_code[2:4], 16)
+            b = int(hex_code[4:6], 16)
+        except (ValueError, IndexError):
+            logger.warning(f"Invalid hex code: {hex_code}")
+            return "gray"  # Default fallback
+
+        # Calculate lightness
+        lightness = (r + g + b) / 3
+
+        # Very light colors
+        if lightness > 240:
+            return "white"
+
+        # Very dark colors
+        if lightness < 40:
+            return "black"
+
+        # Neutral grays (low color saturation)
+        max_rgb = max(r, g, b)
+        min_rgb = min(r, g, b)
+        saturation = (max_rgb - min_rgb) / max_rgb if max_rgb > 0 else 0
+
+        if saturation < 0.15:
+            if lightness > 200:
+                return "white"
+            elif lightness > 150:
+                return "beige"
+            elif lightness > 100:
+                return "gray"
+            else:
+                return "charcoal"
+
+        # Determine dominant color channel
+        if r > g and r > b:
+            # Red dominant
+            if g > 100 and b < 100:  # Yellow-ish
+                return "tan"
+            elif b > 100:  # Purple-ish
+                return "burgundy"
+            else:
+                return "red"
+        elif g > r and g > b:
+            # Green dominant
+            if r > 100:  # Yellow-ish
+                return "olive"
+            elif b > 100:  # Cyan-ish
+                return "turquoise"
+            else:
+                return "green"
+        elif b > r and b > g:
+            # Blue dominant
+            if r > 100:  # Purple-ish
+                return "navy"
+            else:
+                return "blue"
+
+        # Browns (red and green similar, both higher than blue)
+        if r > 100 and g > 80 and b < 100:
+            return "brown"
+
+        # Default to gray for edge cases
+        return "gray"
+
     def _get_color_families(self) -> Dict[str, List[str]]:
         """Get color family mappings for fuzzy color matching"""
         return {
@@ -1224,15 +1398,18 @@ class AdvancedRecommendationEngine:
             'blue': ['blue', 'navy', 'royal blue', 'cobalt', 'azure', 'turquoise'],
             'navy': ['navy', 'blue', 'dark blue', 'midnight blue'],
             'azure': ['azure', 'blue', 'light blue', 'sky blue'],
+            'turquoise': ['turquoise', 'azure', 'cyan', 'teal'],
 
             # Greens
             'green': ['green', 'emerald', 'sage', 'olive', 'forest green'],
             'emerald': ['emerald', 'green', 'jade'],
             'sage': ['sage', 'green', 'mint'],
+            'olive': ['olive', 'green', 'khaki'],
 
             # Neutrals
             'gray': ['gray', 'grey', 'charcoal', 'slate', 'silver'],
             'grey': ['gray', 'grey', 'charcoal', 'slate', 'silver'],
+            'charcoal': ['charcoal', 'gray', 'grey', 'black'],
             'beige': ['beige', 'tan', 'khaki', 'cream', 'ivory'],
             'white': ['white', 'off-white', 'cream', 'ivory'],
             'black': ['black', 'charcoal', 'ebony'],
