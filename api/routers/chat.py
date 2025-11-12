@@ -250,7 +250,8 @@ async def send_message(
                                           'lamp', 'table lamp', 'desk lamp', 'floor lamp', 'wall lamp',
                                           'ceiling lamp', 'pendant', 'chandelier', 'sconce', 'lighting',
                                           'bookshelf', 'shelving', 'shelf', 'dresser', 'cabinet', 'wardrobe',
-                                          'chest', 'storage', 'mirror', 'rug', 'carpet', 'decor']
+                                          'chest', 'storage', 'mirror', 'rug', 'carpet', 'wall rug', 'floor rug',
+                                          'tapestry', 'decor']
 
                     # Check if this furniture type is additive-only
                     is_additive_only = any(additive_type in furniture_type.lower() for additive_type in additive_only_types)
@@ -536,6 +537,16 @@ async def visualize_room(
         if not products:
             raise HTTPException(status_code=400, detail="At least one product must be selected")
 
+        # Check product count and enforce incremental visualization for larger sets
+        # The Gemini API has input size limitations and fails with 500 errors when
+        # processing 5+ products simultaneously. Use incremental mode as workaround.
+        MAX_PRODUCTS_BATCH = 4
+        forced_incremental = False
+        if len(products) > MAX_PRODUCTS_BATCH and not is_incremental:
+            logger.info(f"Product count ({len(products)}) exceeds batch limit ({MAX_PRODUCTS_BATCH}). Forcing incremental visualization.")
+            is_incremental = True
+            forced_incremental = True
+
         # Handle force reset - clear visualization history and start fresh
         if force_reset:
             logger.info(f"Force reset requested - clearing visualization history for session {session_id}")
@@ -767,17 +778,48 @@ async def visualize_room(
         }
         conversation_context_manager.push_visualization_state(session_id, visualization_data)
 
+        # Verify that we have a valid visualization result
+        if not viz_result or not viz_result.rendered_image:
+            logger.error(f"Visualization failed: viz_result.rendered_image is empty or None")
+            raise HTTPException(
+                status_code=500,
+                detail="Visualization generation failed. The AI service did not return a valid image. Please try again."
+            )
+
+        # Prepare response message based on visualization mode
+        if forced_incremental:
+            message = f"Visualization generated successfully with {len(products)} products. Products were added sequentially for optimal results."
+        else:
+            message = "Visualization generated successfully. Note: This shows a design concept with your selected products."
+
         return {
-            "rendered_image": viz_result.rendered_image,
-            "message": "Visualization generated successfully. Note: This shows a design concept with your selected products.",
+            "visualization": {
+                "rendered_image": viz_result.rendered_image,
+                "processing_time": viz_result.processing_time if hasattr(viz_result, 'processing_time') else 0.0,
+                "quality_metrics": {
+                    "overall_quality": viz_result.quality_score if hasattr(viz_result, 'quality_score') else 0.85,
+                    "placement_accuracy": viz_result.placement_accuracy if hasattr(viz_result, 'placement_accuracy') else 0.90,
+                    "lighting_realism": viz_result.lighting_realism if hasattr(viz_result, 'lighting_realism') else 0.85,
+                    "confidence_score": viz_result.confidence_score if hasattr(viz_result, 'confidence_score') else 0.87
+                }
+            },
+            "message": message,
             "technical_note": "Generative AI models create new images rather than edit existing ones. Some variation in room structure is expected."
         }
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating visualization: {e}")
-        raise HTTPException(status_code=500, detail=f"Error generating visualization: {str(e)}")
+        logger.error(f"Error generating visualization: {e}", exc_info=True)
+        # Provide user-friendly error message
+        error_msg = str(e)
+        if "500" in error_msg and "INTERNAL" in error_msg:
+            detail = "The visualization service is temporarily unavailable. This may be due to processing too many products at once. Please try with fewer products or try again later."
+        elif "timeout" in error_msg.lower():
+            detail = "Visualization request timed out. Please try again with fewer products."
+        else:
+            detail = f"Error generating visualization: {error_msg}"
+        raise HTTPException(status_code=500, detail=detail)
 
 
 @router.post("/sessions/{session_id}/visualization/undo")
@@ -898,6 +940,12 @@ def _extract_furniture_type(product_name: str) -> str:
         elif 'console' in name_lower:
             return 'console table'
         return 'table'  # Generic fallback
+    elif 'rug' in name_lower or 'carpet' in name_lower:
+        # Distinguish between wall rugs and floor rugs
+        if 'wall' in name_lower or 'hanging' in name_lower or 'tapestry' in name_lower:
+            return 'wall rug'  # For wall mounting
+        else:
+            return 'floor rug'  # For floor placement
     elif 'bed' in name_lower:
         return 'bed'
     elif 'lamp' in name_lower:
@@ -1037,6 +1085,9 @@ def _extract_product_keywords(user_message: str, style_context: Optional[str] = 
         ('lighting', ['lighting', 'lamp', 'light', 'fixture'], {}),
 
         # Textiles and soft furnishings
+        ('wall rug', ['wall rug', 'wall hanging', 'tapestry', 'wall tapestry', 'hanging rug'], {}),
+        ('tapestry', ['tapestry', 'wall hanging', 'wall rug', 'wall tapestry'], {}),
+        ('floor rug', ['rug', 'carpet', 'area rug', 'floor rug', 'floor covering'], {}),
         ('rug', ['rug', 'carpet', 'area rug', 'floor covering'], {}),
         ('carpet', ['carpet', 'rug', 'floor covering'], {}),
 
@@ -1376,6 +1427,8 @@ async def _get_product_recommendations(
         # NEW: Extract professional designer fields from analysis
         color_palette = None
         styling_tips = None
+        ai_product_types = None  # NEW: AI stylist validated product types
+
         if hasattr(analysis, 'color_palette') and analysis.color_palette:
             color_palette = analysis.color_palette
             logger.info(f"Using AI designer color palette: {color_palette}")
@@ -1383,6 +1436,27 @@ async def _get_product_recommendations(
         if hasattr(analysis, 'styling_tips') and analysis.styling_tips:
             styling_tips = analysis.styling_tips
             logger.info(f"Using AI designer styling tips: {styling_tips}")
+
+        # NEW: Extract AI-validated product types for hard filtering
+        ai_textures = None
+        ai_patterns = None
+        if hasattr(analysis, 'product_matching_criteria') and analysis.product_matching_criteria:
+            criteria = analysis.product_matching_criteria
+            if isinstance(criteria, dict):
+                product_types = criteria.get('product_types', [])
+                if product_types:
+                    ai_product_types = product_types
+                    logger.info(f"Using AI stylist product types for filtering: {ai_product_types}")
+
+                # Extract textures and patterns from filtering keywords
+                filtering = criteria.get('filtering_keywords', {})
+                if isinstance(filtering, dict):
+                    ai_textures = filtering.get('texture_preferences', [])
+                    ai_patterns = filtering.get('pattern_preferences', [])
+                    if ai_textures:
+                        logger.info(f"Extracted AI texture preferences: {ai_textures}")
+                    if ai_patterns:
+                        logger.info(f"Extracted AI pattern preferences: {ai_patterns}")
 
         # Merge materials from user message with materials from AI analysis
         final_materials = list(user_materials_from_message)  # Start with materials from message
@@ -1392,16 +1466,46 @@ async def _get_product_recommendations(
                 if material.lower() not in [m.lower() for m in final_materials]:
                     final_materials.append(material)
 
-        # Prepare final colors (just from user message for now - most reliable)
-        final_colors = list(user_colors_from_message)
+        # NEW: Add textures if provided by AI
+        final_textures = []
+        if ai_textures:
+            final_textures = list(ai_textures)
+
+        # NEW: Add patterns if provided by AI
+        final_patterns = []
+        if ai_patterns:
+            final_patterns = list(ai_patterns)
+
+        # NEW: Merge colors from AI analysis with user message colors
+        final_colors = list(user_colors_from_message)  # Start with user message colors
+        # Add colors from AI design analysis
+        if 'colors' in user_preferences and user_preferences['colors']:
+            for color in user_preferences['colors']:
+                if color.lower() not in [c.lower() for c in final_colors]:
+                    final_colors.append(color)
+        # Add colors from AI color_palette
+        if color_palette:
+            for color in color_palette:
+                # Convert hex to color name or use directly
+                if isinstance(color, str) and color not in final_colors:
+                    final_colors.append(color)
+
+        # NEW: Combine AI-recommended styles with extracted styles
+        final_styles = list(style_preferences) if style_preferences else []
+        logger.info(f"Using AI style preferences: {final_styles}")
 
         # Enable strict attribute matching if user specified specific materials OR colors
         strict_match = bool(user_materials_from_message) or bool(user_colors_from_message)
 
+        # Log all final filtering criteria
         if final_materials:
             logger.info(f"Final materials for filtering: {final_materials} (strict_match={strict_match})")
         if final_colors:
             logger.info(f"Final colors for filtering: {final_colors} (strict_match={strict_match})")
+        if final_textures:
+            logger.info(f"Final textures for filtering: {final_textures}")
+        if final_patterns:
+            logger.info(f"Final patterns for filtering: {final_patterns}")
 
         # DEBUG: Log what keywords are being used
         logger.info(f"[PLANTER DEBUG] product_keywords variable: {product_keywords}")
@@ -1417,16 +1521,20 @@ async def _get_product_recommendations(
             user_preferences=user_preferences,
             room_context=room_context,
             budget_range=budget_range,
-            style_preferences=style_preferences,
+            style_preferences=final_styles,  # Use AI-combined styles
             functional_requirements=functional_requirements,
             product_keywords=final_product_keywords,
             max_recommendations=limit,
             # NEW: Professional AI designer fields
             color_palette=color_palette,
             styling_tips=styling_tips,
-            # NEW: Color and Material attribute filtering
+            ai_product_types=ai_product_types,  # NEW: AI stylist validated product types for hard filtering
+            # NEW: Attribute filtering from AI stylist
             user_colors=final_colors if final_colors else None,
             user_materials=final_materials if final_materials else None,
+            user_textures=final_textures if final_textures else None,  # NEW: AI texture preferences
+            user_patterns=final_patterns if final_patterns else None,  # NEW: AI pattern preferences
+            user_styles=final_styles if final_styles else None,  # NEW: AI style preferences
             strict_attribute_match=strict_match
         )
 

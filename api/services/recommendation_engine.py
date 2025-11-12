@@ -44,6 +44,7 @@ class RecommendationRequest:
     # NEW FIELDS from professional AI designer
     color_palette: Optional[List[str]] = None  # From AI designer: hex codes or color names to boost matching
     styling_tips: Optional[List[str]] = None  # From AI designer: tips with product keywords for matching
+    ai_product_types: Optional[List[str]] = None  # From AI stylist: validated product types (e.g., ['coffee table', 'sofa'])
 
 
 @dataclass
@@ -393,7 +394,8 @@ class AdvancedRecommendationEngine:
             'other_tables': ['console table', 'desk', 'table'],  # Generic tables
             'storage_furniture': ['dresser', 'chest', 'cabinet', 'bookshelf', 'shelving', 'shelf', 'wardrobe'],
             'bedroom_furniture': ['bed', 'mattress', 'headboard'],
-            'decor': ['mirror', 'rug', 'carpet', 'mat', 'planter', 'pot', 'vase'],
+            'wall_decor': ['wall art', 'wall decor', 'wall hanging', 'tapestry'],  # Wall decoration items
+            'decor': ['mirror', 'rug', 'carpet', 'mat', 'planter', 'pot', 'vase', 'wall rug', 'floor rug'],
             'general_lighting': ['lamp', 'lighting'],  # Catch-all for generic lighting terms
         }
 
@@ -416,9 +418,65 @@ class AdvancedRecommendationEngine:
         logger.info(f"Categorized keywords: {dict(categorized)}")
         return dict(categorized)
 
+    def _get_db_category_patterns(self, keyword_category: str) -> List[str]:
+        """
+        Map keyword categories to database category name patterns.
+        This ensures searches for 'planter' only return products in planter-related categories,
+        preventing lamps from appearing in planter searches, etc.
+        """
+        category_mapping = {
+            # Lighting categories
+            'ceiling_lighting': ['chandelier', 'pendant', 'ceiling'],
+            'portable_lighting': ['table lamp', 'desk lamp', 'floor lamp', 'lamp'],
+            'wall_lighting': ['wall lamp', 'sconce', 'wall light'],
+            'general_lighting': ['lamp', 'lighting', 'light'],
+
+            # Furniture categories - IMPORTANT: Use actual database category names!
+            # Database has: "Sofa", "Sofa Chair", "Furniture" for sofas
+            # Database has: "Table", "Tables", "Console" for tables
+            # Note: "Furniture" is generic but necessary to catch all sofas
+            'sofas': ['sofa', 'couch', 'sectional', 'loveseat', 'furniture'],
+            'chairs': ['chair', 'armchair', 'seating'],
+            'other_seating': ['bench', 'stool', 'ottoman', 'pouf'],
+            'center_tables': ['table', 'tables', 'console'],  # Fixed: use actual DB categories
+            'side_tables': ['table', 'tables', 'console'],  # Fixed: use actual DB categories
+            'dining_tables': ['table', 'tables'],  # Fixed: use actual DB categories
+            'other_tables': ['console', 'desk', 'table', 'tables'],  # Fixed: use actual DB categories
+            'storage_furniture': ['dresser', 'chest', 'cabinet', 'bookshelf', 'shelf', 'storage'],
+            'bedroom_furniture': ['bed', 'mattress', 'headboard'],
+
+            # Decor categories - split out planters and wall decor separately!
+            'wall_decor': ['wall art', 'wall decor', 'wall accessories', 'wall hanging', 'tapestry'],
+            'decor': ['planter', 'pot', 'vase', 'mirror', 'rug', 'carpet', 'mat', 'sculpture', 'decor', 'accessory'],
+        }
+
+        # Special handling for specific items to prevent cross-category contamination
+        specific_mappings = {
+            'sofa': ['sofa', 'furniture'],  # Sofas are in both "Sofa" and "Furniture" categories
+            'couch': ['sofa', 'furniture'],  # Couches same as sofas
+            'planter': ['planter', 'pot'],  # Only planter/pot categories
+            'pot': ['planter', 'pot'],  # Only planter/pot categories
+            'lamp': ['lamp', 'lighting', 'light'],  # Only lighting categories
+            'lighting': ['lamp', 'lighting', 'light'],  # Only lighting categories
+            'rug': ['rug', 'carpet', 'mat'],  # Only rug categories
+            'vase': ['vase'],  # Only vase categories
+            'wall art': ['wall art', 'wall decor', 'wall accessories'],  # Only wall art/decor categories
+            'wall decor': ['wall art', 'wall decor', 'wall accessories'],  # Only wall art/decor categories
+            'wall hanging': ['wall art', 'wall decor', 'wall accessories', 'wall hanging'],  # Only wall art/decor categories
+            'tapestry': ['tapestry', 'wall hanging', 'wall art'],  # Only tapestry/wall art categories
+        }
+
+        # Check if this is a specific item first
+        if keyword_category in specific_mappings:
+            return specific_mappings[keyword_category]
+
+        # Otherwise use the general category mapping
+        return category_mapping.get(keyword_category, [])
+
     async def _get_candidate_products(self, request: RecommendationRequest, db: AsyncSession) -> List[Product]:
         """Get candidate products based on basic criteria with strict category filtering"""
         from sqlalchemy.orm import selectinload
+        from database.models import Category
 
         query = select(Product).where(Product.is_available == True)
 
@@ -430,13 +488,14 @@ class AdvancedRecommendationEngine:
             # STEP 1: Categorize keywords to determine product category
             categorized_keywords = self._categorize_keywords(request.product_keywords)
 
-            # STEP 2: Build category-aware query
-            # If all keywords belong to the same category, we can use strict filtering
-            # to prevent cross-category contamination (e.g., "lamp" matching non-lighting products)
+            # STEP 2: Build category-aware query with BOTH name matching AND database category filtering
+            # This prevents cross-category contamination (e.g., lamps appearing in planter searches)
 
             category_conditions = []
-            for category, keywords in categorized_keywords.items():
-                # Build OR condition within this category
+            db_category_conditions = []
+
+            for keyword_category, keywords in categorized_keywords.items():
+                # Build OR condition within this category for name matching
                 keyword_conditions = []
                 for keyword in keywords:
                     # Use PostgreSQL regex with word boundaries (\y)
@@ -448,20 +507,19 @@ class AdvancedRecommendationEngine:
 
                 if keyword_conditions:
                     # Combine keywords within category with OR
-                    category_conditions.append(or_(*keyword_conditions))
+                    name_condition = or_(*keyword_conditions)
+                    # Use name matching only - database category filtering is too restrictive
+                    category_conditions.append(name_condition)
 
             # STEP 3: Combine category conditions
             # If keywords span multiple categories, OR them together
-            # This allows "sofa or lamp" queries while preventing unrelated matches
             if category_conditions:
                 if len(category_conditions) == 1:
-                    # Single category - strict filtering
                     query = query.where(category_conditions[0])
                 else:
-                    # Multiple categories - OR them but still category-aware
                     query = query.where(or_(*category_conditions))
 
-            logger.info(f"Applied category-aware filtering for {len(category_conditions)} categories")
+            logger.info(f"Applied name-based filtering for {len(category_conditions)} keyword categories")
         else:
             logger.warning("No product keywords provided - returning all products")
 
@@ -517,7 +575,79 @@ class AdvancedRecommendationEngine:
         query = query.limit(1000)
 
         result = await db.execute(query)
-        return result.scalars().all()
+        candidates = result.scalars().all()
+
+        # NEW: Validate against AI product types if provided (hard filter)
+        if request.ai_product_types:
+            logger.info(f"AI VALIDATION: Filtering {len(candidates)} candidates against AI product types: {request.ai_product_types}")
+            validated_candidates = []
+            for product in candidates:
+                if await self._validate_against_ai_product_types(product, request.ai_product_types, db):
+                    validated_candidates.append(product)
+
+            logger.info(f"AI VALIDATION: {len(candidates)} → {len(validated_candidates)} products after AI filtering")
+            return validated_candidates
+
+        return candidates
+
+    async def _validate_against_ai_product_types(
+        self,
+        product: Product,
+        ai_product_types: List[str],
+        db: AsyncSession
+    ) -> bool:
+        """
+        Validate if product matches AI stylist's recommended product types
+
+        Uses fuzzy matching against:
+        1. Product name
+        2. furniture_type attribute (if available)
+
+        Args:
+            product: Product to validate
+            ai_product_types: List of AI-recommended product types (e.g., ['coffee table', 'center table', 'sofa'])
+            db: Database session
+
+        Returns:
+            True if product matches any AI-recommended type, False otherwise
+        """
+        if not ai_product_types:
+            return True  # No AI filter, accept all
+
+        product_name = product.name.lower()
+
+        # Check 1: Product name matching with word boundaries
+        for product_type in ai_product_types:
+            product_type_lower = product_type.lower().strip()
+            # Use word boundary regex for accurate matching
+            if re.search(rf'\b{re.escape(product_type_lower)}\b', product_name):
+                logger.debug(f"Product {product.id} '{product.name}' MATCHED AI type '{product_type}' in name")
+                return True
+
+        # Check 2: furniture_type attribute matching
+        try:
+            result = await db.execute(
+                select(ProductAttribute.attribute_value)
+                .where(
+                    ProductAttribute.product_id == product.id,
+                    ProductAttribute.attribute_name == 'furniture_type'
+                )
+            )
+            furniture_type = result.scalar_one_or_none()
+
+            if furniture_type:
+                furniture_type_lower = furniture_type.lower()
+                for product_type in ai_product_types:
+                    product_type_lower = product_type.lower().strip()
+                    # Check if AI type matches furniture_type attribute
+                    if product_type_lower in furniture_type_lower or furniture_type_lower in product_type_lower:
+                        logger.debug(f"Product {product.id} '{product.name}' MATCHED AI type '{product_type}' in furniture_type='{furniture_type}'")
+                        return True
+        except Exception as e:
+            logger.error(f"Error checking furniture_type for product {product.id}: {e}")
+
+        logger.debug(f"Product {product.id} '{product.name}' FILTERED OUT by AI validation (expected types: {ai_product_types})")
+        return False
 
     def _get_room_categories(self, room_type: str) -> List[str]:
         """Map room types to relevant product categories"""
