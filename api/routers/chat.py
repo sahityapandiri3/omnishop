@@ -554,6 +554,13 @@ async def visualize_room(
             context.visualization_history = []
             context.visualization_redo_stack = []
 
+        # Store original image if this is a new upload
+        # This is critical for undo functionality - allows undo to return to base image
+        user_uploaded_new_image = request.get('user_uploaded_new_image', False)
+        if user_uploaded_new_image or force_reset:
+            logger.info(f"Storing original room image for session {session_id} (new upload or reset)")
+            conversation_context_manager.store_image(session_id, base_image)
+
         # Detect existing furniture in the room if not yet done
         existing_furniture = request.get('existing_furniture')
         if not existing_furniture:
@@ -671,14 +678,72 @@ async def visualize_room(
             result = await db.execute(query)
             db_products = result.scalars().all()
 
-            # Enrich products with image URLs
+            # Enrich products with full details for proper undo/redo support
             for product in products:
                 db_product = next((p for p in db_products if p.id == product.get('id')), None)
-                if db_product and db_product.images:
-                    primary_image = next((img for img in db_product.images if img.is_primary), db_product.images[0])
-                    if primary_image:
-                        product['image_url'] = primary_image.original_url
-                        product['full_name'] = db_product.name
+                if db_product:
+                    # Add price and other essential fields
+                    product['price'] = float(db_product.price) if db_product.price else 0.0
+                    product['name'] = db_product.name
+                    product['full_name'] = db_product.name
+                    product['source'] = db_product.source_website
+
+                    # Add image URLs
+                    if db_product.images:
+                        primary_image = next((img for img in db_product.images if img.is_primary), db_product.images[0])
+                        if primary_image:
+                            product['image_url'] = primary_image.original_url
+
+                    # Add productType for frontend replacement logic
+                    # Extract from product name if not already present
+                    if 'productType' not in product or not product['productType']:
+                        product_name_lower = db_product.name.lower()
+                        # Order matters - check specific types first
+                        if 'sofa' in product_name_lower or 'couch' in product_name_lower or 'sectional' in product_name_lower:
+                            product['productType'] = 'sofa'
+                        elif 'coffee table' in product_name_lower or 'center table' in product_name_lower or 'centre table' in product_name_lower:
+                            product['productType'] = 'coffee_table'
+                        elif 'side table' in product_name_lower or 'end table' in product_name_lower or 'nightstand' in product_name_lower:
+                            product['productType'] = 'side_table'
+                        elif 'dining table' in product_name_lower:
+                            product['productType'] = 'dining_table'
+                        elif 'console table' in product_name_lower:
+                            product['productType'] = 'console_table'
+                        elif 'accent chair' in product_name_lower or 'armchair' in product_name_lower:
+                            product['productType'] = 'accent_chair'
+                        elif 'dining chair' in product_name_lower:
+                            product['productType'] = 'dining_chair'
+                        elif 'office chair' in product_name_lower:
+                            product['productType'] = 'office_chair'
+                        elif 'table lamp' in product_name_lower or 'desk lamp' in product_name_lower:
+                            product['productType'] = 'table_lamp'
+                        elif 'floor lamp' in product_name_lower:
+                            product['productType'] = 'floor_lamp'
+                        elif 'ceiling lamp' in product_name_lower or 'pendant' in product_name_lower or 'chandelier' in product_name_lower:
+                            product['productType'] = 'ceiling_lamp'
+                        elif 'table' in product_name_lower:
+                            product['productType'] = 'table'
+                        elif 'chair' in product_name_lower:
+                            product['productType'] = 'chair'
+                        elif 'lamp' in product_name_lower:
+                            product['productType'] = 'lamp'
+                        elif 'bed' in product_name_lower:
+                            product['productType'] = 'bed'
+                        elif 'dresser' in product_name_lower:
+                            product['productType'] = 'dresser'
+                        elif 'mirror' in product_name_lower:
+                            product['productType'] = 'mirror'
+                        elif 'rug' in product_name_lower or 'carpet' in product_name_lower:
+                            if 'wall' in product_name_lower or 'hanging' in product_name_lower or 'tapestry' in product_name_lower:
+                                product['productType'] = 'wall_rug'
+                            else:
+                                product['productType'] = 'floor_rug'
+                        elif 'ottoman' in product_name_lower:
+                            product['productType'] = 'ottoman'
+                        elif 'bench' in product_name_lower:
+                            product['productType'] = 'bench'
+                        else:
+                            product['productType'] = 'other'
 
         # Get user's style description from analysis
         user_style_description = visualization_instruction  # Use the clarification-based instruction
@@ -837,8 +902,15 @@ async def undo_visualization(session_id: str):
 
         logger.info(f"Undid visualization for session {session_id}")
 
+        # Add products_in_scene field for frontend compatibility
+        # Frontend expects 'products_in_scene', backend stores 'products'
+        visualization_response = {
+            **previous_state,
+            "products_in_scene": previous_state.get("products", [])
+        }
+
         return {
-            "visualization": previous_state,
+            "visualization": visualization_response,
             "message": "Successfully undid last visualization",
             "can_undo": conversation_context_manager.can_undo(session_id),
             "can_redo": conversation_context_manager.can_redo(session_id)
@@ -866,8 +938,15 @@ async def redo_visualization(session_id: str):
 
         logger.info(f"Redid visualization for session {session_id}")
 
+        # Add products_in_scene field for frontend compatibility
+        # Frontend expects 'products_in_scene', backend stores 'products'
+        visualization_response = {
+            **next_state,
+            "products_in_scene": next_state.get("products", [])
+        }
+
         return {
-            "visualization": next_state,
+            "visualization": visualization_response,
             "message": "Successfully redid visualization",
             "can_undo": conversation_context_manager.can_undo(session_id),
             "can_redo": conversation_context_manager.can_redo(session_id)

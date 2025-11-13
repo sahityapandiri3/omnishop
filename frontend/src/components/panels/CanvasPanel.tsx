@@ -55,7 +55,7 @@ export default function CanvasPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Calculate total price
-  const totalPrice = products.reduce((sum, product) => sum + product.price, 0);
+  const totalPrice = products.reduce((sum, product) => sum + (product.price || 0), 0);
 
   // Check if canvas has changed since last visualization
   useEffect(() => {
@@ -65,10 +65,11 @@ export default function CanvasPanel({
     }
 
     // Compare current products with last visualized products
-    const currentIds = new Set(products.map(p => p.id));
+    // Ensure IDs are strings for consistent comparison
+    const currentIds = new Set(products.map(p => String(p.id)));
     const productsChanged =
       products.length !== visualizedProductIds.size ||
-      products.some(p => !visualizedProductIds.has(p.id));
+      products.some(p => !visualizedProductIds.has(String(p.id)));
 
     if (productsChanged) {
       setNeedsRevisualization(true);
@@ -107,7 +108,8 @@ export default function CanvasPanel({
 
   // Detect visualization change type
   const detectChangeType = () => {
-    const currentIds = new Set(products.map(p => p.id));
+    // Ensure IDs are strings for consistent comparison
+    const currentIds = new Set(products.map(p => String(p.id)));
 
     // Check for removals (products that were visualized but no longer in canvas)
     const removedProducts = Array.from(visualizedProductIds).filter(id => !currentIds.has(id));
@@ -117,7 +119,7 @@ export default function CanvasPanel({
     }
 
     // Check for additions (products in canvas but not yet visualized)
-    const newProducts = products.filter(p => !visualizedProductIds.has(p.id));
+    const newProducts = products.filter(p => !visualizedProductIds.has(String(p.id)));
     if (newProducts.length > 0 && visualizedProductIds.size > 0) {
       console.log('[CanvasPanel] Detected additions, will use incremental visualization');
       return { type: 'additive', newProducts };
@@ -227,13 +229,14 @@ export default function CanvasPanel({
       const data = await response.json();
       console.log('[CanvasPanel] Visualization response:', data);
 
-      if (!data.rendered_image) {
+      if (!data.visualization?.rendered_image) {
         throw new Error('No visualization image was generated');
       }
 
       // Set visualization result and update tracking
-      setVisualizationResult(data.rendered_image);
-      setVisualizedProductIds(new Set(products.map(p => p.id))); // Track all current products as visualized
+      setVisualizationResult(data.visualization.rendered_image);
+      // Ensure IDs are strings for consistency with undo/redo
+      setVisualizedProductIds(new Set(products.map(p => String(p.id)))); // Track all current products as visualized
       setNeedsRevisualization(false); // Reset change flag
 
       // Update undo/redo availability (need to check backend state)
@@ -292,17 +295,36 @@ export default function CanvasPanel({
 
       const data = await response.json();
       console.log('[CanvasPanel] Undo response:', data);
+      console.log('[CanvasPanel] Visualization object:', data.visualization);
+      console.log('[CanvasPanel] Has rendered_image?:', !!data.visualization?.rendered_image);
 
       // Update visualization with previous state
-      if (data.visualization?.rendered_image) {
-        setVisualizationResult(data.visualization.rendered_image);
+      // If rendered_image is null, it means we've undone to the base image (original room)
+      if (data.visualization) {
+        const imageToShow = data.visualization.rendered_image || roomImage;
+        console.log('[CanvasPanel] Updating to:', data.visualization.rendered_image ? 'previous visualization' : 'base room image');
+        setVisualizationResult(imageToShow);
 
         // Update canvas products to match the undone state
         const previousProducts = data.visualization.products_in_scene || [];
-        onSetProducts(previousProducts);
+        console.log('[CanvasPanel] Previous products from undo:', previousProducts);
+        console.log('[CanvasPanel] Previous products detail:', JSON.stringify(previousProducts));
+        console.log('[CanvasPanel] Calling onSetProducts with:', previousProducts.length, 'products');
 
-        // Update visualized product IDs
-        setVisualizedProductIds(new Set(previousProducts.map((p: Product) => p.id)));
+        // Convert product IDs to strings if they're numbers (for consistency)
+        const normalizedProducts = previousProducts.map((p: any) => ({
+          ...p,
+          id: String(p.id)
+        }));
+        console.log('[CanvasPanel] Normalized products:', normalizedProducts);
+        onSetProducts(normalizedProducts);
+
+        // Update visualized product IDs - use normalizedProducts to maintain string ID consistency
+        const newVisualizedIds = new Set(normalizedProducts.map((p: Product) => p.id));
+        console.log('[CanvasPanel] New visualizedProductIds:', newVisualizedIds);
+        setVisualizedProductIds(newVisualizedIds);
+      } else {
+        console.error('[CanvasPanel] No visualization object in response!', data);
       }
 
       // Update undo/redo availability
@@ -348,10 +370,21 @@ export default function CanvasPanel({
 
         // Update canvas products to match the redone state
         const nextProducts = data.visualization.products_in_scene || [];
-        onSetProducts(nextProducts);
+        console.log('[CanvasPanel] Next products from redo:', nextProducts);
+        console.log('[CanvasPanel] Next products detail:', JSON.stringify(nextProducts));
 
-        // Update visualized product IDs
-        setVisualizedProductIds(new Set(nextProducts.map((p: Product) => p.id)));
+        // Convert product IDs to strings if they're numbers (for consistency)
+        const normalizedProducts = nextProducts.map((p: any) => ({
+          ...p,
+          id: String(p.id)
+        }));
+        console.log('[CanvasPanel] Normalized products for redo:', normalizedProducts);
+        onSetProducts(normalizedProducts);
+
+        // Update visualized product IDs - use normalizedProducts to maintain string ID consistency
+        const newVisualizedIds = new Set(normalizedProducts.map((p: Product) => p.id));
+        console.log('[CanvasPanel] New visualizedProductIds for redo:', newVisualizedIds);
+        setVisualizedProductIds(newVisualizedIds);
       }
 
       // Update undo/redo availability
@@ -599,9 +632,11 @@ export default function CanvasPanel({
                       <p className="text-[10px] font-medium text-neutral-900 dark:text-white line-clamp-1">
                         {product.name}
                       </p>
-                      <p className="text-[10px] text-primary-600 dark:text-primary-400 font-semibold">
-                        ₹{product.price.toLocaleString()}
-                      </p>
+                      {product.price && (
+                        <p className="text-[10px] text-primary-600 dark:text-primary-400 font-semibold">
+                          ₹{product.price.toLocaleString()}
+                        </p>
+                      )}
                     </div>
                   </div>
                 );
@@ -640,9 +675,11 @@ export default function CanvasPanel({
                       <p className="text-[10px] text-neutral-600 dark:text-neutral-400">
                         {product.source}
                       </p>
-                      <p className="text-xs font-semibold text-primary-600 dark:text-primary-400">
-                        ₹{product.price.toLocaleString()}
-                      </p>
+                      {product.price && (
+                        <p className="text-xs font-semibold text-primary-600 dark:text-primary-400">
+                          ₹{product.price.toLocaleString()}
+                        </p>
+                      )}
                     </div>
                     <button
                       onClick={() => onRemoveProduct(product.id)}
@@ -693,7 +730,11 @@ export default function CanvasPanel({
                   </svg>
                 </button>
                 <button
-                  onClick={() => setVisualizationResult(null)}
+                  onClick={() => {
+                    setVisualizationResult(null);
+                    setVisualizedProductIds(new Set()); // Clear tracking so next visualization is treated as fresh
+                    setNeedsRevisualization(false);
+                  }}
                   className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 font-medium"
                 >
                   Clear

@@ -29,6 +29,11 @@ export default function DesignPage() {
       setRoomImage(storedImage);
       // Don't clear sessionStorage immediately - keep it for refresh
     }
+
+    // Clear session ID on page load to start fresh
+    // This prevents old visualization history from bleeding into new sessions
+    sessionStorage.removeItem('design_session_id');
+    console.log('[DesignPage] Cleared session ID on page load - starting fresh session');
   }, []);
 
   // Handle product recommendation from chat
@@ -65,7 +70,13 @@ export default function DesignPage() {
     if (name.includes('bed')) return 'bed';
     if (name.includes('dresser')) return 'dresser';
     if (name.includes('mirror')) return 'mirror';
-    if (name.includes('rug') || name.includes('carpet')) return 'rug';
+    if (name.includes('rug') || name.includes('carpet')) {
+      // Distinguish between wall rugs and floor rugs
+      if (name.includes('wall') || name.includes('hanging') || name.includes('tapestry')) {
+        return 'wall_rug';
+      }
+      return 'floor_rug';
+    }
     if (name.includes('ottoman')) return 'ottoman';
     if (name.includes('bench')) return 'bench';
 
@@ -79,18 +90,26 @@ export default function DesignPage() {
     const productType = product.productType || extractProductType(product.name || '');
     const productWithType = { ...product, productType };
 
+    console.log('[DesignPage] Adding product to canvas:', product.name);
+    console.log('[DesignPage] Product type:', productType);
+    console.log('[DesignPage] Current canvas products:', canvasProducts.map(p => ({ name: p.name, type: p.productType })));
+
     // Check if product type already exists (for replaceable items like sofas, tables)
     const existingIndex = canvasProducts.findIndex(
       (p) => p.productType === productType
     );
 
+    console.log('[DesignPage] Existing product index:', existingIndex);
+
     if (existingIndex >= 0) {
       // Replace existing product of same type
+      console.log('[DesignPage] Replacing existing product at index', existingIndex);
       const updated = [...canvasProducts];
       updated[existingIndex] = productWithType;
       setCanvasProducts(updated);
     } else {
       // Add new product
+      console.log('[DesignPage] Adding new product (no existing match)');
       setCanvasProducts([...canvasProducts, productWithType]);
     }
 
