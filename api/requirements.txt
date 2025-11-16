@@ -37,7 +37,7 @@ redis==5.0.0
 aioredis==2.0.1
 
 # CORS and middleware
-python-cors==1.7.0
+
 
 # Environment and configuration
 python-dotenv==1.0.0
