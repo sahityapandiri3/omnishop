@@ -1,6 +1,6 @@
 # FastAPI and ASGI server
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+fastapi==0.110.1
+uvicorn[standard]==0.29.0
 
 # Database
 sqlalchemy==2.0.21
@@ -15,7 +15,7 @@ databases[postgresql]==0.8.0
 # Authentication and security
 passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.3.0
-python-multipart==0.0.6
+python-multipart==0.0.9
 
 # HTTP client for external APIs
 httpx==0.25.1
