@@ -15,10 +15,10 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from api.routers import products, categories, chat, visualization
-    from api.core.config import settings
-    # from api.core.database import database
-    from api.core.logging import setup_logging
+    from routers import products, categories, chat, visualization
+    from core.config import settings
+    # from core.database import database
+    from core.logging import setup_logging
 
     # Setup logging
     setup_logging()

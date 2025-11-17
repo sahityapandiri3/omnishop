@@ -8,7 +8,7 @@ import os
 # Add parent directory to path for api imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from api.services.cloud_inpainting_service import CloudInpaintingService
+from services.cloud_inpainting_service import CloudInpaintingService
 
 def test_dimension_extraction():
     """Test dimension extraction with various description formats"""

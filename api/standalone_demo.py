@@ -21,7 +21,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import Image Transformation service (Gemini 2.5 Flash Image)
 try:
-    from api.services.image_transformation_service import image_transformation_service
+    from services.image_transformation_service import image_transformation_service
     IMAGE_TRANSFORMATION_AVAILABLE = True
     logger_temp = logging.getLogger(__name__)
     logger_temp.info("✅ Image transformation service imported successfully")

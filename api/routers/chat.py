@@ -10,18 +10,18 @@ import logging
 import uuid
 from datetime import datetime
 
-from api.core.database import get_db
-from api.schemas.chat import (
+from core.database import get_db
+from schemas.chat import (
     ChatMessageRequest, ChatMessageResponse, ChatMessageSchema,
     StartSessionRequest, StartSessionResponse, ChatHistoryResponse,
     ChatSessionSchema, MessageType, DesignAnalysisSchema
 )
-from api.services.chatgpt_service import chatgpt_service
-from api.services.recommendation_engine import recommendation_engine, RecommendationRequest
-from api.services.ml_recommendation_model import ml_recommendation_model
-from api.services.google_ai_service import google_ai_service, VisualizationRequest, VisualizationResult
-from api.services.conversation_context import conversation_context_manager
-from api.services.nlp_processor import design_nlp_processor
+from services.chatgpt_service import chatgpt_service
+from services.recommendation_engine import recommendation_engine, RecommendationRequest
+from services.ml_recommendation_model import ml_recommendation_model
+from services.google_ai_service import google_ai_service, VisualizationRequest, VisualizationResult
+from services.conversation_context import conversation_context_manager
+from services.nlp_processor import design_nlp_processor
 from database.models import ChatSession, ChatMessage, Product
 
 logger = logging.getLogger(__name__)
@@ -94,7 +94,7 @@ async def send_message(
 
         # Get AI response
         # Use active image (latest visualization OR original upload) for analysis
-        active_image = conversation_context_manager.get_last_image(session_id) if session_id else None
+        active_image = conversation_context_manager.get_active_image(session_id) if session_id else None
         conversational_response, analysis = await chatgpt_service.analyze_user_input(
             user_message=request.message,
             session_id=session_id,
@@ -112,7 +112,7 @@ async def send_message(
                 logger.info(f"Timeout detected (confidence: {overall_confidence}%) - starting background task")
 
                 # Start background task for real AI analysis
-                from api.tasks.chatgpt_tasks import analyze_user_input_async
+                from tasks.chatgpt_tasks import analyze_user_input_async
                 task = analyze_user_input_async.delay(
                     user_message=request.message,
                     session_id=session_id,
@@ -174,7 +174,7 @@ async def send_message(
                 )
             else:
                 logger.warning(f"Analysis is None for session {session_id}, using fallback recommendations")
-                from api.schemas.chat import DesignAnalysisSchema
+                from schemas.chat import DesignAnalysisSchema
                 fallback_analysis = DesignAnalysisSchema(
                     design_analysis={},
                     product_matching_criteria={},
@@ -393,7 +393,7 @@ async def get_task_status(task_id: str, db: AsyncSession = Depends(get_db)):
     """
     try:
         from celery.result import AsyncResult
-        from api.celery_app import celery_app
+        from celery_app import celery_app
 
         task_result = AsyncResult(task_id, app=celery_app)
 
@@ -416,7 +416,7 @@ async def get_task_status(task_id: str, db: AsyncSession = Depends(get_db)):
             # If successful, we can now get better product recommendations
             if result.get('status') == 'success' and result.get('analysis'):
                 try:
-                    from api.schemas.chat import DesignAnalysisSchema
+                    from schemas.chat import DesignAnalysisSchema
                     analysis = DesignAnalysisSchema(**result['analysis'])
 
                     # Get improved product recommendations

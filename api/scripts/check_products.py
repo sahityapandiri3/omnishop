@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import select, func
-from api.core.database import get_db
+from core.database import get_db
 from database.models import Product
 
 

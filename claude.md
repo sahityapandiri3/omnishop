@@ -5,10 +5,14 @@ This file is used to store configuration and context for Claude Code interaction
 ## Project Context
 - **Project**: AI Interior Design Visualization App
 - **Current Phase**: Milestone 1 - Data Foundation & Web Scraping Execution
-- **Tech Stack**: Python/Scrapy, PostgreSQL, React/Next.js, ChatGPT API, Google AI Studio API
+- **Tech Stack**: Python/Scrapy, PostgreSQL, React/Next.js, ChatGPT API, Google AI Studio API (Google Image Flash 2.5)
 
 ## Common Commands
 (Add frequently used commands here as the project develops)
 
 ## Notes
 (Add project-specific notes and reminders here)
+
+## Project instructions
+
+I’m a product manager with limited coding and AI experience and learning to become well-versed in these spaces. When you are coding and doing your work, please share tips that explain the tech architecture and any changes that your are making and why. 

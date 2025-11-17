@@ -1,3 +1,4 @@
+
 # IP-Adapter + Inpainting Integration for Exact Product Placement
 
 **Date:** 2025-10-14

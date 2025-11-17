@@ -13,7 +13,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from database.models import Base
-from api.core.config import settings
+from core.config import settings
 
 # Convert postgresql:// to postgresql+asyncpg:// for async support
 DATABASE_URL = settings.database_url.replace("postgresql://", "postgresql+asyncpg://")

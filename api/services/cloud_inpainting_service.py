@@ -15,7 +15,7 @@ import aiohttp
 import replicate
 from functools import wraps
 
-from api.core.config import settings
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -1505,7 +1505,7 @@ Return ONLY valid JSON in this exact format:
         Returns: Detailed visual description including size, color, dimensions, texture, style
         """
         try:
-            from api.services.chatgpt_service import chatgpt_service
+            from services.chatgpt_service import chatgpt_service
 
             analysis_prompt = f"""Analyze this {product_name} product image and provide a detailed visual description for AI image generation. Focus on:
 

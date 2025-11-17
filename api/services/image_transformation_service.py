@@ -17,7 +17,7 @@ except ImportError:
     GENAI_AVAILABLE = False
     logging.warning("google-genai package not installed. Image transformation will not work.")
 
-from api.core.config import settings
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 

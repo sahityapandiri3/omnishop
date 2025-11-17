@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 
 from database.models import Product, ProductImage, ProductAttribute, ChatSession, ChatMessage
-from api.services.nlp_processor import design_nlp_processor
+from services.nlp_processor import design_nlp_processor
 
 logger = logging.getLogger(__name__)
 

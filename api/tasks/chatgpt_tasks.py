@@ -4,8 +4,8 @@ Background tasks for ChatGPT analysis
 import asyncio
 import logging
 from typing import Optional, Dict, Any, Tuple
-from api.celery_app import celery_app
-from api.services.chatgpt_service import chatgpt_service
+from celery_app import celery_app
+from services.chatgpt_service import chatgpt_service
 import json
 
 logger = logging.getLogger(__name__)

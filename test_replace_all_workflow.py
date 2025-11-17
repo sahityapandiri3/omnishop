@@ -13,7 +13,7 @@ from pathlib import Path
 # Add api directory to path
 sys.path.insert(0, str(Path(__file__).parent / "api"))
 
-from api.services.cloud_inpainting_service import cloud_inpainting_service
+from services.cloud_inpainting_service import cloud_inpainting_service
 from PIL import Image
 
 

@@ -8,8 +8,8 @@ from sqlalchemy.orm import selectinload
 from typing import Optional, List
 import logging
 
-from api.core.database import get_db
-from api.schemas.products import (
+from core.database import get_db
+from schemas.products import (
     ProductSchema, ProductSummarySchema, ProductDetailResponse,
     ProductSearchResponse, ProductQuery, ProductFilters,
     CategorySchema, ProductStatsResponse

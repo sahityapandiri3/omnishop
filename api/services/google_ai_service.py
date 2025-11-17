@@ -18,7 +18,7 @@ import numpy as np
 from google import genai
 from google.genai import types
 
-from api.core.config import settings
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 

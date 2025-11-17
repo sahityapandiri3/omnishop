@@ -7,8 +7,8 @@ from sqlalchemy import select, func
 from typing import List
 import logging
 
-from api.core.database import get_db
-from api.schemas.products import CategorySchema
+from core.database import get_db
+from schemas.products import CategorySchema
 from database.models import Category, Product
 
 logger = logging.getLogger(__name__)

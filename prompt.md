@@ -187,7 +187,7 @@ This prompt is designed to work with:
 - OpenAI GPT-4 with vision capabilities
 - Structured JSON output for programmatic processing
 - Integration with product database filtering systems
-- Google AI Studio API for spatial analysis and image understanding
+- Spatial analysis APIs (Google AI studio using image flash 2.5)
 - User interface for displaying recommendations
 
 The output format ensures compatibility with downstream systems while providing comprehensive analysis for high-quality interior design recommendations.

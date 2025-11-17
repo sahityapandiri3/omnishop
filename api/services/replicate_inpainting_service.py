@@ -17,7 +17,7 @@ from datetime import datetime
 from PIL import Image
 import replicate
 
-from api.core.config import settings
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -1291,7 +1291,7 @@ class ReplicateInpaintingService:
         try:
             from sqlalchemy import select
             from database.models import ProductAttribute
-            from api.core.database import get_db
+            from core.database import get_db
 
             # Get database session (this is simplified - in production use dependency injection)
             async for db in get_db():
@@ -1326,7 +1326,7 @@ class ReplicateInpaintingService:
         try:
             from sqlalchemy import select
             from database.models import ProductImage
-            from api.core.database import get_db
+            from core.database import get_db
 
             async for db in get_db():
                 # Query for primary image or first image
@@ -1364,7 +1364,7 @@ class ReplicateInpaintingService:
         Returns: Detailed visual description including size, color, dimensions, texture, style
         """
         try:
-            from api.services.chatgpt_service import chatgpt_service
+            from services.chatgpt_service import chatgpt_service
 
             analysis_prompt = f"""Analyze this {product_name} product image and provide a detailed visual description for AI image generation. Focus on:
 

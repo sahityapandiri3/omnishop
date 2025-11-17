@@ -4,7 +4,7 @@ import sys
 sys.path.insert(0, '/Users/sahityapandiri/Omnishop/api')
 
 from anthropic import Anthropic
-from api.core.config import settings
+from core.config import settings
 
 print("="*60)
 print("Testing Anthropic Client Initialization")

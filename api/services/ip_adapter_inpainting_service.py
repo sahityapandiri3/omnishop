@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageOps
 from dataclasses import dataclass
 import aiohttp
 
-from api.core.config import settings
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 

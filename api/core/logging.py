@@ -3,7 +3,7 @@ Logging configuration for the API
 """
 import logging
 import structlog
-from api.core.config import settings
+from core.config import settings
 
 
 def setup_logging():

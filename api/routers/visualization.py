@@ -9,12 +9,12 @@ import uuid
 import base64
 from datetime import datetime
 
-from api.core.database import get_db
-from api.services.google_ai_service import google_ai_service
-from api.services.chatgpt_service import chatgpt_service
-from api.services.recommendation_engine import recommendation_engine, RecommendationRequest
-from api.services.ml_recommendation_model import ml_recommendation_model
-from api.schemas.chat import ChatMessageSchema
+from core.database import get_db
+from services.google_ai_service import google_ai_service
+from services.chatgpt_service import chatgpt_service
+from services.recommendation_engine import recommendation_engine, RecommendationRequest
+from services.ml_recommendation_model import ml_recommendation_model
+from schemas.chat import ChatMessageSchema
 from database.models import Product
 
 logger = logging.getLogger(__name__)
@@ -94,7 +94,7 @@ async def perform_spatial_analysis(
     """Perform detailed spatial analysis for furniture placement"""
     try:
         # Convert dict back to RoomAnalysis object for processing
-        from api.services.google_ai_service import RoomAnalysis
+        from services.google_ai_service import RoomAnalysis
 
         room_analysis_obj = RoomAnalysis(
             room_type=room_analysis.get("room_type", "unknown"),
@@ -155,7 +155,7 @@ async def generate_room_visualization(
 ):
     """Generate photorealistic room visualization with placed products"""
     try:
-        from api.services.google_ai_service import VisualizationRequest
+        from services.google_ai_service import VisualizationRequest
 
         # Create visualization request
         viz_request = VisualizationRequest(
@@ -553,7 +553,7 @@ async def generate_visualization_with_ml_recommendations(
             })
 
         # Generate visualization
-        from api.services.google_ai_service import VisualizationRequest
+        from services.google_ai_service import VisualizationRequest
 
         viz_request = VisualizationRequest(
             base_image=base_image,

@@ -17,8 +17,8 @@ chat = None
 visualization = None
 
 try:
-    from api.demo_settings import demo_settings as settings
-    from api.core.logging import setup_logging
+    from demo_settings import demo_settings as settings
+    from core.logging import setup_logging
 except ImportError as e:
     print(f"Import error: {e}")
     # Create minimal settings for demo
@@ -32,7 +32,7 @@ except ImportError as e:
 
 # Import routers separately after settings are loaded
 try:
-    from api.routers import chat, visualization
+    from routers import chat, visualization
     print("✅ Routers imported successfully")
 except ImportError as e:
     print(f"⚠️ Router import error: {e}")
