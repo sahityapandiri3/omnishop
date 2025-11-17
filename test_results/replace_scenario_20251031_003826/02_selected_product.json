@@ -1,0 +1,25 @@
+{
+  "id": 561,
+  "name": "SPIN SOFA",
+  "price": 488500.0,
+  "currency": "INR",
+  "brand": "Sage Living",
+  "source_website": "sageliving",
+  "source_url": "https://www.sageliving.in/product/spin-sofa/",
+  "is_on_sale": false,
+  "primary_image": {
+    "url": "https://www.sageliving.in/wp-content/uploads/2022/11/Sage20226119-1.jpg?x36149",
+    "alt_text": null
+  },
+  "recommendation_data": {
+    "confidence_score": 0.5699146660716877,
+    "reasoning": [
+      "Perfect functional fit for your space",
+      "Excellent value within your budget"
+    ],
+    "style_match": 0.5,
+    "functional_match": 1.0,
+    "price_score": 1.0,
+    "overall_score": 0.5699146660716877
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "success_rate": "100.0%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-27 17:40:48"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: d89f4cc7-5bc5-4c36-97e6-6a4dd8efbe82",
+      "timestamp": "2025-10-27 17:40:50"
+    },
+    {
+      "test": "Analyze Room & Get Suggestions",
+      "passed": true,
+      "details": "22 products, selected: Lumo Sofa  3 Seater  Down-feather Back Cushions (7.5 feet)",
+      "timestamp": "2025-10-27 17:42:23"
+    },
+    {
+      "test": "Generate Visualization",
+      "passed": true,
+      "details": "Time: 130.7s, Confidence: 0.00, Output: /Users/sahityapandiri/Omnishop/test_results/visualization_1761567275.jpg",
+      "timestamp": "2025-10-27 17:44:35"
+    },
+    {
+      "test": "Verify Quality",
+      "passed": true,
+      "details": "Automated checks passed, manual verification required",
+      "timestamp": "2025-10-27 17:44:36"
+    },
+    {
+      "test": "Check Active Fixes",
+      "passed": true,
+      "details": "Manual log verification required",
+      "timestamp": "2025-10-27 17:44:37"
+    }
+  ]
+}

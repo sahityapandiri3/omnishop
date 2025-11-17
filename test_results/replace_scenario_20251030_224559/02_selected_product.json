@@ -1,0 +1,25 @@
+{
+  "id": 413,
+  "name": "Lumo Sofa  L Shaped Left Sectional  Down-feather Back Cushions (7.5 feet)",
+  "price": 137398.47,
+  "currency": "INR",
+  "brand": "Pelican Essentials",
+  "source_website": "pelicanessentials",
+  "source_url": "https://pelicanessentials.com/products/lumo-sofa-l-shaped-left-sectional-down-feather-cushions-7-5-feet-copy",
+  "is_on_sale": false,
+  "primary_image": {
+    "url": "https://pelicanessentials.com/cdn/shop/files/rovel3.jpg?v=1727288126&width=1154",
+    "alt_text": null
+  },
+  "recommendation_data": {
+    "confidence_score": 0.5699312362245192,
+    "reasoning": [
+      "Perfect functional fit for your space",
+      "Excellent value within your budget"
+    ],
+    "style_match": 0.5,
+    "functional_match": 1.0,
+    "price_score": 1.0,
+    "overall_score": 0.5699312362245192
+  }
+}

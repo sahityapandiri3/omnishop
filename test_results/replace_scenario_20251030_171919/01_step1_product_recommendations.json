@@ -1,0 +1,540 @@
+{
+  "message": {
+    "id": "446d1653-6120-4aa2-90ea-dedd231e4deb",
+    "type": "assistant",
+    "content": "I've analyzed your request and found some great recommendations for you!",
+    "timestamp": "2025-10-30T11:49:27.911282",
+    "session_id": "e093b27a-dcd2-47a5-9a0c-06094a469aa1",
+    "products": [
+      {
+        "id": 357,
+        "name": "Standard Sofa Fabric Swatches (Palo-Lore-Node)",
+        "price": 99.64,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/palo-sofa-swatches",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/rightimage-swatchboxcopy.png?v=1695779254&width=825",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5741018413552373,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5741018413552373
+        }
+      },
+      {
+        "id": 460,
+        "name": "Anne Sofa  L Shaped Sectional  Down-feather Back Cushion (9.3 feet) XL  Removable Fabric",
+        "price": 125802.07,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/anne-sofa-l-shaped-sectional-down-feather-cushion-9-3-feet-xl",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/ANNE_L_99.jpg?v=1727408911&width=898",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5698749568035515,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5698749568035515
+        }
+      },
+      {
+        "id": 522,
+        "name": "ECLIPSE 7 SOFA",
+        "price": 304440.0,
+        "currency": "INR",
+        "brand": "Sage Living",
+        "source_website": "sageliving",
+        "source_url": "https://www.sageliving.in/product/eclipse-7-sofa/",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://www.sageliving.in/wp-content/uploads/2023/07/1-scaled.jpg?x36149",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5696635652432307,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5696635652432307
+        }
+      },
+      {
+        "id": 530,
+        "name": "TAMA SOFA",
+        "price": 258350.0,
+        "currency": "INR",
+        "brand": "Sage Living",
+        "source_website": "sageliving",
+        "source_url": "https://www.sageliving.in/product/tama-sofa/",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://www.sageliving.in/wp-content/uploads/2022/12/1-4.jpg?x36149",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5688864257786558,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5688864257786558
+        }
+      },
+      {
+        "id": 294,
+        "name": "Anne Sofa  L Shaped Right Sectional  Polyfill Cushion (9.3 feet) XL  Removable Fabric",
+        "price": 87226.34,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/anne-sofa-l-shaped-right-sectional-polyfill-cushion-9-3-feet-xl",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/Anne_L_1_fa8d778b-f823-4f48-91c7-13de38ebbe80.png?v=1729680288&width=1281",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5682977924217619,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5682977924217619
+        }
+      },
+      {
+        "id": 450,
+        "name": "Cael Sofa  3 Seater (6 feet)",
+        "price": 37640.6,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/cael-3-seater-sofa-6-feet",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/72_2-Photoroom.jpg?v=1751799836&width=879",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5678601177389604,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5678601177389604
+        }
+      },
+      {
+        "id": 453,
+        "name": "Anne Sofa  L Shaped Right Sectional  Down-feather Cushion (9.3 feet) XL  Removable Fabric",
+        "price": 119442.07,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/anne-sofa-l-shaped-right-sectional-down-feather-cushion-9-3-feet-xl",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/Anne_L_1_fa8d778b-f823-4f48-91c7-13de38ebbe80.png?v=1729680288&width=1281",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5678413415625897,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5678413415625897
+        }
+      },
+      {
+        "id": 457,
+        "name": "Anne Sofa  1 Seater  Polyfill Cushion  Removable Fabric",
+        "price": 30314.83,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/anne-sofa-1-seater",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/Pelican_LivingRoom001_Anne_1_Seaters_002_f6886526-1039-4306-b838-6ef89e3bd5b5.jpg?v=1731931773&width=2500",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.566732945200111,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.566732945200111
+        }
+      },
+      {
+        "id": 312,
+        "name": "Node Sofa  5 Seater Corner Sofa (8x8 feet)",
+        "price": 104928.34,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/node-sofa-5-seater-corner-sectional-8-x8-feet",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/node_5_seater_a81f23c9-c9ce-4d8f-ab2f-0b171439bc03.jpg?v=1734338702&width=2000",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5665255924363988,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5665255924363988
+        }
+      },
+      {
+        "id": 407,
+        "name": "Node Sofa  1 Seater Sofa (3.5 feet)",
+        "price": 25852.34,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/node-sofa-1-seater-3-5-feet",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/Node1.jpg?v=1692489751&width=1125",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5665203229394736,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5665203229394736
+        }
+      }
+    ],
+    "image_url": null
+  },
+  "analysis": {
+    "design_analysis": {
+      "current_style": "The room features a modern aesthetic with high ceilings, large windows, and a neutral color palette. The existing sofas are contemporary, with a mix of cream and brown tones.",
+      "recommended_sofa": {
+        "style": "Modern",
+        "material": "Leather",
+        "color": "Consider a dark grey or charcoal to complement the existing neutral tones while adding a sleek contrast.",
+        "features": "Opt for clean lines and a low profile to maintain the modern look. Look for options with metal or minimal legs to enhance the airy feel of the room.",
+        "size": "Ensure the sofa maintains the current spatial layout, ideally similar in size to the existing sofa to fit well within the space."
+      },
+      "additional_tips": [
+        "Consider adding cushions with geometric patterns to introduce subtle texture.",
+        "Incorporate a throw blanket in a warm tone to add comfort and warmth.",
+        "Ensure the new sofa aligns with the room's height and doesn't obstruct views from the windows."
+      ]
+    },
+    "product_matching_criteria": {},
+    "visualization_guidance": {},
+    "confidence_scores": {},
+    "recommendations": {},
+    "user_friendly_response": "I've analyzed your request and found some great recommendations for you!"
+  },
+  "recommended_products": [
+    {
+      "id": 357,
+      "name": "Standard Sofa Fabric Swatches (Palo-Lore-Node)",
+      "price": 99.64,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/palo-sofa-swatches",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/rightimage-swatchboxcopy.png?v=1695779254&width=825",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5741018413552373,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5741018413552373
+      }
+    },
+    {
+      "id": 460,
+      "name": "Anne Sofa  L Shaped Sectional  Down-feather Back Cushion (9.3 feet) XL  Removable Fabric",
+      "price": 125802.07,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/anne-sofa-l-shaped-sectional-down-feather-cushion-9-3-feet-xl",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/ANNE_L_99.jpg?v=1727408911&width=898",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5698749568035515,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5698749568035515
+      }
+    },
+    {
+      "id": 522,
+      "name": "ECLIPSE 7 SOFA",
+      "price": 304440.0,
+      "currency": "INR",
+      "brand": "Sage Living",
+      "source_website": "sageliving",
+      "source_url": "https://www.sageliving.in/product/eclipse-7-sofa/",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://www.sageliving.in/wp-content/uploads/2023/07/1-scaled.jpg?x36149",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5696635652432307,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5696635652432307
+      }
+    },
+    {
+      "id": 530,
+      "name": "TAMA SOFA",
+      "price": 258350.0,
+      "currency": "INR",
+      "brand": "Sage Living",
+      "source_website": "sageliving",
+      "source_url": "https://www.sageliving.in/product/tama-sofa/",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://www.sageliving.in/wp-content/uploads/2022/12/1-4.jpg?x36149",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5688864257786558,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5688864257786558
+      }
+    },
+    {
+      "id": 294,
+      "name": "Anne Sofa  L Shaped Right Sectional  Polyfill Cushion (9.3 feet) XL  Removable Fabric",
+      "price": 87226.34,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/anne-sofa-l-shaped-right-sectional-polyfill-cushion-9-3-feet-xl",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/Anne_L_1_fa8d778b-f823-4f48-91c7-13de38ebbe80.png?v=1729680288&width=1281",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5682977924217619,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5682977924217619
+      }
+    },
+    {
+      "id": 450,
+      "name": "Cael Sofa  3 Seater (6 feet)",
+      "price": 37640.6,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/cael-3-seater-sofa-6-feet",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/72_2-Photoroom.jpg?v=1751799836&width=879",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5678601177389604,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5678601177389604
+      }
+    },
+    {
+      "id": 453,
+      "name": "Anne Sofa  L Shaped Right Sectional  Down-feather Cushion (9.3 feet) XL  Removable Fabric",
+      "price": 119442.07,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/anne-sofa-l-shaped-right-sectional-down-feather-cushion-9-3-feet-xl",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/Anne_L_1_fa8d778b-f823-4f48-91c7-13de38ebbe80.png?v=1729680288&width=1281",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5678413415625897,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5678413415625897
+      }
+    },
+    {
+      "id": 457,
+      "name": "Anne Sofa  1 Seater  Polyfill Cushion  Removable Fabric",
+      "price": 30314.83,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/anne-sofa-1-seater",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/Pelican_LivingRoom001_Anne_1_Seaters_002_f6886526-1039-4306-b838-6ef89e3bd5b5.jpg?v=1731931773&width=2500",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.566732945200111,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.566732945200111
+      }
+    },
+    {
+      "id": 312,
+      "name": "Node Sofa  5 Seater Corner Sofa (8x8 feet)",
+      "price": 104928.34,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/node-sofa-5-seater-corner-sectional-8-x8-feet",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/node_5_seater_a81f23c9-c9ce-4d8f-ab2f-0b171439bc03.jpg?v=1734338702&width=2000",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5665255924363988,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5665255924363988
+      }
+    },
+    {
+      "id": 407,
+      "name": "Node Sofa  1 Seater Sofa (3.5 feet)",
+      "price": 25852.34,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/node-sofa-1-seater-3-5-feet",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/Node1.jpg?v=1692489751&width=1125",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5665203229394736,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5665203229394736
+      }
+    }
+  ],
+  "detected_furniture": null,
+  "similar_furniture_items": null,
+  "requires_action_choice": false,
+  "action_options": null
+}

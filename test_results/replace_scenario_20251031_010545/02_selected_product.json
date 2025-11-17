@@ -1,0 +1,25 @@
+{
+  "id": 313,
+  "name": "Lumo Sofa  1 Seater Genuine Leather",
+  "price": 83728.34,
+  "currency": "INR",
+  "brand": "Pelican Essentials",
+  "source_website": "pelicanessentials",
+  "source_url": "https://pelicanessentials.com/products/lumo-sofa-1-seater-genuine-leather",
+  "is_on_sale": false,
+  "primary_image": {
+    "url": "https://pelicanessentials.com/cdn/shop/files/rove_l_11.jpg?v=1727394424&width=1445",
+    "alt_text": null
+  },
+  "recommendation_data": {
+    "confidence_score": 0.5695745522009469,
+    "reasoning": [
+      "Perfect functional fit for your space",
+      "Excellent value within your budget"
+    ],
+    "style_match": 0.5,
+    "functional_match": 1.0,
+    "price_score": 1.0,
+    "overall_score": 0.5695745522009469
+  }
+}

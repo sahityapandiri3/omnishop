@@ -1,0 +1,46 @@
+{
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "success_rate": "100.0%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-26 15:15:04"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: f4b7bdd6-169a-4459-8bf1-5d1951609287",
+      "timestamp": "2025-10-26 15:15:05"
+    },
+    {
+      "test": "Analyze Room & Get Suggestions",
+      "passed": true,
+      "details": "22 products, selected: Node 2.0 Sofa  4 Seater Corner Sofa (9 x 6 feet)",
+      "timestamp": "2025-10-26 15:15:38"
+    },
+    {
+      "test": "Generate Visualization",
+      "passed": true,
+      "details": "Time: 109.6s, Confidence: 0.00, Output: /Users/sahityapandiri/Omnishop/test_results/visualization_1761472048.jpg",
+      "timestamp": "2025-10-26 15:17:28"
+    },
+    {
+      "test": "Verify Quality",
+      "passed": true,
+      "details": "Automated checks passed, manual verification required",
+      "timestamp": "2025-10-26 15:17:29"
+    },
+    {
+      "test": "Check Active Fixes",
+      "passed": true,
+      "details": "Manual log verification required",
+      "timestamp": "2025-10-26 15:17:30"
+    }
+  ]
+}

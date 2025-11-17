@@ -1,0 +1,46 @@
+{
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "success_rate": "100.0%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-24 20:35:46"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: a015cbc8-d219-4bde-92bc-921f0fc34f2a",
+      "timestamp": "2025-10-24 20:35:47"
+    },
+    {
+      "test": "Analyze Room & Get Suggestions",
+      "passed": true,
+      "details": "25 products, selected: Lore Sofa  L-Shaped Right Sectional with Chaise  Italian Leather Sofa (7 feet)",
+      "timestamp": "2025-10-24 20:36:39"
+    },
+    {
+      "test": "Generate Visualization",
+      "passed": true,
+      "details": "Time: 45.6s, Confidence: 0.00, Output: /Users/sahityapandiri/Omnishop/test_results/visualization_1761318446.jpg",
+      "timestamp": "2025-10-24 20:37:26"
+    },
+    {
+      "test": "Verify Quality",
+      "passed": true,
+      "details": "Automated checks passed, manual verification required",
+      "timestamp": "2025-10-24 20:37:27"
+    },
+    {
+      "test": "Check Active Fixes",
+      "passed": true,
+      "details": "Manual log verification required",
+      "timestamp": "2025-10-24 20:37:28"
+    }
+  ]
+}

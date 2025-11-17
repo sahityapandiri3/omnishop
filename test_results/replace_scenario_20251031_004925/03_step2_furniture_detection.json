@@ -1,0 +1,54 @@
+{
+  "message": {
+    "id": "a13f9bd6-7836-4c19-9d6f-d4c3c5c711c7",
+    "type": "assistant",
+    "content": "I've analyzed your request and found some great recommendations for you!",
+    "timestamp": "2025-10-30T19:19:52.600171",
+    "session_id": "60c06ce6-bfda-4589-a998-b6c402c6ea4f",
+    "products": [],
+    "image_url": null
+  },
+  "analysis": {
+    "design_analysis": {
+      "current_style": "The room has a neutral and elegant aesthetic with a focus on soft textures and muted tones. The existing sofa is upholstered in a light fabric, contributing to an airy and relaxing atmosphere.",
+      "recommended_sofa_options": [
+        {
+          "style": "Modern",
+          "material": "Leather",
+          "color": "Light tan or cream",
+          "features": "Clean lines, minimalistic design, metal or wooden legs"
+        },
+        {
+          "style": "Mid-century Modern",
+          "material": "Leather",
+          "color": "Cognac",
+          "features": "Tapered legs, tufted cushions"
+        }
+      ],
+      "complementary_elements": {
+        "accent_colors": "Consider adding accent pillows in teal or gray to complement the leather sofa.",
+        "additional_furniture": "Pair with a sleek coffee table in wood or metal to enhance the modern look."
+      }
+    },
+    "product_matching_criteria": {},
+    "visualization_guidance": {},
+    "confidence_scores": {},
+    "recommendations": {},
+    "user_friendly_response": "I've analyzed your request and found some great recommendations for you!"
+  },
+  "recommended_products": [],
+  "detected_furniture": null,
+  "similar_furniture_items": [
+    {
+      "furniture_type": "sofa",
+      "position": "center",
+      "description": "White sectional sofa with chaise",
+      "confidence": 0.98
+    }
+  ],
+  "requires_action_choice": true,
+  "action_options": [
+    "add",
+    "replace"
+  ]
+}

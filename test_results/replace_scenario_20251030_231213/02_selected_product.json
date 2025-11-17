@@ -1,0 +1,25 @@
+{
+  "id": 392,
+  "name": "Palo Sofa  2 Seater (5 feet)  Removable Fabrics",
+  "price": 36188.4,
+  "currency": "INR",
+  "brand": "Pelican Essentials",
+  "source_website": "pelicanessentials",
+  "source_url": "https://pelicanessentials.com/products/palo-sofa-2-seater-5-feet-removable-fabrics-1",
+  "is_on_sale": false,
+  "primary_image": {
+    "url": "https://pelicanessentials.com/cdn/shop/files/UmberBrown_1_ca7fbf1b-4f93-43af-bc3b-3e200c9c5507-Photoroom.jpg?v=1751596221&width=1747",
+    "alt_text": null
+  },
+  "recommendation_data": {
+    "confidence_score": 0.5688067231738216,
+    "reasoning": [
+      "Perfect functional fit for your space",
+      "Excellent value within your budget"
+    ],
+    "style_match": 0.5,
+    "functional_match": 1.0,
+    "price_score": 1.0,
+    "overall_score": 0.5688067231738216
+  }
+}

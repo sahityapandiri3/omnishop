@@ -130,3 +130,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Chat conversation data (exclude from git)
+db_exports/chat_messages.csv
+db_exports/chat_sessions.csv

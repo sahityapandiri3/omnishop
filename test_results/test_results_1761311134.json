@@ -1,0 +1,46 @@
+{
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "success_rate": "100.0%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-24 18:33:41"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: d53bd0f3-d22d-4055-a602-61a82744f1b5",
+      "timestamp": "2025-10-24 18:33:42"
+    },
+    {
+      "test": "Analyze Room & Get Suggestions",
+      "passed": true,
+      "details": "23 products, selected: Cael Sofa  3 Seater (6 feet)",
+      "timestamp": "2025-10-24 18:34:10"
+    },
+    {
+      "test": "Generate Visualization",
+      "passed": true,
+      "details": "Time: 79.6s, Confidence: 0.00, Output: /Users/sahityapandiri/Omnishop/test_results/visualization_1761311131.jpg",
+      "timestamp": "2025-10-24 18:35:31"
+    },
+    {
+      "test": "Verify Quality",
+      "passed": true,
+      "details": "Automated checks passed, manual verification required",
+      "timestamp": "2025-10-24 18:35:32"
+    },
+    {
+      "test": "Check Active Fixes",
+      "passed": true,
+      "details": "Manual log verification required",
+      "timestamp": "2025-10-24 18:35:33"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "id": 308,
+  "name": "Lore Sofa  3 Seater (7 feet)  High Back Sofa",
+  "price": 57674.6,
+  "currency": "INR",
+  "brand": "Pelican Essentials",
+  "source_website": "pelicanessentials",
+  "source_url": "https://pelicanessentials.com/products/heranca-3-seater",
+  "is_on_sale": false,
+  "primary_image": {
+    "url": "https://pelicanessentials.com/cdn/shop/files/three_seater_grey_0002-Photoroom.jpg?v=1751589493&width=1600",
+    "alt_text": null
+  },
+  "recommendation_data": {
+    "confidence_score": 0.5698923542573896,
+    "reasoning": [
+      "Perfect functional fit for your space",
+      "Excellent value within your budget"
+    ],
+    "style_match": 0.5,
+    "functional_match": 1.0,
+    "price_score": 1.0,
+    "overall_score": 0.5698923542573896
+  }
+}

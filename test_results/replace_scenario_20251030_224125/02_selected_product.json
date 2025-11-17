@@ -1,0 +1,25 @@
+{
+  "id": 439,
+  "name": "Leather Sofa Swatches",
+  "price": 99.64,
+  "currency": "INR",
+  "brand": "Pelican Essentials",
+  "source_website": "pelicanessentials",
+  "source_url": "https://pelicanessentials.com/products/genuine-leather-swatches-palo",
+  "is_on_sale": false,
+  "primary_image": {
+    "url": "https://pelicanessentials.com/cdn/shop/files/istockphoto-134247840-612x612.jpg?v=1695779024&width=571",
+    "alt_text": null
+  },
+  "recommendation_data": {
+    "confidence_score": 0.5952909811434908,
+    "reasoning": [
+      "Perfect functional fit for your space",
+      "Excellent value within your budget"
+    ],
+    "style_match": 0.5,
+    "functional_match": 1.0,
+    "price_score": 1.0,
+    "overall_score": 0.5952909811434908
+  }
+}

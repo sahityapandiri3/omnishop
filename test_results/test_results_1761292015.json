@@ -1,0 +1,46 @@
+{
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "success_rate": "100.0%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-24 13:13:24"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: 728846cf-9680-4640-8887-c8db1ad9db26",
+      "timestamp": "2025-10-24 13:13:25"
+    },
+    {
+      "test": "Analyze Room & Get Suggestions",
+      "passed": true,
+      "details": "23 products, selected: Palo Sofa  3 Seater Italian Leather Sofa (7 feet)",
+      "timestamp": "2025-10-24 13:14:02"
+    },
+    {
+      "test": "Generate Visualization",
+      "passed": true,
+      "details": "Time: 169.6s, Confidence: 0.00, Output: /Users/sahityapandiri/Omnishop/test_results/visualization_1761292012.jpg",
+      "timestamp": "2025-10-24 13:16:52"
+    },
+    {
+      "test": "Verify Quality",
+      "passed": true,
+      "details": "Automated checks passed, manual verification required",
+      "timestamp": "2025-10-24 13:16:53"
+    },
+    {
+      "test": "Check Active Fixes",
+      "passed": true,
+      "details": "Manual log verification required",
+      "timestamp": "2025-10-24 13:16:54"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "success_rate": "100.0%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-24 11:17:09"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: 79b27945-f5e8-49dd-abae-2ee2f2396076",
+      "timestamp": "2025-10-24 11:17:10"
+    },
+    {
+      "test": "Analyze Room & Get Suggestions",
+      "passed": true,
+      "details": "22 products, selected: Node 2.0 Sofa  3 Seater (9 feet)",
+      "timestamp": "2025-10-24 11:17:36"
+    },
+    {
+      "test": "Generate Visualization",
+      "passed": true,
+      "details": "Time: 118.6s, Confidence: 0.00, Output: /Users/sahityapandiri/Omnishop/test_results/visualization_1761284975.jpg",
+      "timestamp": "2025-10-24 11:19:35"
+    },
+    {
+      "test": "Verify Quality",
+      "passed": true,
+      "details": "Automated checks passed, manual verification required",
+      "timestamp": "2025-10-24 11:19:36"
+    },
+    {
+      "test": "Check Active Fixes",
+      "passed": true,
+      "details": "Manual log verification required",
+      "timestamp": "2025-10-24 11:19:37"
+    }
+  ]
+}

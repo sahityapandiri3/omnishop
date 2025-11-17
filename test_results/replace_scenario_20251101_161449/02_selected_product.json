@@ -1,0 +1,25 @@
+{
+  "id": 418,
+  "name": "Lore Sofa  3 Seater Italian Leather Sofa (7 feet)",
+  "price": 147758.7,
+  "currency": "INR",
+  "brand": "Pelican Essentials",
+  "source_website": "pelicanessentials",
+  "source_url": "https://pelicanessentials.com/products/lore-3-seater-sofa-italian-leather",
+  "is_on_sale": false,
+  "primary_image": {
+    "url": "https://pelicanessentials.com/cdn/shop/files/3seatersofa_1_08d9b16d-6aa7-40b4-b2d3-1a45e417ca6e.jpg?v=1751593289&width=2000",
+    "alt_text": null
+  },
+  "recommendation_data": {
+    "confidence_score": 0.5690130568688763,
+    "reasoning": [
+      "Perfect functional fit for your space",
+      "Excellent value within your budget"
+    ],
+    "style_match": 0.5,
+    "functional_match": 1.0,
+    "price_score": 1.0,
+    "overall_score": 0.5690130568688763
+  }
+}

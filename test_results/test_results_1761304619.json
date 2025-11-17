@@ -1,0 +1,46 @@
+{
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "success_rate": "100.0%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-24 16:44:03"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: 4bef482d-afb0-4021-a95a-1b9cdec24177",
+      "timestamp": "2025-10-24 16:44:04"
+    },
+    {
+      "test": "Analyze Room & Get Suggestions",
+      "passed": true,
+      "details": "23 products, selected: ECRU L SHAPED SOFA",
+      "timestamp": "2025-10-24 16:44:45"
+    },
+    {
+      "test": "Generate Visualization",
+      "passed": true,
+      "details": "Time: 129.9s, Confidence: 0.00, Output: /Users/sahityapandiri/Omnishop/test_results/visualization_1761304616.jpg",
+      "timestamp": "2025-10-24 16:46:56"
+    },
+    {
+      "test": "Verify Quality",
+      "passed": true,
+      "details": "Automated checks passed, manual verification required",
+      "timestamp": "2025-10-24 16:46:57"
+    },
+    {
+      "test": "Check Active Fixes",
+      "passed": true,
+      "details": "Manual log verification required",
+      "timestamp": "2025-10-24 16:46:58"
+    }
+  ]
+}

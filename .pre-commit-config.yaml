@@ -1,0 +1,82 @@
+# Pre-commit hooks for code quality and testing
+# Install with: pip install pre-commit && pre-commit install
+
+repos:
+  # General file formatting
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-json
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # Python code formatting
+  - repo: https://github.com/psf/black
+    rev: 23.12.1
+    hooks:
+      - id: black
+        language_version: python3.10
+        args: ['--line-length=127']
+        files: ^api/
+
+  # Python import sorting
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ['--profile=black', '--line-length=127']
+        files: ^api/
+
+  # Python linting
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        args: ['--max-line-length=127', '--extend-ignore=E203,E501,W503']
+        files: ^api/
+
+  # Python type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        args: ['--ignore-missing-imports', '--no-strict-optional']
+        files: ^api/
+        additional_dependencies: [types-all]
+
+  # Security checks
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.6
+    hooks:
+      - id: bandit
+        args: ['-r', 'api', '-ll', '--skip=B101,B601']
+        files: ^api/
+
+  # Run unit tests before commit
+  - repo: local
+    hooks:
+      - id: pytest-unit
+        name: pytest unit tests
+        entry: pytest
+        language: system
+        args: ['tests/unit', '-v', '-m', 'unit', '--tb=short']
+        pass_filenames: false
+        always_run: true
+        stages: [commit]
+
+  # Run quick regression tests
+  - repo: local
+    hooks:
+      - id: pytest-regression-quick
+        name: pytest regression tests (quick)
+        entry: pytest
+        language: system
+        args: ['tests/regression', '-v', '-m', 'regression and not slow', '--tb=short']
+        pass_filenames: false
+        always_run: true
+        stages: [push]

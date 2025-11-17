@@ -1,0 +1,46 @@
+{
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "success_rate": "100.0%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-26 13:01:39"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: 2bc0fe28-17a4-4230-8e8b-93c72a967a20",
+      "timestamp": "2025-10-26 13:01:40"
+    },
+    {
+      "test": "Analyze Room & Get Suggestions",
+      "passed": true,
+      "details": "25 products, selected: Lore Sofa  3 Seater Italian Leather Sofa (7 feet)",
+      "timestamp": "2025-10-26 13:01:57"
+    },
+    {
+      "test": "Generate Visualization",
+      "passed": true,
+      "details": "Time: 136.4s, Confidence: 0.00, Output: /Users/sahityapandiri/Omnishop/test_results/visualization_1761464055.jpg",
+      "timestamp": "2025-10-26 13:04:15"
+    },
+    {
+      "test": "Verify Quality",
+      "passed": true,
+      "details": "Automated checks passed, manual verification required",
+      "timestamp": "2025-10-26 13:04:16"
+    },
+    {
+      "test": "Check Active Fixes",
+      "passed": true,
+      "details": "Manual log verification required",
+      "timestamp": "2025-10-26 13:04:17"
+    }
+  ]
+}

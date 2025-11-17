@@ -1,0 +1,25 @@
+{
+  "id": 416,
+  "name": "Lumo Sofa  3 Seater  Down-feather Back Cushions (7.5 feet)",
+  "price": 112244.67,
+  "currency": "INR",
+  "brand": "Pelican Essentials",
+  "source_website": "pelicanessentials",
+  "source_url": "https://pelicanessentials.com/products/lumo-sofa-3-seater-down-feather-cushions-7-5-feet",
+  "is_on_sale": false,
+  "primary_image": {
+    "url": "https://pelicanessentials.com/cdn/shop/files/lumo_3_gray.jpg?v=1742256505&width=2890",
+    "alt_text": null
+  },
+  "recommendation_data": {
+    "confidence_score": 0.568541252369843,
+    "reasoning": [
+      "Perfect functional fit for your space",
+      "Excellent value within your budget"
+    ],
+    "style_match": 0.5,
+    "functional_match": 1.0,
+    "price_score": 1.0,
+    "overall_score": 0.568541252369843
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "success_rate": "100.0%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-24 13:46:54"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: 31525d34-3c62-42b3-b868-fe7e5b0ee9f3",
+      "timestamp": "2025-10-24 13:46:55"
+    },
+    {
+      "test": "Analyze Room & Get Suggestions",
+      "passed": true,
+      "details": "22 products, selected: Palo Sofa T  3 Seater (7 feet)  Tufted",
+      "timestamp": "2025-10-24 13:47:23"
+    },
+    {
+      "test": "Generate Visualization",
+      "passed": true,
+      "details": "Time: 168.2s, Confidence: 0.00, Output: /Users/sahityapandiri/Omnishop/test_results/visualization_1761294013.jpg",
+      "timestamp": "2025-10-24 13:50:13"
+    },
+    {
+      "test": "Verify Quality",
+      "passed": true,
+      "details": "Automated checks passed, manual verification required",
+      "timestamp": "2025-10-24 13:50:14"
+    },
+    {
+      "test": "Check Active Fixes",
+      "passed": true,
+      "details": "Manual log verification required",
+      "timestamp": "2025-10-24 13:50:15"
+    }
+  ]
+}

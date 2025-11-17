@@ -1,0 +1,610 @@
+{
+  "message": {
+    "id": "2ce57461-b184-421a-bd59-210a76f2e660",
+    "type": "assistant",
+    "content": "I've analyzed your request and found some great recommendations for you!",
+    "timestamp": "2025-10-30T17:16:32.864443",
+    "session_id": "c8663962-0df4-44f8-9cdd-dd23f33d9ecc",
+    "products": [
+      {
+        "id": 357,
+        "name": "Standard Sofa Fabric Swatches (Palo-Lore-Node)",
+        "price": 99.64,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/palo-sofa-swatches",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/rightimage-swatchboxcopy.png?v=1695779254&width=825",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5989450748328318,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5989450748328318
+        }
+      },
+      {
+        "id": 439,
+        "name": "Leather Sofa Swatches",
+        "price": 99.64,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/genuine-leather-swatches-palo",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/istockphoto-134247840-612x612.jpg?v=1695779024&width=571",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.574135132894968,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.574135132894968
+        }
+      },
+      {
+        "id": 318,
+        "name": "Nordhaven Sofa  2 Seater  Solid Teak/Walut/Oak Wood",
+        "price": 83405.25,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/nordhaven-sofa-3-seater-solid-teak-wood",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/grey_p_view_-Photoroom.jpg?v=1756481738&width=2279",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5699278347563701,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5699278347563701
+        }
+      },
+      {
+        "id": 416,
+        "name": "Lumo Sofa  3 Seater  Down-feather Back Cushions (7.5 feet)",
+        "price": 112244.67,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/lumo-sofa-3-seater-down-feather-cushions-7-5-feet",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/lumo_3_gray.jpg?v=1742256505&width=2890",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5697488161136249,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5697488161136249
+        }
+      },
+      {
+        "id": 367,
+        "name": "Palo Sofa T  L-Shaped Sectional with Chaise (8.25 feet length)  Tufted",
+        "price": 81386.8,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/palo-sofa-t-tufeted-sectional-8-5-feet-length-wood-legs",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/products/Left_Arm_Chaise_Indigo_Blue_Wood_Leg_6259b6d1-9e4b-4e92-b903-974481c46f39.jpg?v=1669626892&width=1800",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5694012901429404,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5694012901429404
+        }
+      },
+      {
+        "id": 379,
+        "name": "Palo Sofa  3 Seater (7 feet)  Removable Fabrics",
+        "price": 49703.4,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/palo-3seater-removable",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/3_Seater_Front_Stone_Grey-Photoroom.jpg?v=1751585124&width=1600",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5691155526701814,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5691155526701814
+        }
+      },
+      {
+        "id": 458,
+        "name": "Anne Sofa  2 Seater  Polyfill Cushion (5.6 feet)  Removable Fabric",
+        "price": 50232.34,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/anne-sofa-2-seater-5-6-feet",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/Pelican_LivingRoom001_Anne_2_Seaters_002_4116f018-664d-4216-90d1-98b0c24d6dc0.jpg?v=1731931775&width=2500",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5689548776761761,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5689548776761761
+        }
+      },
+      {
+        "id": 531,
+        "name": "CALISTA SOFA",
+        "price": 658550.0,
+        "currency": "INR",
+        "brand": "Sage Living",
+        "source_website": "sageliving",
+        "source_url": "https://www.sageliving.in/product/calista-sofa/",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://www.sageliving.in/wp-content/uploads/2023/02/1-5.jpg?x36149",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5679032595662042,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5679032595662042
+        }
+      },
+      {
+        "id": 377,
+        "name": "Palo Sofa  L-Shaped Sectional with Chaise (8.25 feet length)  Removable Fabrics",
+        "price": 76477.94,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/sectional-wood-legs",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/products/Left_Arm_Chaise_Wood_Leg.jpg?v=1707914404&width=2000",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5669781106228471,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5669781106228471
+        }
+      },
+      {
+        "id": 556,
+        "name": "ELLIP DINING CHAIR",
+        "price": 29500.0,
+        "currency": "INR",
+        "brand": "Sage Living",
+        "source_website": "sageliving",
+        "source_url": "https://www.sageliving.in/product/ellip-dining-chair/",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://www.sageliving.in/wp-content/uploads/2022/02/1-3.jpg?x36149",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5649221097915573,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5649221097915573
+        }
+      }
+    ],
+    "image_url": null
+  },
+  "analysis": {
+    "design_analysis": {
+      "current_style": "The room has a neutral, modern aesthetic with beige tones and clean lines. The existing sofa is a light color, contributing to the airy and bright feel of the room.",
+      "recommended_sofa": {
+        "style": "Modern",
+        "material": "Leather",
+        "color_suggestions": [
+          "Dark brown",
+          "Charcoal gray",
+          "Black"
+        ],
+        "features": [
+          "Clean lines",
+          "Low profile",
+          "Metal legs for a contemporary look"
+        ]
+      },
+      "complementary_elements": {
+        "pillows": "Consider adding pillows in contrasting colors like teal or burgundy to add a pop of color.",
+        "accents": "Metallic or glass accents could enhance the modern feel."
+      }
+    },
+    "product_matching_criteria": {},
+    "visualization_guidance": {},
+    "confidence_scores": {},
+    "recommendations": {},
+    "user_friendly_response": "I've analyzed your request and found some great recommendations for you!"
+  },
+  "recommended_products": [
+    {
+      "id": 357,
+      "name": "Standard Sofa Fabric Swatches (Palo-Lore-Node)",
+      "price": 99.64,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/palo-sofa-swatches",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/rightimage-swatchboxcopy.png?v=1695779254&width=825",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5989450748328318,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5989450748328318
+      }
+    },
+    {
+      "id": 439,
+      "name": "Leather Sofa Swatches",
+      "price": 99.64,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/genuine-leather-swatches-palo",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/istockphoto-134247840-612x612.jpg?v=1695779024&width=571",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.574135132894968,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.574135132894968
+      }
+    },
+    {
+      "id": 318,
+      "name": "Nordhaven Sofa  2 Seater  Solid Teak/Walut/Oak Wood",
+      "price": 83405.25,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/nordhaven-sofa-3-seater-solid-teak-wood",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/grey_p_view_-Photoroom.jpg?v=1756481738&width=2279",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5699278347563701,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5699278347563701
+      }
+    },
+    {
+      "id": 416,
+      "name": "Lumo Sofa  3 Seater  Down-feather Back Cushions (7.5 feet)",
+      "price": 112244.67,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/lumo-sofa-3-seater-down-feather-cushions-7-5-feet",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/lumo_3_gray.jpg?v=1742256505&width=2890",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5697488161136249,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5697488161136249
+      }
+    },
+    {
+      "id": 367,
+      "name": "Palo Sofa T  L-Shaped Sectional with Chaise (8.25 feet length)  Tufted",
+      "price": 81386.8,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/palo-sofa-t-tufeted-sectional-8-5-feet-length-wood-legs",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/products/Left_Arm_Chaise_Indigo_Blue_Wood_Leg_6259b6d1-9e4b-4e92-b903-974481c46f39.jpg?v=1669626892&width=1800",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5694012901429404,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5694012901429404
+      }
+    },
+    {
+      "id": 379,
+      "name": "Palo Sofa  3 Seater (7 feet)  Removable Fabrics",
+      "price": 49703.4,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/palo-3seater-removable",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/3_Seater_Front_Stone_Grey-Photoroom.jpg?v=1751585124&width=1600",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5691155526701814,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5691155526701814
+      }
+    },
+    {
+      "id": 458,
+      "name": "Anne Sofa  2 Seater  Polyfill Cushion (5.6 feet)  Removable Fabric",
+      "price": 50232.34,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/anne-sofa-2-seater-5-6-feet",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/Pelican_LivingRoom001_Anne_2_Seaters_002_4116f018-664d-4216-90d1-98b0c24d6dc0.jpg?v=1731931775&width=2500",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5689548776761761,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5689548776761761
+      }
+    },
+    {
+      "id": 531,
+      "name": "CALISTA SOFA",
+      "price": 658550.0,
+      "currency": "INR",
+      "brand": "Sage Living",
+      "source_website": "sageliving",
+      "source_url": "https://www.sageliving.in/product/calista-sofa/",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://www.sageliving.in/wp-content/uploads/2023/02/1-5.jpg?x36149",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5679032595662042,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5679032595662042
+      }
+    },
+    {
+      "id": 377,
+      "name": "Palo Sofa  L-Shaped Sectional with Chaise (8.25 feet length)  Removable Fabrics",
+      "price": 76477.94,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/sectional-wood-legs",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/products/Left_Arm_Chaise_Wood_Leg.jpg?v=1707914404&width=2000",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5669781106228471,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5669781106228471
+      }
+    },
+    {
+      "id": 556,
+      "name": "ELLIP DINING CHAIR",
+      "price": 29500.0,
+      "currency": "INR",
+      "brand": "Sage Living",
+      "source_website": "sageliving",
+      "source_url": "https://www.sageliving.in/product/ellip-dining-chair/",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://www.sageliving.in/wp-content/uploads/2022/02/1-3.jpg?x36149",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5649221097915573,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5649221097915573
+      }
+    }
+  ],
+  "detected_furniture": [
+    {
+      "object_type": "sofa",
+      "position": "center",
+      "size": "large",
+      "style": "modern",
+      "color": "white",
+      "material": "fabric",
+      "condition": "good",
+      "confidence": 0.98,
+      "furniture_id": "furniture_0"
+    },
+    {
+      "object_type": "chair",
+      "position": "left-foreground",
+      "size": "medium",
+      "style": "modern",
+      "color": "white",
+      "material": "fabric",
+      "condition": "good",
+      "confidence": 0.95,
+      "furniture_id": "furniture_1"
+    },
+    {
+      "object_type": "table",
+      "position": "right",
+      "size": "small",
+      "style": "modern",
+      "color": "brown",
+      "material": "wood",
+      "condition": "good",
+      "confidence": 0.9,
+      "furniture_id": "furniture_2"
+    }
+  ],
+  "similar_furniture_items": [
+    {
+      "object_type": "sofa",
+      "position": "center",
+      "size": "large",
+      "style": "modern",
+      "color": "white",
+      "material": "fabric",
+      "condition": "good",
+      "confidence": 0.98,
+      "furniture_id": "furniture_0"
+    }
+  ],
+  "requires_action_choice": true,
+  "action_options": {
+    "add": {
+      "available": true,
+      "description": "Add Lumo Sofa  L Shaped Left Sectional  Down-feather Back Cushions (7.5 feet) to the room alongside existing furniture"
+    },
+    "replace": {
+      "available": true,
+      "count": 1,
+      "items": [
+        {
+          "furniture_id": "furniture_0",
+          "type": "sofa",
+          "position": "center",
+          "description": "sofa at center"
+        }
+      ],
+      "description": "Replace 1 existing sofa(s) with Lumo Sofa  L Shaped Left Sectional  Down-feather Back Cushions (7.5 feet)"
+    }
+  }
+}

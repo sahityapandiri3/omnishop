@@ -1,0 +1,28 @@
+{
+  "summary": {
+    "total": 3,
+    "passed": 2,
+    "failed": 1,
+    "success_rate": "66.7%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-23 11:03:57"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: fc491737-42c7-4168-90fd-1b58ebbd6ec5",
+      "timestamp": "2025-10-23 11:03:58"
+    },
+    {
+      "test": "Analyze Room",
+      "passed": false,
+      "details": "404 Client Error: Not Found for url: http://localhost:8000/api/chat/fc491737-42c7-4168-90fd-1b58ebbd6ec5/analyze",
+      "timestamp": "2025-10-23 11:03:59"
+    }
+  ]
+}

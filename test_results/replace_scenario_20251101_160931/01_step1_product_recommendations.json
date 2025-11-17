@@ -1,0 +1,545 @@
+{
+  "message": {
+    "id": "b2e46587-01d6-4184-85de-8fdce10f2618",
+    "type": "assistant",
+    "content": "To replace your sofa with a modern leather option, consider a mid-tone brown or tan leather sectional. This will add warmth and texture while keeping the room's neutral palette. Ensure the new sofa has clean lines to maintain the modern aesthetic. Pair it with cushions in teal or gray for a cohesive look.",
+    "timestamp": "2025-11-01T10:39:38.298954",
+    "session_id": "eea82964-e449-4c77-9f44-467a3bcbceb2",
+    "products": [
+      {
+        "id": 357,
+        "name": "Standard Sofa Fabric Swatches (Palo-Lore-Node)",
+        "price": 99.64,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/palo-sofa-swatches",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/rightimage-swatchboxcopy.png?v=1695779254&width=825",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5769266753743603,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5769266753743603
+        }
+      },
+      {
+        "id": 439,
+        "name": "Leather Sofa Swatches",
+        "price": 99.64,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/genuine-leather-swatches-palo",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/istockphoto-134247840-612x612.jpg?v=1695779024&width=571",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5759397039185467,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5759397039185467
+        }
+      },
+      {
+        "id": 383,
+        "name": "Palo Sofa T  2.5 Seater (6 feet)  Tufted",
+        "price": 45228.08,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/palo-2-5-seater-tufted",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/2_Seater_Angle_Indigo_Blue_Wood_Leg-Photoroom.jpg?v=1751584942&width=1600",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5696539567281521,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5696539567281521
+        }
+      },
+      {
+        "id": 290,
+        "name": "Anne Sofa  Ottoman  Removable Fabric",
+        "price": 19823.27,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/anne-sofa-ottoman",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/image123959.webp?v=1727406804&width=1080",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5696241458751307,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5696241458751307
+        }
+      },
+      {
+        "id": 368,
+        "name": "Palo Sofa  L-Shaped Sectional with Chaise (8.25 feet)  Italian Leather Sofa",
+        "price": 192803.4,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/palo-sofa-sectional-8-5-feet-genuine-leather",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/leather-juniper-green-l-l-0_d9a4d80d-4b6e-4c4e-87ec-5ba2b845f0de.jpg?v=1740542286&width=3000",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.569370805788094,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.569370805788094
+        }
+      },
+      {
+        "id": 416,
+        "name": "Lumo Sofa  3 Seater  Down-feather Back Cushions (7.5 feet)",
+        "price": 112244.67,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/lumo-sofa-3-seater-down-feather-cushions-7-5-feet",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/lumo_3_gray.jpg?v=1742256505&width=2890",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.568541252369843,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.568541252369843
+        }
+      },
+      {
+        "id": 455,
+        "name": "Lore Sofa  2 Seater Sofa (5 feet)  High Back Sofa",
+        "price": 42250.54,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/loveseat",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/lore2seaternew_1.jpg?v=1751590045&width=1556",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5683231837858367,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5683231837858367
+        }
+      },
+      {
+        "id": 490,
+        "name": "ECRU L SHAPED SOFA",
+        "price": 424800.0,
+        "currency": "INR",
+        "brand": "Sage Living",
+        "source_website": "sageliving",
+        "source_url": "https://www.sageliving.in/product/ecru-l-shaped-sofa/",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://www.sageliving.in/wp-content/uploads/2024/09/DSC_7767.jpg?x36149",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5681472610231931,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5681472610231931
+        }
+      },
+      {
+        "id": 370,
+        "name": "Porto Duo Sleeper Sofa  Sofa Cum Bed (6 Feet)",
+        "price": 65491.25,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/porto-duo-sleeper-sofa-sofa-cum-bed-6-feet",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/Front-Photoroom_1_39383264-9294-462a-af02-5d5d373ea11f.jpg?v=1755484978&width=2000",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5673387397280155,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5673387397280155
+        }
+      },
+      {
+        "id": 399,
+        "name": "Node Sofa  4 Seater Corner Sofa (8 x 5.5 feet)",
+        "price": 83940.34,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/node-sofa-4-seater-corner",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/Nodelifestyle.jpg?v=1699032591&width=874",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5669844113460917,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5669844113460917
+        }
+      }
+    ],
+    "image_url": null
+  },
+  "analysis": {
+    "design_analysis": {
+      "current_style": "The room has a modern and neutral aesthetic with a focus on light and soft tones. The existing sofa is a light-colored fabric sectional that complements the beige and white elements in the room.",
+      "suggested_sofa_style": "A modern leather sofa with clean lines and a sleek silhouette. Consider a sofa in a mid-tone brown or tan leather to maintain the neutral palette while adding a touch of warmth and texture.",
+      "size_and_shape": "Choose a sectional similar in size to maintain the current layout. A chaise or L-shape design would work well, providing comfort and maintaining the room's functionality.",
+      "color_and_texture": "Opt for a smooth leather finish to contrast with the existing fabric textures. This will add visual interest and sophistication to the room.",
+      "accessory_recommendations": "Pair the leather sofa with cushions in muted colors like teal or gray to complement the existing ones. Incorporate a throw blanket for added comfort and style."
+    },
+    "product_matching_criteria": {},
+    "visualization_guidance": {},
+    "confidence_scores": {},
+    "recommendations": {},
+    "user_friendly_response": "To replace your sofa with a modern leather option, consider a mid-tone brown or tan leather sectional. This will add warmth and texture while keeping the room's neutral palette. Ensure the new sofa has clean lines to maintain the modern aesthetic. Pair it with cushions in teal or gray for a cohesive look."
+  },
+  "recommended_products": [
+    {
+      "id": 357,
+      "name": "Standard Sofa Fabric Swatches (Palo-Lore-Node)",
+      "price": 99.64,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/palo-sofa-swatches",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/rightimage-swatchboxcopy.png?v=1695779254&width=825",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5769266753743603,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5769266753743603
+      }
+    },
+    {
+      "id": 439,
+      "name": "Leather Sofa Swatches",
+      "price": 99.64,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/genuine-leather-swatches-palo",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/istockphoto-134247840-612x612.jpg?v=1695779024&width=571",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5759397039185467,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5759397039185467
+      }
+    },
+    {
+      "id": 383,
+      "name": "Palo Sofa T  2.5 Seater (6 feet)  Tufted",
+      "price": 45228.08,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/palo-2-5-seater-tufted",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/2_Seater_Angle_Indigo_Blue_Wood_Leg-Photoroom.jpg?v=1751584942&width=1600",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5696539567281521,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5696539567281521
+      }
+    },
+    {
+      "id": 290,
+      "name": "Anne Sofa  Ottoman  Removable Fabric",
+      "price": 19823.27,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/anne-sofa-ottoman",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/image123959.webp?v=1727406804&width=1080",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5696241458751307,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5696241458751307
+      }
+    },
+    {
+      "id": 368,
+      "name": "Palo Sofa  L-Shaped Sectional with Chaise (8.25 feet)  Italian Leather Sofa",
+      "price": 192803.4,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/palo-sofa-sectional-8-5-feet-genuine-leather",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/leather-juniper-green-l-l-0_d9a4d80d-4b6e-4c4e-87ec-5ba2b845f0de.jpg?v=1740542286&width=3000",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.569370805788094,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.569370805788094
+      }
+    },
+    {
+      "id": 416,
+      "name": "Lumo Sofa  3 Seater  Down-feather Back Cushions (7.5 feet)",
+      "price": 112244.67,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/lumo-sofa-3-seater-down-feather-cushions-7-5-feet",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/lumo_3_gray.jpg?v=1742256505&width=2890",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.568541252369843,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.568541252369843
+      }
+    },
+    {
+      "id": 455,
+      "name": "Lore Sofa  2 Seater Sofa (5 feet)  High Back Sofa",
+      "price": 42250.54,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/loveseat",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/lore2seaternew_1.jpg?v=1751590045&width=1556",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5683231837858367,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5683231837858367
+      }
+    },
+    {
+      "id": 490,
+      "name": "ECRU L SHAPED SOFA",
+      "price": 424800.0,
+      "currency": "INR",
+      "brand": "Sage Living",
+      "source_website": "sageliving",
+      "source_url": "https://www.sageliving.in/product/ecru-l-shaped-sofa/",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://www.sageliving.in/wp-content/uploads/2024/09/DSC_7767.jpg?x36149",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5681472610231931,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5681472610231931
+      }
+    },
+    {
+      "id": 370,
+      "name": "Porto Duo Sleeper Sofa  Sofa Cum Bed (6 Feet)",
+      "price": 65491.25,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/porto-duo-sleeper-sofa-sofa-cum-bed-6-feet",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/Front-Photoroom_1_39383264-9294-462a-af02-5d5d373ea11f.jpg?v=1755484978&width=2000",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5673387397280155,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5673387397280155
+      }
+    },
+    {
+      "id": 399,
+      "name": "Node Sofa  4 Seater Corner Sofa (8 x 5.5 feet)",
+      "price": 83940.34,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/node-sofa-4-seater-corner",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/Nodelifestyle.jpg?v=1699032591&width=874",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5669844113460917,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5669844113460917
+      }
+    }
+  ],
+  "detected_furniture": [
+    {
+      "furniture_type": "sofa",
+      "confidence": 0.98
+    },
+    {
+      "furniture_type": "chair",
+      "confidence": 0.95
+    },
+    {
+      "furniture_type": "table",
+      "confidence": 0.85
+    }
+  ],
+  "similar_furniture_items": null,
+  "requires_action_choice": false,
+  "action_options": null
+}

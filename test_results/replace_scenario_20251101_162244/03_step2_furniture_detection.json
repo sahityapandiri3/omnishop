@@ -1,0 +1,61 @@
+{
+  "message": {
+    "id": "576d4f52-751d-44da-804d-b72ae1afb69a",
+    "type": "assistant",
+    "content": "I've analyzed your request and found some great recommendations for you!",
+    "timestamp": "2025-11-01T10:53:03.029717",
+    "session_id": "4f6a3614-c22c-4540-a5e3-d4f078425097",
+    "products": [],
+    "image_url": null
+  },
+  "analysis": {
+    "design_analysis": {
+      "current_style": "Neutral and minimalist with a light color palette.",
+      "current_elements": {
+        "sofa": "White modern sectional",
+        "rug": "Beige patterned",
+        "walls": "Neutral beige",
+        "accent_chair": "White modern",
+        "pillows": "Teal and brown accents",
+        "curtains": "Light beige"
+      },
+      "recommendations": {
+        "sofa_replacement": {
+          "type": "Modern leather sofa",
+          "color_options": [
+            "Dark brown",
+            "Charcoal grey",
+            "Black"
+          ],
+          "style": "Sleek with clean lines",
+          "size": "Similar sectional or 3-seater depending on space"
+        },
+        "complementary_elements": {
+          "pillows": "Add leather or textured pillows in complementary colors",
+          "rug": "Consider a darker or contrasting pattern to highlight the sofa",
+          "accent_chair": "Possible leather or matching material for cohesion"
+        }
+      }
+    },
+    "product_matching_criteria": {},
+    "visualization_guidance": {},
+    "confidence_scores": {},
+    "recommendations": {},
+    "user_friendly_response": "I've analyzed your request and found some great recommendations for you!"
+  },
+  "recommended_products": [],
+  "detected_furniture": null,
+  "similar_furniture_items": [
+    {
+      "furniture_type": "sofa",
+      "position": "center",
+      "description": "White sectional sofa with chaise",
+      "confidence": 0.98
+    }
+  ],
+  "requires_action_choice": true,
+  "action_options": [
+    "add",
+    "replace"
+  ]
+}

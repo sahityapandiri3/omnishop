@@ -1,0 +1,28 @@
+{
+  "summary": {
+    "total": 3,
+    "passed": 2,
+    "failed": 1,
+    "success_rate": "66.7%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-23 11:33:07"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: a5baa678-5dd8-4f9b-94a1-ed5a305984d6",
+      "timestamp": "2025-10-23 11:33:08"
+    },
+    {
+      "test": "Analyze Room",
+      "passed": false,
+      "details": "HTTPConnectionPool(host='localhost', port=8000): Read timed out. (read timeout=60)",
+      "timestamp": "2025-10-23 11:34:09"
+    }
+  ]
+}

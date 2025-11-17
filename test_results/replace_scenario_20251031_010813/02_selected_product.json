@@ -1,0 +1,25 @@
+{
+  "id": 450,
+  "name": "Cael Sofa  3 Seater (6 feet)",
+  "price": 37640.6,
+  "currency": "INR",
+  "brand": "Pelican Essentials",
+  "source_website": "pelicanessentials",
+  "source_url": "https://pelicanessentials.com/products/cael-3-seater-sofa-6-feet",
+  "is_on_sale": false,
+  "primary_image": {
+    "url": "https://pelicanessentials.com/cdn/shop/files/72_2-Photoroom.jpg?v=1751799836&width=879",
+    "alt_text": null
+  },
+  "recommendation_data": {
+    "confidence_score": 0.5698489460057444,
+    "reasoning": [
+      "Perfect functional fit for your space",
+      "Excellent value within your budget"
+    ],
+    "style_match": 0.5,
+    "functional_match": 1.0,
+    "price_score": 1.0,
+    "overall_score": 0.5698489460057444
+  }
+}

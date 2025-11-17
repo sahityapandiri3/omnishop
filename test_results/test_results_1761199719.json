@@ -1,0 +1,34 @@
+{
+  "summary": {
+    "total": 4,
+    "passed": 3,
+    "failed": 1,
+    "success_rate": "75.0%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-23 11:37:55"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: adb0495c-eeae-48d9-b37b-13c25631fbf6",
+      "timestamp": "2025-10-23 11:37:56"
+    },
+    {
+      "test": "Analyze Room & Get Suggestions",
+      "passed": true,
+      "details": "22 products, selected: Node 2.0 Sofa  5 Seater Corner Sofa (9x9 feet)",
+      "timestamp": "2025-10-23 11:38:38"
+    },
+    {
+      "test": "Generate Visualization",
+      "passed": false,
+      "details": "500 Server Error: Internal Server Error for url: http://localhost:8000/api/chat/sessions/adb0495c-eeae-48d9-b37b-13c25631fbf6/visualize",
+      "timestamp": "2025-10-23 11:38:39"
+    }
+  ]
+}

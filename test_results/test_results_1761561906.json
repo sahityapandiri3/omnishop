@@ -1,0 +1,46 @@
+{
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "success_rate": "100.0%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-27 16:07:16"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: 181a9c09-0521-42ae-89af-17edeb92355e",
+      "timestamp": "2025-10-27 16:07:17"
+    },
+    {
+      "test": "Analyze Room & Get Suggestions",
+      "passed": true,
+      "details": "22 products, selected: Lumo Sofa  3 Seater (7.5 feet) Genuine Leather",
+      "timestamp": "2025-10-27 16:07:47"
+    },
+    {
+      "test": "Generate Visualization",
+      "passed": true,
+      "details": "Time: 434.8s, Confidence: 0.00, Output: /Users/sahityapandiri/Omnishop/test_results/visualization_1761561903.jpg",
+      "timestamp": "2025-10-27 16:15:03"
+    },
+    {
+      "test": "Verify Quality",
+      "passed": true,
+      "details": "Automated checks passed, manual verification required",
+      "timestamp": "2025-10-27 16:15:04"
+    },
+    {
+      "test": "Check Active Fixes",
+      "passed": true,
+      "details": "Manual log verification required",
+      "timestamp": "2025-10-27 16:15:05"
+    }
+  ]
+}

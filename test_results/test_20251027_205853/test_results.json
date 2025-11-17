@@ -1,0 +1,43 @@
+{
+  "summary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "success_rate": "100.0%"
+  },
+  "output_dir": "/Users/sahityapandiri/Omnishop/test_results/test_20251027_205853",
+  "replace_product": "Node Sofa  L Shaped Sofa  3 Seater (8 x 5.5 feet)",
+  "add_product": "Lore Sofa  3 Seater (7 feet)  High Back Sofa",
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Size: 1811608 bytes",
+      "timestamp": "2025-10-27 20:58:53"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: c26b37a2-4bbb-4a1f-b11a-9d4bd0f87bcc",
+      "timestamp": "2025-10-27 20:58:54"
+    },
+    {
+      "test": "Get Product Suggestions",
+      "passed": true,
+      "details": "Found 23 products, selected 2 for testing",
+      "timestamp": "2025-10-27 20:59:36"
+    },
+    {
+      "test": "Replace All Scenario",
+      "passed": true,
+      "details": "Time: 137.4s, Product: Node Sofa  L Shaped Sofa  3 Seater (8 x 5.5 feet)",
+      "timestamp": "2025-10-27 21:02:25"
+    },
+    {
+      "test": "Add Scenario",
+      "passed": true,
+      "details": "Time: 46.4s, Product: Lore Sofa  3 Seater (7 feet)  High Back Sofa",
+      "timestamp": "2025-10-27 21:03:13"
+    }
+  ]
+}

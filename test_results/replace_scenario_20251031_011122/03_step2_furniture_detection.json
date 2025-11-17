@@ -1,0 +1,45 @@
+{
+  "message": {
+    "id": "8cfbcbb7-a8c8-4b84-b529-47819a300b07",
+    "type": "assistant",
+    "content": "I've analyzed your request and found some great recommendations for you!",
+    "timestamp": "2025-10-30T19:41:57.921476",
+    "session_id": "0c0b1234-705d-44b0-bcf3-231c8faacbb0",
+    "products": [],
+    "image_url": null
+  },
+  "analysis": {
+    "design_analysis": {
+      "current_style": "The room has a modern and minimalist style with neutral tones and clean lines.",
+      "color_palette": "The room features beige and cream with hints of teal and brown in the cushions.",
+      "furniture_suggestions": {
+        "sofa": {
+          "style": "Modern",
+          "material": "Leather",
+          "color": "Tan or gray",
+          "reasoning": "A tan or gray leather sofa will complement the neutral tones and add a luxurious touch."
+        }
+      }
+    },
+    "product_matching_criteria": {},
+    "visualization_guidance": {},
+    "confidence_scores": {},
+    "recommendations": {},
+    "user_friendly_response": "I've analyzed your request and found some great recommendations for you!"
+  },
+  "recommended_products": [],
+  "detected_furniture": null,
+  "similar_furniture_items": [
+    {
+      "furniture_type": "sofa",
+      "position": "center",
+      "description": "White sectional sofa with chaise",
+      "confidence": 0.98
+    }
+  ],
+  "requires_action_choice": true,
+  "action_options": [
+    "add",
+    "replace"
+  ]
+}

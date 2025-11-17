@@ -1,0 +1,25 @@
+{
+  "id": 368,
+  "name": "Palo Sofa  L-Shaped Sectional with Chaise (8.25 feet)  Italian Leather Sofa",
+  "price": 192803.4,
+  "currency": "INR",
+  "brand": "Pelican Essentials",
+  "source_website": "pelicanessentials",
+  "source_url": "https://pelicanessentials.com/products/palo-sofa-sectional-8-5-feet-genuine-leather",
+  "is_on_sale": false,
+  "primary_image": {
+    "url": "https://pelicanessentials.com/cdn/shop/files/leather-juniper-green-l-l-0_d9a4d80d-4b6e-4c4e-87ec-5ba2b845f0de.jpg?v=1740542286&width=3000",
+    "alt_text": null
+  },
+  "recommendation_data": {
+    "confidence_score": 0.5698710334007959,
+    "reasoning": [
+      "Perfect functional fit for your space",
+      "Excellent value within your budget"
+    ],
+    "style_match": 0.5,
+    "functional_match": 1.0,
+    "price_score": 1.0,
+    "overall_score": 0.5698710334007959
+  }
+}

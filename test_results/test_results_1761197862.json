@@ -1,0 +1,28 @@
+{
+  "summary": {
+    "total": 3,
+    "passed": 2,
+    "failed": 1,
+    "success_rate": "66.7%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-23 11:07:19"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: 56f78bfc-8437-4870-870c-4364780290c3",
+      "timestamp": "2025-10-23 11:07:20"
+    },
+    {
+      "test": "Analyze Room",
+      "passed": false,
+      "details": "Empty response",
+      "timestamp": "2025-10-23 11:07:42"
+    }
+  ]
+}

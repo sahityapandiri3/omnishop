@@ -1,0 +1,46 @@
+{
+  "message": {
+    "id": "e5f63a43-2028-450a-8fb5-8a57164e1d76",
+    "type": "assistant",
+    "content": "To replace your current sofa with a modern leather option, consider a design that complements your room's neutral palette and minimalist style. A taupe or gray leather sofa with clean lines will enhance the modern aesthetic. Make sure the new piece fits well in the space and consider adding accents like pillows or a throw to tie the room together.",
+    "timestamp": "2025-10-30T19:14:23.923371",
+    "session_id": "fe93ec23-d8ef-405c-b510-8a4344748e49",
+    "products": [],
+    "image_url": null
+  },
+  "analysis": {
+    "design_analysis": {
+      "current_style": "The room has a modern and minimalist style with neutral tones and clean lines. The existing sofa is a light, textured fabric that complements the neutral color scheme.",
+      "furniture_recommendation": {
+        "type": "Modern Leather Sofa",
+        "color": "Consider a neutral color like taupe, gray, or black to maintain the room's cohesive look.",
+        "style": "Choose a sleek design with clean lines to match the modern aesthetic.",
+        "size": "Ensure the new sofa fits the same footprint to maintain balance in the room."
+      },
+      "additional_tips": {
+        "accessories": "Incorporate some leather or metal accents through pillows or a throw to tie the new sofa into the existing decor.",
+        "lighting": "Enhance the modern feel with sleek floor or table lamps."
+      }
+    },
+    "product_matching_criteria": {},
+    "visualization_guidance": {},
+    "confidence_scores": {},
+    "recommendations": {},
+    "user_friendly_response": "To replace your current sofa with a modern leather option, consider a design that complements your room's neutral palette and minimalist style. A taupe or gray leather sofa with clean lines will enhance the modern aesthetic. Make sure the new piece fits well in the space and consider adding accents like pillows or a throw to tie the room together."
+  },
+  "recommended_products": [],
+  "detected_furniture": null,
+  "similar_furniture_items": [
+    {
+      "furniture_type": "sofa",
+      "position": "center",
+      "description": "White sectional sofa with chaise",
+      "confidence": 0.98
+    }
+  ],
+  "requires_action_choice": true,
+  "action_options": [
+    "add",
+    "replace"
+  ]
+}

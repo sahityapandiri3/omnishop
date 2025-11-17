@@ -1,0 +1,34 @@
+{
+  "summary": {
+    "total": 4,
+    "passed": 3,
+    "failed": 1,
+    "success_rate": "75.0%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-24 16:53:52"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: fa8763f4-337f-4e0d-9bd9-6823e1ab8876",
+      "timestamp": "2025-10-24 16:53:53"
+    },
+    {
+      "test": "Analyze Room & Get Suggestions",
+      "passed": true,
+      "details": "25 products, selected: Lore Sofa  2 Seater Italian Leather Sofa (5 feet)",
+      "timestamp": "2025-10-24 16:54:32"
+    },
+    {
+      "test": "Generate Visualization",
+      "passed": false,
+      "details": "No rendered image",
+      "timestamp": "2025-10-24 16:58:24"
+    }
+  ]
+}

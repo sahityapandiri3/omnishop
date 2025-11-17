@@ -1,0 +1,25 @@
+{
+  "id": 330,
+  "name": "Palo Sofa T  Chair (3.5 feet length)  Tufted",
+  "price": 28916.8,
+  "currency": "INR",
+  "brand": "Pelican Essentials",
+  "source_website": "pelicanessentials",
+  "source_url": "https://pelicanessentials.com/products/palo-sofa-t-tufted-chair-3-5-feet-length-wood-legs",
+  "is_on_sale": false,
+  "primary_image": {
+    "url": "https://pelicanessentials.com/cdn/shop/products/1_Seater_Ivory_Wood_Leg_2f520716-e5f9-47db-a874-a311f98e430f.jpg?v=1669626456&width=1800",
+    "alt_text": null
+  },
+  "recommendation_data": {
+    "confidence_score": 0.5699453051107171,
+    "reasoning": [
+      "Perfect functional fit for your space",
+      "Excellent value within your budget"
+    ],
+    "style_match": 0.5,
+    "functional_match": 1.0,
+    "price_score": 1.0,
+    "overall_score": 0.5699453051107171
+  }
+}

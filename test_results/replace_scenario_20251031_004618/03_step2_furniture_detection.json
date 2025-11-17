@@ -1,0 +1,48 @@
+{
+  "message": {
+    "id": "831fced0-0754-4f83-99a1-eafd754b97ae",
+    "type": "assistant",
+    "content": "I've analyzed your request and found some great recommendations for you!",
+    "timestamp": "2025-10-30T19:17:53.324726",
+    "session_id": "b8eceda5-25b2-4ca9-a5d8-f96662db27a5",
+    "products": [],
+    "image_url": null
+  },
+  "analysis": {
+    "design_analysis": {
+      "current_style": "The room features a neutral color palette with a modern and minimalistic design. The existing sofa is contemporary with clean lines.",
+      "recommended_sofa": {
+        "style": "Modern",
+        "material": "Leather",
+        "color": "Taupe or Gray",
+        "design": "Sleek with angular lines",
+        "size": "Similar dimensions to existing sofa"
+      },
+      "complementary_elements": {
+        "pillows": "Add colorful or textured pillows for contrast",
+        "rug": "Maintain or choose a geometric pattern to enhance modern look",
+        "side table": "Keep wooden side table for warmth"
+      }
+    },
+    "product_matching_criteria": {},
+    "visualization_guidance": {},
+    "confidence_scores": {},
+    "recommendations": {},
+    "user_friendly_response": "I've analyzed your request and found some great recommendations for you!"
+  },
+  "recommended_products": [],
+  "detected_furniture": null,
+  "similar_furniture_items": [
+    {
+      "furniture_type": "sofa",
+      "position": "center",
+      "description": "White sectional sofa with chaise",
+      "confidence": 0.98
+    }
+  ],
+  "requires_action_choice": true,
+  "action_options": [
+    "add",
+    "replace"
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "summary": {
+    "total": 4,
+    "passed": 3,
+    "failed": 1,
+    "success_rate": "75.0%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-23 11:24:13"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: 4bd78ee2-fd3f-441c-be15-a7f3d32bba5b",
+      "timestamp": "2025-10-23 11:24:14"
+    },
+    {
+      "test": "Analyze Room & Get Suggestions",
+      "passed": true,
+      "details": "23 products, selected: Nordhaven Sofa  3 Seater  Solid Teak Wood/Walnut/Oak Wood",
+      "timestamp": "2025-10-23 11:24:39"
+    },
+    {
+      "test": "Generate Visualization",
+      "passed": false,
+      "details": "500 Server Error: Internal Server Error for url: http://localhost:8000/api/chat/sessions/4bd78ee2-fd3f-441c-be15-a7f3d32bba5b/visualize",
+      "timestamp": "2025-10-23 11:24:40"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "message": {
+    "id": "ee1214bd-4d1f-4556-ac83-5862de61f895",
+    "type": "assistant",
+    "content": "To enhance your room with a modern leather sofa, consider selecting one in a warm tone like cognac or brown. This will complement your neutral palette beautifully. Look for sleek designs to maintain the room's modern vibe, and consider adding textured pillows for a cozy touch.",
+    "timestamp": "2025-10-30T19:08:44.907156",
+    "session_id": "0676b9d2-c149-40bc-af4b-c48dc0ecf052",
+    "products": [],
+    "image_url": null
+  },
+  "analysis": {
+    "design_analysis": {
+      "current_style": "The room has a neutral and modern aesthetic with clean lines and a soft color palette.",
+      "suggested_sofa": "A modern leather sofa in a warm brown or cognac color would complement the existing elements.",
+      "integration_tips": [
+        "Choose a sofa with sleek, minimalistic lines to maintain the modern look.",
+        "Consider a low-profile design to keep the room feeling open.",
+        "Add textured pillows in similar colors to the current ones for continuity."
+      ],
+      "additional_recommendations": [
+        "Incorporate a throw blanket in a rich color to add depth.",
+        "Place a small, modern coffee table in front of the sofa."
+      ]
+    },
+    "product_matching_criteria": {},
+    "visualization_guidance": {},
+    "confidence_scores": {},
+    "recommendations": {},
+    "user_friendly_response": "To enhance your room with a modern leather sofa, consider selecting one in a warm tone like cognac or brown. This will complement your neutral palette beautifully. Look for sleek designs to maintain the room's modern vibe, and consider adding textured pillows for a cozy touch."
+  },
+  "recommended_products": [],
+  "detected_furniture": null,
+  "similar_furniture_items": [
+    {
+      "furniture_type": "sofa",
+      "position": "center",
+      "description": "White sectional sofa with chaise lounge",
+      "confidence": 0.98
+    }
+  ],
+  "requires_action_choice": true,
+  "action_options": [
+    "add",
+    "replace"
+  ]
+}

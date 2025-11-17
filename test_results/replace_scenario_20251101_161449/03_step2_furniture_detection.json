@@ -1,0 +1,52 @@
+{
+  "message": {
+    "id": "8f0ad72c-e6b2-4a7e-8c0d-9f2dd4ee3167",
+    "type": "assistant",
+    "content": "To modernize your space, consider a sleek leather sofa in charcoal grey or cognac. This will add a stylish contrast and a touch of sophistication to your beautifully neutral room.",
+    "timestamp": "2025-11-01T10:45:22.380465",
+    "session_id": "7cba7340-e157-4533-84fe-3874b5e31506",
+    "products": [],
+    "image_url": null
+  },
+  "analysis": {
+    "design_analysis": {
+      "current_style": "The room has a neutral, modern aesthetic with beige tones and minimalist decor. The existing sofa and chair are plush and inviting, complemented by soft, neutral drapery and a textured area rug.",
+      "proposed_change": "Replace the existing sofa with a modern leather sofa.",
+      "sofa_suggestions": [
+        {
+          "color": "Charcoal Grey",
+          "reason": "Provides a sleek, modern contrast against the beige tones while maintaining a neutral palette."
+        },
+        {
+          "color": "Cognac",
+          "reason": "Adds warmth and richness to the space, complementing the natural tones in the room."
+        }
+      ],
+      "design_elements": {
+        "sofa_style": "Choose a sofa with clean lines and a low profile to maintain the minimalist look.",
+        "accessories": "Incorporate throw pillows with textures or subtle patterns to add depth and comfort.",
+        "additional_tips": "Consider a leather sofa with metal or wooden legs to enhance the modern aesthetic."
+      }
+    },
+    "product_matching_criteria": {},
+    "visualization_guidance": {},
+    "confidence_scores": {},
+    "recommendations": {},
+    "user_friendly_response": "To modernize your space, consider a sleek leather sofa in charcoal grey or cognac. This will add a stylish contrast and a touch of sophistication to your beautifully neutral room."
+  },
+  "recommended_products": [],
+  "detected_furniture": null,
+  "similar_furniture_items": [
+    {
+      "furniture_type": "sofa",
+      "position": "center",
+      "description": "White sectional sofa with chaise",
+      "confidence": 0.98
+    }
+  ],
+  "requires_action_choice": true,
+  "action_options": [
+    "add",
+    "replace"
+  ]
+}

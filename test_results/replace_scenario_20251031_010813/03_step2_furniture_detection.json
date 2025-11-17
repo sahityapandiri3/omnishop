@@ -1,0 +1,46 @@
+{
+  "message": {
+    "id": "f462b365-6c25-430b-9cfe-29006a54c473",
+    "type": "assistant",
+    "content": "To replace your current sofa with a modern leather option, consider a dark brown or black piece with sleek lines to match the room's aesthetic. Add throw pillows in muted tones like gray or deep teal to tie the look together.",
+    "timestamp": "2025-10-30T19:38:31.824185",
+    "session_id": "80302372-c6f4-4e17-8aff-c08135dcfb51",
+    "products": [],
+    "image_url": null
+  },
+  "analysis": {
+    "design_analysis": {
+      "current_style": "The room features a neutral and modern aesthetic with a white sectional sofa. The color palette is soft, with beige and cream tones, complemented by teal and brown accent pillows. The rug has a geometric pattern that adds texture.",
+      "suggested_sofa": {
+        "type": "Modern Leather Sofa",
+        "color": "Dark Brown or Black",
+        "style": "Low-profile with sleek lines",
+        "features": "Clean edges, possibly metal or wooden legs for contrast"
+      },
+      "complementary_elements": {
+        "throw_pillows": "Incorporate muted tones like gray, beige, or deep teal to maintain color harmony.",
+        "rug": "Keep the existing rug for texture or opt for a solid color if a simpler look is desired."
+      }
+    },
+    "product_matching_criteria": {},
+    "visualization_guidance": {},
+    "confidence_scores": {},
+    "recommendations": {},
+    "user_friendly_response": "To replace your current sofa with a modern leather option, consider a dark brown or black piece with sleek lines to match the room's aesthetic. Add throw pillows in muted tones like gray or deep teal to tie the look together."
+  },
+  "recommended_products": [],
+  "detected_furniture": null,
+  "similar_furniture_items": [
+    {
+      "furniture_type": "sofa",
+      "position": "center",
+      "description": "White sectional sofa with chaise",
+      "confidence": 0.98
+    }
+  ],
+  "requires_action_choice": true,
+  "action_options": [
+    "add",
+    "replace"
+  ]
+}

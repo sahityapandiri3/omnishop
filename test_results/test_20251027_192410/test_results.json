@@ -1,0 +1,43 @@
+{
+  "summary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "success_rate": "100.0%"
+  },
+  "output_dir": "/Users/sahityapandiri/Omnishop/test_results/test_20251027_192410",
+  "replace_product": "Palo Sofa  1 Seater Italian Leather Sofa (3.5 feet)",
+  "add_product": "Lumo Sofa  3 Seater  Down-feather Back Cushions (7.5 feet)",
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Size: 1811608 bytes",
+      "timestamp": "2025-10-27 19:24:10"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: 62499baf-f240-4fb9-b27b-957813f63a5a",
+      "timestamp": "2025-10-27 19:24:11"
+    },
+    {
+      "test": "Get Product Suggestions",
+      "passed": true,
+      "details": "Found 25 products, selected 2 for testing",
+      "timestamp": "2025-10-27 19:24:59"
+    },
+    {
+      "test": "Replace All Scenario",
+      "passed": true,
+      "details": "Time: 125.0s, Product: Palo Sofa  1 Seater Italian Leather Sofa (3.5 feet)",
+      "timestamp": "2025-10-27 19:27:27"
+    },
+    {
+      "test": "Add Scenario",
+      "passed": true,
+      "details": "Time: 46.5s, Product: Lumo Sofa  3 Seater  Down-feather Back Cushions (7.5 feet)",
+      "timestamp": "2025-10-27 19:28:14"
+    }
+  ]
+}

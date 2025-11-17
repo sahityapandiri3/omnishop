@@ -1,0 +1,34 @@
+{
+  "summary": {
+    "total": 4,
+    "passed": 3,
+    "failed": 1,
+    "success_rate": "75.0%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-26 12:44:46"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: 45ba6b96-3330-4908-aa89-82f2217cafb4",
+      "timestamp": "2025-10-26 12:44:47"
+    },
+    {
+      "test": "Analyze Room & Get Suggestions",
+      "passed": true,
+      "details": "25 products, selected: Lore Sofa  1 Seater Italian Leather Sofa (3 feet)",
+      "timestamp": "2025-10-26 12:45:11"
+    },
+    {
+      "test": "Generate Visualization",
+      "passed": false,
+      "details": "No rendered image",
+      "timestamp": "2025-10-26 12:45:32"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "success_rate": "100.0%"
+  },
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Image size: 1811608 bytes, type: image/png",
+      "timestamp": "2025-10-24 12:46:25"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: 44d7aad8-955c-49fc-94cb-c1c3c2967737",
+      "timestamp": "2025-10-24 12:46:26"
+    },
+    {
+      "test": "Analyze Room & Get Suggestions",
+      "passed": true,
+      "details": "22 products, selected: Node Sofa  5 Seater Corner Sofa (8x8 feet)",
+      "timestamp": "2025-10-24 12:47:09"
+    },
+    {
+      "test": "Generate Visualization",
+      "passed": true,
+      "details": "Time: 166.1s, Confidence: 0.00, Output: /Users/sahityapandiri/Omnishop/test_results/visualization_1761290396.jpg",
+      "timestamp": "2025-10-24 12:49:56"
+    },
+    {
+      "test": "Verify Quality",
+      "passed": true,
+      "details": "Automated checks passed, manual verification required",
+      "timestamp": "2025-10-24 12:49:57"
+    },
+    {
+      "test": "Check Active Fixes",
+      "passed": true,
+      "details": "Manual log verification required",
+      "timestamp": "2025-10-24 12:49:58"
+    }
+  ]
+}

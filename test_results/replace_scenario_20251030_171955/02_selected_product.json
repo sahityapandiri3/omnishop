@@ -1,0 +1,25 @@
+{
+  "id": 425,
+  "name": "Node 2.0 Sofa  4 Seater Corner Sofa (9 x 6 feet)",
+  "price": 120611.04,
+  "currency": "INR",
+  "brand": "Pelican Essentials",
+  "source_website": "pelicanessentials",
+  "source_url": "https://pelicanessentials.com/products/node-2-0-sofa-4-seater-corner-sofa-9-x-6-feet",
+  "is_on_sale": false,
+  "primary_image": {
+    "url": "https://pelicanessentials.com/cdn/shop/files/Pelican_Sofa_Node_4_Seaters_Corner_Livingroom_002_b17fd833-22e9-4bf0-968c-c1fa8329dbe2.jpg?v=1751592699&width=2500",
+    "alt_text": null
+  },
+  "recommendation_data": {
+    "confidence_score": 0.6635595682423774,
+    "reasoning": [
+      "Excellent style match for your preferences",
+      "Excellent value within your budget"
+    ],
+    "style_match": 0.9,
+    "functional_match": 0.5,
+    "price_score": 0.9822849799196787,
+    "overall_score": 0.6635595682423774
+  }
+}

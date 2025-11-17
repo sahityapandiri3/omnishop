@@ -1,0 +1,545 @@
+{
+  "message": {
+    "id": "4a7293e6-b038-4f2d-bab1-4427fddd97f1",
+    "type": "assistant",
+    "content": "A modern leather sofa in a warm brown or cognac color would beautifully contrast with the neutral tones of the room, adding a touch of elegance. Choose a sleek, low-profile design to maintain the minimalist aesthetic. Make sure the size complements the room's layout.",
+    "timestamp": "2025-11-01T10:09:06.698568",
+    "session_id": "2244bff2-2219-4b61-9365-03f031ca5c46",
+    "products": [
+      {
+        "id": 522,
+        "name": "ECLIPSE 7 SOFA",
+        "price": 304440.0,
+        "currency": "INR",
+        "brand": "Sage Living",
+        "source_website": "sageliving",
+        "source_url": "https://www.sageliving.in/product/eclipse-7-sofa/",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://www.sageliving.in/wp-content/uploads/2023/07/1-scaled.jpg?x36149",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5696546278673048,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5696546278673048
+        }
+      },
+      {
+        "id": 438,
+        "name": "Lore Sofa Ottoman  2.5 feet",
+        "price": 15962.54,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/lore-sofa-ottoman-2-5-feet",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/WhatsApp_Image_2024-08-12_at_16.41.29.jpg?v=1728377104&width=855",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5695614632682766,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5695614632682766
+        }
+      },
+      {
+        "id": 322,
+        "name": "Palo Sofa (Split Seats)  2 Seater (5 feet)  Removable Fabrics",
+        "price": 41487.34,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/palo-sofa-2-seater-5-feet-removable-fabrics",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/products/3a.jpg?v=1679067264&width=1696",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5694947661622628,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5694947661622628
+        }
+      },
+      {
+        "id": 530,
+        "name": "TAMA SOFA",
+        "price": 258350.0,
+        "currency": "INR",
+        "brand": "Sage Living",
+        "source_website": "sageliving",
+        "source_url": "https://www.sageliving.in/product/tama-sofa/",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://www.sageliving.in/wp-content/uploads/2022/12/1-4.jpg?x36149",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5694573972837581,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5694573972837581
+        }
+      },
+      {
+        "id": 408,
+        "name": "Node 2.0 Sofa  5 Seater Corner Sofa (9x9 feet)",
+        "price": 144673.04,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/node-2-0-sofa-5-seater-corner-sofa-9x9-feet-1",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/Pelican_Sofa_Node_5_Seaters_Corner_Livingroom_002_cc81045d-2f7e-468f-94f1-3b383d1099cf.jpg?v=1742203740&width=2500",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5691539093404545,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5691539093404545
+        }
+      },
+      {
+        "id": 520,
+        "name": "ECLIPSE 10 SOFA",
+        "price": 438550.0,
+        "currency": "INR",
+        "brand": "Sage Living",
+        "source_website": "sageliving",
+        "source_url": "https://www.sageliving.in/product/eclipse-10-sofa/",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://www.sageliving.in/wp-content/uploads/2023/07/1-1.jpg?x36149",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5685423034060525,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5685423034060525
+        }
+      },
+      {
+        "id": 450,
+        "name": "Cael Sofa  3 Seater (6 feet)",
+        "price": 37640.6,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/cael-3-seater-sofa-6-feet",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/72_2-Photoroom.jpg?v=1751799836&width=879",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5677459656044177,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5677459656044177
+        }
+      },
+      {
+        "id": 329,
+        "name": "Palo Sofa  2 Seater (5 feet)  Tufted",
+        "price": 38361.4,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/palo-sofa-2-seater-5-feet-tufted-1",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/charcoal2seater-Photoroom.jpg?v=1751594571&width=2537",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5672978961621196,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5672978961621196
+        }
+      },
+      {
+        "id": 289,
+        "name": "Lore Sofa  1 Seater (3 feet)  High Back Sofa",
+        "price": 27972.34,
+        "currency": "INR",
+        "brand": "Pelican Essentials",
+        "source_website": "pelicanessentials",
+        "source_url": "https://pelicanessentials.com/products/loungechair",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://pelicanessentials.com/cdn/shop/files/lore4_01fe2168-49cc-4f61-817a-189de7e4564d.jpg?v=1716386698&width=1152",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.566756648414479,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.566756648414479
+        }
+      },
+      {
+        "id": 531,
+        "name": "CALISTA SOFA",
+        "price": 658550.0,
+        "currency": "INR",
+        "brand": "Sage Living",
+        "source_website": "sageliving",
+        "source_url": "https://www.sageliving.in/product/calista-sofa/",
+        "is_on_sale": false,
+        "primary_image": {
+          "url": "https://www.sageliving.in/wp-content/uploads/2023/02/1-5.jpg?x36149",
+          "alt_text": null
+        },
+        "recommendation_data": {
+          "confidence_score": 0.5665819403528002,
+          "reasoning": [
+            "Perfect functional fit for your space",
+            "Excellent value within your budget"
+          ],
+          "style_match": 0.5,
+          "functional_match": 1.0,
+          "price_score": 1.0,
+          "overall_score": 0.5665819403528002
+        }
+      }
+    ],
+    "image_url": null
+  },
+  "analysis": {
+    "design_analysis": {
+      "current_style": "The room has a neutral and minimalist aesthetic with a focus on soft tones and a contemporary feel.",
+      "suggested_sofa_style": "Modern leather sofa",
+      "sofa_color": "Consider a warm brown or cognac leather to add contrast while maintaining warmth.",
+      "sofa_shape": "Opt for a sleek, low-profile design to complement the room's minimalist look.",
+      "additional_considerations": "Ensure the new sofa fits the existing layout and doesn't overwhelm the space. Maintain balance with the existing chair and rug."
+    },
+    "product_matching_criteria": {},
+    "visualization_guidance": {},
+    "confidence_scores": {},
+    "recommendations": {},
+    "user_friendly_response": "A modern leather sofa in a warm brown or cognac color would beautifully contrast with the neutral tones of the room, adding a touch of elegance. Choose a sleek, low-profile design to maintain the minimalist aesthetic. Make sure the size complements the room's layout."
+  },
+  "recommended_products": [
+    {
+      "id": 522,
+      "name": "ECLIPSE 7 SOFA",
+      "price": 304440.0,
+      "currency": "INR",
+      "brand": "Sage Living",
+      "source_website": "sageliving",
+      "source_url": "https://www.sageliving.in/product/eclipse-7-sofa/",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://www.sageliving.in/wp-content/uploads/2023/07/1-scaled.jpg?x36149",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5696546278673048,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5696546278673048
+      }
+    },
+    {
+      "id": 438,
+      "name": "Lore Sofa Ottoman  2.5 feet",
+      "price": 15962.54,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/lore-sofa-ottoman-2-5-feet",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/WhatsApp_Image_2024-08-12_at_16.41.29.jpg?v=1728377104&width=855",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5695614632682766,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5695614632682766
+      }
+    },
+    {
+      "id": 322,
+      "name": "Palo Sofa (Split Seats)  2 Seater (5 feet)  Removable Fabrics",
+      "price": 41487.34,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/palo-sofa-2-seater-5-feet-removable-fabrics",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/products/3a.jpg?v=1679067264&width=1696",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5694947661622628,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5694947661622628
+      }
+    },
+    {
+      "id": 530,
+      "name": "TAMA SOFA",
+      "price": 258350.0,
+      "currency": "INR",
+      "brand": "Sage Living",
+      "source_website": "sageliving",
+      "source_url": "https://www.sageliving.in/product/tama-sofa/",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://www.sageliving.in/wp-content/uploads/2022/12/1-4.jpg?x36149",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5694573972837581,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5694573972837581
+      }
+    },
+    {
+      "id": 408,
+      "name": "Node 2.0 Sofa  5 Seater Corner Sofa (9x9 feet)",
+      "price": 144673.04,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/node-2-0-sofa-5-seater-corner-sofa-9x9-feet-1",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/Pelican_Sofa_Node_5_Seaters_Corner_Livingroom_002_cc81045d-2f7e-468f-94f1-3b383d1099cf.jpg?v=1742203740&width=2500",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5691539093404545,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5691539093404545
+      }
+    },
+    {
+      "id": 520,
+      "name": "ECLIPSE 10 SOFA",
+      "price": 438550.0,
+      "currency": "INR",
+      "brand": "Sage Living",
+      "source_website": "sageliving",
+      "source_url": "https://www.sageliving.in/product/eclipse-10-sofa/",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://www.sageliving.in/wp-content/uploads/2023/07/1-1.jpg?x36149",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5685423034060525,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5685423034060525
+      }
+    },
+    {
+      "id": 450,
+      "name": "Cael Sofa  3 Seater (6 feet)",
+      "price": 37640.6,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/cael-3-seater-sofa-6-feet",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/72_2-Photoroom.jpg?v=1751799836&width=879",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5677459656044177,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5677459656044177
+      }
+    },
+    {
+      "id": 329,
+      "name": "Palo Sofa  2 Seater (5 feet)  Tufted",
+      "price": 38361.4,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/palo-sofa-2-seater-5-feet-tufted-1",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/charcoal2seater-Photoroom.jpg?v=1751594571&width=2537",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5672978961621196,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5672978961621196
+      }
+    },
+    {
+      "id": 289,
+      "name": "Lore Sofa  1 Seater (3 feet)  High Back Sofa",
+      "price": 27972.34,
+      "currency": "INR",
+      "brand": "Pelican Essentials",
+      "source_website": "pelicanessentials",
+      "source_url": "https://pelicanessentials.com/products/loungechair",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://pelicanessentials.com/cdn/shop/files/lore4_01fe2168-49cc-4f61-817a-189de7e4564d.jpg?v=1716386698&width=1152",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.566756648414479,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.566756648414479
+      }
+    },
+    {
+      "id": 531,
+      "name": "CALISTA SOFA",
+      "price": 658550.0,
+      "currency": "INR",
+      "brand": "Sage Living",
+      "source_website": "sageliving",
+      "source_url": "https://www.sageliving.in/product/calista-sofa/",
+      "is_on_sale": false,
+      "primary_image": {
+        "url": "https://www.sageliving.in/wp-content/uploads/2023/02/1-5.jpg?x36149",
+        "alt_text": null
+      },
+      "recommendation_data": {
+        "confidence_score": 0.5665819403528002,
+        "reasoning": [
+          "Perfect functional fit for your space",
+          "Excellent value within your budget"
+        ],
+        "style_match": 0.5,
+        "functional_match": 1.0,
+        "price_score": 1.0,
+        "overall_score": 0.5665819403528002
+      }
+    }
+  ],
+  "detected_furniture": [
+    {
+      "furniture_type": "sofa",
+      "confidence": 0.98
+    },
+    {
+      "furniture_type": "chair",
+      "confidence": 0.95
+    },
+    {
+      "furniture_type": "table",
+      "confidence": 0.85
+    }
+  ],
+  "similar_furniture_items": null,
+  "requires_action_choice": false,
+  "action_options": null
+}

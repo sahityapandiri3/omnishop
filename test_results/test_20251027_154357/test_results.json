@@ -1,0 +1,43 @@
+{
+  "summary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "success_rate": "100.0%"
+  },
+  "output_dir": "/Users/sahityapandiri/Omnishop/test_results/test_20251027_154357",
+  "replace_product": "Lore Sofa  3 Seater Italian Leather Sofa (7 feet)",
+  "add_product": "Lumo Sofa  3 Seater  Down-feather Back Cushions (7.5 feet)",
+  "results": [
+    {
+      "test": "Load Test Image",
+      "passed": true,
+      "details": "Size: 1811608 bytes",
+      "timestamp": "2025-10-27 15:43:57"
+    },
+    {
+      "test": "Create Session",
+      "passed": true,
+      "details": "Session ID: ed313407-df2e-4aa2-bdc1-bce28706d748",
+      "timestamp": "2025-10-27 15:43:58"
+    },
+    {
+      "test": "Get Product Suggestions",
+      "passed": true,
+      "details": "Found 23 products, selected 2 for testing",
+      "timestamp": "2025-10-27 15:44:26"
+    },
+    {
+      "test": "Replace All Scenario",
+      "passed": true,
+      "details": "Time: 126.0s, Product: Lore Sofa  3 Seater Italian Leather Sofa (7 feet)",
+      "timestamp": "2025-10-27 15:46:48"
+    },
+    {
+      "test": "Add Scenario",
+      "passed": true,
+      "details": "Time: 73.7s, Product: Lumo Sofa  3 Seater  Down-feather Back Cushions (7.5 feet)",
+      "timestamp": "2025-10-27 15:48:03"
+    }
+  ]
+}

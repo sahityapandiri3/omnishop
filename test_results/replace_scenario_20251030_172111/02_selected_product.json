@@ -1,0 +1,25 @@
+{
+  "id": 406,
+  "name": "Lore Sofa  L-Shaped Right Sectional with Chaise  Italian Leather Sofa (7 feet)",
+  "price": 183263.4,
+  "currency": "INR",
+  "brand": "Pelican Essentials",
+  "source_website": "pelicanessentials",
+  "source_url": "https://pelicanessentials.com/products/lore-sofa-l-shaped-right-sectional-with-chaise-italian-leather-sofa-7-feet",
+  "is_on_sale": false,
+  "primary_image": {
+    "url": "https://pelicanessentials.com/cdn/shop/files/CORNER_SCENE_green_0002.jpg?v=1694540033&width=2000",
+    "alt_text": null
+  },
+  "recommendation_data": {
+    "confidence_score": 0.5699729110862831,
+    "reasoning": [
+      "Perfect functional fit for your space",
+      "Excellent value within your budget"
+    ],
+    "style_match": 0.5,
+    "functional_match": 1.0,
+    "price_score": 1.0,
+    "overall_score": 0.5699729110862831
+  }
+}

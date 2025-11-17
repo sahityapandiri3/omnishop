@@ -1,0 +1,40 @@
+{
+  "message": {
+    "id": "6b0405cd-3df0-41b6-9077-9932b6daade1",
+    "type": "assistant",
+    "content": "Consider replacing your current sofa with a sleek, modern leather option in warm brown or cognac. This will add a touch of elegance and contrast beautifully with your room's neutral palette.",
+    "timestamp": "2025-11-01T10:09:17.706586",
+    "session_id": "2244bff2-2219-4b61-9365-03f031ca5c46",
+    "products": [],
+    "image_url": null
+  },
+  "analysis": {
+    "design_analysis": {
+      "current_style": "The room has a neutral, minimalist aesthetic with a focus on light colors and textures. The existing sofa is modern with clean lines.",
+      "proposed_change": "Introduce a modern leather sofa.",
+      "color_suggestion": "Warm brown or cognac leather to add contrast and warmth.",
+      "design_rationale": "A leather sofa will provide a sophisticated contrast to the soft textures and neutral colors in the room. The warm tone will enhance the cozy atmosphere.",
+      "size_recommendation": "Ensure the sofa is proportional to the room size, similar to the current sectional, to maintain balance."
+    },
+    "product_matching_criteria": {},
+    "visualization_guidance": {},
+    "confidence_scores": {},
+    "recommendations": {},
+    "user_friendly_response": "Consider replacing your current sofa with a sleek, modern leather option in warm brown or cognac. This will add a touch of elegance and contrast beautifully with your room's neutral palette."
+  },
+  "recommended_products": [],
+  "detected_furniture": null,
+  "similar_furniture_items": [
+    {
+      "furniture_type": "sofa",
+      "position": "center",
+      "description": "White sectional sofa with chaise",
+      "confidence": 0.98
+    }
+  ],
+  "requires_action_choice": true,
+  "action_options": [
+    "add",
+    "replace"
+  ]
+}
