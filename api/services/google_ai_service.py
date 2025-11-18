@@ -89,21 +89,24 @@ class GoogleAIStudioService:
 
         self._validate_api_key()
 
-        # Initialize new genai client for Gemini 2.5 Flash Image
-        self.genai_client = genai.Client(api_key=self.api_key)
+        # Initialize new genai client for Gemini 2.5 Flash Image (only if API key is configured)
+        if self.api_key:
+            self.genai_client = genai.Client(api_key=self.api_key)
 
-        # Debug: Log API key info (first 8 and last 4 characters for security)
-        if len(self.api_key) > 12:
-            masked_key = f"{self.api_key[:8]}...{self.api_key[-4:]}"
-            logger.info(f"Google AI API Key loaded: {masked_key}")
+            # Debug: Log API key info (first 8 and last 4 characters for security)
+            if len(self.api_key) > 12:
+                masked_key = f"{self.api_key[:8]}...{self.api_key[-4:]}"
+                logger.info(f"Google AI API Key loaded: {masked_key}")
+        else:
+            self.genai_client = None
 
         logger.info("Google AI Studio service initialized with Gemini 2.5 Flash Image support")
 
     def _validate_api_key(self):
         """Validate Google AI API key"""
         if not self.api_key:
-            logger.error("Google AI Studio API key not configured")
-            raise ValueError("Google AI Studio API key is required")
+            logger.warning("Google AI Studio API key not configured - service will not be functional")
+            return
 
         logger.info("Google AI Studio API key validated")
 

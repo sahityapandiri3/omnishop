@@ -104,8 +104,9 @@ class ChatGPTService:
     def _validate_api_key(self):
         """Validate OpenAI API key"""
         if not settings.openai_api_key:
-            logger.error("OpenAI API key not configured")
-            raise ValueError("OpenAI API key is required")
+            logger.warning("OpenAI API key not configured - service will not be functional")
+            self.demo_mode = True
+            return
 
         # Allow demo keys for localhost development
         if settings.openai_api_key == "demo_key_for_localhost":
