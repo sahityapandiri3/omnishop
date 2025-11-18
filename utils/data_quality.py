@@ -7,8 +7,8 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
-from database.connection import get_db_session
-from database.models import Product, ProductImage, Category, ScrapingLog
+from api.database.connection import get_db_session
+from api.database.models import Product, ProductImage, Category, ScrapingLog
 
 logger = logging.getLogger(__name__)
 

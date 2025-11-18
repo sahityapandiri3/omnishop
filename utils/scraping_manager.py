@@ -9,8 +9,8 @@ from typing import Dict, List, Optional
 from pathlib import Path
 import json
 
-from database.connection import get_db_session
-from database.models import ScrapingLog, ScrapingStatus
+from api.database.connection import get_db_session
+from api.database.models import ScrapingLog, ScrapingStatus
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -282,7 +282,7 @@ class ScrapingManager:
 
     def _get_total_products_by_source(self) -> Dict:
         """Get total products count by source website"""
-        from database.models import Product
+        from api.database.models import Product
 
         with get_db_session() as session:
             totals = {}

@@ -94,7 +94,7 @@ async def send_message(
 
         # Get AI response
         # Use active image (latest visualization OR original upload) for analysis
-        active_image = conversation_context_manager.get_active_image(session_id) if session_id else None
+        active_image = conversation_context_manager.get_last_image(session_id) if session_id else None
         conversational_response, analysis = await chatgpt_service.analyze_user_input(
             user_message=request.message,
             session_id=session_id,

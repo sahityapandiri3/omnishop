@@ -411,7 +411,7 @@ class TestEdgeCases:
 @pytest.fixture
 async def test_db_session():
     """Provide a test database session"""
-    from database.connection import get_db_session
+    from api.database.connection import get_db_session
     async with get_db_session() as session:
         yield session
 

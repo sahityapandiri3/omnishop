@@ -11,6 +11,11 @@ import time
 import sys
 import os
 
+# Add api directory to path for imports (works both locally and on Railway)
+api_dir = os.path.dirname(os.path.abspath(__file__))
+if api_dir not in sys.path:
+    sys.path.insert(0, api_dir)
+
 # Add parent directory to path to import from scrapers
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
