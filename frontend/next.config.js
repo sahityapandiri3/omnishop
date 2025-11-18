@@ -24,14 +24,8 @@ const nextConfig = {
   env: {
     CUSTOM_KEY: 'my-value',
   },
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: 'http://localhost:8000/api/:path*',
-      },
-    ];
-  },
+  // Rewrites removed - frontend uses NEXT_PUBLIC_API_URL environment variable
+  // This allows flexible configuration for different deployment environments
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
     // Optimize bundle size
     if (!dev && !isServer) {
