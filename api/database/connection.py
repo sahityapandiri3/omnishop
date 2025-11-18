@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 import logging
 
-from config.settings import settings
+from core.config import settings
 from .models import Base
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ class DatabaseManager:
     """Database connection and session management"""
 
     def __init__(self, database_url: str = None):
-        self.database_url = database_url or settings.database.url
+        self.database_url = database_url or settings.database_url
         self.engine = None
         self.SessionLocal = None
         self._initialize()

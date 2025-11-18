@@ -140,29 +140,33 @@ async def root():
 
 
 # Include routers
-app.include_router(
-    products.router,
-    prefix="/api",
-    tags=["products"]
-)
+if 'products' in dir():
+    app.include_router(
+        products.router,
+        prefix="/api",
+        tags=["products"]
+    )
 
-app.include_router(
-    categories.router,
-    prefix="/api",
-    tags=["categories"]
-)
+if 'categories' in dir():
+    app.include_router(
+        categories.router,
+        prefix="/api",
+        tags=["categories"]
+    )
 
-app.include_router(
-    chat.router,
-    prefix="/api/chat",
-    tags=["chat"]
-)
+if 'chat' in dir():
+    app.include_router(
+        chat.router,
+        prefix="/api/chat",
+        tags=["chat"]
+    )
 
-app.include_router(
-    visualization.router,
-    prefix="/api",
-    tags=["visualization"]
-)
+if 'visualization' in dir():
+    app.include_router(
+        visualization.router,
+        prefix="/api",
+        tags=["visualization"]
+    )
 
 # Additional routers can be added here as needed
 
