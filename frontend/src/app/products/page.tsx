@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Product, ProductFilters, Category, ProductSearchResponse } from '@/types'
-import { api } from '@/utils/api'
+import { getProducts, getCategories } from '@/utils/api'
 import ProductGrid from '@/components/ProductGrid'
 import SearchBar from '@/components/SearchBar'
 import FilterSidebar from '@/components/FilterSidebar'
@@ -24,7 +24,7 @@ export default function ProductsPage() {
     error: productsError
   } = useQuery<ProductSearchResponse>({
     queryKey: ['products', page, searchQuery, filters, sortBy, sortDirection],
-    queryFn: () => api.getProducts({
+    queryFn: () => getProducts({
       page,
       size: 20,
       search: searchQuery || undefined,
@@ -40,7 +40,7 @@ export default function ProductsPage() {
     isLoading: categoriesLoading
   } = useQuery<Category[]>({
     queryKey: ['categories'],
-    queryFn: api.getCategories
+    queryFn: getCategories
   })
 
   const handleSearch = (query: string) => {

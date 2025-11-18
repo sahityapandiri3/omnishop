@@ -58,7 +58,7 @@ export default function VisualizePage() {
           {/* Space Visualization */}
           <div>
             <SpaceVisualization
-              roomImage={roomImage}
+              roomImage={roomImage ?? undefined}
               recommendedProducts={recommendedProducts}
               className="h-fit"
             />

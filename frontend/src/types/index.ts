@@ -96,6 +96,9 @@ export interface ProductSortOptions {
   direction: 'asc' | 'desc';
 }
 
+// Product search response type alias
+export type ProductSearchResponse = PaginatedResponse<Product>;
+
 // Chat and AI types
 export interface ChatMessage {
   id: string;

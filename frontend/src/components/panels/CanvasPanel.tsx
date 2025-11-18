@@ -166,7 +166,9 @@ export default function CanvasPanel({
 
         const sessionData = await sessionResponse.json();
         sessionId = sessionData.session_id;
-        sessionStorage.setItem('design_session_id', sessionId);
+        if (sessionId) {
+          sessionStorage.setItem('design_session_id', sessionId);
+        }
       }
 
       // Prepare API request based on change type
@@ -241,7 +243,9 @@ export default function CanvasPanel({
 
       // Update undo/redo availability (need to check backend state)
       // After visualization, undo should be available if there's history
-      await updateUndoRedoState(sessionId);
+      if (sessionId) {
+        await updateUndoRedoState(sessionId);
+      }
 
       console.log(`[CanvasPanel] Visualization successful. Tracked ${products.length} products as visualized.`);
     } catch (error: any) {
@@ -320,7 +324,7 @@ export default function CanvasPanel({
         onSetProducts(normalizedProducts);
 
         // Update visualized product IDs - use normalizedProducts to maintain string ID consistency
-        const newVisualizedIds = new Set(normalizedProducts.map((p: Product) => p.id));
+        const newVisualizedIds = new Set<string>(normalizedProducts.map((p: Product) => String(p.id)));
         console.log('[CanvasPanel] New visualizedProductIds:', newVisualizedIds);
         setVisualizedProductIds(newVisualizedIds);
       } else {
@@ -382,7 +386,7 @@ export default function CanvasPanel({
         onSetProducts(normalizedProducts);
 
         // Update visualized product IDs - use normalizedProducts to maintain string ID consistency
-        const newVisualizedIds = new Set(normalizedProducts.map((p: Product) => p.id));
+        const newVisualizedIds = new Set<string>(normalizedProducts.map((p: Product) => String(p.id)));
         console.log('[CanvasPanel] New visualizedProductIds for redo:', newVisualizedIds);
         setVisualizedProductIds(newVisualizedIds);
       }

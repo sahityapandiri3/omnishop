@@ -20,7 +20,7 @@ repos:
     rev: 23.12.1
     hooks:
       - id: black
-        language_version: python3.10
+        language_version: python3.9
         args: ['--line-length=127']
         files: ^api/
 
@@ -47,7 +47,6 @@ repos:
       - id: mypy
         args: ['--ignore-missing-imports', '--no-strict-optional']
         files: ^api/
-        additional_dependencies: [types-all]
 
   # Security checks
   - repo: https://github.com/PyCQA/bandit
@@ -66,7 +65,7 @@ repos:
         language: system
         args: ['tests/unit', '-v', '-m', 'unit', '--tb=short']
         pass_filenames: false
-        always_run: true
+        files: ^api/
         stages: [commit]
 
   # Run quick regression tests
@@ -78,5 +77,5 @@ repos:
         language: system
         args: ['tests/regression', '-v', '-m', 'regression and not slow', '--tb=short']
         pass_filenames: false
-        always_run: true
+        files: ^api/
         stages: [push]

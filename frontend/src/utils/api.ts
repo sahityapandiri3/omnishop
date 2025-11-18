@@ -202,6 +202,9 @@ export const redoVisualization = async (sessionId: string) => {
 // Legacy support - export the old structure for existing components
 export { api as default };
 
+// Named export for components using import { api }
+export { api };
+
 // Export API groups for backward compatibility
 export const productAPI = {
   getProducts: (page = 1, size = 20, filters?: ProductFilters, sort?: any) =>

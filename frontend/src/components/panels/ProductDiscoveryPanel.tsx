@@ -283,7 +283,7 @@ export default function ProductDiscoveryPanel({
                   const image = primaryImage || product.images[0];
                   return image.large_url || image.medium_url || image.original_url;
                 }
-                return product.image_url || '/placeholder-product.jpg';
+                return (product as any).image_url || '/placeholder-product.jpg';
               };
 
               const imageUrl = getImageUrl();
@@ -377,7 +377,7 @@ export default function ProductDiscoveryPanel({
                     {product.source_website && (
                       <div className="absolute bottom-1.5 right-1.5">
                         <span className="inline-block bg-black/70 text-white text-[10px] font-medium px-1.5 py-0.5 rounded backdrop-blur-sm">
-                          {product.source_website || product.source}
+                          {product.source_website}
                         </span>
                       </div>
                     )}
