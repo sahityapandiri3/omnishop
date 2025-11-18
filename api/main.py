@@ -29,8 +29,12 @@ try:
     setup_logging()
 except ImportError as e:
     print(f"Import error: {e}")
-    # Fallback imports for basic functionality
-    settings = None
+    # Create minimal fallback settings for basic functionality
+    class FallbackSettings:
+        environment = "production"
+        cors_origins = ["*"]
+        debug = False
+    settings = FallbackSettings()
     def setup_logging():
         logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

@@ -6,11 +6,6 @@ import sqlalchemy
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from contextlib import asynccontextmanager
-import sys
-import os
-
-# Add parent directory to import models
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from database.models import Base
 from core.config import settings
