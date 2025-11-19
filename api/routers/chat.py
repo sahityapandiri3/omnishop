@@ -109,21 +109,22 @@ async def send_message(
             overall_confidence = analysis.confidence_scores.get('overall_analysis', 100)
             if overall_confidence < 60:
                 is_timeout = True
-                logger.info(f"Timeout detected (confidence: {overall_confidence}%) - starting background task")
+                logger.info(f"Timeout detected (confidence: {overall_confidence}%) - background task disabled (Redis not available)")
 
+                # TODO: Re-enable background tasks once Redis is added to Railway
                 # Start background task for real AI analysis
-                from tasks.chatgpt_tasks import analyze_user_input_async
-                task = analyze_user_input_async.delay(
-                    user_message=request.message,
-                    session_id=session_id,
-                    image_data=active_image or request.image,
-                    user_id=session.user_id
-                )
-                background_task_id = task.id
-                logger.info(f"Started background task {background_task_id}")
+                # from tasks.chatgpt_tasks import analyze_user_input_async
+                # task = analyze_user_input_async.delay(
+                #     user_message=request.message,
+                #     session_id=session_id,
+                #     image_data=active_image or request.image,
+                #     user_id=session.user_id
+                # )
+                # background_task_id = task.id
+                # logger.info(f"Started background task {background_task_id}")
 
                 # Update conversational response to mention background processing
-                conversational_response = "I'm analyzing your request in detail. I'll show you some product recommendations now, and I'll refine them once the analysis is complete. You can refresh in a moment to see updated recommendations!"
+                # conversational_response = "I'm analyzing your request in detail. I'll show you some product recommendations now, and I'll refine them once the analysis is complete. You can refresh in a moment to see updated recommendations!"
 
         # Save assistant message
         assistant_message_id = str(uuid.uuid4())
