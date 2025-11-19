@@ -1,1 +1,1 @@
-web: cd api && alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT
+web: alembic upgrade head && cd api && uvicorn main:app --host 0.0.0.0 --port $PORT
