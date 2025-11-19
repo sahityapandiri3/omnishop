@@ -27,8 +27,18 @@ try:
 
     # Setup logging
     setup_logging()
+    logger = logging.getLogger(__name__)
+    logger.info("✅ All routers imported successfully")
 except ImportError as e:
-    print(f"Import error: {e}")
+    # Log the full error and traceback
+    import traceback
+    print(f"❌ IMPORT ERROR: {e}")
+    print(f"Full traceback:\n{traceback.format_exc()}")
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    logger.error(f"Failed to import routers: {e}")
+    logger.error(f"Traceback: {traceback.format_exc()}")
+
     # Create minimal fallback settings for basic functionality
     class FallbackSettings:
         environment = "production"
@@ -37,7 +47,6 @@ except ImportError as e:
     settings = FallbackSettings()
     def setup_logging():
         logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
