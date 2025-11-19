@@ -2,7 +2,7 @@ name: Claude Code
 
 on:
   workflow_dispatch: # run manually from Actions tab
-  push:
+  pull_request:
     branches:
       - main
 
