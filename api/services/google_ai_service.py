@@ -15,8 +15,8 @@ from pathlib import Path
 import io
 from PIL import Image, ImageEnhance, ImageFilter
 import numpy as np
-from google import genai
-from google.genai import types
+import google.generativeai as genai
+from google.generativeai import types
 
 from core.config import settings
 
