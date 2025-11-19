@@ -1,15 +1,16 @@
 """
 FastAPI main application for Omnishop
 """
+import logging
+import os
+import sys
+import time
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
-from contextlib import asynccontextmanager
-import logging
-import time
-import sys
-import os
 
 # Add api directory to path for imports (works both locally and on Railway)
 api_dir = os.path.dirname(os.path.abspath(__file__))
@@ -24,10 +25,11 @@ import_error_message = None
 import_error_traceback = None
 
 try:
-    from routers import products, categories, chat, visualization
     from core.config import settings
+
     # from core.database import database
     from core.logging import setup_logging
+    from routers import categories, chat, products, visualization
 
     # Setup logging
     setup_logging()
@@ -36,6 +38,7 @@ try:
 except ImportError as e:
     # Log the full error and traceback
     import traceback
+
     import_error_message = str(e)
     import_error_traceback = traceback.format_exc()
 
@@ -51,7 +54,9 @@ except ImportError as e:
         environment = "production"
         cors_origins = ["*"]
         debug = False
+
     settings = FallbackSettings()
+
     def setup_logging():
         logging.basicConfig(level=logging.INFO)
 
@@ -84,9 +89,17 @@ app = FastAPI(
 )
 
 # Add middleware
+# Note: Wildcard patterns in allow_origins don't work, so we use allow_origin_regex
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "https://omnishop-three.vercel.app",  # Production frontend
+    ],
+    allow_origin_regex=r"https://omnishop-.*\.vercel\.app",  # All Vercel preview deployments
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -116,7 +129,7 @@ async def log_requests(request: Request, call_next):
             "status_code": response.status_code,
             "process_time": f"{process_time:.3f}s",
             "client_ip": client_ip,
-        }
+        },
     )
 
     # Add timing header
@@ -133,7 +146,7 @@ async def health_check():
         "status": "healthy",
         "timestamp": time.time(),
         "version": "1.0.0",
-        "database": "ready"  # Database sessions managed per-request
+        "database": "ready",  # Database sessions managed per-request
     }
 
 
@@ -150,8 +163,8 @@ async def root():
             "products": "/api/products",
             "categories": "/api/categories",
             "chat": "/api/chat",
-            "visualization": "/api/visualization"
-        }
+            "visualization": "/api/visualization",
+        },
     }
 
 
@@ -160,50 +173,39 @@ async def root():
 async def debug_info():
     """Debug endpoint to check router import status and configuration"""
     import sys
+
     return {
-        "environment": getattr(settings, 'environment', 'unknown'),
+        "environment": getattr(settings, "environment", "unknown"),
         "routers_imported": {
-            "products": 'products' in dir(),
-            "categories": 'categories' in dir(),
-            "chat": 'chat' in dir(),
-            "visualization": 'visualization' in dir(),
+            "products": "products" in dir(),
+            "categories": "categories" in dir(),
+            "chat": "chat" in dir(),
+            "visualization": "visualization" in dir(),
         },
         "settings_type": str(type(settings)),
         "python_version": sys.version,
         "registered_routes": [route.path for route in app.routes],
         "import_error": import_error_message,
         "import_traceback": import_error_traceback,
+        "cors_configured": {
+            "allow_origins": getattr(settings, "cors_origins", None),
+            "note": "Using allow_origin_regex for Vercel preview deployments",
+        },
     }
 
 
 # Include routers
-if 'products' in dir():
-    app.include_router(
-        products.router,
-        prefix="/api",
-        tags=["products"]
-    )
+if "products" in dir():
+    app.include_router(products.router, prefix="/api", tags=["products"])
 
-if 'categories' in dir():
-    app.include_router(
-        categories.router,
-        prefix="/api",
-        tags=["categories"]
-    )
+if "categories" in dir():
+    app.include_router(categories.router, prefix="/api", tags=["categories"])
 
-if 'chat' in dir():
-    app.include_router(
-        chat.router,
-        prefix="/api/chat",
-        tags=["chat"]
-    )
+if "chat" in dir():
+    app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 
-if 'visualization' in dir():
-    app.include_router(
-        visualization.router,
-        prefix="/api",
-        tags=["visualization"]
-    )
+if "visualization" in dir():
+    app.include_router(visualization.router, prefix="/api", tags=["visualization"])
 
 # Additional routers can be added here as needed
 
