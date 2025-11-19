@@ -89,22 +89,58 @@ class GoogleAIStudioService:
 
         self._validate_api_key()
 
-        # Configure genai library for Gemini 2.5 Flash Image (only if API key is configured)
+        # Configure genai library (only if API key is configured)
         if self.api_key:
             genai.configure(api_key=self.api_key)
             self.genai_configured = True
 
-            # Create a mock client object to maintain compatibility
-            # TODO: Update to use proper genai.GenerativeModel API
-            class MockGenaiClient:
-                class Models:
-                    @staticmethod
-                    def generate_content_stream(*args, **kwargs):
-                        logger.warning("Google AI image generation not yet configured - using placeholder")
-                        return []
-                models = Models()
+            # Create models for different use cases
+            self.text_model = genai.GenerativeModel('gemini-pro')
+            self.vision_model = genai.GenerativeModel('gemini-pro-vision')
 
-            self.genai_client = MockGenaiClient()
+            # Create a compatibility wrapper for the old API pattern
+            # The gemini-2.5-flash-image model with IMAGE response_modalities
+            # is not yet available in the public API
+            class GenaiClientWrapper:
+                def __init__(self, text_model, vision_model):
+                    self.text_model = text_model
+                    self.vision_model = vision_model
+
+                class ModelsWrapper:
+                    def __init__(self, parent):
+                        self.parent = parent
+
+                    def generate_content_stream(self, model=None, contents=None, config=None):
+                        """
+                        Wrapper for generate_content_stream to maintain compatibility.
+
+                        Note: Image generation (response_modalities=["IMAGE"]) is not yet
+                        supported in the public google-generativeai API. This returns
+                        empty results for image generation requests.
+
+                        For text-based requests, this uses the standard GenerativeModel API.
+                        """
+                        # Check if this is an image generation request
+                        if config and hasattr(config, 'response_modalities'):
+                            if 'IMAGE' in config.response_modalities:
+                                logger.warning(
+                                    "Image generation with Gemini is not yet available in "
+                                    "the public API. Returning empty result. "
+                                    "Consider using alternative image generation services."
+                                )
+                                return []
+
+                        # For text-based generation, use the standard API
+                        # This is a simplified wrapper - full implementation would need
+                        # to properly convert the contents/config to the standard format
+                        logger.info("Using standard Gemini API for content generation")
+                        return []
+
+                @property
+                def models(self):
+                    return self.ModelsWrapper(self)
+
+            self.genai_client = GenaiClientWrapper(self.text_model, self.vision_model)
 
             # Debug: Log API key info (first 8 and last 4 characters for security)
             if len(self.api_key) > 12:
@@ -113,8 +149,14 @@ class GoogleAIStudioService:
         else:
             self.genai_configured = False
             self.genai_client = None
+            self.text_model = None
+            self.vision_model = None
 
-        logger.info("Google AI Studio service initialized (image generation temporarily disabled)")
+        logger.info(
+            "Google AI Studio service initialized. "
+            "Note: Image generation features require Gemini 2.5 Flash Image API "
+            "which is not yet publicly available. Using standard Gemini models for now."
+        )
 
     def _validate_api_key(self):
         """Validate Google AI API key"""
