@@ -1,1 +1,1 @@
-web: bash start.sh
+web: cd api && bash start.sh
