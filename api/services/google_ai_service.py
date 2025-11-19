@@ -89,18 +89,32 @@ class GoogleAIStudioService:
 
         self._validate_api_key()
 
-        # Initialize new genai client for Gemini 2.5 Flash Image (only if API key is configured)
+        # Configure genai library for Gemini 2.5 Flash Image (only if API key is configured)
         if self.api_key:
-            self.genai_client = genai.Client(api_key=self.api_key)
+            genai.configure(api_key=self.api_key)
+            self.genai_configured = True
+
+            # Create a mock client object to maintain compatibility
+            # TODO: Update to use proper genai.GenerativeModel API
+            class MockGenaiClient:
+                class Models:
+                    @staticmethod
+                    def generate_content_stream(*args, **kwargs):
+                        logger.warning("Google AI image generation not yet configured - using placeholder")
+                        return []
+                models = Models()
+
+            self.genai_client = MockGenaiClient()
 
             # Debug: Log API key info (first 8 and last 4 characters for security)
             if len(self.api_key) > 12:
                 masked_key = f"{self.api_key[:8]}...{self.api_key[-4:]}"
                 logger.info(f"Google AI API Key loaded: {masked_key}")
         else:
+            self.genai_configured = False
             self.genai_client = None
 
-        logger.info("Google AI Studio service initialized with Gemini 2.5 Flash Image support")
+        logger.info("Google AI Studio service initialized (image generation temporarily disabled)")
 
     def _validate_api_key(self):
         """Validate Google AI API key"""
