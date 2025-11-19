@@ -19,6 +19,10 @@ if api_dir not in sys.path:
 # Add parent directory to path to import from scrapers
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Store import error for debugging
+import_error_message = None
+import_error_traceback = None
+
 try:
     from routers import products, categories, chat, visualization
     from core.config import settings
@@ -32,12 +36,15 @@ try:
 except ImportError as e:
     # Log the full error and traceback
     import traceback
+    import_error_message = str(e)
+    import_error_traceback = traceback.format_exc()
+
     print(f"❌ IMPORT ERROR: {e}")
-    print(f"Full traceback:\n{traceback.format_exc()}")
+    print(f"Full traceback:\n{import_error_traceback}")
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
     logger.error(f"Failed to import routers: {e}")
-    logger.error(f"Traceback: {traceback.format_exc()}")
+    logger.error(f"Traceback: {import_error_traceback}")
 
     # Create minimal fallback settings for basic functionality
     class FallbackSettings:
@@ -164,6 +171,8 @@ async def debug_info():
         "settings_type": str(type(settings)),
         "python_version": sys.version,
         "registered_routes": [route.path for route in app.routes],
+        "import_error": import_error_message,
+        "import_traceback": import_error_traceback,
     }
 
 
