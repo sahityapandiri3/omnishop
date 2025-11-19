@@ -29,7 +29,9 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:8000",
-        "http://127.0.0.1:8000"
+        "http://127.0.0.1:8000",
+        "https://omnishop-three.vercel.app",  # Production frontend
+        "https://omnishop-*.vercel.app"  # All Vercel preview deployments
     ]
 
     @field_validator('cors_origins', mode='before')
