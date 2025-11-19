@@ -148,6 +148,25 @@ async def root():
     }
 
 
+# Debug endpoint to check import status
+@app.get("/debug")
+async def debug_info():
+    """Debug endpoint to check router import status and configuration"""
+    import sys
+    return {
+        "environment": getattr(settings, 'environment', 'unknown'),
+        "routers_imported": {
+            "products": 'products' in dir(),
+            "categories": 'categories' in dir(),
+            "chat": 'chat' in dir(),
+            "visualization": 'visualization' in dir(),
+        },
+        "settings_type": str(type(settings)),
+        "python_version": sys.version,
+        "registered_routes": [route.path for route in app.routes],
+    }
+
+
 # Include routers
 if 'products' in dir():
     app.include_router(
