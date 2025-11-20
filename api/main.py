@@ -67,6 +67,37 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Omnishop API...")
 
+    # Check critical environment variables
+    logger.info("=" * 60)
+    logger.info("ENVIRONMENT VARIABLES CHECK")
+    logger.info("=" * 60)
+
+    openai_key = os.getenv("OPENAI_API_KEY", "")
+    google_key = os.getenv("GOOGLE_AI_API_KEY", "")
+    db_url = os.getenv("DATABASE_URL", "")
+
+    if openai_key:
+        key_preview = f"{openai_key[:7]}...{openai_key[-4:]}" if len(openai_key) > 11 else "***"
+        logger.info(f"✅ OPENAI_API_KEY is set: {key_preview}")
+    else:
+        logger.error("❌ OPENAI_API_KEY is NOT set - Chat will not work!")
+
+    if google_key:
+        key_preview = f"{google_key[:7]}...{google_key[-4:]}" if len(google_key) > 11 else "***"
+        logger.info(f"✅ GOOGLE_AI_API_KEY is set: {key_preview}")
+    else:
+        logger.error("❌ GOOGLE_AI_API_KEY is NOT set - Image analysis will not work!")
+
+    if db_url:
+        # Sanitize database URL
+        import re
+        sanitized = re.sub(r':\/\/[^:]*:[^@]*@', '://***:***@', db_url)
+        logger.info(f"✅ DATABASE_URL is set: {sanitized}")
+    else:
+        logger.error("❌ DATABASE_URL is NOT set!")
+
+    logger.info("=" * 60)
+
     # Database connection is managed by SQLAlchemy async session
     # No explicit connect/disconnect needed
     logger.info("Application started")
