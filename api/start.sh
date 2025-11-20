@@ -59,6 +59,26 @@ else
     log_success "DATABASE_URL is set: $SANITIZED_URL"
 fi
 
+# Check OpenAI API Key
+if [ -z "$OPENAI_API_KEY" ]; then
+    log_error "OPENAI_API_KEY is not set!"
+    log_error "Chat functionality will not work without this key"
+else
+    # Show first/last few characters only
+    KEY_PREVIEW="${OPENAI_API_KEY:0:7}...${OPENAI_API_KEY: -4}"
+    log_success "OPENAI_API_KEY is set: $KEY_PREVIEW"
+fi
+
+# Check Google AI API Key
+if [ -z "$GOOGLE_AI_API_KEY" ]; then
+    log_error "GOOGLE_AI_API_KEY is not set!"
+    log_error "Image analysis functionality will not work without this key"
+else
+    # Show first/last few characters only
+    KEY_PREVIEW="${GOOGLE_AI_API_KEY:0:7}...${GOOGLE_AI_API_KEY: -4}"
+    log_success "GOOGLE_AI_API_KEY is set: $KEY_PREVIEW"
+fi
+
 # Validate PORT is a number
 if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
     log_error "PORT must be a number, got: $PORT"
