@@ -225,6 +225,42 @@ async def debug_info():
     }
 
 
+# OpenAI API test endpoint
+@app.get("/debug/openai")
+async def test_openai():
+    """Test OpenAI API connection"""
+    import openai
+
+    api_key = os.getenv("OPENAI_API_KEY", "")
+
+    if not api_key:
+        return {
+            "status": "error",
+            "message": "OPENAI_API_KEY not set"
+        }
+
+    try:
+        client = openai.AsyncOpenAI(api_key=api_key, timeout=10.0)
+        response = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": "Say 'API test successful'"}],
+            max_tokens=10
+        )
+
+        return {
+            "status": "success",
+            "message": "OpenAI API is working",
+            "response": response.choices[0].message.content,
+            "model": response.model
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"OpenAI API test failed: {str(e)}",
+            "error_type": type(e).__name__
+        }
+
+
 # Include routers
 if "products" in dir():
     app.include_router(products.router, prefix="/api", tags=["products"])
