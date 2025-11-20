@@ -1702,14 +1702,14 @@ async def _get_product_recommendations(
 
 
 def _map_budget_range(price_range: str) -> Tuple[float, float]:
-    """Map budget indicators to price ranges"""
+    """Map budget indicators to price ranges (in INR for furniture)"""
     budget_map = {
-        'budget': (0, 500),
-        'mid-range': (500, 2000),
-        'premium': (2000, 5000),
-        'luxury': (5000, 50000)
+        'budget': (0, 15000),        # Budget furniture: up to ₹15K
+        'mid-range': (10000, 50000), # Mid-range furniture: ₹10K-50K
+        'premium': (40000, 150000),  # Premium furniture: ₹40K-150K
+        'luxury': (100000, 1000000)  # Luxury furniture: ₹100K+
     }
-    return budget_map.get(price_range, (0, 10000))
+    return budget_map.get(price_range, (0, 200000))  # Default: no upper limit for most searches
 
 
 async def _get_basic_product_recommendations(
