@@ -562,7 +562,7 @@ class AdvancedRecommendationEngine:
         """Get candidate products based on basic criteria with strict category filtering"""
         from sqlalchemy.orm import selectinload
 
-        query = select(Product).where(Product.is_available is True)
+        query = select(Product).where(Product.is_available)
 
         # Apply product keyword filter (MOST IMPORTANT - filter by what user asked for)
         logger.info(
