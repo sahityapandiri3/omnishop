@@ -1,24 +1,21 @@
 """
 Google AI Studio service for spatial analysis, image understanding, and visualization
 """
-import logging
 import asyncio
-import json
 import base64
-import aiohttp
-import time
-import mimetypes
-from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-from pathlib import Path
 import io
-from PIL import Image, ImageEnhance, ImageFilter
-import numpy as np
+import json
+import logging
+import time
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
+
+import aiohttp
+from core.config import settings
 from google import genai
 from google.genai import types
-
-from core.config import settings
+from PIL import Image, ImageEnhance
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +23,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RoomAnalysis:
     """Results from room analysis"""
+
     room_type: str
     dimensions: Dict[str, float]
     lighting_conditions: str
@@ -39,6 +37,7 @@ class RoomAnalysis:
 @dataclass
 class SpatialAnalysis:
     """Results from spatial analysis"""
+
     layout_type: str
     traffic_patterns: List[str]
     focal_points: List[Dict[str, Any]]
@@ -50,6 +49,7 @@ class SpatialAnalysis:
 @dataclass
 class VisualizationRequest:
     """Request for room visualization"""
+
     base_image: str
     products_to_place: List[Dict[str, Any]]
     placement_positions: List[Dict[str, Any]]
@@ -62,6 +62,7 @@ class VisualizationRequest:
 @dataclass
 class VisualizationResult:
     """Result from visualization generation"""
+
     rendered_image: str
     processing_time: float
     quality_score: float
@@ -84,7 +85,7 @@ class GoogleAIStudioService:
             "successful_requests": 0,
             "failed_requests": 0,
             "total_processing_time": 0.0,
-            "last_reset": datetime.now()
+            "last_reset": datetime.now(),
         }
 
         self._validate_api_key()
@@ -117,6 +118,7 @@ class GoogleAIStudioService:
 
     def _create_rate_limiter(self):
         """Create rate limiter for API calls"""
+
         class RateLimiter:
             def __init__(self, max_requests=30, time_window=60):
                 self.max_requests = max_requests
@@ -126,8 +128,7 @@ class GoogleAIStudioService:
             async def acquire(self):
                 now = datetime.now()
                 # Remove old requests
-                self.requests = [req for req in self.requests
-                               if (now - req).total_seconds() < self.time_window]
+                self.requests = [req for req in self.requests if (now - req).total_seconds() < self.time_window]
 
                 if len(self.requests) >= self.max_requests:
                     sleep_time = self.time_window - (now - self.requests[0]).total_seconds()
@@ -151,10 +152,7 @@ class GoogleAIStudioService:
 
         session = await self._get_session()
         url = f"{self.base_url}/{endpoint}"
-        headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": self.api_key
-        }
+        headers = {"Content-Type": "application/json", "x-goog-api-key": self.api_key}
 
         start_time = time.time()
         self.usage_stats["total_requests"] += 1
@@ -187,10 +185,11 @@ class GoogleAIStudioService:
             processed_image = self._preprocess_image(image_data)
 
             payload = {
-                "contents": [{
-                    "parts": [
-                        {
-                            "text": """Analyze this interior space image and provide detailed analysis in JSON format:
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": """Analyze this interior space image and provide detailed analysis in JSON format:
 
 {
   "room_type": "living_room/bedroom/kitchen/etc",
@@ -226,22 +225,18 @@ class GoogleAIStudioService:
 }
 
 Provide accurate measurements and detailed observations."""
-                        },
-                        {
-                            "inline_data": {
-                                "mime_type": "image/jpeg",
-                                "data": processed_image
-                            }
-                        }
-                    ]
-                }],
+                            },
+                            {"inline_data": {"mime_type": "image/jpeg", "data": processed_image}},
+                        ]
+                    }
+                ],
                 "generationConfig": {
                     "temperature": 0.3,
                     "topK": 40,
                     "topP": 0.95,
                     "maxOutputTokens": 2048,
-                    "responseMimeType": "application/json"
-                }
+                    "responseMimeType": "application/json",
+                },
             }
 
             result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
@@ -264,7 +259,7 @@ Provide accurate measurements and detailed observations."""
                 existing_furniture=analysis_data.get("existing_furniture", []),
                 architectural_features=analysis_data.get("architectural_features", []),
                 style_assessment=analysis_data.get("style_assessment", "unknown"),
-                confidence_score=0.85  # High confidence for Google AI analysis
+                confidence_score=0.85,  # High confidence for Google AI analysis
             )
 
         except Exception as e:
@@ -317,14 +312,8 @@ Provide detailed spatial analysis in JSON format:
 """
 
             payload = {
-                "contents": [{
-                    "parts": [{"text": spatial_prompt}]
-                }],
-                "generationConfig": {
-                    "temperature": 0.2,
-                    "maxOutputTokens": 1536,
-                    "responseMimeType": "application/json"
-                }
+                "contents": [{"parts": [{"text": spatial_prompt}]}],
+                "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1536, "responseMimeType": "application/json"},
             }
 
             result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
@@ -343,7 +332,7 @@ Provide detailed spatial analysis in JSON format:
                 focal_points=spatial_data.get("focal_points", []),
                 available_spaces=spatial_data.get("available_spaces", []),
                 placement_suggestions=spatial_data.get("placement_suggestions", []),
-                scale_recommendations=spatial_data.get("scale_recommendations", {})
+                scale_recommendations=spatial_data.get("scale_recommendations", {}),
             )
 
         except Exception as e:
@@ -356,10 +345,11 @@ Provide detailed spatial analysis in JSON format:
             processed_image = self._preprocess_image(image_data)
 
             payload = {
-                "contents": [{
-                    "parts": [
-                        {
-                            "text": """Identify and locate all furniture and decor objects in this room image.
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": """Identify and locate all furniture and decor objects in this room image.
 
 For each object, provide:
 - Object type (sofa, chair, table, lamp, etc.)
@@ -382,20 +372,12 @@ Return results as JSON array:
     "confidence": 0.95
   }
 ]"""
-                        },
-                        {
-                            "inline_data": {
-                                "mime_type": "image/jpeg",
-                                "data": processed_image
-                            }
-                        }
-                    ]
-                }],
-                "generationConfig": {
-                    "temperature": 0.3,
-                    "maxOutputTokens": 1024,
-                    "responseMimeType": "application/json"
-                }
+                            },
+                            {"inline_data": {"mime_type": "image/jpeg", "data": processed_image}},
+                        ]
+                    }
+                ],
+                "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1024, "responseMimeType": "application/json"},
             }
 
             result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
@@ -423,10 +405,11 @@ Return results as JSON array:
             processed_image = self._preprocess_image(image_data)
 
             payload = {
-                "contents": [{
-                    "parts": [
-                        {
-                            "text": """List all furniture items visible in this room image.
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": """List all furniture items visible in this room image.
 For each item, provide:
 - furniture_type (e.g., "sofa", "chair", "bed", "lamp", "cabinet")
 - confidence (0-1 scale indicating how certain you are)
@@ -469,20 +452,12 @@ Return results as JSON array:
 
 IMPORTANT: Only include actual furniture pieces. Do not include decorative items, walls, windows, or structural elements.
 CRITICAL: Distinguish between center_table (in front of seating) and side_table (beside seating) based on position."""
-                        },
-                        {
-                            "inline_data": {
-                                "mime_type": "image/jpeg",
-                                "data": processed_image
-                            }
-                        }
-                    ]
-                }],
-                "generationConfig": {
-                    "temperature": 0.2,
-                    "maxOutputTokens": 1024,
-                    "responseMimeType": "application/json"
-                }
+                            },
+                            {"inline_data": {"mime_type": "image/jpeg", "data": processed_image}},
+                        ]
+                    }
+                ],
+                "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1024, "responseMimeType": "application/json"},
             }
 
             result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
@@ -510,10 +485,11 @@ CRITICAL: Distinguish between center_table (in front of seating) and side_table 
             processed_image = self._preprocess_image(image_data)
 
             payload = {
-                "contents": [{
-                    "parts": [
-                        {
-                            "text": f"""Analyze this room image and determine if there is a "{furniture_type}" (or similar furniture) present.
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": f"""Analyze this room image and determine if there is a "{furniture_type}" (or similar furniture) present.
 
 Return a JSON response with:
 - exists: true/false (whether the furniture type exists)
@@ -551,20 +527,12 @@ CRITICAL: Keep sofas, chairs, tables, and lamps SEPARATE:
 - Chairs are individual seating pieces (accent chair, armchair, side chair)
 - Tables are surfaces for placing items (coffee table, side table, dining table)
 - Lamps are lighting fixtures (table lamp, floor lamp, ceiling lamp) - NOT tables!"""
-                        },
-                        {
-                            "inline_data": {
-                                "mime_type": "image/jpeg",
-                                "data": processed_image
-                            }
-                        }
-                    ]
-                }],
-                "generationConfig": {
-                    "temperature": 0.2,
-                    "maxOutputTokens": 512,
-                    "responseMimeType": "application/json"
-                }
+                            },
+                            {"inline_data": {"mime_type": "image/jpeg", "data": processed_image}},
+                        ]
+                    }
+                ],
+                "generationConfig": {"temperature": 0.2, "maxOutputTokens": 512, "responseMimeType": "application/json"},
             }
 
             result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
@@ -585,12 +553,7 @@ CRITICAL: Keep sofas, chairs, tables, and lamps SEPARATE:
             logger.error(f"Error checking furniture existence: {e}")
             return (False, [])
 
-    async def generate_add_visualization(
-        self,
-        room_image: str,
-        product_name: str,
-        product_image: Optional[str] = None
-    ) -> str:
+    async def generate_add_visualization(self, room_image: str, product_name: str, product_image: Optional[str] = None) -> str:
         """
         Generate visualization with product ADDED to room
         Returns: base64 image data
@@ -672,30 +635,19 @@ OUTPUT: One photorealistic image showing THE SAME ROOM with the {product_name} a
 
             # Build parts list
             parts = [types.Part.from_text(text=prompt)]
-            parts.append(types.Part(
-                inline_data=types.Blob(
-                    mime_type="image/jpeg",
-                    data=base64.b64decode(processed_room)
-                )
-            ))
+            parts.append(types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_room))))
 
             # Add product reference image if available
             if product_image_data:
                 parts.append(types.Part.from_text(text=f"\nProduct reference image ({product_name}):"))
-                parts.append(types.Part(
-                    inline_data=types.Blob(
-                        mime_type="image/jpeg",
-                        data=base64.b64decode(product_image_data)
-                    )
-                ))
+                parts.append(
+                    types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(product_image_data)))
+                )
 
             contents = [types.Content(role="user", parts=parts)]
 
             # Generate visualization with Gemini 2.5 Flash Image
-            generate_content_config = types.GenerateContentConfig(
-                response_modalities=["IMAGE"],
-                temperature=0.3
-            )
+            generate_content_config = types.GenerateContentConfig(response_modalities=["IMAGE"], temperature=0.3)
 
             generated_image = None
             for chunk in self.genai_client.models.generate_content_stream(
@@ -708,7 +660,7 @@ OUTPUT: One photorealistic image showing THE SAME ROOM with the {product_name} a
                         if part.inline_data and part.inline_data.data:
                             image_bytes = part.inline_data.data
                             mime_type = part.inline_data.mime_type or "image/png"
-                            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
                             generated_image = f"data:{mime_type};base64,{image_base64}"
                             logger.info(f"Generated ADD visualization ({len(image_bytes)} bytes)")
 
@@ -719,11 +671,7 @@ OUTPUT: One photorealistic image showing THE SAME ROOM with the {product_name} a
             return room_image
 
     async def generate_replace_visualization(
-        self,
-        room_image: str,
-        product_name: str,
-        furniture_type: str,
-        product_image: Optional[str] = None
+        self, room_image: str, product_name: str, furniture_type: str, product_image: Optional[str] = None
     ) -> str:
         """
         Generate visualization with furniture REPLACED
@@ -749,32 +697,21 @@ Generate a photorealistic image of the room with the {product_name} replacing th
 
             # Build parts list
             parts = [types.Part.from_text(text=prompt)]
-            parts.append(types.Part(
-                inline_data=types.Blob(
-                    mime_type="image/jpeg",
-                    data=base64.b64decode(processed_room)
-                )
-            ))
+            parts.append(types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_room))))
 
             # Add product reference image if available
             # IMPORTANT: Do NOT add text labels between images - this confuses the model
             # Send images directly back-to-back like Google AI Studio does
             if product_image_data:
-                parts.append(types.Part(
-                    inline_data=types.Blob(
-                        mime_type="image/jpeg",
-                        data=base64.b64decode(product_image_data)
-                    )
-                ))
+                parts.append(
+                    types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(product_image_data)))
+                )
 
             contents = [types.Content(role="user", parts=parts)]
 
             # Generate visualization with Gemini 2.5 Flash Image
             # Use temperature 0.4 to match Google AI Studio's default
-            generate_content_config = types.GenerateContentConfig(
-                response_modalities=["IMAGE"],
-                temperature=0.4
-            )
+            generate_content_config = types.GenerateContentConfig(response_modalities=["IMAGE"], temperature=0.4)
 
             generated_image = None
             for chunk in self.genai_client.models.generate_content_stream(
@@ -787,7 +724,7 @@ Generate a photorealistic image of the room with the {product_name} replacing th
                         if part.inline_data and part.inline_data.data:
                             image_bytes = part.inline_data.data
                             mime_type = part.inline_data.mime_type or "image/png"
-                            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
                             generated_image = f"data:{mime_type};base64,{image_base64}"
                             logger.info(f"Generated REPLACE visualization ({len(image_bytes)} bytes)")
 
@@ -811,19 +748,15 @@ Generate a photorealistic image of the room with the {product_name} replacing th
             products_description = []
             product_images = []
             for idx, product in enumerate(visualization_request.products_to_place):
-                product_name = product.get('full_name') or product.get('name', 'furniture item')
+                product_name = product.get("full_name") or product.get("name", "furniture item")
                 products_description.append(f"Product {idx+1}: {product_name}")
 
                 # Download product image if available
-                if product.get('image_url'):
+                if product.get("image_url"):
                     try:
-                        product_image_data = await self._download_image(product['image_url'])
+                        product_image_data = await self._download_image(product["image_url"])
                         if product_image_data:
-                            product_images.append({
-                                'data': product_image_data,
-                                'name': product_name,
-                                'index': idx + 1
-                            })
+                            product_images.append({"data": product_image_data, "name": product_name, "index": idx + 1})
                     except Exception as e:
                         logger.warning(f"Failed to download product image: {e}")
 
@@ -838,16 +771,18 @@ Generate a photorealistic image of the room with the {product_name} replacing th
                 # Build detailed product list with descriptions
                 detailed_products = []
                 for idx, product in enumerate(visualization_request.products_to_place):
-                    product_name = product.get('full_name') or product.get('name', 'furniture item')
-                    product_desc = product.get('description', 'No description available')
-                    detailed_products.append(f"""
+                    product_name = product.get("full_name") or product.get("name", "furniture item")
+                    product_desc = product.get("description", "No description available")
+                    detailed_products.append(
+                        f"""
 Product {idx + 1}:
 - Name: {product_name}
 - Description: {product_desc}
 - Placement: {user_request if user_request else 'Place naturally in appropriate location based on product type'}
-- Reference Image: Provided below""")
+- Reference Image: Provided below"""
+                    )
 
-                products_detail = '\n'.join(detailed_products)
+                products_detail = "\n".join(detailed_products)
 
                 # ULTRA-STRICT room preservation prompt
                 product_count = len(visualization_request.products_to_place)
@@ -928,6 +863,10 @@ PLACEMENT STRATEGY:
 7. Arrange products according to type-specific placement rules (see below)
 8. Ensure products don't block doorways or windows
 9. Keep proper spacing between products (18-30 inches walking space)
+10. ⚖️ SPATIAL BALANCE: Distribute products evenly across the room to create visual balance
+   - If a planter/lamp/decor is placed on one side of the sofa, place a side table on the OTHER side
+   - Avoid clustering all products on one side of the room
+   - Create symmetry and balance in the overall layout
 
 📍 TYPE-SPECIFIC PLACEMENT RULES:
 
@@ -951,6 +890,7 @@ PLACEMENT STRATEGY:
 - Position at SAME DEPTH as sofa (aligned with sofa's length, not width)
 - Should be at ARM'S REACH from someone sitting on sofa
 - Distance: 0-6 inches from sofa's side
+- ⚖️ BALANCE: If planter/lamp/decor exists on one side, place side table on the OPPOSITE side
 - ❌ INCORRECT: Placing in front of sofa but shifted to the side
 - ✅ CORRECT: Directly touching or very close to sofa's side panel/armrest
 
@@ -965,6 +905,13 @@ PLACEMENT STRATEGY:
 🛏️ BEDS:
 - Place against longest wall
 - Leave walkway space on at least one side
+
+🌿 PLANTERS / DECOR ITEMS (vases, sculptures, decorative objects):
+- Place on floor next to sofa, chair, or table
+- Can be placed on existing side tables or shelves
+- ⚖️ BALANCE: If placing next to sofa, position on one side; if side table is needed, place it on the OPPOSITE side
+- Avoid blocking pathways or clustering all decor on one side
+- Create visual balance by distributing decor items across the room
 
 IMPORTANT FOR MULTIPLE PRODUCTS ({product_count} products):
 - When placing {product_count} products, the room STILL stays the same
@@ -1041,29 +988,25 @@ Create a photorealistic interior design visualization that addresses the user's 
                 parts = [types.Part.from_text(text=visualization_prompt)]
 
                 # Add room image
-                parts.append(types.Part(
-                    inline_data=types.Blob(
-                        mime_type="image/jpeg",
-                        data=base64.b64decode(processed_image)
-                    )
-                ))
+                parts.append(
+                    types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_image)))
+                )
 
                 # Add product images as references
                 for prod_img in product_images:
-                    parts.append(types.Part.from_text(text=f"\nProduct {prod_img['index']} reference image ({prod_img['name']}):"))
-                    parts.append(types.Part(
-                        inline_data=types.Blob(
-                            mime_type="image/jpeg",
-                            data=base64.b64decode(prod_img['data'])
-                        )
-                    ))
+                    parts.append(
+                        types.Part.from_text(text=f"\nProduct {prod_img['index']} reference image ({prod_img['name']}):")
+                    )
+                    parts.append(
+                        types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(prod_img["data"])))
+                    )
 
                 contents = [types.Content(role="user", parts=parts)]
 
                 # Use response modalities for image and text generation
                 generate_content_config = types.GenerateContentConfig(
                     response_modalities=["IMAGE", "TEXT"],
-                    temperature=0.25  # Lower temperature for better room preservation consistency
+                    temperature=0.25,  # Lower temperature for better room preservation consistency
                 )
 
                 # Stream response
@@ -1072,7 +1015,11 @@ Create a photorealistic interior design visualization that addresses the user's 
                     contents=contents,
                     config=generate_content_config,
                 ):
-                    if chunk.candidates is None or chunk.candidates[0].content is None or chunk.candidates[0].content.parts is None:
+                    if (
+                        chunk.candidates is None
+                        or chunk.candidates[0].content is None
+                        or chunk.candidates[0].content.parts is None
+                    ):
                         continue
 
                     for part in chunk.candidates[0].content.parts:
@@ -1083,7 +1030,7 @@ Create a photorealistic interior design visualization that addresses the user's 
                             mime_type = inline_data.mime_type or "image/png"
 
                             # Convert to base64 data URI
-                            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
                             transformed_image = f"data:{mime_type};base64,{image_base64}"
                             logger.info(f"Generated image with {model} ({len(image_bytes)} bytes)")
 
@@ -1099,7 +1046,7 @@ Create a photorealistic interior design visualization that addresses the user's 
                     quality_score=0.0,
                     placement_accuracy=0.0,
                     lighting_realism=0.0,
-                    confidence_score=0.0
+                    confidence_score=0.0,
                 )
             except Exception as model_error:
                 logger.error(f"Model failed: {str(model_error)}")
@@ -1115,8 +1062,10 @@ Create a photorealistic interior design visualization that addresses the user's 
             if transformation_description:
                 logger.info(f"AI description: {transformation_description[:150]}...")
 
-            success = (transformed_image != visualization_request.base_image)
-            logger.info(f"Generated visualization with {len(products_description)} products in {processing_time:.2f}s (success: {success})")
+            success = transformed_image != visualization_request.base_image
+            logger.info(
+                f"Generated visualization with {len(products_description)} products in {processing_time:.2f}s (success: {success})"
+            )
 
             return VisualizationResult(
                 rendered_image=transformed_image,
@@ -1124,7 +1073,7 @@ Create a photorealistic interior design visualization that addresses the user's 
                 quality_score=0.88 if success else 0.5,
                 placement_accuracy=0.90 if success else 0.0,
                 lighting_realism=0.85 if success else 0.0,
-                confidence_score=0.87 if success else 0.3
+                confidence_score=0.87 if success else 0.3,
             )
 
         except Exception as e:
@@ -1136,15 +1085,11 @@ Create a photorealistic interior design visualization that addresses the user's 
                 quality_score=0.5,
                 placement_accuracy=0.0,
                 lighting_realism=0.0,
-                confidence_score=0.3
+                confidence_score=0.3,
             )
 
     async def generate_text_based_visualization(
-        self,
-        base_image: str,
-        user_request: str,
-        lighting_conditions: str = "mixed",
-        render_quality: str = "high"
+        self, base_image: str, user_request: str, lighting_conditions: str = "mixed", render_quality: str = "high"
     ) -> VisualizationResult:
         """
         Generate room visualization based on text description (allows full transformation)
@@ -1184,19 +1129,11 @@ QUALITY REQUIREMENTS:
             model = "gemini-2.5-flash-image"
             parts = [
                 types.Part.from_text(text=visualization_prompt),
-                types.Part(
-                    inline_data=types.Blob(
-                        mime_type="image/jpeg",
-                        data=base64.b64decode(processed_image)
-                    )
-                )
+                types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_image))),
             ]
 
             contents = [types.Content(role="user", parts=parts)]
-            generate_content_config = types.GenerateContentConfig(
-                response_modalities=["IMAGE", "TEXT"],
-                temperature=0.4
-            )
+            generate_content_config = types.GenerateContentConfig(response_modalities=["IMAGE", "TEXT"], temperature=0.4)
 
             transformed_image = None
             transformation_description = ""
@@ -1207,7 +1144,11 @@ QUALITY REQUIREMENTS:
                 contents=contents,
                 config=generate_content_config,
             ):
-                if chunk.candidates is None or chunk.candidates[0].content is None or chunk.candidates[0].content.parts is None:
+                if (
+                    chunk.candidates is None
+                    or chunk.candidates[0].content is None
+                    or chunk.candidates[0].content.parts is None
+                ):
                     continue
 
                 for part in chunk.candidates[0].content.parts:
@@ -1218,7 +1159,7 @@ QUALITY REQUIREMENTS:
                         mime_type = inline_data.mime_type or "image/png"
 
                         # Convert to base64 data URI
-                        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
                         transformed_image = f"data:{mime_type};base64,{image_base64}"
                         logger.info(f"Successfully generated text-based visualization ({len(image_bytes)} bytes)")
 
@@ -1240,7 +1181,7 @@ QUALITY REQUIREMENTS:
                 quality_score=0.90 if transformed_image != base_image else 0.5,
                 placement_accuracy=0.85 if transformed_image != base_image else 0.0,
                 lighting_realism=0.88 if transformed_image != base_image else 0.0,
-                confidence_score=0.87 if transformed_image != base_image else 0.3
+                confidence_score=0.87 if transformed_image != base_image else 0.3,
             )
 
         except Exception as e:
@@ -1251,7 +1192,7 @@ QUALITY REQUIREMENTS:
                 quality_score=0.5,
                 placement_accuracy=0.0,
                 lighting_realism=0.0,
-                confidence_score=0.3
+                confidence_score=0.3,
             )
 
     async def generate_iterative_visualization(
@@ -1260,7 +1201,7 @@ QUALITY REQUIREMENTS:
         modification_request: str,
         placed_products: List[Dict[str, Any]] = None,
         lighting_conditions: str = "mixed",
-        render_quality: str = "high"
+        render_quality: str = "high",
     ) -> VisualizationResult:
         """
         Generate iterative visualization by modifying an existing generated image
@@ -1280,11 +1221,13 @@ QUALITY REQUIREMENTS:
                 existing_products_description = "\n\n🔒 CRITICAL: PRESERVE THESE EXISTING PRODUCTS:\n"
                 existing_products_description += "The room already contains these products from previous visualizations:\n"
                 for idx, product in enumerate(placed_products, 1):
-                    product_name = product.get('full_name') or product.get('name', 'furniture item')
+                    product_name = product.get("full_name") or product.get("name", "furniture item")
                     existing_products_description += f"  {idx}. {product_name}\n"
                 existing_products_description += "\n⚠️ IMPORTANT: These products MUST remain visible in the output."
                 existing_products_description += "\n⚠️ DO NOT remove or replace these products unless specifically requested."
-                existing_products_description += f"\n⚠️ The modification '{modification_request}' should ONLY affect what is specifically mentioned."
+                existing_products_description += (
+                    f"\n⚠️ The modification '{modification_request}' should ONLY affect what is specifically mentioned."
+                )
                 existing_products_description += "\n⚠️ All other furniture and products must stay exactly as shown."
 
             # Build iterative modification prompt with room and product preservation
@@ -1324,18 +1267,12 @@ QUALITY REQUIREMENTS:
             model = "gemini-2.5-flash-image"
             parts = [
                 types.Part.from_text(text=visualization_prompt),
-                types.Part(
-                    inline_data=types.Blob(
-                        mime_type="image/jpeg",
-                        data=base64.b64decode(processed_image)
-                    )
-                )
+                types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_image))),
             ]
 
             contents = [types.Content(role="user", parts=parts)]
             generate_content_config = types.GenerateContentConfig(
-                response_modalities=["IMAGE", "TEXT"],
-                temperature=0.3  # Lower temperature for more consistent modifications
+                response_modalities=["IMAGE", "TEXT"], temperature=0.3  # Lower temperature for more consistent modifications
             )
 
             transformed_image = None
@@ -1357,7 +1294,11 @@ QUALITY REQUIREMENTS:
 
                     last_chunk_time = time.time()
 
-                    if chunk.candidates is None or chunk.candidates[0].content is None or chunk.candidates[0].content.parts is None:
+                    if (
+                        chunk.candidates is None
+                        or chunk.candidates[0].content is None
+                        or chunk.candidates[0].content.parts is None
+                    ):
                         continue
 
                     for part in chunk.candidates[0].content.parts:
@@ -1368,7 +1309,7 @@ QUALITY REQUIREMENTS:
                             mime_type = inline_data.mime_type or "image/png"
 
                             # Convert to base64 data URI
-                            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
                             transformed_image = f"data:{mime_type};base64,{image_base64}"
                             logger.info(f"Successfully generated iterative visualization ({len(image_bytes)} bytes)")
 
@@ -1384,7 +1325,7 @@ QUALITY REQUIREMENTS:
                     quality_score=0.0,
                     placement_accuracy=0.0,
                     lighting_realism=0.0,
-                    confidence_score=0.0
+                    confidence_score=0.0,
                 )
             except Exception as stream_error:
                 logger.error(f"Streaming error: {str(stream_error)}")
@@ -1395,7 +1336,7 @@ QUALITY REQUIREMENTS:
                     quality_score=0.0,
                     placement_accuracy=0.0,
                     lighting_realism=0.0,
-                    confidence_score=0.0
+                    confidence_score=0.0,
                 )
 
             processing_time = time.time() - start_time
@@ -1413,7 +1354,7 @@ QUALITY REQUIREMENTS:
                 quality_score=0.92 if transformed_image != base_image else 0.5,
                 placement_accuracy=0.88 if transformed_image != base_image else 0.0,
                 lighting_realism=0.90 if transformed_image != base_image else 0.0,
-                confidence_score=0.89 if transformed_image != base_image else 0.3
+                confidence_score=0.89 if transformed_image != base_image else 0.3,
             )
 
         except Exception as e:
@@ -1424,7 +1365,7 @@ QUALITY REQUIREMENTS:
                 quality_score=0.5,
                 placement_accuracy=0.0,
                 lighting_realism=0.0,
-                confidence_score=0.3
+                confidence_score=0.3,
             )
 
     async def _download_image(self, image_url: str) -> Optional[str]:
@@ -1437,8 +1378,8 @@ QUALITY REQUIREMENTS:
                     image = Image.open(io.BytesIO(image_bytes))
 
                     # Convert to RGB
-                    if image.mode != 'RGB':
-                        image = image.convert('RGB')
+                    if image.mode != "RGB":
+                        image = image.convert("RGB")
 
                     # Resize for optimal processing (max 1024px for product images)
                     # Increased from 512px to preserve more product detail
@@ -1448,7 +1389,7 @@ QUALITY REQUIREMENTS:
 
                     # Convert to base64
                     buffer = io.BytesIO()
-                    image.save(buffer, format='JPEG', quality=85, optimize=True)
+                    image.save(buffer, format="JPEG", quality=85, optimize=True)
                     return base64.b64encode(buffer.getvalue()).decode()
                 else:
                     logger.warning(f"Failed to download image from {image_url}: {response.status}")
@@ -1461,16 +1402,16 @@ QUALITY REQUIREMENTS:
         """Preprocess image for AI analysis"""
         try:
             # Remove data URL prefix if present
-            if image_data.startswith('data:image'):
-                image_data = image_data.split(',')[1]
+            if image_data.startswith("data:image"):
+                image_data = image_data.split(",")[1]
 
             # Decode and process image
             image_bytes = base64.b64decode(image_data)
             image = Image.open(io.BytesIO(image_bytes))
 
             # Convert to RGB
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
+            if image.mode != "RGB":
+                image = image.convert("RGB")
 
             # Resize for optimal processing (max 1024px)
             max_size = 1024
@@ -1483,7 +1424,7 @@ QUALITY REQUIREMENTS:
 
             # Convert back to base64
             buffer = io.BytesIO()
-            image.save(buffer, format='JPEG', quality=90, optimize=True)
+            image.save(buffer, format="JPEG", quality=90, optimize=True)
             return base64.b64encode(buffer.getvalue()).decode()
 
         except Exception as e:
@@ -1500,7 +1441,7 @@ QUALITY REQUIREMENTS:
             existing_furniture=[],
             architectural_features=["windows"],
             style_assessment="contemporary",
-            confidence_score=0.3
+            confidence_score=0.3,
         )
 
     def _create_fallback_spatial_analysis(self) -> SpatialAnalysis:
@@ -1511,21 +1452,17 @@ QUALITY REQUIREMENTS:
             focal_points=[{"type": "window", "position": "main_wall", "importance": "high"}],
             available_spaces=[{"area": "center", "suitable_for": ["seating"], "accessibility": "high"}],
             placement_suggestions=[{"furniture_type": "sofa", "recommended_position": "facing_window"}],
-            scale_recommendations={"sofa_length": "84_inches", "coffee_table": "48x24_inches"}
+            scale_recommendations={"sofa_length": "84_inches", "coffee_table": "48x24_inches"},
         )
 
     async def get_usage_statistics(self) -> Dict[str, Any]:
         """Get API usage statistics"""
         return {
             **self.usage_stats,
-            "success_rate": (
-                self.usage_stats["successful_requests"] /
-                max(self.usage_stats["total_requests"], 1) * 100
-            ),
+            "success_rate": (self.usage_stats["successful_requests"] / max(self.usage_stats["total_requests"], 1) * 100),
             "average_processing_time": (
-                self.usage_stats["total_processing_time"] /
-                max(self.usage_stats["successful_requests"], 1)
-            )
+                self.usage_stats["total_processing_time"] / max(self.usage_stats["successful_requests"], 1)
+            ),
         }
 
     async def health_check(self) -> Dict[str, Any]:
@@ -1533,7 +1470,7 @@ QUALITY REQUIREMENTS:
         try:
             test_payload = {
                 "contents": [{"parts": [{"text": "Test connection. Respond with 'OK'."}]}],
-                "generationConfig": {"maxOutputTokens": 10}
+                "generationConfig": {"maxOutputTokens": 10},
             }
 
             start_time = time.time()
@@ -1544,15 +1481,11 @@ QUALITY REQUIREMENTS:
                 "status": "healthy",
                 "response_time": response_time,
                 "api_key_valid": True,
-                "usage_stats": await self.get_usage_statistics()
+                "usage_stats": await self.get_usage_statistics(),
             }
 
         except Exception as e:
-            return {
-                "status": "unhealthy",
-                "error": str(e),
-                "api_key_valid": bool(self.api_key)
-            }
+            return {"status": "unhealthy", "error": str(e), "api_key_valid": bool(self.api_key)}
 
     async def close(self):
         """Close HTTP session"""

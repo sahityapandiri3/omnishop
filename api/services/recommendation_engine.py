@@ -2,20 +2,15 @@
 Advanced Product Recommendation Engine for Interior Design
 """
 import logging
-import numpy as np
-import asyncio
 import re
-from typing import Dict, List, Optional, Any, Tuple, Set
+from collections import defaultdict
 from dataclasses import dataclass, field
-from collections import defaultdict, Counter
-from datetime import datetime, timedelta
-import json
-import math
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
-from database.models import Product, ProductImage, ProductAttribute, ChatSession, ChatMessage
-from services.nlp_processor import design_nlp_processor
+from database.models import Product, ProductAttribute
+from sqlalchemy import and_, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +18,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RecommendationRequest:
     """Request for product recommendations with attribute matching"""
+
     user_preferences: Dict[str, Any] = field(default_factory=dict)
     room_context: Optional[Dict[str, Any]] = None
     budget_range: Optional[Tuple[float, float]] = None
@@ -50,6 +46,7 @@ class RecommendationRequest:
 @dataclass
 class RecommendationResult:
     """Single product recommendation result"""
+
     product_id: str
     product_name: str
     confidence_score: float
@@ -60,11 +57,13 @@ class RecommendationResult:
     popularity_score: float
     compatibility_score: float
     overall_score: float
+    source_website: Optional[str] = None  # For source diversity
 
 
 @dataclass
 class RecommendationResponse:
     """Complete recommendation response"""
+
     recommendations: List[RecommendationResult]
     total_found: int
     processing_time: float
@@ -89,29 +88,74 @@ class AdvancedRecommendationEngine:
         """Build style compatibility scoring matrix"""
         return {
             "modern": {
-                "modern": 1.0, "contemporary": 0.9, "minimalist": 0.8, "scandinavian": 0.7,
-                "industrial": 0.6, "transitional": 0.7, "mid_century": 0.5, "traditional": 0.2,
-                "rustic": 0.2, "bohemian": 0.3, "art_deco": 0.4, "mediterranean": 0.2
+                "modern": 1.0,
+                "contemporary": 0.9,
+                "minimalist": 0.8,
+                "scandinavian": 0.7,
+                "industrial": 0.6,
+                "transitional": 0.7,
+                "mid_century": 0.5,
+                "traditional": 0.2,
+                "rustic": 0.2,
+                "bohemian": 0.3,
+                "art_deco": 0.4,
+                "mediterranean": 0.2,
             },
             "traditional": {
-                "traditional": 1.0, "transitional": 0.8, "mediterranean": 0.7, "art_deco": 0.6,
-                "rustic": 0.5, "modern": 0.2, "contemporary": 0.3, "minimalist": 0.1,
-                "industrial": 0.1, "scandinavian": 0.2, "bohemian": 0.4, "mid_century": 0.3
+                "traditional": 1.0,
+                "transitional": 0.8,
+                "mediterranean": 0.7,
+                "art_deco": 0.6,
+                "rustic": 0.5,
+                "modern": 0.2,
+                "contemporary": 0.3,
+                "minimalist": 0.1,
+                "industrial": 0.1,
+                "scandinavian": 0.2,
+                "bohemian": 0.4,
+                "mid_century": 0.3,
             },
             "scandinavian": {
-                "scandinavian": 1.0, "minimalist": 0.9, "modern": 0.7, "contemporary": 0.6,
-                "transitional": 0.5, "rustic": 0.6, "industrial": 0.3, "traditional": 0.2,
-                "bohemian": 0.3, "art_deco": 0.2, "mediterranean": 0.3, "mid_century": 0.4
+                "scandinavian": 1.0,
+                "minimalist": 0.9,
+                "modern": 0.7,
+                "contemporary": 0.6,
+                "transitional": 0.5,
+                "rustic": 0.6,
+                "industrial": 0.3,
+                "traditional": 0.2,
+                "bohemian": 0.3,
+                "art_deco": 0.2,
+                "mediterranean": 0.3,
+                "mid_century": 0.4,
             },
             "industrial": {
-                "industrial": 1.0, "modern": 0.6, "contemporary": 0.5, "loft": 0.9,
-                "minimalist": 0.4, "mid_century": 0.5, "transitional": 0.3, "traditional": 0.1,
-                "scandinavian": 0.3, "rustic": 0.4, "bohemian": 0.3, "art_deco": 0.3
+                "industrial": 1.0,
+                "modern": 0.6,
+                "contemporary": 0.5,
+                "loft": 0.9,
+                "minimalist": 0.4,
+                "mid_century": 0.5,
+                "transitional": 0.3,
+                "traditional": 0.1,
+                "scandinavian": 0.3,
+                "rustic": 0.4,
+                "bohemian": 0.3,
+                "art_deco": 0.3,
             },
             "bohemian": {
-                "bohemian": 1.0, "eclectic": 0.9, "mediterranean": 0.6, "rustic": 0.5,
-                "traditional": 0.4, "art_deco": 0.5, "modern": 0.3, "minimalist": 0.1,
-                "industrial": 0.3, "scandinavian": 0.3, "contemporary": 0.3, "mid_century": 0.4
+                "bohemian": 1.0,
+                "eclectic": 0.9,
+                "mediterranean": 0.6,
+                "rustic": 0.5,
+                "traditional": 0.4,
+                "art_deco": 0.5,
+                "modern": 0.3,
+                "minimalist": 0.1,
+                "industrial": 0.3,
+                "scandinavian": 0.3,
+                "contemporary": 0.3,
+                "mid_century": 0.4,
             },
             # Add more style combinations...
         }
@@ -120,53 +164,85 @@ class AdvancedRecommendationEngine:
         """Build functional compatibility rules"""
         return {
             "seating": {
-                "living_room": 1.0, "bedroom": 0.6, "office": 0.8, "dining_room": 0.4,
-                "kitchen": 0.2, "bathroom": 0.1, "entryway": 0.3
+                "living_room": 1.0,
+                "bedroom": 0.6,
+                "office": 0.8,
+                "dining_room": 0.4,
+                "kitchen": 0.2,
+                "bathroom": 0.1,
+                "entryway": 0.3,
             },
             "storage": {
-                "living_room": 0.8, "bedroom": 1.0, "office": 0.9, "dining_room": 0.6,
-                "kitchen": 0.7, "bathroom": 0.8, "entryway": 0.7
+                "living_room": 0.8,
+                "bedroom": 1.0,
+                "office": 0.9,
+                "dining_room": 0.6,
+                "kitchen": 0.7,
+                "bathroom": 0.8,
+                "entryway": 0.7,
             },
             "lighting": {
-                "living_room": 1.0, "bedroom": 1.0, "office": 1.0, "dining_room": 1.0,
-                "kitchen": 0.9, "bathroom": 0.8, "entryway": 0.9
+                "living_room": 1.0,
+                "bedroom": 1.0,
+                "office": 1.0,
+                "dining_room": 1.0,
+                "kitchen": 0.9,
+                "bathroom": 0.8,
+                "entryway": 0.9,
             },
             "dining": {
-                "dining_room": 1.0, "kitchen": 0.8, "living_room": 0.3, "office": 0.2,
-                "bedroom": 0.1, "bathroom": 0.0, "entryway": 0.1
+                "dining_room": 1.0,
+                "kitchen": 0.8,
+                "living_room": 0.3,
+                "office": 0.2,
+                "bedroom": 0.1,
+                "bathroom": 0.0,
+                "entryway": 0.1,
             },
             "sleeping": {
-                "bedroom": 1.0, "living_room": 0.2, "office": 0.1, "dining_room": 0.0,
-                "kitchen": 0.0, "bathroom": 0.0, "entryway": 0.0
+                "bedroom": 1.0,
+                "living_room": 0.2,
+                "office": 0.1,
+                "dining_room": 0.0,
+                "kitchen": 0.0,
+                "bathroom": 0.0,
+                "entryway": 0.0,
             },
             "workspace": {
-                "office": 1.0, "bedroom": 0.6, "living_room": 0.5, "dining_room": 0.3,
-                "kitchen": 0.2, "bathroom": 0.0, "entryway": 0.1
+                "office": 1.0,
+                "bedroom": 0.6,
+                "living_room": 0.5,
+                "dining_room": 0.3,
+                "kitchen": 0.2,
+                "bathroom": 0.0,
+                "entryway": 0.1,
             },
             "accessory": {
-                "living_room": 0.9, "bedroom": 0.9, "office": 0.7, "dining_room": 0.8,
-                "kitchen": 0.6, "bathroom": 0.7, "entryway": 0.8
+                "living_room": 0.9,
+                "bedroom": 0.9,
+                "office": 0.7,
+                "dining_room": 0.8,
+                "kitchen": 0.6,
+                "bathroom": 0.7,
+                "entryway": 0.8,
             },
             "decoration": {
-                "living_room": 0.8, "bedroom": 0.8, "office": 0.6, "dining_room": 0.7,
-                "kitchen": 0.5, "bathroom": 0.6, "entryway": 0.7
-            }
+                "living_room": 0.8,
+                "bedroom": 0.8,
+                "office": 0.6,
+                "dining_room": 0.7,
+                "kitchen": 0.5,
+                "bathroom": 0.6,
+                "entryway": 0.7,
+            },
         }
 
     def _define_price_segments(self) -> Dict[str, Tuple[float, float]]:
         """Define price segments for budget matching"""
-        return {
-            "budget": (0, 500),
-            "mid_range": (500, 2000),
-            "premium": (2000, 5000),
-            "luxury": (5000, float('inf'))
-        }
+        return {"budget": (0, 500), "mid_range": (500, 2000), "premium": (2000, 5000), "luxury": (5000, float("inf"))}
 
     async def get_recommendations(
-        self,
-        request: RecommendationRequest,
-        db: AsyncSession,
-        user_id: Optional[str] = None
+        self, request: RecommendationRequest, db: AsyncSession, user_id: Optional[str] = None
     ) -> RecommendationResponse:
         """Get comprehensive product recommendations"""
         start_time = datetime.now()
@@ -189,7 +265,7 @@ class AdvancedRecommendationEngine:
                         processing_time=(datetime.now() - start_time).total_seconds(),
                         recommendation_strategy="strict_filtering_zero_results",
                         personalization_level=0.0,
-                        diversity_score=0.0
+                        diversity_score=0.0,
                     )
 
             # Apply multiple recommendation strategies
@@ -206,8 +282,14 @@ class AdvancedRecommendationEngine:
 
             # Combine scores using weighted approach
             final_recommendations = await self._combine_scores(
-                candidates, content_based_scores, popularity_scores, style_scores,
-                functional_scores, price_scores, collaborative_scores, request
+                candidates,
+                content_based_scores,
+                popularity_scores,
+                style_scores,
+                functional_scores,
+                price_scores,
+                collaborative_scores,
+                request,
             )
 
             # Apply diversity and ranking
@@ -219,12 +301,12 @@ class AdvancedRecommendationEngine:
             diversity_score = self._calculate_diversity_score(final_recommendations)
 
             return RecommendationResponse(
-                recommendations=final_recommendations[:request.max_recommendations],
+                recommendations=final_recommendations[: request.max_recommendations],
                 total_found=len(candidates),
                 processing_time=processing_time,
                 recommendation_strategy=self._determine_strategy(request, user_id),
                 personalization_level=personalization_level,
-                diversity_score=diversity_score
+                diversity_score=diversity_score,
             )
 
         except Exception as e:
@@ -235,14 +317,11 @@ class AdvancedRecommendationEngine:
                 processing_time=0.0,
                 recommendation_strategy="error_fallback",
                 personalization_level=0.0,
-                diversity_score=0.0
+                diversity_score=0.0,
             )
 
     async def _apply_strict_attribute_filtering(
-        self,
-        candidates: List[Product],
-        request: RecommendationRequest,
-        db: AsyncSession
+        self, candidates: List[Product], request: RecommendationRequest, db: AsyncSession
     ) -> List[Product]:
         """
         Apply strict attribute filtering to ensure ZERO false positives
@@ -265,8 +344,10 @@ class AdvancedRecommendationEngine:
         user_patterns = request.user_patterns or []
         user_styles = request.user_styles or []
 
-        logger.info(f"STRICT FILTERING: Checking {len(candidates)} candidates with user_colors={user_colors}, "
-                   f"user_materials={user_materials}, user_styles={user_styles}")
+        logger.info(
+            f"STRICT FILTERING: Checking {len(candidates)} candidates with user_colors={user_colors}, "
+            f"user_materials={user_materials}, user_styles={user_styles}"
+        )
 
         # If no attributes specified, return all candidates
         if not any([user_colors, user_materials, user_textures, user_patterns, user_styles]):
@@ -280,15 +361,16 @@ class AdvancedRecommendationEngine:
             # Color filtering
             if user_colors:
                 result = await db.execute(
-                    select(ProductAttribute.attribute_value)
-                    .where(
+                    select(ProductAttribute.attribute_value).where(
                         ProductAttribute.product_id == product.id,
-                        ProductAttribute.attribute_name.in_(['color_primary', 'color_secondary', 'color_accent'])
+                        ProductAttribute.attribute_name.in_(["color_primary", "color_secondary", "color_accent"]),
                     )
                 )
                 product_colors = [c.lower() for c in result.scalars().all() if c]
 
-                logger.debug(f"Product {product.id} '{product.name}': product_colors={product_colors}, user_colors={user_colors}")
+                logger.debug(
+                    f"Product {product.id} '{product.name}': product_colors={product_colors}, user_colors={user_colors}"
+                )
 
                 # Product MUST have matching color
                 if not product_colors or not any(uc.lower() in product_colors for uc in user_colors):
@@ -301,7 +383,9 @@ class AdvancedRecommendationEngine:
                             has_family_match = True
                             break
                     if not has_family_match:
-                        logger.debug(f"Product {product.id} FILTERED OUT: no color match (product_colors={product_colors}, user_colors={user_colors})")
+                        logger.debug(
+                            f"Product {product.id} FILTERED OUT: no color match (product_colors={product_colors}, user_colors={user_colors})"
+                        )
                         passes_filter = False
                     else:
                         logger.debug(f"Product {product.id} PASSED: color family match")
@@ -311,10 +395,9 @@ class AdvancedRecommendationEngine:
             # Material filtering
             if passes_filter and user_materials:
                 result = await db.execute(
-                    select(ProductAttribute.attribute_value)
-                    .where(
+                    select(ProductAttribute.attribute_value).where(
                         ProductAttribute.product_id == product.id,
-                        ProductAttribute.attribute_name.in_(['material_primary', 'material_secondary'])
+                        ProductAttribute.attribute_name.in_(["material_primary", "material_secondary"]),
                     )
                 )
                 product_materials = [m.lower() for m in result.scalars().all() if m]
@@ -326,10 +409,8 @@ class AdvancedRecommendationEngine:
             # Texture filtering
             if passes_filter and user_textures:
                 result = await db.execute(
-                    select(ProductAttribute.attribute_value)
-                    .where(
-                        ProductAttribute.product_id == product.id,
-                        ProductAttribute.attribute_name == 'texture'
+                    select(ProductAttribute.attribute_value).where(
+                        ProductAttribute.product_id == product.id, ProductAttribute.attribute_name == "texture"
                     )
                 )
                 product_texture = result.scalar_one_or_none()
@@ -341,10 +422,8 @@ class AdvancedRecommendationEngine:
             # Pattern filtering
             if passes_filter and user_patterns:
                 result = await db.execute(
-                    select(ProductAttribute.attribute_value)
-                    .where(
-                        ProductAttribute.product_id == product.id,
-                        ProductAttribute.attribute_name == 'pattern'
+                    select(ProductAttribute.attribute_value).where(
+                        ProductAttribute.product_id == product.id, ProductAttribute.attribute_name == "pattern"
                     )
                 )
                 product_pattern = result.scalar_one_or_none()
@@ -356,10 +435,8 @@ class AdvancedRecommendationEngine:
             # Style filtering
             if passes_filter and user_styles:
                 result = await db.execute(
-                    select(ProductAttribute.attribute_value)
-                    .where(
-                        ProductAttribute.product_id == product.id,
-                        ProductAttribute.attribute_name == 'style'
+                    select(ProductAttribute.attribute_value).where(
+                        ProductAttribute.product_id == product.id, ProductAttribute.attribute_name == "style"
                     )
                 )
                 product_style = result.scalar_one_or_none()
@@ -372,8 +449,10 @@ class AdvancedRecommendationEngine:
             if passes_filter:
                 filtered_candidates.append(product)
 
-        logger.info(f"Strict attribute filtering: {len(candidates)} → {len(filtered_candidates)} products "
-                   f"(colors={user_colors}, materials={user_materials}, styles={user_styles})")
+        logger.info(
+            f"Strict attribute filtering: {len(candidates)} → {len(filtered_candidates)} products "
+            f"(colors={user_colors}, materials={user_materials}, styles={user_styles})"
+        )
 
         return filtered_candidates
 
@@ -382,21 +461,29 @@ class AdvancedRecommendationEngine:
 
         # Define mutually exclusive product categories
         categories = {
-            'ceiling_lighting': ['ceiling lamp', 'ceiling light', 'chandelier', 'pendant', 'overhead light', 'pendant light'],
-            'portable_lighting': ['table lamp', 'desk lamp', 'floor lamp'],
-            'wall_lighting': ['wall lamp', 'sconce', 'wall light'],
-            'sofas': ['sofa', 'couch', 'sectional', 'loveseat'],  # Sofas - replaceable items
-            'chairs': ['chair', 'armchair', 'accent chair', 'side chair', 'sofa chair', 'recliner', 'dining chair'],  # Chairs - additive items only
-            'other_seating': ['bench', 'stool', 'ottoman'],  # Other seating - additive items
-            'center_tables': ['coffee table', 'center table', 'centre table'],  # Placed in front of sofa
-            'side_tables': ['side table', 'end table', 'nightstand', 'bedside table'],  # Placed beside furniture
-            'dining_tables': ['dining table'],  # Separate category for dining tables
-            'other_tables': ['console table', 'desk', 'table'],  # Generic tables
-            'storage_furniture': ['dresser', 'chest', 'cabinet', 'bookshelf', 'shelving', 'shelf', 'wardrobe'],
-            'bedroom_furniture': ['bed', 'mattress', 'headboard'],
-            'wall_decor': ['wall art', 'wall decor', 'wall hanging', 'tapestry'],  # Wall decoration items
-            'decor': ['mirror', 'rug', 'carpet', 'mat', 'planter', 'pot', 'vase', 'wall rug', 'floor rug'],
-            'general_lighting': ['lamp', 'lighting'],  # Catch-all for generic lighting terms
+            "ceiling_lighting": ["ceiling lamp", "ceiling light", "chandelier", "pendant", "overhead light", "pendant light"],
+            "portable_lighting": ["table lamp", "desk lamp", "floor lamp"],
+            "wall_lighting": ["wall lamp", "sconce", "wall light"],
+            "sofas": ["sofa", "couch", "sectional", "loveseat"],  # Sofas - replaceable items
+            "chairs": [
+                "chair",
+                "armchair",
+                "accent chair",
+                "side chair",
+                "sofa chair",
+                "recliner",
+                "dining chair",
+            ],  # Chairs - additive items only
+            "other_seating": ["bench", "stool", "ottoman"],  # Other seating - additive items
+            "center_tables": ["coffee table", "center table", "centre table"],  # Placed in front of sofa
+            "side_tables": ["side table", "end table", "nightstand", "bedside table"],  # Placed beside furniture
+            "dining_tables": ["dining table"],  # Separate category for dining tables
+            "other_tables": ["console table", "desk", "table"],  # Generic tables
+            "storage_furniture": ["dresser", "chest", "cabinet", "bookshelf", "shelving", "shelf", "wardrobe"],
+            "bedroom_furniture": ["bed", "mattress", "headboard"],
+            "wall_decor": ["wall art", "wall decor", "wall hanging", "tapestry"],  # Wall decoration items
+            "decor": ["mirror", "rug", "carpet", "mat", "planter", "pot", "vase", "wall rug", "floor rug"],
+            "general_lighting": ["lamp", "lighting"],  # Catch-all for generic lighting terms
         }
 
         # Map keywords to their categories
@@ -413,7 +500,7 @@ class AdvancedRecommendationEngine:
                 categorized[category].append(keyword)
             else:
                 # Unknown keyword - put in its own category
-                categorized['other'].append(keyword)
+                categorized["other"].append(keyword)
 
         logger.info(f"Categorized keywords: {dict(categorized)}")
         return dict(categorized)
@@ -426,44 +513,42 @@ class AdvancedRecommendationEngine:
         """
         category_mapping = {
             # Lighting categories
-            'ceiling_lighting': ['chandelier', 'pendant', 'ceiling'],
-            'portable_lighting': ['table lamp', 'desk lamp', 'floor lamp', 'lamp'],
-            'wall_lighting': ['wall lamp', 'sconce', 'wall light'],
-            'general_lighting': ['lamp', 'lighting', 'light'],
-
+            "ceiling_lighting": ["chandelier", "pendant", "ceiling"],
+            "portable_lighting": ["table lamp", "desk lamp", "floor lamp", "lamp"],
+            "wall_lighting": ["wall lamp", "sconce", "wall light"],
+            "general_lighting": ["lamp", "lighting", "light"],
             # Furniture categories - IMPORTANT: Use actual database category names!
             # Database has: "Sofa", "Sofa Chair", "Furniture" for sofas
             # Database has: "Table", "Tables", "Console" for tables
             # Note: "Furniture" is generic but necessary to catch all sofas
-            'sofas': ['sofa', 'couch', 'sectional', 'loveseat', 'furniture'],
-            'chairs': ['chair', 'armchair', 'seating'],
-            'other_seating': ['bench', 'stool', 'ottoman', 'pouf'],
-            'center_tables': ['table', 'tables', 'console'],  # Fixed: use actual DB categories
-            'side_tables': ['table', 'tables', 'console'],  # Fixed: use actual DB categories
-            'dining_tables': ['table', 'tables'],  # Fixed: use actual DB categories
-            'other_tables': ['console', 'desk', 'table', 'tables'],  # Fixed: use actual DB categories
-            'storage_furniture': ['dresser', 'chest', 'cabinet', 'bookshelf', 'shelf', 'storage'],
-            'bedroom_furniture': ['bed', 'mattress', 'headboard'],
-
+            "sofas": ["sofa", "couch", "sectional", "loveseat", "furniture"],
+            "chairs": ["chair", "armchair", "seating"],
+            "other_seating": ["bench", "stool", "ottoman", "pouf"],
+            "center_tables": ["table", "tables", "console"],  # Fixed: use actual DB categories
+            "side_tables": ["table", "tables", "console"],  # Fixed: use actual DB categories
+            "dining_tables": ["table", "tables"],  # Fixed: use actual DB categories
+            "other_tables": ["console", "desk", "table", "tables"],  # Fixed: use actual DB categories
+            "storage_furniture": ["dresser", "chest", "cabinet", "bookshelf", "shelf", "storage"],
+            "bedroom_furniture": ["bed", "mattress", "headboard"],
             # Decor categories - split out planters and wall decor separately!
-            'wall_decor': ['wall art', 'wall decor', 'wall accessories', 'wall hanging', 'tapestry'],
-            'decor': ['planter', 'pot', 'vase', 'mirror', 'rug', 'carpet', 'mat', 'sculpture', 'decor', 'accessory'],
+            "wall_decor": ["wall art", "wall decor", "wall accessories", "wall hanging", "tapestry"],
+            "decor": ["planter", "pot", "vase", "mirror", "rug", "carpet", "mat", "sculpture", "decor", "accessory"],
         }
 
         # Special handling for specific items to prevent cross-category contamination
         specific_mappings = {
-            'sofa': ['sofa', 'furniture'],  # Sofas are in both "Sofa" and "Furniture" categories
-            'couch': ['sofa', 'furniture'],  # Couches same as sofas
-            'planter': ['planter', 'pot'],  # Only planter/pot categories
-            'pot': ['planter', 'pot'],  # Only planter/pot categories
-            'lamp': ['lamp', 'lighting', 'light'],  # Only lighting categories
-            'lighting': ['lamp', 'lighting', 'light'],  # Only lighting categories
-            'rug': ['rug', 'carpet', 'mat'],  # Only rug categories
-            'vase': ['vase'],  # Only vase categories
-            'wall art': ['wall art', 'wall decor', 'wall accessories'],  # Only wall art/decor categories
-            'wall decor': ['wall art', 'wall decor', 'wall accessories'],  # Only wall art/decor categories
-            'wall hanging': ['wall art', 'wall decor', 'wall accessories', 'wall hanging'],  # Only wall art/decor categories
-            'tapestry': ['tapestry', 'wall hanging', 'wall art'],  # Only tapestry/wall art categories
+            "sofa": ["sofa", "furniture"],  # Sofas are in both "Sofa" and "Furniture" categories
+            "couch": ["sofa", "furniture"],  # Couches same as sofas
+            "planter": ["planter", "pot"],  # Only planter/pot categories
+            "pot": ["planter", "pot"],  # Only planter/pot categories
+            "lamp": ["lamp", "lighting", "light"],  # Only lighting categories
+            "lighting": ["lamp", "lighting", "light"],  # Only lighting categories
+            "rug": ["rug", "carpet", "mat"],  # Only rug categories
+            "vase": ["vase"],  # Only vase categories
+            "wall art": ["wall art", "wall decor", "wall accessories"],  # Only wall art/decor categories
+            "wall decor": ["wall art", "wall decor", "wall accessories"],  # Only wall art/decor categories
+            "wall hanging": ["wall art", "wall decor", "wall accessories", "wall hanging"],  # Only wall art/decor categories
+            "tapestry": ["tapestry", "wall hanging", "wall art"],  # Only tapestry/wall art categories
         }
 
         # Check if this is a specific item first
@@ -476,12 +561,13 @@ class AdvancedRecommendationEngine:
     async def _get_candidate_products(self, request: RecommendationRequest, db: AsyncSession) -> List[Product]:
         """Get candidate products based on basic criteria with strict category filtering"""
         from sqlalchemy.orm import selectinload
-        from database.models import Category
 
-        query = select(Product).where(Product.is_available == True)
+        query = select(Product).where(Product.is_available is True)
 
         # Apply product keyword filter (MOST IMPORTANT - filter by what user asked for)
-        logger.info(f"[CANDIDATE PRODUCTS DEBUG] request.product_keywords = {request.product_keywords}, type = {type(request.product_keywords)}")
+        logger.info(
+            f"[CANDIDATE PRODUCTS DEBUG] request.product_keywords = {request.product_keywords}, type = {type(request.product_keywords)}"
+        )
         if request.product_keywords:
             logger.info(f"Filtering products by keywords: {request.product_keywords}")
 
@@ -492,7 +578,6 @@ class AdvancedRecommendationEngine:
             # This prevents cross-category contamination (e.g., lamps appearing in planter searches)
 
             category_conditions = []
-            db_category_conditions = []
 
             for keyword_category, keywords in categorized_keywords.items():
                 # Build OR condition within this category for name matching
@@ -503,7 +588,7 @@ class AdvancedRecommendationEngine:
                     # IMPORTANT: Only match against product NAME, not description
                     # Description matching causes false positives (e.g., "place next to a sofa" in table descriptions)
                     escaped_keyword = re.escape(keyword)
-                    keyword_conditions.append(Product.name.op('~*')(rf'\y{escaped_keyword}\y'))
+                    keyword_conditions.append(Product.name.op("~*")(rf"\y{escaped_keyword}\y"))
 
                 if keyword_conditions:
                     # Combine keywords within category with OR
@@ -526,16 +611,37 @@ class AdvancedRecommendationEngine:
         # CRITICAL: Exclude accessories and non-furniture items
         # These terms indicate the product is NOT actual furniture (e.g., "Sofa Swatches" is not a sofa)
         accessory_exclusions = [
-            'swatch', 'swatches', 'sample', 'samples',  # Fabric samples
-            'fabric', 'material', 'textile',  # Materials only
-            'cushion', 'pillow', 'throw pillow',  # Soft accessories
-            'cover', 'slipcover', 'protector',  # Covers
-            'accessory', 'accessories',  # Generic accessories
-            'part', 'parts', 'component',  # Replacement parts
-            'hardware', 'screw', 'nail', 'bolt',  # Hardware
-            'tool', 'tools', 'kit',  # Tools
-            'cleaner', 'polish', 'wax',  # Maintenance products
-            'manual', 'guide', 'instruction',  # Documentation
+            "swatch",
+            "swatches",
+            "sample",
+            "samples",  # Fabric samples
+            "fabric",
+            "material",
+            "textile",  # Materials only
+            "cushion",
+            "pillow",
+            "throw pillow",  # Soft accessories
+            "cover",
+            "slipcover",
+            "protector",  # Covers
+            "accessory",
+            "accessories",  # Generic accessories
+            "part",
+            "parts",
+            "component",  # Replacement parts
+            "hardware",
+            "screw",
+            "nail",
+            "bolt",  # Hardware
+            "tool",
+            "tools",
+            "kit",  # Tools
+            "cleaner",
+            "polish",
+            "wax",  # Maintenance products
+            "manual",
+            "guide",
+            "instruction",  # Documentation
         ]
 
         # Build exclusion conditions
@@ -543,7 +649,7 @@ class AdvancedRecommendationEngine:
         for exclusion in accessory_exclusions:
             escaped = re.escape(exclusion)
             # Exclude if word appears in product name
-            exclusion_conditions.append(~Product.name.op('~*')(rf'\y{escaped}\y'))
+            exclusion_conditions.append(~Product.name.op("~*")(rf"\y{escaped}\y"))
 
         if exclusion_conditions:
             query = query.where(and_(*exclusion_conditions))
@@ -579,7 +685,9 @@ class AdvancedRecommendationEngine:
 
         # NEW: Validate against AI product types if provided (hard filter)
         if request.ai_product_types:
-            logger.info(f"AI VALIDATION: Filtering {len(candidates)} candidates against AI product types: {request.ai_product_types}")
+            logger.info(
+                f"AI VALIDATION: Filtering {len(candidates)} candidates against AI product types: {request.ai_product_types}"
+            )
             validated_candidates = []
             for product in candidates:
                 if await self._validate_against_ai_product_types(product, request.ai_product_types, db):
@@ -591,10 +699,7 @@ class AdvancedRecommendationEngine:
         return candidates
 
     async def _validate_against_ai_product_types(
-        self,
-        product: Product,
-        ai_product_types: List[str],
-        db: AsyncSession
+        self, product: Product, ai_product_types: List[str], db: AsyncSession
     ) -> bool:
         """
         Validate if product matches AI stylist's recommended product types
@@ -620,17 +725,15 @@ class AdvancedRecommendationEngine:
         for product_type in ai_product_types:
             product_type_lower = product_type.lower().strip()
             # Use word boundary regex for accurate matching
-            if re.search(rf'\b{re.escape(product_type_lower)}\b', product_name):
+            if re.search(rf"\b{re.escape(product_type_lower)}\b", product_name):
                 logger.debug(f"Product {product.id} '{product.name}' MATCHED AI type '{product_type}' in name")
                 return True
 
         # Check 2: furniture_type attribute matching
         try:
             result = await db.execute(
-                select(ProductAttribute.attribute_value)
-                .where(
-                    ProductAttribute.product_id == product.id,
-                    ProductAttribute.attribute_name == 'furniture_type'
+                select(ProductAttribute.attribute_value).where(
+                    ProductAttribute.product_id == product.id, ProductAttribute.attribute_name == "furniture_type"
                 )
             )
             furniture_type = result.scalar_one_or_none()
@@ -641,12 +744,16 @@ class AdvancedRecommendationEngine:
                     product_type_lower = product_type.lower().strip()
                     # Check if AI type matches furniture_type attribute
                     if product_type_lower in furniture_type_lower or furniture_type_lower in product_type_lower:
-                        logger.debug(f"Product {product.id} '{product.name}' MATCHED AI type '{product_type}' in furniture_type='{furniture_type}'")
+                        logger.debug(
+                            f"Product {product.id} '{product.name}' MATCHED AI type '{product_type}' in furniture_type='{furniture_type}'"
+                        )
                         return True
         except Exception as e:
             logger.error(f"Error checking furniture_type for product {product.id}: {e}")
 
-        logger.debug(f"Product {product.id} '{product.name}' FILTERED OUT by AI validation (expected types: {ai_product_types})")
+        logger.debug(
+            f"Product {product.id} '{product.name}' FILTERED OUT by AI validation (expected types: {ai_product_types})"
+        )
         return False
 
     def _get_room_categories(self, room_type: str) -> List[str]:
@@ -657,15 +764,12 @@ class AdvancedRecommendationEngine:
             "dining_room": ["dining_tables", "dining_chairs", "sideboards", "lighting"],
             "kitchen": ["bar_stools", "kitchen_islands", "storage", "lighting"],
             "office": ["desks", "office_chairs", "bookcases", "storage", "lighting"],
-            "bathroom": ["vanities", "mirrors", "storage", "lighting"]
+            "bathroom": ["vanities", "mirrors", "storage", "lighting"],
         }
         return room_category_map.get(room_type, [])
 
     async def _content_based_filtering(
-        self,
-        candidates: List[Product],
-        request: RecommendationRequest,
-        db: AsyncSession
+        self, candidates: List[Product], request: RecommendationRequest, db: AsyncSession
     ) -> Dict[str, float]:
         """
         Content-based filtering using product attributes
@@ -698,7 +802,7 @@ class AdvancedRecommendationEngine:
         if request.color_palette:
             # Convert hex codes from color_palette to color names
             for hex_code in request.color_palette:
-                if hex_code.startswith('#'):
+                if hex_code.startswith("#"):
                     color_name = self._hex_to_color_name(hex_code)
                     combined_colors.append(color_name)
                     logger.debug(f"Converted hex {hex_code} to color name: {color_name}")
@@ -737,10 +841,9 @@ class AdvancedRecommendationEngine:
             # Style matching (15% - reduced from 20%)
             if style_preferences:
                 product_style = self._extract_product_style(product)
-                style_match = max([
-                    self._calculate_style_similarity(style, product_style)
-                    for style in style_preferences
-                ], default=0.0)
+                style_match = max(
+                    [self._calculate_style_similarity(style, product_style) for style in style_preferences], default=0.0
+                )
                 score += style_match * 0.15
 
             # Size matching (10% - NEW)
@@ -786,15 +889,14 @@ class AdvancedRecommendationEngine:
 
             # Add some randomness to simulate real data
             import random
+
             popularity_factor = random.uniform(0.3, 1.0)
             scores[product.id] = base_popularity * popularity_factor
 
         return scores
 
     async def _style_compatibility_scoring(
-        self,
-        candidates: List[Product],
-        request: RecommendationRequest
+        self, candidates: List[Product], request: RecommendationRequest
     ) -> Dict[str, float]:
         """Score products based on style compatibility"""
         scores = {}
@@ -815,9 +917,7 @@ class AdvancedRecommendationEngine:
         return scores
 
     async def _functional_compatibility_scoring(
-        self,
-        candidates: List[Product],
-        request: RecommendationRequest
+        self, candidates: List[Product], request: RecommendationRequest
     ) -> Dict[str, float]:
         """Score products based on functional requirements"""
         scores = {}
@@ -832,9 +932,7 @@ class AdvancedRecommendationEngine:
         return scores
 
     async def _price_compatibility_scoring(
-        self,
-        candidates: List[Product],
-        request: RecommendationRequest
+        self, candidates: List[Product], request: RecommendationRequest
     ) -> Dict[str, float]:
         """Score products based on price compatibility with budget"""
         scores = {}
@@ -863,15 +961,8 @@ class AdvancedRecommendationEngine:
 
         return scores
 
-    async def _collaborative_filtering(
-        self,
-        candidates: List[Product],
-        user_id: str,
-        db: AsyncSession
-    ) -> Dict[str, float]:
+    async def _collaborative_filtering(self, candidates: List[Product], user_id: str, db: AsyncSession) -> Dict[str, float]:
         """Collaborative filtering based on user behavior patterns"""
-        scores = {}
-
         # This would implement user-based or item-based collaborative filtering
         # For now, we'll return neutral scores
         return {product.id: 0.5 for product in candidates}
@@ -885,7 +976,7 @@ class AdvancedRecommendationEngine:
         functional_scores: Dict[str, float],
         price_scores: Dict[str, float],
         collaborative_scores: Dict[str, float],
-        request: RecommendationRequest
+        request: RecommendationRequest,
     ) -> List[RecommendationResult]:
         """Combine all scoring methods into final recommendations"""
 
@@ -907,12 +998,12 @@ class AdvancedRecommendationEngine:
 
             # Calculate weighted overall score
             overall_score = (
-                content_score * weights["content"] +
-                popularity_score * weights["popularity"] +
-                style_score * weights["style"] +
-                functional_score * weights["functional"] +
-                price_score * weights["price"] +
-                collaborative_score * weights["collaborative"]
+                content_score * weights["content"]
+                + popularity_score * weights["popularity"]
+                + style_score * weights["style"]
+                + functional_score * weights["functional"]
+                + price_score * weights["price"]
+                + collaborative_score * weights["collaborative"]
             )
 
             # Generate reasoning
@@ -930,7 +1021,8 @@ class AdvancedRecommendationEngine:
                 price_score=price_score,
                 popularity_score=popularity_score,
                 compatibility_score=(style_score + functional_score) / 2,
-                overall_score=overall_score
+                overall_score=overall_score,
+                source_website=product.source_website,  # Add source for diversity
             )
 
             recommendations.append(recommendation)
@@ -941,12 +1033,12 @@ class AdvancedRecommendationEngine:
         """Calculate weights for different algorithms based on request"""
         # Base weights - Content now includes keyword relevance, so boost it significantly
         weights = {
-            "content": 0.40,       # Increased from 0.25 - now includes keyword relevance
-            "popularity": 0.10,    # Decreased from 0.15
-            "style": 0.20,         # Decreased from 0.25
-            "functional": 0.20,    # Same
-            "price": 0.10,         # Decreased from 0.15
-            "collaborative": 0.0
+            "content": 0.40,  # Increased from 0.25 - now includes keyword relevance
+            "popularity": 0.10,  # Decreased from 0.15
+            "style": 0.20,  # Decreased from 0.25
+            "functional": 0.20,  # Same
+            "price": 0.10,  # Decreased from 0.15
+            "collaborative": 0.0,
         }
 
         # Adjust based on available information
@@ -981,32 +1073,68 @@ class AdvancedRecommendationEngine:
         return weights
 
     def _apply_diversity_ranking(
-        self,
-        recommendations: List[RecommendationResult],
-        request: RecommendationRequest
+        self, recommendations: List[RecommendationResult], request: RecommendationRequest
     ) -> List[RecommendationResult]:
-        """Apply diversity and final ranking to recommendations"""
+        """
+        Apply diversity ranking to ensure products from multiple sources appear in results.
+
+        Strategy:
+        1. Group products by source_website
+        2. Sort each source's products by score
+        3. Use round-robin selection to pick from different sources
+        4. This ensures top products from ALL sources are included, not just one source
+        """
+        if not recommendations:
+            return []
 
         # Sort by overall score first
         recommendations.sort(key=lambda x: x.overall_score, reverse=True)
 
-        # Apply diversity constraints
-        diverse_recommendations = []
-        seen_categories = set()
-        seen_price_ranges = set()
+        # Group recommendations by source
+        from collections import defaultdict
+
+        recommendations_by_source = defaultdict(list)
 
         for rec in recommendations:
-            # Add diversity logic here
-            # For now, just return sorted recommendations
-            diverse_recommendations.append(rec)
+            source = rec.source_website or "unknown"
+            recommendations_by_source[source].append(rec)
+
+        # Sort each source's products by score (already sorted, but ensure)
+        for source in recommendations_by_source:
+            recommendations_by_source[source].sort(key=lambda x: x.overall_score, reverse=True)
+
+        # Round-robin selection across sources to ensure diversity
+        diverse_recommendations: List[RecommendationResult] = []
+        sources = list(recommendations_by_source.keys())
+        source_indices = {source: 0 for source in sources}  # Track position in each source list
+
+        max_iterations = len(recommendations)
+        iteration = 0
+
+        while len(diverse_recommendations) < len(recommendations) and iteration < max_iterations:
+            iteration += 1
+
+            # Cycle through all sources
+            for source in sources:
+                if source_indices[source] < len(recommendations_by_source[source]):
+                    # Get next product from this source
+                    rec = recommendations_by_source[source][source_indices[source]]
+                    diverse_recommendations.append(rec)
+                    source_indices[source] += 1
+
+                    # Stop if we've collected enough recommendations
+                    if len(diverse_recommendations) >= len(recommendations):
+                        break
+
+        logger.info(
+            f"Source diversity applied: {len(recommendations)} products -> "
+            f"{len(set(r.source_website for r in diverse_recommendations))} unique sources in top results"
+        )
 
         return diverse_recommendations
 
     def _calculate_personalization_level(
-        self,
-        request: RecommendationRequest,
-        user_id: Optional[str],
-        collaborative_scores: Dict[str, float]
+        self, request: RecommendationRequest, user_id: Optional[str], collaborative_scores: Dict[str, float]
     ) -> float:
         """Calculate how personalized the recommendations are"""
         personalization = 0.0
@@ -1061,7 +1189,7 @@ class AdvancedRecommendationEngine:
             "modern": ["modern", "contemporary", "sleek", "minimalist"],
             "traditional": ["traditional", "classic", "ornate", "elegant"],
             "rustic": ["rustic", "farmhouse", "reclaimed", "weathered"],
-            "scandinavian": ["scandinavian", "nordic", "hygge", "light"]
+            "scandinavian": ["scandinavian", "nordic", "hygge", "light"],
         }
 
         product_text = (product.name + " " + (product.description or "")).lower()
@@ -1078,20 +1206,35 @@ class AdvancedRecommendationEngine:
         # Order matters: check more specific terms first
         function_map = {
             # Lighting (check before 'table')
-            "lamp": "lighting", "chandelier": "lighting", "light": "lighting",
+            "lamp": "lighting",
+            "chandelier": "lighting",
+            "light": "lighting",
             # Seating
-            "sofa": "seating", "chair": "seating", "armchair": "seating", "bench": "seating",
+            "sofa": "seating",
+            "chair": "seating",
+            "armchair": "seating",
+            "bench": "seating",
             # Sleeping
-            "bed": "sleeping", "mattress": "sleeping",
+            "bed": "sleeping",
+            "mattress": "sleeping",
             # Storage
-            "dresser": "storage", "bookshelf": "storage", "cabinet": "storage", "wardrobe": "storage",
+            "dresser": "storage",
+            "bookshelf": "storage",
+            "cabinet": "storage",
+            "wardrobe": "storage",
             # Workspace
-            "desk": "workspace", "office": "workspace",
+            "desk": "workspace",
+            "office": "workspace",
             # Dining (check after lamp to avoid 'table lamp' matching as dining)
-            "dining table": "dining", "table": "dining",
+            "dining table": "dining",
+            "table": "dining",
             # Accessories
-            "pillow": "accessory", "cushion": "accessory", "throw": "accessory",
-            "vase": "accessory", "mirror": "accessory", "rug": "accessory"
+            "pillow": "accessory",
+            "cushion": "accessory",
+            "throw": "accessory",
+            "vase": "accessory",
+            "mirror": "accessory",
+            "rug": "accessory",
         }
 
         product_name = product.name.lower()
@@ -1123,7 +1266,7 @@ class AdvancedRecommendationEngine:
                 score = 1.0
 
             # HIGH PRIORITY: Keyword is a standalone word in product name (with word boundaries)
-            elif re.search(rf'\b{re.escape(keyword)}\b', product_name):
+            elif re.search(rf"\b{re.escape(keyword)}\b", product_name):
                 # Check position - earlier is better
                 match_pos = product_name.find(keyword)
                 # Score: 0.9 if in first half of name, 0.7 otherwise
@@ -1134,7 +1277,7 @@ class AdvancedRecommendationEngine:
                 score = 0.5
 
             # LOW PRIORITY: Keyword in description
-            elif re.search(rf'\b{re.escape(keyword)}\b', product_desc):
+            elif re.search(rf"\b{re.escape(keyword)}\b", product_desc):
                 score = 0.3
 
             # Keep the highest score across all keywords
@@ -1146,12 +1289,7 @@ class AdvancedRecommendationEngine:
         """Calculate similarity between two styles"""
         return self.style_compatibility_matrix.get(style1, {}).get(style2, 0.0)
 
-    async def _calculate_color_match(
-        self,
-        product: Product,
-        preferred_colors: List[str],
-        db: AsyncSession
-    ) -> float:
+    async def _calculate_color_match(self, product: Product, preferred_colors: List[str], db: AsyncSession) -> float:
         """
         Calculate color match score using ProductAttribute table
 
@@ -1167,10 +1305,9 @@ class AdvancedRecommendationEngine:
         try:
             # Query product colors from ProductAttribute
             result = await db.execute(
-                select(ProductAttribute.attribute_value)
-                .where(
+                select(ProductAttribute.attribute_value).where(
                     ProductAttribute.product_id == product.id,
-                    ProductAttribute.attribute_name.in_(['color_primary', 'color_secondary', 'color_accent'])
+                    ProductAttribute.attribute_name.in_(["color_primary", "color_secondary", "color_accent"]),
                 )
             )
             product_colors = [color.lower() for color in result.scalars().all() if color]
@@ -1197,12 +1334,7 @@ class AdvancedRecommendationEngine:
             logger.error(f"Error calculating color match for product {product.id}: {e}")
             return 0.5  # Default to neutral score on error
 
-    async def _calculate_material_match(
-        self,
-        product: Product,
-        preferred_materials: List[str],
-        db: AsyncSession
-    ) -> float:
+    async def _calculate_material_match(self, product: Product, preferred_materials: List[str], db: AsyncSession) -> float:
         """
         Calculate material match score using ProductAttribute table
 
@@ -1217,10 +1349,9 @@ class AdvancedRecommendationEngine:
         try:
             # Query product materials from ProductAttribute
             result = await db.execute(
-                select(ProductAttribute.attribute_value)
-                .where(
+                select(ProductAttribute.attribute_value).where(
                     ProductAttribute.product_id == product.id,
-                    ProductAttribute.attribute_name.in_(['material_primary', 'material_secondary'])
+                    ProductAttribute.attribute_name.in_(["material_primary", "material_secondary"]),
                 )
             )
             product_materials = [mat.lower() for mat in result.scalars().all() if mat]
@@ -1236,8 +1367,7 @@ class AdvancedRecommendationEngine:
             # Compatible materials (substring match)
             for user_material in preferred_materials:
                 for product_material in product_materials:
-                    if (user_material.lower() in product_material or
-                        product_material in user_material.lower()):
+                    if user_material.lower() in product_material or product_material in user_material.lower():
                         return 0.7
 
             return 0.0
@@ -1246,12 +1376,7 @@ class AdvancedRecommendationEngine:
             logger.error(f"Error calculating material match for product {product.id}: {e}")
             return 0.5  # Default to neutral score on error
 
-    async def _calculate_size_match(
-        self,
-        product: Product,
-        room_dimensions: Dict[str, float],
-        db: AsyncSession
-    ) -> float:
+    async def _calculate_size_match(self, product: Product, room_dimensions: Dict[str, float], db: AsyncSession) -> float:
         """
         Calculate size match score based on room dimensions
 
@@ -1267,10 +1392,9 @@ class AdvancedRecommendationEngine:
         try:
             # Query product dimensions
             result = await db.execute(
-                select(ProductAttribute.attribute_name, ProductAttribute.attribute_value)
-                .where(
+                select(ProductAttribute.attribute_name, ProductAttribute.attribute_value).where(
                     ProductAttribute.product_id == product.id,
-                    ProductAttribute.attribute_name.in_(['width', 'depth', 'height'])
+                    ProductAttribute.attribute_name.in_(["width", "depth", "height"]),
                 )
             )
 
@@ -1282,8 +1406,8 @@ class AdvancedRecommendationEngine:
             # Calculate fit score based on room dimensions
             fit_scores = []
 
-            if 'width' in dimensions and 'room_width' in room_dimensions:
-                ratio = dimensions['width'] / room_dimensions['room_width']
+            if "width" in dimensions and "room_width" in room_dimensions:
+                ratio = dimensions["width"] / room_dimensions["room_width"]
                 if ratio < 0.3:
                     fit_scores.append(1.0)
                 elif ratio < 0.5:
@@ -1299,12 +1423,7 @@ class AdvancedRecommendationEngine:
             logger.error(f"Error calculating size match for product {product.id}: {e}")
             return 0.8  # Default to acceptable size on error
 
-    async def _calculate_texture_match(
-        self,
-        product: Product,
-        preferred_textures: List[str],
-        db: AsyncSession
-    ) -> float:
+    async def _calculate_texture_match(self, product: Product, preferred_textures: List[str], db: AsyncSession) -> float:
         """
         Calculate texture match score
 
@@ -1317,10 +1436,8 @@ class AdvancedRecommendationEngine:
 
         try:
             result = await db.execute(
-                select(ProductAttribute.attribute_value)
-                .where(
-                    ProductAttribute.product_id == product.id,
-                    ProductAttribute.attribute_name == 'texture'
+                select(ProductAttribute.attribute_value).where(
+                    ProductAttribute.product_id == product.id, ProductAttribute.attribute_name == "texture"
                 )
             )
             product_texture = result.scalar_one_or_none()
@@ -1338,12 +1455,7 @@ class AdvancedRecommendationEngine:
             logger.error(f"Error calculating texture match for product {product.id}: {e}")
             return 0.5
 
-    async def _calculate_pattern_match(
-        self,
-        product: Product,
-        preferred_patterns: List[str],
-        db: AsyncSession
-    ) -> float:
+    async def _calculate_pattern_match(self, product: Product, preferred_patterns: List[str], db: AsyncSession) -> float:
         """
         Calculate pattern match score
 
@@ -1356,10 +1468,8 @@ class AdvancedRecommendationEngine:
 
         try:
             result = await db.execute(
-                select(ProductAttribute.attribute_value)
-                .where(
-                    ProductAttribute.product_id == product.id,
-                    ProductAttribute.attribute_name == 'pattern'
+                select(ProductAttribute.attribute_value).where(
+                    ProductAttribute.product_id == product.id, ProductAttribute.attribute_name == "pattern"
                 )
             )
             product_pattern = result.scalar_one_or_none()
@@ -1394,33 +1504,112 @@ class AdvancedRecommendationEngine:
 
         # Common furniture and decor product types to look for
         product_types = [
-            'rug', 'sofa', 'chair', 'table', 'lamp', 'vase', 'plant', 'throw', 'pillow',
-            'cushion', 'curtain', 'mirror', 'artwork', 'shelf', 'cabinet', 'ottoman',
-            'bench', 'stool', 'desk', 'bed', 'nightstand', 'dresser', 'bookshelf',
-            'coffee table', 'side table', 'accent chair', 'floor lamp', 'table lamp',
-            'wall art', 'decorative', 'decor', 'ceramic', 'sculpture', 'bowl'
+            "rug",
+            "sofa",
+            "chair",
+            "table",
+            "lamp",
+            "vase",
+            "plant",
+            "throw",
+            "pillow",
+            "cushion",
+            "curtain",
+            "mirror",
+            "artwork",
+            "shelf",
+            "cabinet",
+            "ottoman",
+            "bench",
+            "stool",
+            "desk",
+            "bed",
+            "nightstand",
+            "dresser",
+            "bookshelf",
+            "coffee table",
+            "side table",
+            "accent chair",
+            "floor lamp",
+            "table lamp",
+            "wall art",
+            "decorative",
+            "decor",
+            "ceramic",
+            "sculpture",
+            "bowl",
         ]
 
         # Common materials and textures
         materials = [
-            'wool', 'linen', 'cotton', 'silk', 'leather', 'velvet', 'wood', 'oak',
-            'walnut', 'teak', 'metal', 'brass', 'bronze', 'glass', 'ceramic',
-            'marble', 'stone', 'rattan', 'wicker', 'bamboo', 'jute', 'natural',
-            'woven', 'handcrafted', 'organic'
+            "wool",
+            "linen",
+            "cotton",
+            "silk",
+            "leather",
+            "velvet",
+            "wood",
+            "oak",
+            "walnut",
+            "teak",
+            "metal",
+            "brass",
+            "bronze",
+            "glass",
+            "ceramic",
+            "marble",
+            "stone",
+            "rattan",
+            "wicker",
+            "bamboo",
+            "jute",
+            "natural",
+            "woven",
+            "handcrafted",
+            "organic",
         ]
 
         # Style descriptors
         style_terms = [
-            'modern', 'contemporary', 'traditional', 'minimal', 'minimalist',
-            'scandinavian', 'japandi', 'bohemian', 'industrial', 'rustic',
-            'vintage', 'mid-century', 'eclectic', 'coastal', 'farmhouse'
+            "modern",
+            "contemporary",
+            "traditional",
+            "minimal",
+            "minimalist",
+            "scandinavian",
+            "japandi",
+            "bohemian",
+            "industrial",
+            "rustic",
+            "vintage",
+            "mid-century",
+            "eclectic",
+            "coastal",
+            "farmhouse",
         ]
 
         # Color/tone descriptors
         color_terms = [
-            'cream', 'beige', 'white', 'black', 'gray', 'grey', 'blue', 'green',
-            'brown', 'tan', 'natural', 'neutral', 'warm', 'cool', 'light', 'dark',
-            'soft', 'muted', 'earthy', 'natural-toned'
+            "cream",
+            "beige",
+            "white",
+            "black",
+            "gray",
+            "grey",
+            "blue",
+            "green",
+            "brown",
+            "tan",
+            "natural",
+            "neutral",
+            "warm",
+            "cool",
+            "light",
+            "dark",
+            "soft",
+            "muted",
+            "earthy",
+            "natural-toned",
         ]
 
         # Combine all keyword lists for matching
@@ -1447,7 +1636,7 @@ class AdvancedRecommendationEngine:
             Color name string (e.g., "beige", "gray", "blue")
         """
         # Remove # if present
-        hex_code = hex_code.lstrip('#')
+        hex_code = hex_code.lstrip("#")
 
         # Convert to RGB
         try:
@@ -1519,34 +1708,30 @@ class AdvancedRecommendationEngine:
         """Get color family mappings for fuzzy color matching"""
         return {
             # Reds
-            'red': ['red', 'crimson', 'burgundy', 'maroon', 'ruby', 'cherry', 'wine'],
-            'crimson': ['red', 'crimson', 'burgundy', 'maroon'],
-            'burgundy': ['burgundy', 'maroon', 'wine', 'red'],
-            'maroon': ['maroon', 'burgundy', 'red'],
-
+            "red": ["red", "crimson", "burgundy", "maroon", "ruby", "cherry", "wine"],
+            "crimson": ["red", "crimson", "burgundy", "maroon"],
+            "burgundy": ["burgundy", "maroon", "wine", "red"],
+            "maroon": ["maroon", "burgundy", "red"],
             # Blues
-            'blue': ['blue', 'navy', 'royal blue', 'cobalt', 'azure', 'turquoise'],
-            'navy': ['navy', 'blue', 'dark blue', 'midnight blue'],
-            'azure': ['azure', 'blue', 'light blue', 'sky blue'],
-            'turquoise': ['turquoise', 'azure', 'cyan', 'teal'],
-
+            "blue": ["blue", "navy", "royal blue", "cobalt", "azure", "turquoise"],
+            "navy": ["navy", "blue", "dark blue", "midnight blue"],
+            "azure": ["azure", "blue", "light blue", "sky blue"],
+            "turquoise": ["turquoise", "azure", "cyan", "teal"],
             # Greens
-            'green': ['green', 'emerald', 'sage', 'olive', 'forest green'],
-            'emerald': ['emerald', 'green', 'jade'],
-            'sage': ['sage', 'green', 'mint'],
-            'olive': ['olive', 'green', 'khaki'],
-
+            "green": ["green", "emerald", "sage", "olive", "forest green"],
+            "emerald": ["emerald", "green", "jade"],
+            "sage": ["sage", "green", "mint"],
+            "olive": ["olive", "green", "khaki"],
             # Neutrals
-            'gray': ['gray', 'grey', 'charcoal', 'slate', 'silver'],
-            'grey': ['gray', 'grey', 'charcoal', 'slate', 'silver'],
-            'charcoal': ['charcoal', 'gray', 'grey', 'black'],
-            'beige': ['beige', 'tan', 'khaki', 'cream', 'ivory'],
-            'white': ['white', 'off-white', 'cream', 'ivory'],
-            'black': ['black', 'charcoal', 'ebony'],
-
+            "gray": ["gray", "grey", "charcoal", "slate", "silver"],
+            "grey": ["gray", "grey", "charcoal", "slate", "silver"],
+            "charcoal": ["charcoal", "gray", "grey", "black"],
+            "beige": ["beige", "tan", "khaki", "cream", "ivory"],
+            "white": ["white", "off-white", "cream", "ivory"],
+            "black": ["black", "charcoal", "ebony"],
             # Browns
-            'brown': ['brown', 'chocolate', 'espresso', 'walnut', 'mahogany'],
-            'tan': ['tan', 'beige', 'camel', 'khaki'],
+            "brown": ["brown", "chocolate", "espresso", "walnut", "mahogany"],
+            "tan": ["tan", "beige", "camel", "khaki"],
         }
 
     def _calculate_description_similarity(self, product: Product, keywords: List[str]) -> float:
@@ -1563,12 +1748,7 @@ class AdvancedRecommendationEngine:
         return intersection / union if union > 0 else 0.0
 
     def _generate_recommendation_reasoning(
-        self,
-        product: Product,
-        content_score: float,
-        style_score: float,
-        functional_score: float,
-        price_score: float
+        self, product: Product, content_score: float, style_score: float, functional_score: float, price_score: float
     ) -> List[str]:
         """Generate human-readable reasoning for recommendation"""
         reasoning = []

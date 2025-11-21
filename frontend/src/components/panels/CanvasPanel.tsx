@@ -53,6 +53,8 @@ export default function CanvasPanel({
   const [canRedo, setCanRedo] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const canvasProductsRef = useRef<HTMLDivElement>(null);
+  const visualizationRef = useRef<HTMLDivElement>(null);
 
   // Calculate total price
   const totalPrice = products.reduce((sum, product) => sum + (product.price || 0), 0);
@@ -75,6 +77,30 @@ export default function CanvasPanel({
       setNeedsRevisualization(true);
     }
   }, [products, visualizedProductIds, visualizationResult]);
+
+  // Auto-scroll to canvas products when a product is added
+  useEffect(() => {
+    if (products.length > 0 && canvasProductsRef.current) {
+      // Scroll to canvas products section
+      canvasProductsRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
+    }
+  }, [products.length]); // Trigger when product count changes
+
+  // Auto-scroll to visualization result when first visualization completes
+  useEffect(() => {
+    if (visualizationResult && visualizationRef.current) {
+      // Small delay to ensure render is complete
+      setTimeout(() => {
+        visualizationRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start'
+        });
+      }, 100);
+    }
+  }, [visualizationResult]); // Trigger when visualization result changes
 
   // Handle file upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -531,7 +557,7 @@ export default function CanvasPanel({
         </div>
 
         {/* Products in Canvas */}
-        <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
+        <div ref={canvasProductsRef} className="p-4 border-b border-neutral-200 dark:border-neutral-700">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-medium text-neutral-900 dark:text-white">
               Products in Canvas
@@ -706,7 +732,7 @@ export default function CanvasPanel({
 
         {/* Visualization Result with Outdated Warning */}
         {visualizationResult && (
-          <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
+          <div ref={visualizationRef} className="p-4 border-b border-neutral-200 dark:border-neutral-700">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-neutral-900 dark:text-white">
                 Visualization Result
