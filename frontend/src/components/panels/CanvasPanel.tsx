@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
+import { DraggableFurnitureCanvas, FurniturePosition } from '../DraggableFurnitureCanvas';
+import { furniturePositionAPI } from '@/utils/api';
 
 interface Product {
   id: string;
@@ -51,6 +53,11 @@ export default function CanvasPanel({
   // Undo/Redo state
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+
+  // Furniture position editing state
+  const [isEditingPositions, setIsEditingPositions] = useState(false);
+  const [furniturePositions, setFurniturePositions] = useState<FurniturePosition[]>([]);
+  const [hasUnsavedPositions, setHasUnsavedPositions] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasProductsRef = useRef<HTMLDivElement>(null);
@@ -428,6 +435,64 @@ export default function CanvasPanel({
     }
   };
 
+  // Position editing handlers
+  const handleEnterEditMode = () => {
+    // Initialize furniture positions from products when entering edit mode
+    // For now, create dummy positions - these will come from AI detection later
+    const initialPositions: FurniturePosition[] = products.map((product, index) => ({
+      productId: String(product.id),
+      x: 0.1 + (index % 3) * 0.3, // Distribute horizontally
+      y: 0.2 + Math.floor(index / 3) * 0.3, // Distribute vertically
+      label: product.name,
+      width: 0.15,
+      height: 0.15,
+    }));
+
+    setFurniturePositions(initialPositions);
+    setIsEditingPositions(true);
+    setHasUnsavedPositions(false);
+  };
+
+  const handleExitEditMode = () => {
+    if (hasUnsavedPositions) {
+      const confirmExit = window.confirm('You have unsaved position changes. Exit anyway?');
+      if (!confirmExit) return;
+    }
+    setIsEditingPositions(false);
+    setHasUnsavedPositions(false);
+  };
+
+  const handlePositionsChange = (newPositions: FurniturePosition[]) => {
+    setFurniturePositions(newPositions);
+    setHasUnsavedPositions(true);
+  };
+
+  const handleSavePositions = async () => {
+    const sessionId = sessionStorage.getItem('design_session_id');
+    if (!sessionId) {
+      console.error('[CanvasPanel] No session ID found');
+      alert('Error: No session found. Please create a visualization first.');
+      return;
+    }
+
+    try {
+      console.log('[CanvasPanel] Saving positions:', furniturePositions);
+      const result = await furniturePositionAPI.savePositions(sessionId, furniturePositions);
+      console.log('[CanvasPanel] Positions saved successfully:', result);
+      setHasUnsavedPositions(false);
+      alert(`Positions saved successfully! (${result.positions_saved} furniture items)`);
+    } catch (error) {
+      console.error('[CanvasPanel] Error saving positions:', error);
+      alert('Error saving positions. Please try again.');
+    }
+  };
+
+  const handleRevisualizeWithPositions = async () => {
+    // TODO: Call visualization API with custom positions
+    console.log('[CanvasPanel] Re-visualizing with positions:', furniturePositions);
+    alert('Re-visualization with custom positions (Backend integration pending)');
+  };
+
   // Get image URL from product (handles both old and new format)
   const getProductImageUrl = (product: Product): string => {
     // Try images array first (transformed format)
@@ -738,10 +803,24 @@ export default function CanvasPanel({
                 Visualization Result
               </h3>
               <div className="flex items-center gap-2">
+                {/* Edit Positions button */}
+                {!isEditingPositions && (
+                  <button
+                    onClick={handleEnterEditMode}
+                    className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors flex items-center gap-1.5"
+                    title="Edit furniture positions"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Edit Positions
+                  </button>
+                )}
+
                 {/* Undo/Redo buttons */}
                 <button
                   onClick={handleUndo}
-                  disabled={!canUndo}
+                  disabled={!canUndo || isEditingPositions}
                   className="p-1.5 rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   title="Undo (Remove last added product)"
                 >
@@ -751,7 +830,7 @@ export default function CanvasPanel({
                 </button>
                 <button
                   onClick={handleRedo}
-                  disabled={!canRedo}
+                  disabled={!canRedo || isEditingPositions}
                   className="p-1.5 rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   title="Redo (Add back removed product)"
                 >
@@ -765,7 +844,8 @@ export default function CanvasPanel({
                     setVisualizedProductIds(new Set()); // Clear tracking so next visualization is treated as fresh
                     setNeedsRevisualization(false);
                   }}
-                  className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 font-medium"
+                  disabled={isEditingPositions}
+                  className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 font-medium disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Clear
                 </button>
@@ -784,25 +864,81 @@ export default function CanvasPanel({
               </div>
             )}
 
-            <div className={`relative aspect-video bg-neutral-100 dark:bg-neutral-700 rounded-lg overflow-hidden ${needsRevisualization ? 'ring-2 ring-amber-400 dark:ring-amber-600' : ''}`}>
-              {visualizationResult.startsWith('data:') ? (
-                <img
-                  src={visualizationResult}
-                  alt="Visualization result"
-                  className="w-full h-full object-cover"
+            {/* Image/Canvas Container */}
+            <div className={`relative aspect-video bg-neutral-100 dark:bg-neutral-700 rounded-lg overflow-hidden ${needsRevisualization ? 'ring-2 ring-amber-400 dark:ring-amber-600' : ''} ${isEditingPositions ? 'ring-2 ring-purple-400 dark:ring-purple-600' : ''}`}>
+              {isEditingPositions ? (
+                <DraggableFurnitureCanvas
+                  visualizationImage={visualizationResult}
+                  furniturePositions={furniturePositions}
+                  onPositionsChange={handlePositionsChange}
+                  containerWidth={800}
+                  containerHeight={450}
                 />
               ) : (
-                <Image
-                  src={visualizationResult}
-                  alt="Visualization result"
-                  fill
-                  className="object-cover"
-                  unoptimized
-                />
+                <>
+                  {visualizationResult.startsWith('data:') ? (
+                    <img
+                      src={visualizationResult}
+                      alt="Visualization result"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <Image
+                      src={visualizationResult}
+                      alt="Visualization result"
+                      fill
+                      className="object-cover"
+                      unoptimized
+                    />
+                  )}
+                </>
               )}
             </div>
 
-            {!needsRevisualization && (
+            {/* Edit Mode Actions */}
+            {isEditingPositions && (
+              <div className="mt-3 flex items-center gap-2 justify-between">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleExitEditMode}
+                    className="px-4 py-2 rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-sm font-medium transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSavePositions}
+                    disabled={!hasUnsavedPositions}
+                    className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 disabled:bg-neutral-400 text-white text-sm font-medium transition-colors disabled:cursor-not-allowed flex items-center gap-1.5"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Save Positions
+                  </button>
+                </div>
+                <button
+                  onClick={handleRevisualizeWithPositions}
+                  className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium transition-colors flex items-center gap-1.5"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Re-visualize with New Positions
+                </button>
+              </div>
+            )}
+
+            {/* Unsaved Changes Warning */}
+            {hasUnsavedPositions && isEditingPositions && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 text-center flex items-center justify-center gap-1">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                You have unsaved position changes
+              </p>
+            )}
+
+            {!needsRevisualization && !isEditingPositions && (
               <p className="text-xs text-green-600 dark:text-green-400 mt-2 text-center">
                 ✓ Visualization up to date
               </p>

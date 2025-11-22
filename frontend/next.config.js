@@ -27,6 +27,11 @@ const nextConfig = {
   // Rewrites removed - frontend uses NEXT_PUBLIC_API_URL environment variable
   // This allows flexible configuration for different deployment environments
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
+    // Ignore canvas module on server-side (fixes Konva.js build issues)
+    if (isServer) {
+      config.externals = [...(config.externals || []), 'canvas', 'jsdom'];
+    }
+
     // Optimize bundle size
     if (!dev && !isServer) {
       config.optimization.splitChunks.chunks = 'all';

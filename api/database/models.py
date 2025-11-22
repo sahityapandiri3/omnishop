@@ -1,18 +1,15 @@
 """
 Database models for Omnishop scraping system
 """
+import enum
+import uuid
 from datetime import datetime
-from typing import Optional, List
-from sqlalchemy import (
-    Column, Integer, String, Text, Float, DateTime, Boolean,
-    ForeignKey, Index, JSON, Enum
-)
+from typing import List, Optional
+
+from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import UUID
-import uuid
-import enum
-
 
 Base = declarative_base()
 
@@ -26,6 +23,7 @@ class ScrapingStatus(enum.Enum):
 
 class Category(Base):
     """Product categories with hierarchical structure"""
+
     __tablename__ = "categories"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -46,6 +44,7 @@ class Category(Base):
 
 class Product(Base):
     """Main product information"""
+
     __tablename__ = "products"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -80,9 +79,9 @@ class Product(Base):
 
     # Indexes
     __table_args__ = (
-        Index('idx_product_source_external', 'source_website', 'external_id'),
-        Index('idx_product_price_category', 'price', 'category_id'),
-        Index('idx_product_brand_category', 'brand', 'category_id'),
+        Index("idx_product_source_external", "source_website", "external_id"),
+        Index("idx_product_price_category", "price", "category_id"),
+        Index("idx_product_brand_category", "brand", "category_id"),
     )
 
     def __repr__(self):
@@ -91,6 +90,7 @@ class Product(Base):
 
 class ProductImage(Base):
     """Product images with multiple sizes"""
+
     __tablename__ = "product_images"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -124,6 +124,7 @@ class ProductImage(Base):
 
 class ProductAttribute(Base):
     """Additional product attributes (dimensions, materials, etc.)"""
+
     __tablename__ = "product_attributes"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -145,8 +146,8 @@ class ProductAttribute(Base):
 
     # Indexes
     __table_args__ = (
-        Index('idx_attribute_name_value', 'attribute_name', 'attribute_value'),
-        Index('idx_attribute_product_name', 'product_id', 'attribute_name'),
+        Index("idx_attribute_name_value", "attribute_name", "attribute_value"),
+        Index("idx_attribute_product_name", "product_id", "attribute_name"),
     )
 
     def __repr__(self):
@@ -155,6 +156,7 @@ class ProductAttribute(Base):
 
 class ScrapingLog(Base):
     """Logs for scraping operations"""
+
     __tablename__ = "scraping_logs"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -190,6 +192,7 @@ class ScrapingLog(Base):
 
 class ProductSearchView(Base):
     """Materialized view for fast product searching"""
+
     __tablename__ = "product_search_view"
 
     id = Column(Integer, primary_key=True)
@@ -215,6 +218,7 @@ class ProductSearchView(Base):
 
 class ChatSession(Base):
     """Chat session for interior design conversations"""
+
     __tablename__ = "chat_sessions"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -232,6 +236,7 @@ class ChatSession(Base):
 
 class ChatMessage(Base):
     """Individual chat messages"""
+
     __tablename__ = "chat_messages"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -247,3 +252,41 @@ class ChatMessage(Base):
 
     def __repr__(self):
         return f"<ChatMessage(id={self.id}, type={self.type}, session_id={self.session_id})>"
+
+
+class FurniturePosition(Base):
+    """Stores custom furniture positions in visualizations"""
+
+    __tablename__ = "furniture_positions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String(36), ForeignKey("chat_sessions.id"), nullable=False, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+
+    # Position coordinates (0-1 range, representing percentage of canvas)
+    x = Column(Float, nullable=False)
+    y = Column(Float, nullable=False)
+
+    # Optional dimensions (0-1 range)
+    width = Column(Float, nullable=True)
+    height = Column(Float, nullable=True)
+
+    # Metadata
+    label = Column(String(200), nullable=True)  # Product display name
+    is_ai_placed = Column(Boolean, default=True)  # True if AI placed, False if user adjusted
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    session = relationship("ChatSession", backref="furniture_positions")
+    product = relationship("Product")
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_furniture_position_session", "session_id"),
+        Index("idx_furniture_position_product", "product_id"),
+    )
+
+    def __repr__(self):
+        return f"<FurniturePosition(id={self.id}, session_id={self.session_id}, product_id={self.product_id}, x={self.x}, y={self.y})>"

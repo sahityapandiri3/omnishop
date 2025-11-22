@@ -1,21 +1,21 @@
 """
 Visualization API routes for spatial analysis and room rendering
 """
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional, Dict, Any, Tuple
+import base64
 import logging
 import uuid
-import base64
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
 from core.database import get_db
-from services.google_ai_service import google_ai_service
-from services.chatgpt_service import chatgpt_service
-from services.recommendation_engine import recommendation_engine, RecommendationRequest
-from services.ml_recommendation_model import ml_recommendation_model
-from schemas.chat import ChatMessageSchema
 from database.models import Product
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from schemas.chat import ChatMessageSchema
+from services.chatgpt_service import chatgpt_service
+from services.google_ai_service import google_ai_service
+from services.ml_recommendation_model import ml_recommendation_model
+from services.recommendation_engine import RecommendationRequest, recommendation_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/visualization", tags=["visualization"])
@@ -35,19 +35,16 @@ class SpatialAnalysisRequest:
 
 
 class VisualizationGenerationRequest:
-    def __init__(self, base_image: str, products: List[Dict[str, Any]],
-                 placement_preferences: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, base_image: str, products: List[Dict[str, Any]], placement_preferences: Optional[Dict[str, Any]] = None
+    ):
         self.base_image = base_image
         self.products = products
         self.placement_preferences = placement_preferences or {}
 
 
 @router.post("/analyze-room")
-async def analyze_room_image(
-    image_data: str,
-    session_id: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
-):
+async def analyze_room_image(image_data: str, session_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     """Analyze room image for spatial understanding and design assessment"""
     try:
         # Perform room analysis using Google AI Studio
@@ -61,7 +58,7 @@ async def analyze_room_image(
                 "style_assessment": room_analysis.style_assessment,
                 "existing_furniture": room_analysis.existing_furniture,
                 "architectural_features": room_analysis.architectural_features,
-                "analysis_timestamp": datetime.utcnow().isoformat()
+                "analysis_timestamp": datetime.utcnow().isoformat(),
             }
 
             chatgpt_service.update_room_context(session_id, room_context)
@@ -75,10 +72,10 @@ async def analyze_room_image(
                 "existing_furniture": room_analysis.existing_furniture,
                 "architectural_features": room_analysis.architectural_features,
                 "style_assessment": room_analysis.style_assessment,
-                "confidence_score": room_analysis.confidence_score
+                "confidence_score": room_analysis.confidence_score,
             },
             "session_updated": session_id is not None,
-            "analysis_id": str(uuid.uuid4())
+            "analysis_id": str(uuid.uuid4()),
         }
 
     except Exception as e:
@@ -87,10 +84,7 @@ async def analyze_room_image(
 
 
 @router.post("/spatial-analysis")
-async def perform_spatial_analysis(
-    room_analysis: Dict[str, Any],
-    additional_context: Optional[str] = None
-):
+async def perform_spatial_analysis(room_analysis: Dict[str, Any], additional_context: Optional[str] = None):
     """Perform detailed spatial analysis for furniture placement"""
     try:
         # Convert dict back to RoomAnalysis object for processing
@@ -104,7 +98,7 @@ async def perform_spatial_analysis(
             existing_furniture=room_analysis.get("existing_furniture", []),
             architectural_features=room_analysis.get("architectural_features", []),
             style_assessment=room_analysis.get("style_assessment", "unknown"),
-            confidence_score=room_analysis.get("confidence_score", 0.5)
+            confidence_score=room_analysis.get("confidence_score", 0.5),
         )
 
         # Perform spatial analysis
@@ -117,10 +111,10 @@ async def perform_spatial_analysis(
                 "focal_points": spatial_analysis.focal_points,
                 "available_spaces": spatial_analysis.available_spaces,
                 "placement_suggestions": spatial_analysis.placement_suggestions,
-                "scale_recommendations": spatial_analysis.scale_recommendations
+                "scale_recommendations": spatial_analysis.scale_recommendations,
             },
             "additional_insights": additional_context,
-            "analysis_timestamp": datetime.utcnow().isoformat()
+            "analysis_timestamp": datetime.utcnow().isoformat(),
         }
 
     except Exception as e:
@@ -137,7 +131,7 @@ async def detect_room_objects(image_data: str):
         return {
             "detected_objects": objects,
             "object_count": len(objects),
-            "detection_timestamp": datetime.utcnow().isoformat()
+            "detection_timestamp": datetime.utcnow().isoformat(),
         }
 
     except Exception as e:
@@ -151,7 +145,7 @@ async def generate_room_visualization(
     products: List[Dict[str, Any]],
     placement_preferences: Optional[Dict[str, Any]] = None,
     render_quality: str = "high",
-    session_id: Optional[str] = None
+    session_id: Optional[str] = None,
 ):
     """Generate photorealistic room visualization with placed products"""
     try:
@@ -164,7 +158,7 @@ async def generate_room_visualization(
             placement_positions=placement_preferences.get("positions", []) if placement_preferences else [],
             lighting_conditions=placement_preferences.get("lighting", "natural") if placement_preferences else "natural",
             render_quality=render_quality,
-            style_consistency=placement_preferences.get("style_consistency", True) if placement_preferences else True
+            style_consistency=placement_preferences.get("style_consistency", True) if placement_preferences else True,
         )
 
         # Generate visualization
@@ -179,10 +173,10 @@ async def generate_room_visualization(
                     "quality_score": result.quality_score,
                     "placement_accuracy": result.placement_accuracy,
                     "lighting_realism": result.lighting_realism,
-                    "confidence_score": result.confidence_score
+                    "confidence_score": result.confidence_score,
                 },
                 "processing_time": result.processing_time,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
             }
 
             # Update conversation context
@@ -197,16 +191,16 @@ async def generate_room_visualization(
                     "overall_quality": result.quality_score,
                     "placement_accuracy": result.placement_accuracy,
                     "lighting_realism": result.lighting_realism,
-                    "confidence_score": result.confidence_score
-                }
+                    "confidence_score": result.confidence_score,
+                },
             },
             "products_placed": len(products),
             "render_settings": {
                 "quality": render_quality,
                 "lighting": viz_request.lighting_conditions,
-                "style_consistency": viz_request.style_consistency
+                "style_consistency": viz_request.style_consistency,
             },
-            "session_updated": session_id is not None
+            "session_updated": session_id is not None,
         }
 
     except Exception as e:
@@ -219,7 +213,7 @@ async def upload_room_image(file: UploadFile = File(...)):
     """Upload room image for analysis"""
     try:
         # Validate file type
-        if not file.content_type.startswith('image/'):
+        if not file.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="File must be an image")
 
         # Read and encode image
@@ -231,7 +225,7 @@ async def upload_room_image(file: UploadFile = File(...)):
             "filename": file.filename,
             "size": len(contents),
             "content_type": file.content_type,
-            "upload_timestamp": datetime.utcnow().isoformat()
+            "upload_timestamp": datetime.utcnow().isoformat(),
         }
 
     except Exception as e:
@@ -250,7 +244,7 @@ async def get_session_room_context(session_id: str):
             "room_context": context.get("room_context"),
             "has_room_analysis": "room_context" in context,
             "conversation_state": context.get("conversation_state", "unknown"),
-            "context_timestamp": context.get("last_updated")
+            "context_timestamp": context.get("last_updated"),
         }
 
     except Exception as e:
@@ -267,19 +261,13 @@ async def visualization_health_check():
 
         return {
             "status": "healthy" if google_ai_health["status"] == "healthy" else "unhealthy",
-            "services": {
-                "google_ai_studio": google_ai_health
-            },
-            "timestamp": datetime.utcnow().isoformat()
+            "services": {"google_ai_studio": google_ai_health},
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
     except Exception as e:
         logger.error(f"Health check failed: {e}")
-        return {
-            "status": "unhealthy",
-            "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        return {"status": "unhealthy", "error": str(e), "timestamp": datetime.utcnow().isoformat()}
 
 
 @router.get("/usage-stats")
@@ -288,10 +276,7 @@ async def get_visualization_usage_stats():
     try:
         google_stats = await google_ai_service.get_usage_statistics()
 
-        return {
-            "google_ai_studio": google_stats,
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        return {"google_ai_studio": google_stats, "timestamp": datetime.utcnow().isoformat()}
 
     except Exception as e:
         logger.error(f"Error getting usage stats: {e}")
@@ -299,18 +284,11 @@ async def get_visualization_usage_stats():
 
 
 @router.post("/sessions/{session_id}/analyze-preferences")
-async def analyze_room_preferences(
-    session_id: str,
-    room_description: str,
-    db: AsyncSession = Depends(get_db)
-):
+async def analyze_room_preferences(session_id: str, room_description: str, db: AsyncSession = Depends(get_db)):
     """Analyze room preferences from natural language description"""
     try:
         # Use ChatGPT to extract room requirements
-        room_requirements = await chatgpt_service.extract_room_requirements(
-            room_description,
-            image_data=None
-        )
+        room_requirements = await chatgpt_service.extract_room_requirements(room_description, image_data=None)
 
         # Get enhanced analysis using NLP
         design_preferences = await chatgpt_service.analyze_design_preferences(room_description)
@@ -319,7 +297,7 @@ async def analyze_room_preferences(
             "session_id": session_id,
             "room_requirements": room_requirements,
             "design_preferences": design_preferences,
-            "analysis_timestamp": datetime.utcnow().isoformat()
+            "analysis_timestamp": datetime.utcnow().isoformat(),
         }
 
     except Exception as e:
@@ -329,9 +307,7 @@ async def analyze_room_preferences(
 
 @router.post("/compare-visualizations")
 async def compare_visualizations(
-    visualization_1: Dict[str, Any],
-    visualization_2: Dict[str, Any],
-    comparison_criteria: Optional[List[str]] = None
+    visualization_1: Dict[str, Any], visualization_2: Dict[str, Any], comparison_criteria: Optional[List[str]] = None
 ):
     """Compare two room visualizations"""
     try:
@@ -341,20 +317,20 @@ async def compare_visualizations(
             "visualization_1_scores": {
                 "quality": visualization_1.get("quality_metrics", {}).get("overall_quality", 0),
                 "realism": visualization_1.get("quality_metrics", {}).get("lighting_realism", 0),
-                "placement": visualization_1.get("quality_metrics", {}).get("placement_accuracy", 0)
+                "placement": visualization_1.get("quality_metrics", {}).get("placement_accuracy", 0),
             },
             "visualization_2_scores": {
                 "quality": visualization_2.get("quality_metrics", {}).get("overall_quality", 0),
                 "realism": visualization_2.get("quality_metrics", {}).get("lighting_realism", 0),
-                "placement": visualization_2.get("quality_metrics", {}).get("placement_accuracy", 0)
+                "placement": visualization_2.get("quality_metrics", {}).get("placement_accuracy", 0),
             },
             "comparison_summary": {
                 "winner": "visualization_1",  # Would be calculated based on scores
                 "key_differences": ["Better lighting in visualization 1", "More accurate placement in visualization 2"],
-                "recommendations": ["Consider hybrid approach", "Focus on lighting improvements"]
+                "recommendations": ["Consider hybrid approach", "Focus on lighting improvements"],
             },
             "comparison_criteria": criteria,
-            "comparison_timestamp": datetime.utcnow().isoformat()
+            "comparison_timestamp": datetime.utcnow().isoformat(),
         }
 
         return comparison_result
@@ -372,7 +348,7 @@ async def recommend_products_for_visualization(
     budget_range: Optional[Tuple[float, float]] = None,
     max_products: int = 10,
     user_id: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Recommend products specifically optimized for room visualization"""
     try:
@@ -383,7 +359,7 @@ async def recommend_products_for_visualization(
             "style_assessment": room_analysis.get("style_assessment", "modern"),
             "existing_furniture": room_analysis.get("existing_furniture", []),
             "layout_type": spatial_analysis.get("layout_type", "open"),
-            "available_spaces": spatial_analysis.get("available_spaces", [])
+            "available_spaces": spatial_analysis.get("available_spaces", []),
         }
 
         # Extract functional requirements from spatial analysis
@@ -399,7 +375,7 @@ async def recommend_products_for_visualization(
             "colors": room_analysis.get("color_palette", []),
             "style": room_analysis.get("style_assessment", "modern"),
             "materials": [],  # Could be extracted from existing furniture
-            "room_compatibility": True
+            "room_compatibility": True,
         }
 
         # Build recommendation request
@@ -409,13 +385,11 @@ async def recommend_products_for_visualization(
             budget_range=budget_range,
             style_preferences=style_preferences or [room_analysis.get("style_assessment", "modern")],
             functional_requirements=functional_requirements,
-            max_recommendations=max_products
+            max_recommendations=max_products,
         )
 
         # Get ML-enhanced recommendations
-        recommendation_response = await recommendation_engine.get_recommendations(
-            recommendation_request, db, user_id
-        )
+        recommendation_response = await recommendation_engine.get_recommendations(recommendation_request, db, user_id)
 
         # Enhance recommendations with visualization-specific data
         enhanced_recommendations = []
@@ -427,9 +401,7 @@ async def recommend_products_for_visualization(
 
             if product:
                 # Get optimal placement position for this product type
-                optimal_placement = _get_optimal_placement(
-                    product, spatial_analysis, room_analysis
-                )
+                optimal_placement = _get_optimal_placement(product, spatial_analysis, room_analysis)
 
                 enhanced_rec = {
                     "product": {
@@ -438,14 +410,14 @@ async def recommend_products_for_visualization(
                         "price": product.price,
                         "brand": product.brand,
                         "category": product.category,
-                        "description": product.description
+                        "description": product.description,
                     },
                     "recommendation_scores": {
                         "overall_score": rec.overall_score,
                         "style_match": rec.style_match_score,
                         "functional_match": rec.functional_match_score,
                         "price_score": rec.price_score,
-                        "confidence": rec.confidence_score
+                        "confidence": rec.confidence_score,
                     },
                     "visualization_data": {
                         "optimal_placement": optimal_placement,
@@ -453,9 +425,9 @@ async def recommend_products_for_visualization(
                         "lighting_requirements": _get_lighting_requirements(product),
                         "compatibility_with_existing": _check_compatibility_with_existing(
                             product, room_analysis.get("existing_furniture", [])
-                        )
+                        ),
                     },
-                    "reasoning": rec.reasoning
+                    "reasoning": rec.reasoning,
                 }
                 enhanced_recommendations.append(enhanced_rec)
 
@@ -466,15 +438,15 @@ async def recommend_products_for_visualization(
                 "processing_time": recommendation_response.processing_time,
                 "personalization_level": recommendation_response.personalization_level,
                 "diversity_score": recommendation_response.diversity_score,
-                "strategy_used": recommendation_response.recommendation_strategy
+                "strategy_used": recommendation_response.recommendation_strategy,
             },
             "visualization_context": {
                 "room_type": room_context["room_type"],
                 "style_theme": room_analysis.get("style_assessment"),
                 "available_spaces": len(spatial_analysis.get("available_spaces", [])),
-                "placement_opportunities": len(placement_suggestions)
+                "placement_opportunities": len(placement_suggestions),
             },
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
     except Exception as e:
@@ -491,7 +463,7 @@ async def generate_visualization_with_ml_recommendations(
     auto_select_products: bool = True,
     max_products: int = 5,
     user_id: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Generate visualization using ML-recommended products automatically"""
     try:
@@ -501,7 +473,7 @@ async def generate_visualization_with_ml_recommendations(
             room_context = {
                 "room_type": room_analysis.get("room_type", "living_room"),
                 "dimensions": room_analysis.get("dimensions", {}),
-                "style_assessment": room_analysis.get("style_assessment", "modern")
+                "style_assessment": room_analysis.get("style_assessment", "modern"),
             }
 
             # Create recommendation request
@@ -509,13 +481,11 @@ async def generate_visualization_with_ml_recommendations(
                 user_preferences=user_preferences or {},
                 room_context=room_context,
                 style_preferences=[room_analysis.get("style_assessment", "modern")],
-                max_recommendations=max_products
+                max_recommendations=max_products,
             )
 
             # Get recommendations
-            recommendation_response = await recommendation_engine.get_recommendations(
-                recommendation_request, db, user_id
-            )
+            recommendation_response = await recommendation_engine.get_recommendations(recommendation_request, db, user_id)
 
             # Convert recommendations to product data for visualization
             products_for_visualization = []
@@ -535,7 +505,7 @@ async def generate_visualization_with_ml_recommendations(
                         "category": product.category,
                         "style": _extract_product_style(product),
                         "placement": placement,
-                        "confidence": rec.confidence_score
+                        "confidence": rec.confidence_score,
                     }
                     products_for_visualization.append(product_viz_data)
 
@@ -545,12 +515,14 @@ async def generate_visualization_with_ml_recommendations(
         # Calculate placement positions using spatial analysis
         placement_positions = []
         for i, product_data in enumerate(products_for_visualization):
-            placement_positions.append({
-                "product_id": product_data["id"],
-                "position": product_data["placement"]["position"],
-                "orientation": product_data["placement"]["orientation"],
-                "scale": product_data["placement"]["scale"]
-            })
+            placement_positions.append(
+                {
+                    "product_id": product_data["id"],
+                    "position": product_data["placement"]["position"],
+                    "orientation": product_data["placement"]["orientation"],
+                    "scale": product_data["placement"]["scale"],
+                }
+            )
 
         # Generate visualization
         from services.google_ai_service import VisualizationRequest
@@ -561,7 +533,7 @@ async def generate_visualization_with_ml_recommendations(
             placement_positions=placement_positions,
             lighting_conditions=room_analysis.get("lighting_conditions", "natural"),
             render_quality="high",
-            style_consistency=True
+            style_consistency=True,
         )
 
         # Generate the visualization
@@ -574,22 +546,22 @@ async def generate_visualization_with_ml_recommendations(
                     "overall_quality": visualization_result.quality_score,
                     "placement_accuracy": visualization_result.placement_accuracy,
                     "lighting_realism": visualization_result.lighting_realism,
-                    "confidence_score": visualization_result.confidence_score
+                    "confidence_score": visualization_result.confidence_score,
                 },
-                "processing_time": visualization_result.processing_time
+                "processing_time": visualization_result.processing_time,
             },
             "products_used": products_for_visualization,
             "ml_recommendations": {
                 "strategy_used": recommendation_response.recommendation_strategy if auto_select_products else "manual",
                 "personalization_level": recommendation_response.personalization_level if auto_select_products else 0.0,
-                "total_candidates": recommendation_response.total_found if auto_select_products else 0
+                "total_candidates": recommendation_response.total_found if auto_select_products else 0,
             },
             "spatial_optimization": {
                 "placement_method": "ai_optimized",
                 "layout_efficiency": _calculate_layout_efficiency(placement_positions, spatial_analysis),
-                "traffic_flow_maintained": _check_traffic_flow(placement_positions, spatial_analysis)
+                "traffic_flow_maintained": _check_traffic_flow(placement_positions, spatial_analysis),
             },
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
     except Exception as e:
@@ -598,6 +570,7 @@ async def generate_visualization_with_ml_recommendations(
 
 
 # Helper functions for visualization-specific recommendations
+
 
 def _get_optimal_placement(product: Product, spatial_analysis: Dict, room_analysis: Dict) -> Dict[str, Any]:
     """Calculate optimal placement for a product based on spatial analysis"""
@@ -613,7 +586,7 @@ def _get_optimal_placement(product: Product, spatial_analysis: Dict, room_analys
             "position": "center",
             "orientation": "facing_main_focal_point",
             "scale": "appropriate",
-            "reasoning": "Default placement"
+            "reasoning": "Default placement",
         }
 
         # Look for specific placement suggestions for this product type
@@ -623,7 +596,7 @@ def _get_optimal_placement(product: Product, spatial_analysis: Dict, room_analys
                     "position": suggestion.get("recommended_position", "center"),
                     "orientation": suggestion.get("orientation", "facing_main_focal_point"),
                     "scale": suggestion.get("distance_from_wall", "18_inches"),
-                    "reasoning": suggestion.get("reasoning", "Optimized for room layout")
+                    "reasoning": suggestion.get("reasoning", "Optimized for room layout"),
                 }
                 break
 
@@ -651,11 +624,7 @@ def _get_scale_recommendation(product: Product, room_analysis: Dict) -> Dict[str
             scale_factor = "large"
             size_recommendation = "Can accommodate larger pieces"
 
-        return {
-            "scale_factor": scale_factor,
-            "size_recommendation": size_recommendation,
-            "room_area": room_area
-        }
+        return {"scale_factor": scale_factor, "size_recommendation": size_recommendation, "room_area": room_area}
 
     except Exception:
         return {"scale_factor": "medium", "size_recommendation": "Standard sizing", "room_area": 200}
@@ -670,7 +639,7 @@ def _get_lighting_requirements(product: Product) -> List[str]:
         "dining": ["overhead_lighting", "ambient_lighting"],
         "workspace": ["task_lighting", "ambient_lighting"],
         "storage": ["accent_lighting"],
-        "decoration": ["accent_lighting", "highlighting"]
+        "decoration": ["accent_lighting", "highlighting"],
     }
 
     return lighting_map.get(product_function, ["ambient_lighting"])
@@ -703,11 +672,16 @@ def _check_compatibility_with_existing(product: Product, existing_furniture: Lis
             "compatibility_score": compatibility_score,
             "notes": compatibility_notes,
             "existing_styles": existing_styles,
-            "product_style": product_style
+            "product_style": product_style,
         }
 
     except Exception:
-        return {"compatibility_score": 0.7, "notes": ["Standard compatibility"], "existing_styles": [], "product_style": "modern"}
+        return {
+            "compatibility_score": 0.7,
+            "notes": ["Standard compatibility"],
+            "existing_styles": [],
+            "product_style": "modern",
+        }
 
 
 def _extract_product_style(product: Product) -> str:
@@ -716,7 +690,7 @@ def _extract_product_style(product: Product) -> str:
         "modern": ["modern", "contemporary", "sleek", "minimalist"],
         "traditional": ["traditional", "classic", "ornate", "elegant"],
         "rustic": ["rustic", "farmhouse", "reclaimed", "weathered"],
-        "scandinavian": ["scandinavian", "nordic", "hygge", "light"]
+        "scandinavian": ["scandinavian", "nordic", "hygge", "light"],
     }
 
     product_text = (product.name + " " + (product.description or "")).lower()
@@ -731,10 +705,17 @@ def _extract_product_style(product: Product) -> str:
 def _extract_product_function(product: Product) -> str:
     """Extract primary function from product (same as in recommendation engine)"""
     function_map = {
-        "sofa": "seating", "chair": "seating", "armchair": "seating",
-        "table": "dining", "desk": "workspace", "bed": "sleeping",
-        "dresser": "storage", "bookshelf": "storage", "cabinet": "storage",
-        "lamp": "lighting", "chandelier": "lighting"
+        "sofa": "seating",
+        "chair": "seating",
+        "armchair": "seating",
+        "table": "dining",
+        "desk": "workspace",
+        "bed": "sleeping",
+        "dresser": "storage",
+        "bookshelf": "storage",
+        "cabinet": "storage",
+        "lamp": "lighting",
+        "chandelier": "lighting",
     }
 
     product_name = product.name.lower()
@@ -788,3 +769,152 @@ def _check_traffic_flow(placement_positions: List[Dict], spatial_analysis: Dict)
 
     except Exception:
         return True
+
+
+# Furniture Position Management Endpoints
+
+
+@router.post("/sessions/{session_id}/furniture-positions")
+async def save_furniture_positions(session_id: str, positions: List[Dict[str, Any]], db: AsyncSession = Depends(get_db)):
+    """Save furniture positions for a visualization session"""
+    try:
+        from database.models import FurniturePosition
+        from sqlalchemy import delete
+
+        # Delete existing positions for this session
+        delete_stmt = delete(FurniturePosition).where(FurniturePosition.session_id == session_id)
+        await db.execute(delete_stmt)
+
+        # Insert new positions
+        saved_positions = []
+        for pos in positions:
+            furniture_position = FurniturePosition(
+                session_id=session_id,
+                product_id=int(pos.get("productId")),
+                x=float(pos.get("x")),
+                y=float(pos.get("y")),
+                width=float(pos.get("width")) if pos.get("width") else None,
+                height=float(pos.get("height")) if pos.get("height") else None,
+                label=pos.get("label"),
+                is_ai_placed=pos.get("isAiPlaced", False),
+            )
+            db.add(furniture_position)
+            saved_positions.append(furniture_position)
+
+        await db.commit()
+
+        return {
+            "session_id": session_id,
+            "positions_saved": len(saved_positions),
+            "status": "success",
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error saving furniture positions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save positions: {str(e)}")
+
+
+@router.get("/sessions/{session_id}/furniture-positions")
+async def get_furniture_positions(session_id: str, db: AsyncSession = Depends(get_db)):
+    """Get saved furniture positions for a visualization session"""
+    try:
+        from database.models import FurniturePosition
+        from sqlalchemy import select
+
+        # Query positions for this session
+        query = select(FurniturePosition).where(FurniturePosition.session_id == session_id)
+        result = await db.execute(query)
+        positions = result.scalars().all()
+
+        # Format positions for frontend
+        formatted_positions = []
+        for pos in positions:
+            formatted_positions.append(
+                {
+                    "productId": str(pos.product_id),
+                    "x": pos.x,
+                    "y": pos.y,
+                    "width": pos.width,
+                    "height": pos.height,
+                    "label": pos.label,
+                    "isAiPlaced": pos.is_ai_placed,
+                    "createdAt": pos.created_at.isoformat(),
+                    "updatedAt": pos.updated_at.isoformat(),
+                }
+            )
+
+        return {
+            "session_id": session_id,
+            "positions": formatted_positions,
+            "total_count": len(formatted_positions),
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    except Exception as e:
+        logger.error(f"Error retrieving furniture positions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve positions: {str(e)}")
+
+
+@router.put("/sessions/{session_id}/furniture-positions/{product_id}")
+async def update_furniture_position(
+    session_id: str, product_id: int, position_update: Dict[str, Any], db: AsyncSession = Depends(get_db)
+):
+    """Update a specific furniture position"""
+    try:
+        from database.models import FurniturePosition
+        from sqlalchemy import select, update
+
+        # Update position
+        update_stmt = (
+            update(FurniturePosition)
+            .where(FurniturePosition.session_id == session_id)
+            .where(FurniturePosition.product_id == product_id)
+            .values(
+                x=float(position_update.get("x")),
+                y=float(position_update.get("y")),
+                width=float(position_update.get("width")) if position_update.get("width") else None,
+                height=float(position_update.get("height")) if position_update.get("height") else None,
+                is_ai_placed=False,  # Mark as user-adjusted
+                updated_at=datetime.utcnow(),
+            )
+        )
+        await db.execute(update_stmt)
+        await db.commit()
+
+        return {
+            "session_id": session_id,
+            "product_id": product_id,
+            "status": "updated",
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error updating furniture position: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update position: {str(e)}")
+
+
+@router.delete("/sessions/{session_id}/furniture-positions")
+async def delete_all_furniture_positions(session_id: str, db: AsyncSession = Depends(get_db)):
+    """Delete all furniture positions for a session"""
+    try:
+        from database.models import FurniturePosition
+        from sqlalchemy import delete
+
+        delete_stmt = delete(FurniturePosition).where(FurniturePosition.session_id == session_id)
+        result = await db.execute(delete_stmt)
+        await db.commit()
+
+        return {
+            "session_id": session_id,
+            "positions_deleted": result.rowcount,
+            "status": "success",
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error deleting furniture positions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete positions: {str(e)}")

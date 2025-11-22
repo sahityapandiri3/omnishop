@@ -272,3 +272,68 @@ export const analyticsAPI = {
   trackSearch: async (query: string, results_count: number) => { /* Mock */ },
   trackChatInteraction: async (sessionId: string, messageType: string) => { /* Mock */ }
 };
+
+// Furniture Position Management API
+export interface FurniturePositionData {
+  productId: string;
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  label?: string;
+  isAiPlaced?: boolean;
+}
+
+export const furniturePositionAPI = {
+  /**
+   * Save furniture positions for a visualization session
+   */
+  savePositions: async (sessionId: string, positions: FurniturePositionData[]) => {
+    try {
+      const response = await api.post(`/api/visualization/sessions/${sessionId}/furniture-positions`, positions);
+      return response.data;
+    } catch (error) {
+      console.error('Error saving furniture positions:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get saved furniture positions for a visualization session
+   */
+  getPositions: async (sessionId: string) => {
+    try {
+      const response = await api.get(`/api/visualization/sessions/${sessionId}/furniture-positions`);
+      return response.data;
+    } catch (error) {
+      console.error('Error retrieving furniture positions:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Update a specific furniture position
+   */
+  updatePosition: async (sessionId: string, productId: number, positionUpdate: Partial<FurniturePositionData>) => {
+    try {
+      const response = await api.put(`/api/visualization/sessions/${sessionId}/furniture-positions/${productId}`, positionUpdate);
+      return response.data;
+    } catch (error) {
+      console.error('Error updating furniture position:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Delete all furniture positions for a session
+   */
+  deleteAllPositions: async (sessionId: string) => {
+    try {
+      const response = await api.delete(`/api/visualization/sessions/${sessionId}/furniture-positions`);
+      return response.data;
+    } catch (error) {
+      console.error('Error deleting furniture positions:', error);
+      throw error;
+    }
+  }
+};
