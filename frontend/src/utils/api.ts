@@ -142,7 +142,7 @@ export const startChatSession = async (data?: { user_id?: string }) => {
   }
 };
 
-export const sendChatMessage = async (sessionId: string, data: { message: string; image?: string; selected_product_id?: string }) => {
+export const sendChatMessage = async (sessionId: string, data: { message: string; image?: string; selected_product_id?: string; selected_stores?: string[] }) => {
   try {
     const response = await api.post(`/api/chat/sessions/${sessionId}/messages`, data);
     return response.data;
@@ -195,6 +195,38 @@ export const redoVisualization = async (sessionId: string) => {
     return response.data;
   } catch (error) {
     console.error('Error redoing visualization:', error);
+    throw error;
+  }
+};
+
+// Furniture removal API
+export const startFurnitureRemoval = async (image: string): Promise<{ job_id: string; status: string }> => {
+  try {
+    const response = await api.post('/api/furniture/remove', { image });
+    return response.data;
+  } catch (error) {
+    console.error('Error starting furniture removal:', error);
+    throw error;
+  }
+};
+
+export const checkFurnitureRemovalStatus = async (jobId: string): Promise<{ job_id: string; status: string; image?: string }> => {
+  try {
+    const response = await api.get(`/api/furniture/status/${jobId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error checking furniture removal status:', error);
+    throw error;
+  }
+};
+
+// Stores API
+export const getAvailableStores = async (): Promise<{ stores: string[] }> => {
+  try {
+    const response = await api.get('/api/stores');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching available stores:', error);
     throw error;
   }
 };

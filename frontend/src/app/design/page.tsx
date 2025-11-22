@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import ChatPanel from '@/components/panels/ChatPanel';
 import ProductDiscoveryPanel from '@/components/panels/ProductDiscoveryPanel';
 import CanvasPanel from '@/components/panels/CanvasPanel';
+import { checkFurnitureRemovalStatus, startFurnitureRemoval, getAvailableStores } from '@/utils/api';
 
 /**
  * New UI V2: Three-Panel Design Interface
@@ -22,7 +23,16 @@ export default function DesignPage() {
   const [canvasProducts, setCanvasProducts] = useState<any[]>([]);
   const [productRecommendations, setProductRecommendations] = useState<any[]>([]);
 
-  // Load room image from sessionStorage on mount
+  // Furniture removal state
+  const [isProcessingFurniture, setIsProcessingFurniture] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState<string>('');
+
+  // Store selection state
+  const [selectedStores, setSelectedStores] = useState<string[]>([]);
+  const [showStoreModal, setShowStoreModal] = useState(false);
+  const [availableStores, setAvailableStores] = useState<string[]>([]);
+
+  // Load room image and stores from sessionStorage on mount
   useEffect(() => {
     const storedImage = sessionStorage.getItem('roomImage');
     if (storedImage) {
@@ -30,10 +40,76 @@ export default function DesignPage() {
       // Don't clear sessionStorage immediately - keep it for refresh
     }
 
+    // Load primary store selection from sessionStorage
+    const storedStores = sessionStorage.getItem('primaryStores');
+    if (storedStores) {
+      try {
+        const parsed = JSON.parse(storedStores);
+        setSelectedStores(parsed);
+        console.log('[DesignPage] Loaded stores from sessionStorage:', parsed);
+      } catch (e) {
+        console.error('[DesignPage] Failed to parse stored stores:', e);
+      }
+    }
+
+    // Fetch available stores for the modal
+    const fetchStores = async () => {
+      try {
+        const response = await getAvailableStores();
+        setAvailableStores(response.stores);
+      } catch (error) {
+        console.error('[DesignPage] Failed to fetch available stores:', error);
+      }
+    };
+    fetchStores();
+
     // Clear session ID on page load to start fresh
     // This prevents old visualization history from bleeding into new sessions
     sessionStorage.removeItem('design_session_id');
     console.log('[DesignPage] Cleared session ID on page load - starting fresh session');
+  }, []);
+
+  // Poll for furniture removal job completion
+  useEffect(() => {
+    const jobId = sessionStorage.getItem('furnitureRemovalJobId');
+    if (!jobId) return;
+
+    console.log('[DesignPage] Found furniture removal job:', jobId);
+    setIsProcessingFurniture(true);
+    setProcessingStatus('Removing existing furniture from your room...');
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const status = await checkFurnitureRemovalStatus(jobId);
+        console.log('[DesignPage] Furniture removal status:', status);
+
+        if (status.status === 'completed') {
+          console.log('[DesignPage] Furniture removal completed successfully');
+          if (status.image) {
+            setRoomImage(status.image);
+            sessionStorage.setItem('roomImage', status.image);
+          }
+          sessionStorage.removeItem('furnitureRemovalJobId');
+          setIsProcessingFurniture(false);
+          setProcessingStatus('');
+          clearInterval(pollInterval);
+        } else if (status.status === 'failed') {
+          console.log('[DesignPage] Furniture removal failed, using original image');
+          sessionStorage.removeItem('furnitureRemovalJobId');
+          setIsProcessingFurniture(false);
+          setProcessingStatus('');
+          clearInterval(pollInterval);
+        } else if (status.status === 'processing') {
+          setProcessingStatus('Processing your room image (this may take a moment)...');
+        }
+      } catch (error) {
+        console.error('[DesignPage] Error checking furniture removal status:', error);
+        // Don't stop polling on error, the job might still be processing
+      }
+    }, 2000); // Poll every 2 seconds
+
+    // Cleanup on unmount
+    return () => clearInterval(pollInterval);
   }, []);
 
   // Handle product recommendation from chat
@@ -129,9 +205,36 @@ export default function DesignPage() {
     setCanvasProducts([]);
   };
 
-  // Handle room image upload
-  const handleRoomImageUpload = (imageData: string) => {
-    setRoomImage(imageData);
+  // Handle room image upload with furniture removal
+  const handleRoomImageUpload = async (imageData: string) => {
+    try {
+      console.log('[DesignPage] Starting furniture removal for uploaded image...');
+      setIsProcessingFurniture(true);
+      setProcessingStatus('Removing existing furniture from your room...');
+
+      // Start async furniture removal
+      const response = await startFurnitureRemoval(imageData);
+      sessionStorage.setItem('furnitureRemovalJobId', response.job_id);
+      sessionStorage.setItem('roomImage', imageData);
+
+      console.log('[DesignPage] Furniture removal started:', response);
+      // Polling will be handled by the useEffect
+    } catch (error) {
+      console.error('[DesignPage] Error starting furniture removal:', error);
+      // On error, use original image
+      setRoomImage(imageData);
+      sessionStorage.setItem('roomImage', imageData);
+      setIsProcessingFurniture(false);
+      setProcessingStatus('');
+    }
+  };
+
+  // Handle store selection change
+  const handleStoreSelectionChange = (stores: string[]) => {
+    setSelectedStores(stores);
+    sessionStorage.setItem('primaryStores', JSON.stringify(stores));
+    console.log('[DesignPage] Updated store selection:', stores);
+    // Note: User will need to re-fetch products by sending a new chat message
   };
 
   return (
@@ -145,9 +248,16 @@ export default function DesignPage() {
           </h1>
         </div>
         <div className="flex items-center gap-3">
-          <span className="hidden sm:inline-block text-sm text-neutral-600 dark:text-neutral-400 px-3 py-1 bg-neutral-100 dark:bg-neutral-700 rounded-full">
-            New UI V2
-          </span>
+          {/* Store Selection Button */}
+          <button
+            onClick={() => setShowStoreModal(true)}
+            className="hidden sm:flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300 px-3 py-1.5 bg-neutral-100 dark:bg-neutral-700 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-600 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+            </svg>
+            {selectedStores.length === 0 ? 'All Stores' : `${selectedStores.length} Store${selectedStores.length > 1 ? 's' : ''}`}
+          </button>
           <button className="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg transition-colors">
             <svg
               className="w-5 h-5 text-neutral-600 dark:text-neutral-400"
@@ -171,6 +281,31 @@ export default function DesignPage() {
           </button>
         </div>
       </header>
+
+      {/* Processing Overlay */}
+      {isProcessingFurniture && (
+        <div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center">
+          <div className="bg-white dark:bg-neutral-800 rounded-2xl shadow-2xl p-8 max-w-md mx-4">
+            <div className="text-center">
+              <div className="w-16 h-16 mx-auto mb-4">
+                <svg className="animate-spin h-16 w-16 text-primary-600" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-neutral-900 dark:text-white mb-2">
+                Processing Your Room
+              </h3>
+              <p className="text-neutral-600 dark:text-neutral-400">
+                {processingStatus}
+              </p>
+              <p className="text-sm text-neutral-500 dark:text-neutral-500 mt-4">
+                This may take up to 30 seconds. Please wait...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mobile Tab Navigation */}
       <div className="lg:hidden bg-white dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700 px-4">
@@ -236,6 +371,7 @@ export default function DesignPage() {
             <ChatPanel
               onProductRecommendations={handleProductRecommendations}
               roomImage={roomImage}
+              selectedStores={selectedStores}
             />
           </div>
 
@@ -267,6 +403,7 @@ export default function DesignPage() {
             <ChatPanel
               onProductRecommendations={handleProductRecommendations}
               roomImage={roomImage}
+              selectedStores={selectedStores}
             />
           </div>
           <div className={`h-full ${activeTab === 'products' ? 'block' : 'hidden'}`}>
@@ -288,6 +425,128 @@ export default function DesignPage() {
           </div>
         </div>
       </div>
+
+      {/* Store Selection Modal */}
+      {showStoreModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-neutral-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-neutral-200 dark:border-neutral-700 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-neutral-900 dark:text-white">
+                Select Stores
+              </h2>
+              <button
+                onClick={() => setShowStoreModal(false)}
+                className="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto max-h-[calc(80vh-140px)]">
+              {/* Action Buttons */}
+              <div className="flex gap-3 mb-6">
+                <button
+                  onClick={() => handleStoreSelectionChange([...availableStores])}
+                  className="flex-1 bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 py-2 px-4 rounded-lg hover:bg-primary-200 dark:hover:bg-primary-800 transition font-medium"
+                >
+                  Select All
+                </button>
+                <button
+                  onClick={() => handleStoreSelectionChange([])}
+                  className="flex-1 bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 py-2 px-4 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-600 transition font-medium"
+                >
+                  Clear All
+                </button>
+              </div>
+
+              {/* Selection Info */}
+              <div className="mb-6 text-center">
+                <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                  {selectedStores.length === 0 ? (
+                    <span className="text-primary-600 dark:text-primary-400 font-semibold">
+                      No stores selected - will search all {availableStores.length} stores
+                    </span>
+                  ) : (
+                    <span>
+                      Selected <span className="font-semibold text-primary-600 dark:text-primary-400">{selectedStores.length}</span> of {availableStores.length} stores
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              {/* Store Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {availableStores.map((store) => {
+                  const isSelected = selectedStores.includes(store);
+                  return (
+                    <button
+                      key={store}
+                      onClick={() => {
+                        const updated = isSelected
+                          ? selectedStores.filter((s) => s !== store)
+                          : [...selectedStores, store];
+                        handleStoreSelectionChange(updated);
+                      }}
+                      className={`
+                        p-4 rounded-lg border-2 transition-all duration-200
+                        ${
+                          isSelected
+                            ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 shadow-md'
+                            : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:border-primary-300 dark:hover:border-primary-700 hover:bg-primary-50 dark:hover:bg-primary-900/10'
+                        }
+                      `}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium capitalize text-left">
+                          {store.replace(/([A-Z])/g, ' $1').trim()}
+                        </span>
+                        {isSelected && (
+                          <svg
+                            className="w-5 h-5 text-primary-600 dark:text-primary-400 flex-shrink-0"
+                            fill="currentColor"
+                            viewBox="0 0 20 20"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900">
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowStoreModal(false)}
+                  className="flex-1 bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 py-2.5 px-4 rounded-lg hover:bg-neutral-300 dark:hover:bg-neutral-600 transition font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => setShowStoreModal(false)}
+                  className="flex-1 bg-gradient-to-r from-primary-600 to-secondary-600 text-white py-2.5 px-4 rounded-lg hover:from-primary-700 hover:to-secondary-700 transition font-medium shadow-lg"
+                >
+                  Apply Selection
+                </button>
+              </div>
+              <p className="text-xs text-neutral-500 dark:text-neutral-500 mt-3 text-center">
+                Changes will apply to new product searches. Send a new message to the AI to see updated results.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -29,7 +29,7 @@ try:
 
     # from core.database import database
     from core.logging import setup_logging
-    from routers import categories, chat, products, visualization
+    from routers import categories, chat, furniture, products, stores, visualization
 
     # Setup logging
     setup_logging()
@@ -91,7 +91,8 @@ async def lifespan(app: FastAPI):
     if db_url:
         # Sanitize database URL
         import re
-        sanitized = re.sub(r':\/\/[^:]*:[^@]*@', '://***:***@', db_url)
+
+        sanitized = re.sub(r":\/\/[^:]*:[^@]*@", "://***:***@", db_url)
         logger.info(f"✅ DATABASE_URL is set: {sanitized}")
     else:
         logger.error("❌ DATABASE_URL is NOT set!")
@@ -234,31 +235,22 @@ async def test_openai():
     api_key = os.getenv("OPENAI_API_KEY", "")
 
     if not api_key:
-        return {
-            "status": "error",
-            "message": "OPENAI_API_KEY not set"
-        }
+        return {"status": "error", "message": "OPENAI_API_KEY not set"}
 
     try:
         client = openai.AsyncOpenAI(api_key=api_key, timeout=10.0)
         response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": "Say 'API test successful'"}],
-            max_tokens=10
+            model="gpt-4o", messages=[{"role": "user", "content": "Say 'API test successful'"}], max_tokens=10
         )
 
         return {
             "status": "success",
             "message": "OpenAI API is working",
             "response": response.choices[0].message.content,
-            "model": response.model
+            "model": response.model,
         }
     except Exception as e:
-        return {
-            "status": "error",
-            "message": f"OpenAI API test failed: {str(e)}",
-            "error_type": type(e).__name__
-        }
+        return {"status": "error", "message": f"OpenAI API test failed: {str(e)}", "error_type": type(e).__name__}
 
 
 # Include routers
@@ -273,6 +265,12 @@ if "chat" in dir():
 
 if "visualization" in dir():
     app.include_router(visualization.router, prefix="/api", tags=["visualization"])
+
+if "stores" in dir():
+    app.include_router(stores.router, tags=["stores"])
+
+if "furniture" in dir():
+    app.include_router(furniture.router, tags=["furniture"])
 
 # Additional routers can be added here as needed
 

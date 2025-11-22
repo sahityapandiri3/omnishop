@@ -4,11 +4,13 @@ import React, { useState, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { startFurnitureRemoval } from '@/utils/api';
 
 export default function HomePage() {
   const router = useRouter();
   const [roomImage, setRoomImage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isStartingRemoval, setIsStartingRemoval] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle file selection
@@ -63,29 +65,45 @@ export default function HomePage() {
     }
   };
 
-  // Navigate to design studio with image
-  const handleContinueWithImage = () => {
-    if (roomImage) {
-      try {
-        console.log('[HomePage] Storing room image and navigating to /design');
-        // Store in sessionStorage for use in design page
-        sessionStorage.setItem('roomImage', roomImage);
-        console.log('[HomePage] Image stored, navigating now...');
-        router.push('/design');
-      } catch (error) {
-        console.error('[HomePage] Error navigating to design page:', error);
-        alert('Failed to navigate. Please try again.');
-      }
-    } else {
+  // Navigate to store selection with image and start furniture removal
+  const handleContinueWithImage = async () => {
+    if (!roomImage) {
       console.warn('[HomePage] No room image to upload');
       alert('Please upload a room image first');
+      return;
+    }
+
+    try {
+      setIsStartingRemoval(true);
+      console.log('[HomePage] Starting furniture removal process...');
+
+      // Start async furniture removal in background
+      const response = await startFurnitureRemoval(roomImage);
+      console.log('[HomePage] Furniture removal started:', response);
+
+      // Store job_id and original image in sessionStorage
+      sessionStorage.setItem('furnitureRemovalJobId', response.job_id);
+      sessionStorage.setItem('roomImage', roomImage);
+
+      console.log('[HomePage] Navigating to /store-select...');
+      // Navigate to store selection immediately (processing continues in background)
+      router.push('/store-select');
+    } catch (error) {
+      console.error('[HomePage] Error starting furniture removal:', error);
+      // On error, still allow user to proceed with original image
+      sessionStorage.setItem('roomImage', roomImage);
+      sessionStorage.removeItem('furnitureRemovalJobId'); // Clear any existing job
+      router.push('/store-select');
+    } finally {
+      setIsStartingRemoval(false);
     }
   };
 
-  // Navigate to design studio without image
+  // Navigate to store selection without image
   const handleSkipUpload = () => {
     sessionStorage.removeItem('roomImage');
-    router.push('/design');
+    sessionStorage.removeItem('furnitureRemovalJobId');
+    router.push('/store-select');
   };
 
   return (
@@ -215,14 +233,25 @@ export default function HomePage() {
             <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
               <button
                 onClick={handleContinueWithImage}
-                disabled={!roomImage}
+                disabled={!roomImage || isStartingRemoval}
                 className="btn btn-primary btn-lg px-8 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Upload & Continue
+                {isStartingRemoval ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 inline-block" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Processing...
+                  </>
+                ) : (
+                  'Upload & Continue'
+                )}
               </button>
               <button
                 onClick={handleSkipUpload}
-                className="btn btn-outline btn-lg px-8"
+                disabled={isStartingRemoval}
+                className="btn btn-outline btn-lg px-8 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Upload Later
               </button>

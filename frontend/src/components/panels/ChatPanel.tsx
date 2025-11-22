@@ -12,6 +12,7 @@ interface Message {
 interface ChatPanelProps {
   onProductRecommendations: (products: any[]) => void;
   roomImage: string | null;
+  selectedStores?: string[];
 }
 
 /**
@@ -21,6 +22,7 @@ interface ChatPanelProps {
 export default function ChatPanel({
   onProductRecommendations,
   roomImage,
+  selectedStores = [],
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -89,6 +91,7 @@ export default function ChatPanel({
       const response = await sendChatMessage(sessionId, {
         message: combinedMessage,
         image: roomImage || undefined,
+        selected_stores: selectedStores.length > 0 ? selectedStores : undefined,
       });
 
       // Check if request was aborted

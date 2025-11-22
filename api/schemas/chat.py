@@ -1,14 +1,16 @@
 """
 Pydantic schemas for chat-related API endpoints
 """
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class MessageType(str, Enum):
     """Chat message types"""
+
     user = "user"
     assistant = "assistant"
     system = "system"
@@ -16,6 +18,7 @@ class MessageType(str, Enum):
 
 class ChatMessageSchema(BaseModel):
     """Chat message schema"""
+
     id: str
     type: MessageType
     content: str
@@ -30,6 +33,7 @@ class ChatMessageSchema(BaseModel):
 
 class ChatSessionSchema(BaseModel):
     """Chat session schema"""
+
     id: str
     created_at: datetime
     updated_at: datetime
@@ -42,6 +46,7 @@ class ChatSessionSchema(BaseModel):
 
 class DesignAnalysisSchema(BaseModel):
     """Design analysis schema from ChatGPT"""
+
     design_analysis: Dict[str, Any]
     product_matching_criteria: Optional[Dict[str, Any]] = {}
     visualization_guidance: Optional[Dict[str, Any]] = {}
@@ -55,15 +60,18 @@ class DesignAnalysisSchema(BaseModel):
 
 class ChatMessageRequest(BaseModel):
     """Request to send a chat message"""
+
     message: str = Field(..., max_length=2000)
     session_id: Optional[str] = None
     image: Optional[str] = None  # Base64 encoded image
     selected_product_id: Optional[str] = None  # Product ID user wants to visualize
     user_action: Optional[str] = None  # "add" or "replace"
+    selected_stores: Optional[List[str]] = None  # Filter products by selected stores
 
 
 class ChatMessageResponse(BaseModel):
     """Response from chat message"""
+
     message: ChatMessageSchema
     analysis: Optional[DesignAnalysisSchema] = None
     recommended_products: Optional[List[Dict[str, Any]]] = None
@@ -75,16 +83,19 @@ class ChatMessageResponse(BaseModel):
 
 class ChatHistoryResponse(BaseModel):
     """Chat history response"""
+
     session: ChatSessionSchema
     messages: List[ChatMessageSchema]
 
 
 class StartSessionRequest(BaseModel):
     """Request to start a new chat session"""
+
     user_id: Optional[str] = None
 
 
 class StartSessionResponse(BaseModel):
     """Response for starting a new session"""
+
     session_id: str
     message: str = "Hello! I'm your AI interior design assistant. How can I help you transform your space today?"

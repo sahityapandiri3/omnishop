@@ -553,6 +553,139 @@ CRITICAL: Keep sofas, chairs, tables, and lamps SEPARATE:
             logger.error(f"Error checking furniture existence: {e}")
             return (False, [])
 
+    async def remove_furniture(self, image_base64: str, max_retries: int = 3) -> Optional[str]:
+        """
+        Remove all furniture from room image
+        Returns: base64 encoded image with furniture removed, or None on failure
+        """
+        try:
+            processed_image = self._preprocess_image(image_base64)
+
+            prompt = """You are an expert at removing ALL moveable objects from room images.
+
+CRITICAL TASK: Remove EVERY SINGLE moveable item from this room. The room must be COMPLETELY EMPTY except for permanent architectural features.
+
+MUST REMOVE - DO NOT LEAVE ANY OF THESE ITEMS:
+
+FURNITURE (remove ALL):
+- Sofas, couches, sectionals, loveseats
+- Chairs: dining chairs, armchairs, office chairs, accent chairs, stools, benches
+- Tables: coffee tables, side tables, end tables, console tables, dining tables, desks
+- Beds, bed frames, mattresses, headboards
+- Storage: dressers, cabinets, shelving units, bookcases, media consoles, TV stands
+- Ottomans, poufs, storage cubes
+
+ELECTRONICS & APPLIANCES (remove ALL):
+- Televisions (wall-mounted or on stands)
+- Computers, monitors, laptops
+- Speakers, sound systems
+- Gaming consoles
+- Any other electronic devices
+
+LIGHTING FIXTURES (remove ALL MOVEABLE):
+- Table lamps (all types - bedside lamps, desk lamps, decorative lamps)
+- Floor lamps (all types - arc lamps, standing lamps, torchiere lamps)
+- Portable task lights
+- DO NOT remove: ceiling lights, wall sconces, recessed lighting (these are fixed)
+
+DECORATIVE ITEMS (remove ALL):
+- Picture frames, wall art that is not built-in
+- Vases, sculptures, figurines
+- Decorative bowls, trays, objects
+- Candles, candle holders
+- Clocks (unless built into wall)
+- Mirrors (unless built into wall/architecture)
+
+TEXTILES (remove ALL):
+- Rugs, carpets, area rugs, runners (all floor coverings that are not permanent flooring)
+- Curtains, drapes, window treatments (unless they are architectural/built-in)
+- Cushions, pillows, throws, blankets
+- Bedding, linens
+
+PLANTS & NATURE (remove ALL):
+- Potted plants, planters (all sizes)
+- Flower arrangements
+- Decorative branches, greenery
+
+MISCELLANEOUS (remove ALL):
+- Baskets, bins, storage containers
+- Books, magazines
+- Toys, games
+- Any other moveable objects
+
+PRESERVE ONLY THESE (do NOT remove):
+- Walls, ceiling, floors (permanent structure)
+- Windows, doors, door frames, window frames
+- Built-in architectural elements: moldings, baseboards, crown molding, wainscoting
+- ONLY fixed/permanent lighting: ceiling lights, recessed lights, wall sconces that are hardwired
+- Permanent flooring material (wood, tile, concrete - NOT rugs)
+- Built-in shelving or cabinets that are part of the architecture
+- Fireplace (if built-in)
+- Radiators, vents (if built-in)
+
+QUALITY REQUIREMENTS:
+1. The room MUST be completely empty - no moveable items remaining
+2. Maintain exact wall colors, floor colors, textures, materials
+3. Preserve lighting conditions, shadows, and ambiance
+4. Do NOT change room dimensions, perspective, or angle
+5. Fill areas where furniture was removed to match surrounding floor/wall seamlessly
+6. Result must look like a completely empty, unfurnished room ready for new furniture
+
+DOUBLE CHECK: Look at the image again and ensure EVERY table lamp, floor lamp, TV, console, rug, and moveable item has been removed. The room should be BARE."""
+
+            # Retry loop with exponential backoff
+            for attempt in range(max_retries):
+                try:
+                    logger.info(f"Furniture removal attempt {attempt + 1} of {max_retries}")
+
+                    parts = [
+                        types.Part.from_text(text=prompt),
+                        types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_image))),
+                    ]
+
+                    contents = [types.Content(role="user", parts=parts)]
+                    generate_content_config = types.GenerateContentConfig(
+                        response_modalities=["IMAGE"], temperature=0.3  # Lower temperature for consistency
+                    )
+
+                    # Generate furniture removal
+                    generated_image = None
+                    for chunk in self.genai_client.models.generate_content_stream(
+                        model="gemini-2.5-flash-image", contents=contents, config=generate_content_config
+                    ):
+                        if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+                            for part in chunk.candidates[0].content.parts:
+                                if part.inline_data and part.inline_data.data:
+                                    image_bytes = part.inline_data.data
+                                    mime_type = part.inline_data.mime_type or "image/png"
+                                    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+                                    generated_image = f"data:{mime_type};base64,{image_base64}"
+                                    logger.info(
+                                        f"Furniture removal successful on attempt {attempt + 1} ({len(image_bytes)} bytes)"
+                                    )
+
+                    if generated_image:
+                        return generated_image
+
+                    logger.warning(f"Furniture removal attempt {attempt + 1} produced no image")
+
+                except Exception as e:
+                    logger.error(f"Furniture removal attempt {attempt + 1} failed: {e}")
+                    if attempt < max_retries - 1:
+                        # Exponential backoff: 2, 4, 8 seconds
+                        sleep_time = 2 ** (attempt + 1)
+                        logger.info(f"Waiting {sleep_time}s before retry...")
+                        await asyncio.sleep(sleep_time)
+                    continue
+
+            # All retries failed
+            logger.error(f"Furniture removal failed after {max_retries} attempts")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error in furniture removal: {e}", exc_info=True)
+            return None
+
     async def generate_add_visualization(self, room_image: str, product_name: str, product_image: Optional[str] = None) -> str:
         """
         Generate visualization with product ADDED to room

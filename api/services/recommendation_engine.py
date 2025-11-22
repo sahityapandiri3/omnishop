@@ -42,6 +42,9 @@ class RecommendationRequest:
     styling_tips: Optional[List[str]] = None  # From AI designer: tips with product keywords for matching
     ai_product_types: Optional[List[str]] = None  # From AI stylist: validated product types (e.g., ['coffee table', 'sofa'])
 
+    # Store filtering
+    selected_stores: Optional[List[str]] = None  # Filter by specific stores/sources (empty or None = all stores)
+
 
 @dataclass
 class RecommendationResult:
@@ -564,6 +567,13 @@ class AdvancedRecommendationEngine:
 
         query = select(Product).where(Product.is_available)
 
+        # Apply store filtering if specified
+        if request.selected_stores and len(request.selected_stores) > 0:
+            logger.info(f"Filtering products by selected stores: {request.selected_stores}")
+            query = query.where(Product.source_website.in_(request.selected_stores))
+        else:
+            logger.info("No store filter applied - searching all stores")
+
         # Apply product keyword filter (MOST IMPORTANT - filter by what user asked for)
         logger.info(
             f"[CANDIDATE PRODUCTS DEBUG] request.product_keywords = {request.product_keywords}, type = {type(request.product_keywords)}"
@@ -1076,43 +1086,61 @@ class AdvancedRecommendationEngine:
         self, recommendations: List[RecommendationResult], request: RecommendationRequest
     ) -> List[RecommendationResult]:
         """
-        Apply diversity ranking to ensure products from multiple sources appear in results.
+        Apply diversity ranking with randomization to ensure products from multiple sources appear in varied order.
 
         Strategy:
         1. Group products by source_website
-        2. Sort each source's products by score
-        3. Use round-robin selection to pick from different sources
-        4. This ensures top products from ALL sources are included, not just one source
+        2. Create relevance tiers (high: 0.8+, medium: 0.5-0.8, low: <0.5)
+        3. Within each tier, shuffle products by source
+        4. Use randomized round-robin selection to pick from different sources
+        5. This ensures variety while maintaining relevance-based ordering
         """
         if not recommendations:
             return []
 
-        # Sort by overall score first
-        recommendations.sort(key=lambda x: x.overall_score, reverse=True)
-
-        # Group recommendations by source
+        import random
         from collections import defaultdict
 
+        # Group recommendations by source
         recommendations_by_source = defaultdict(list)
-
         for rec in recommendations:
             source = rec.source_website or "unknown"
             recommendations_by_source[source].append(rec)
 
-        # Sort each source's products by score (already sorted, but ensure)
+        # Shuffle sources list to randomize which source goes first
+        sources = list(recommendations_by_source.keys())
+        random.shuffle(sources)
+
+        # Create relevance tiers for each source
         for source in recommendations_by_source:
+            # Sort by score first
             recommendations_by_source[source].sort(key=lambda x: x.overall_score, reverse=True)
 
-        # Round-robin selection across sources to ensure diversity
+            # Group into relevance tiers
+            high_tier = [r for r in recommendations_by_source[source] if r.overall_score >= 0.8]
+            medium_tier = [r for r in recommendations_by_source[source] if 0.5 <= r.overall_score < 0.8]
+            low_tier = [r for r in recommendations_by_source[source] if r.overall_score < 0.5]
+
+            # Shuffle within each tier to add randomness while preserving relevance
+            random.shuffle(high_tier)
+            random.shuffle(medium_tier)
+            random.shuffle(low_tier)
+
+            # Recombine: high tier first, then medium, then low
+            recommendations_by_source[source] = high_tier + medium_tier + low_tier
+
+        # Randomized round-robin selection across sources to ensure diversity
         diverse_recommendations: List[RecommendationResult] = []
-        sources = list(recommendations_by_source.keys())
-        source_indices = {source: 0 for source in sources}  # Track position in each source list
+        source_indices = {source: 0 for source in sources}
 
         max_iterations = len(recommendations)
         iteration = 0
 
         while len(diverse_recommendations) < len(recommendations) and iteration < max_iterations:
             iteration += 1
+
+            # Shuffle source order each iteration for more randomness
+            random.shuffle(sources)
 
             # Cycle through all sources
             for source in sources:
@@ -1127,8 +1155,9 @@ class AdvancedRecommendationEngine:
                         break
 
         logger.info(
-            f"Source diversity applied: {len(recommendations)} products -> "
-            f"{len(set(r.source_website for r in diverse_recommendations))} unique sources in top results"
+            f"Source diversity with randomization applied: {len(recommendations)} products -> "
+            f"{len(set(r.source_website for r in diverse_recommendations))} unique sources. "
+            f"Sources: {', '.join(sources)}"
         )
 
         return diverse_recommendations
