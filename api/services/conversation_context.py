@@ -1,13 +1,12 @@
 """
 Conversation context management for maintaining chat session state and memory
 """
+import hashlib
 import json
 import logging
-from typing import Dict, List, Optional, Any
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
-from dataclasses import dataclass, asdict
-import pickle
-import hashlib
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +14,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ConversationContext:
     """Represents conversation context for a session"""
+
     session_id: str
     user_id: Optional[str]
     messages: List[Dict[str, Any]]
@@ -31,10 +31,7 @@ class ConversationContext:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization"""
-        return {
-            **asdict(self),
-            "last_updated": self.last_updated.isoformat()
-        }
+        return {**asdict(self), "last_updated": self.last_updated.isoformat()}
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ConversationContext":
@@ -88,24 +85,20 @@ class ConversationContextManager:
             total_interactions=0,
             last_uploaded_image=None,
             visualization_history=[],
-            visualization_redo_stack=[]
+            visualization_redo_stack=[],
         )
 
         self.contexts[session_id] = context
         logger.info(f"Created new conversation context for session {session_id}")
         return context
 
-    def add_message(self, session_id: str, role: str, content: str,
-                   metadata: Optional[Dict[str, Any]] = None) -> ConversationContext:
+    def add_message(
+        self, session_id: str, role: str, content: str, metadata: Optional[Dict[str, Any]] = None
+    ) -> ConversationContext:
         """Add message to conversation context"""
         context = self.get_or_create_context(session_id)
 
-        message = {
-            "role": role,
-            "content": content,
-            "timestamp": datetime.now().isoformat(),
-            "metadata": metadata or {}
-        }
+        message = {"role": role, "content": content, "timestamp": datetime.now().isoformat(), "metadata": metadata or {}}
 
         context.messages.append(message)
         context.total_interactions += 1
@@ -115,7 +108,7 @@ class ConversationContextManager:
         if len(context.messages) > self.max_context_length:
             # Keep system messages and recent messages
             system_messages = [msg for msg in context.messages if msg["role"] == "system"]
-            recent_messages = context.messages[-(self.max_context_length - len(system_messages)):]
+            recent_messages = context.messages[-(self.max_context_length - len(system_messages)) :]
             context.messages = system_messages + recent_messages
 
         # Update conversation state based on content
@@ -130,7 +123,7 @@ class ConversationContextManager:
         analysis_entry = {
             "timestamp": datetime.now().isoformat(),
             "analysis": analysis,
-            "analysis_id": self._generate_analysis_id(analysis)
+            "analysis_id": self._generate_analysis_id(analysis),
         }
 
         context.design_analysis_history.append(analysis_entry)
@@ -165,9 +158,14 @@ class ConversationContextManager:
         context = self.get_or_create_context(session_id)
         return context.last_uploaded_image
 
-    def store_pending_action_options(self, session_id: str, action_options: Dict[str, Any],
-                                     detected_furniture: list, selected_product_id: str,
-                                     room_image: str) -> ConversationContext:
+    def store_pending_action_options(
+        self,
+        session_id: str,
+        action_options: Dict[str, Any],
+        detected_furniture: list,
+        selected_product_id: str,
+        room_image: str,
+    ) -> ConversationContext:
         """Store pending action options with associated data for letter choice detection"""
         context = self.get_or_create_context(session_id)
         context.pending_action_options = {
@@ -175,7 +173,7 @@ class ConversationContextManager:
             "detected_furniture": detected_furniture,
             "selected_product_id": selected_product_id,
             "room_image": room_image,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
         context.last_updated = datetime.now()
         logger.info(f"Stored pending action options for session {session_id}")
@@ -205,10 +203,7 @@ class ConversationContextManager:
             context.visualization_redo_stack = []
 
         # Add timestamp to visualization data
-        vis_state = {
-            **visualization_data,
-            "timestamp": datetime.now().isoformat()
-        }
+        vis_state = {**visualization_data, "timestamp": datetime.now().isoformat()}
 
         # Push to history stack
         context.visualization_history.append(vis_state)
@@ -221,7 +216,9 @@ class ConversationContextManager:
             context.visualization_history = context.visualization_history[-20:]
 
         context.last_updated = datetime.now()
-        logger.info(f"Pushed visualization state to history for session {session_id}. History size: {len(context.visualization_history)}")
+        logger.info(
+            f"Pushed visualization state to history for session {session_id}. History size: {len(context.visualization_history)}"
+        )
         return context
 
     def undo_visualization(self, session_id: str) -> Optional[Dict[str, Any]]:
@@ -234,26 +231,12 @@ class ConversationContextManager:
         if context.visualization_redo_stack is None:
             context.visualization_redo_stack = []
 
-        # If no history at all, cannot undo
-        if len(context.visualization_history) == 0:
-            logger.info(f"Cannot undo: no visualization history for session {session_id}")
+        # If no history or only 1 visualization, cannot undo (prevents going back to empty room)
+        if len(context.visualization_history) < 2:
+            logger.info(
+                f"Cannot undo: insufficient history for session {session_id} (need at least 2, have {len(context.visualization_history)})"
+            )
             return None
-
-        # If only 1 visualization exists, undo should return the original uploaded image
-        if len(context.visualization_history) == 1:
-            # Pop current state and move to redo stack
-            current_state = context.visualization_history.pop()
-            context.visualization_redo_stack.append(current_state)
-
-            # Return original uploaded image as the previous state
-            context.last_updated = datetime.now()
-            logger.info(f"Undo to original image for session {session_id}. History: {len(context.visualization_history)}, Redo: {len(context.visualization_redo_stack)}")
-
-            return {
-                "image": context.last_uploaded_image,
-                "timestamp": datetime.now().isoformat(),
-                "is_original": True
-            }
 
         # Pop current state and move to redo stack
         current_state = context.visualization_history.pop()
@@ -263,7 +246,9 @@ class ConversationContextManager:
         previous_state = context.visualization_history[-1]
 
         context.last_updated = datetime.now()
-        logger.info(f"Undo visualization for session {session_id}. History: {len(context.visualization_history)}, Redo: {len(context.visualization_redo_stack)}")
+        logger.info(
+            f"Undo visualization for session {session_id}. History: {len(context.visualization_history)}, Redo: {len(context.visualization_redo_stack)}"
+        )
 
         return previous_state
 
@@ -287,7 +272,9 @@ class ConversationContextManager:
         context.visualization_history.append(next_state)
 
         context.last_updated = datetime.now()
-        logger.info(f"Redo visualization for session {session_id}. History: {len(context.visualization_history)}, Redo: {len(context.visualization_redo_stack)}")
+        logger.info(
+            f"Redo visualization for session {session_id}. History: {len(context.visualization_history)}, Redo: {len(context.visualization_redo_stack)}"
+        )
 
         return next_state
 
@@ -296,7 +283,8 @@ class ConversationContextManager:
         context = self.get_or_create_context(session_id)
         if context.visualization_history is None:
             return False
-        return len(context.visualization_history) >= 2
+        # Can undo if there is at least 1 visualization (allows undoing back to original uploaded room)
+        return len(context.visualization_history) >= 1
 
     def can_redo(self, session_id: str) -> bool:
         """Check if redo is available"""
@@ -336,7 +324,7 @@ class ConversationContextManager:
             "budget_range": context.user_preferences.get("budget_range", "unknown"),
             "room_types": context.user_preferences.get("room_types", []),
             "confidence_score": context.user_preferences.get("confidence_score", 0.0),
-            "last_updated": context.user_preferences.get("last_updated", "")
+            "last_updated": context.user_preferences.get("last_updated", ""),
         }
 
     def get_conversation_summary(self, session_id: str) -> Dict[str, Any]:
@@ -352,7 +340,7 @@ class ConversationContextManager:
             "has_room_context": context.current_room_context is not None,
             "user_preferences": self.get_user_preferences_summary(session_id),
             "last_updated": context.last_updated.isoformat(),
-            "session_duration": (datetime.now() - context.last_updated).total_seconds()
+            "session_duration": (datetime.now() - context.last_updated).total_seconds(),
         }
 
     def clear_context(self, session_id: str) -> bool:
@@ -406,11 +394,7 @@ class ConversationContextManager:
         if not context.messages:
             return "new"
 
-        recent_content = " ".join([
-            msg["content"].lower()
-            for msg in context.messages[-3:]
-            if msg["role"] == "user"
-        ])
+        recent_content = " ".join([msg["content"].lower() for msg in context.messages[-3:] if msg["role"] == "user"])
 
         # Simple keyword-based state detection
         if any(word in recent_content for word in ["room", "space", "visualize", "place", "layout"]):
