@@ -13,16 +13,33 @@ export interface FurniturePosition {
   height?: number;
 }
 
+interface Product {
+  id: string;
+  name: string;
+  price: number;
+  image_url?: string;
+  images?: Array<{
+    original_url?: string;
+    medium_url?: string;
+    large_url?: string;
+    is_primary?: boolean;
+  }>;
+}
+
 interface DraggableFurnitureCanvasProps {
-  visualizationImage: string; // base64 or URL
+  visualizationImage: string; // base64 or URL (fallback)
+  baseRoomLayer?: string | null; // base64 image of empty room
+  furnitureLayers?: any[]; // array of furniture layer objects from API
   furniturePositions: FurniturePosition[];
   onPositionsChange: (positions: FurniturePosition[]) => void;
+  products: Product[];
   containerWidth?: number;
   containerHeight?: number;
 }
 
 interface DraggableFurnitureItemProps {
   position: FurniturePosition;
+  productImageUrl: string;
   canvasWidth: number;
   canvasHeight: number;
   onDragEnd: (newPosition: { x: number; y: number }) => void;
@@ -32,14 +49,16 @@ interface DraggableFurnitureItemProps {
 
 const DraggableFurnitureItem: React.FC<DraggableFurnitureItemProps> = ({
   position,
+  productImageUrl,
   canvasWidth,
   canvasHeight,
   onDragEnd,
   isSelected,
   onSelect,
 }) => {
-  const boxWidth = (position.width || 0.1) * canvasWidth;
-  const boxHeight = (position.height || 0.1) * canvasHeight;
+  const [image] = useImage(productImageUrl);
+  const boxWidth = (position.width || 0.15) * canvasWidth;
+  const boxHeight = (position.height || 0.15) * canvasHeight;
   const x = position.x * canvasWidth;
   const y = position.y * canvasHeight;
 
@@ -60,54 +79,17 @@ const DraggableFurnitureItem: React.FC<DraggableFurnitureItemProps> = ({
       onClick={onSelect}
       onTap={onSelect}
     >
-      <Rect
-        width={boxWidth}
-        height={boxHeight}
-        fill="rgba(139, 92, 246, 0.2)"
-        stroke={isSelected ? "#8b5cf6" : "#a78bfa"}
-        strokeWidth={isSelected ? 3 : 2}
-        dash={[5, 5]}
-        cornerRadius={4}
-      />
-
-      <Text
-        text={position.label}
-        fontSize={14}
-        fontFamily="Arial"
-        fill={isSelected ? "#8b5cf6" : "#6b7280"}
-        fontStyle="bold"
-        padding={4}
-        x={5}
-        y={5}
-      />
-
-      {isSelected && (
-        <>
-          <Rect
-            x={boxWidth - 12}
-            y={boxHeight - 12}
-            width={10}
-            height={10}
-            fill="#8b5cf6"
-            cornerRadius={2}
-          />
-          <Rect
-            x={0}
-            y={boxHeight - 12}
-            width={10}
-            height={10}
-            fill="#8b5cf6"
-            cornerRadius={2}
-          />
-          <Rect
-            x={boxWidth - 12}
-            y={0}
-            width={10}
-            height={10}
-            fill="#8b5cf6"
-            cornerRadius={2}
-          />
-        </>
+      {/* Product Image */}
+      {image && (
+        <KonvaImage
+          image={image}
+          width={boxWidth}
+          height={boxHeight}
+          shadowColor="black"
+          shadowBlur={isSelected ? 10 : 5}
+          shadowOpacity={0.3}
+          opacity={isSelected ? 1 : 0.9}
+        />
       )}
     </Group>
   );
@@ -121,8 +103,11 @@ const BackgroundImage: React.FC<{ src: string; width: number; height: number }> 
 
 export const DraggableFurnitureCanvas: React.FC<DraggableFurnitureCanvasProps> = ({
   visualizationImage,
+  baseRoomLayer,
+  furnitureLayers,
   furniturePositions,
   onPositionsChange,
+  products,
   containerWidth = 800,
   containerHeight = 600,
 }) => {
@@ -133,6 +118,27 @@ export const DraggableFurnitureCanvas: React.FC<DraggableFurnitureCanvasProps> =
   useEffect(() => {
     setPositions(furniturePositions);
   }, [furniturePositions]);
+
+  // Get image URL from product (handles both old and new format)
+  const getProductImageUrl = (product: Product): string => {
+    // Try images array first (transformed format)
+    if (product.images && product.images.length > 0) {
+      const primaryImage = product.images.find(img => img.is_primary) || product.images[0];
+      return primaryImage.large_url || primaryImage.medium_url || primaryImage.original_url || '/placeholder-product.jpg';
+    }
+    // Fall back to image_url
+    return product.image_url || '/placeholder-product.jpg';
+  };
+
+  // Get product image for a position
+  // Always uses product catalog image (no layer extraction)
+  const getImageForPosition = (position: FurniturePosition): string => {
+    const product = products.find(p => String(p.id) === String(position.productId));
+    return product ? getProductImageUrl(product) : '/placeholder-product.jpg';
+  };
+
+  // Determine which background image to use
+  const backgroundImage = baseRoomLayer || visualizationImage;
 
   const handlePositionChange = (productId: string, newPos: { x: number; y: number }) => {
     const updatedPositions = positions.map((pos) =>
@@ -162,7 +168,7 @@ export const DraggableFurnitureCanvas: React.FC<DraggableFurnitureCanvasProps> =
       >
         <Layer>
           <BackgroundImage
-            src={visualizationImage}
+            src={backgroundImage}
             width={containerWidth}
             height={containerHeight}
           />
@@ -173,6 +179,7 @@ export const DraggableFurnitureCanvas: React.FC<DraggableFurnitureCanvasProps> =
             <DraggableFurnitureItem
               key={position.productId}
               position={position}
+              productImageUrl={getImageForPosition(position)}
               canvasWidth={containerWidth}
               canvasHeight={containerHeight}
               onDragEnd={(newPos) => handlePositionChange(position.productId, newPos)}

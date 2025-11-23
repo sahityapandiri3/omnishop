@@ -1,17 +1,19 @@
 """
-Image transformation service using Google Gemini 2.5 Flash Image
+Image transformation service using Google Gemini 3 Pro Image (Nano Banana Pro)
 This service handles image-to-image transformation for room design visualization
 """
-import logging
 import base64
+import logging
 import time
 from io import BytesIO
 from typing import Optional
+
 from PIL import Image
 
 try:
     from google import genai
     from google.genai import types
+
     GENAI_AVAILABLE = True
 except ImportError:
     GENAI_AVAILABLE = False
@@ -23,17 +25,17 @@ logger = logging.getLogger(__name__)
 
 
 class ImageTransformationService:
-    """Service for transforming room images using Gemini 2.5 Flash Image"""
+    """Service for transforming room images using Gemini 3 Pro Image (Nano Banana Pro)"""
 
     def __init__(self):
         """Initialize the image transformation service"""
         self.api_key = settings.google_ai_api_key
-        self.model = "gemini-2.5-flash-image"
+        self.model = "gemini-3-pro-image-preview"
 
         if GENAI_AVAILABLE:
             try:
                 self.client = genai.Client(api_key=self.api_key)
-                logger.info("✅ Image transformation service initialized with Gemini 2.5 Flash Image")
+                logger.info("✅ Image transformation service initialized with Gemini 3 Pro Image (Nano Banana Pro)")
             except Exception as e:
                 logger.error(f"❌ Failed to initialize GenAI client: {e}")
                 self.client = None
@@ -45,8 +47,8 @@ class ImageTransformationService:
         """Convert base64 string to PIL Image"""
         try:
             # Remove data URL prefix if present
-            if ',' in base64_string:
-                base64_string = base64_string.split(',', 1)[1]
+            if "," in base64_string:
+                base64_string = base64_string.split(",", 1)[1]
 
             image_data = base64.b64decode(base64_string)
             image = Image.open(BytesIO(image_data))
@@ -61,17 +63,14 @@ class ImageTransformationService:
             buffered = BytesIO()
             image.save(buffered, format=format)
             img_bytes = buffered.getvalue()
-            img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+            img_base64 = base64.b64encode(img_bytes).decode("utf-8")
             return f"data:image/{format.lower()};base64,{img_base64}"
         except Exception as e:
             logger.error(f"❌ Failed to encode image to base64: {e}")
             return ""
 
     async def transform_room_image(
-        self,
-        base_image_base64: str,
-        style_prompt: str,
-        user_preferences: Optional[dict] = None
+        self, base_image_base64: str, style_prompt: str, user_preferences: Optional[dict] = None
     ) -> Optional[str]:
         """
         Transform a room image according to the style prompt

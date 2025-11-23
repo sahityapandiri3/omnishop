@@ -2,8 +2,14 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
-import { DraggableFurnitureCanvas, FurniturePosition } from '../DraggableFurnitureCanvas';
+import dynamic from 'next/dynamic';
+import { FurniturePosition } from '../DraggableFurnitureCanvas';
 import { furniturePositionAPI } from '@/utils/api';
+
+const DraggableFurnitureCanvas = dynamic(
+  () => import('../DraggableFurnitureCanvas').then(mod => ({ default: mod.DraggableFurnitureCanvas })),
+  { ssr: false }
+);
 
 interface Product {
   id: string;
@@ -48,6 +54,7 @@ export default function CanvasPanel({
 
   // Smart re-visualization tracking
   const [visualizedProductIds, setVisualizedProductIds] = useState<Set<string>>(new Set());
+  const [visualizedProducts, setVisualizedProducts] = useState<Product[]>([]); // Track all visualized products
   const [needsRevisualization, setNeedsRevisualization] = useState(false);
 
   // Undo/Redo state
@@ -58,6 +65,11 @@ export default function CanvasPanel({
   const [isEditingPositions, setIsEditingPositions] = useState(false);
   const [furniturePositions, setFurniturePositions] = useState<FurniturePosition[]>([]);
   const [hasUnsavedPositions, setHasUnsavedPositions] = useState(false);
+
+  // Layer extraction state for drag-and-drop editing
+  const [baseRoomLayer, setBaseRoomLayer] = useState<string | null>(null);
+  const [furnitureLayers, setFurnitureLayers] = useState<any[]>([]);
+  const [isExtractingLayers, setIsExtractingLayers] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasProductsRef = useRef<HTMLDivElement>(null);
@@ -272,6 +284,7 @@ export default function CanvasPanel({
       setVisualizationResult(data.visualization.rendered_image);
       // Ensure IDs are strings for consistency with undo/redo
       setVisualizedProductIds(new Set(products.map(p => String(p.id)))); // Track all current products as visualized
+      setVisualizedProducts(products); // Store actual product objects for edit mode
       setNeedsRevisualization(false); // Reset change flag
 
       // Update undo/redo availability (need to check backend state)
@@ -436,21 +449,74 @@ export default function CanvasPanel({
   };
 
   // Position editing handlers
-  const handleEnterEditMode = () => {
-    // Initialize furniture positions from products when entering edit mode
-    // For now, create dummy positions - these will come from AI detection later
-    const initialPositions: FurniturePosition[] = products.map((product, index) => ({
-      productId: String(product.id),
-      x: 0.1 + (index % 3) * 0.3, // Distribute horizontally
-      y: 0.2 + Math.floor(index / 3) * 0.3, // Distribute vertically
-      label: product.name,
-      width: 0.15,
-      height: 0.15,
-    }));
+  const handleEnterEditMode = async () => {
+    const sessionId = sessionStorage.getItem('design_session_id');
+    if (!sessionId || !visualizationResult) {
+      console.error('[CanvasPanel] No session ID or visualization found');
+      alert('Error: Please create a visualization first.');
+      return;
+    }
 
-    setFurniturePositions(initialPositions);
-    setIsEditingPositions(true);
-    setHasUnsavedPositions(false);
+    setIsExtractingLayers(true);
+
+    try {
+      console.log('[CanvasPanel] Entering edit mode (simplified - no layer extraction)');
+
+      // Get clean room background by calling furniture removal
+      console.log('[CanvasPanel] Removing furniture to get clean room background...');
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/remove-furniture`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: visualizationResult
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to get clean room background');
+      }
+
+      const data = await response.json();
+      const cleanRoom = data.clean_image || visualizationResult;
+      console.log('[CanvasPanel] Got clean room background');
+      setBaseRoomLayer(cleanRoom);
+
+      // Initialize default positions for ALL visualized products (not just newly added ones)
+      // ISSUE #2 FIX: Use visualizedProducts instead of products to include all visualized items
+      const productsToEdit = visualizedProducts.length > 0 ? visualizedProducts : products;
+      const numProducts = productsToEdit.length;
+      const cols = Math.ceil(Math.sqrt(numProducts));
+
+      const initialPositions: FurniturePosition[] = productsToEdit.map((product, index) => {
+        const row = Math.floor(index / cols);
+        const col = index % cols;
+        const spacingX = 0.6 / (cols + 1);
+        const spacingY = 0.6 / (Math.ceil(numProducts / cols) + 1);
+
+        return {
+          productId: String(product.id),
+          x: 0.2 + (col + 1) * spacingX,
+          y: 0.2 + (row + 1) * spacingY,
+          label: product.name,
+          width: 0.15,
+          height: 0.15,
+        };
+      });
+
+      console.log(`[CanvasPanel] Initialized default positions for ${numProducts} visualized products:`, initialPositions);
+      setFurniturePositions(initialPositions);
+      setFurnitureLayers([]); // No layers needed with simplified approach
+      setIsEditingPositions(true);
+      setHasUnsavedPositions(false);
+    } catch (error: any) {
+      console.error('[CanvasPanel] Error entering edit mode:', error);
+      alert('Error entering edit mode. Please try again.');
+    } finally {
+      setIsExtractingLayers(false);
+    }
   };
 
   const handleExitEditMode = () => {
@@ -480,7 +546,7 @@ export default function CanvasPanel({
       const result = await furniturePositionAPI.savePositions(sessionId, furniturePositions);
       console.log('[CanvasPanel] Positions saved successfully:', result);
       setHasUnsavedPositions(false);
-      alert(`Positions saved successfully! (${result.positions_saved} furniture items)`);
+      // Position saved silently - button will be disabled until next change
     } catch (error) {
       console.error('[CanvasPanel] Error saving positions:', error);
       alert('Error saving positions. Please try again.');
@@ -488,9 +554,87 @@ export default function CanvasPanel({
   };
 
   const handleRevisualizeWithPositions = async () => {
-    // TODO: Call visualization API with custom positions
-    console.log('[CanvasPanel] Re-visualizing with positions:', furniturePositions);
-    alert('Re-visualization with custom positions (Backend integration pending)');
+    const sessionId = sessionStorage.getItem('design_session_id');
+    if (!sessionId || !roomImage) {
+      console.error('[CanvasPanel] No session ID or room image found');
+      alert('Error: No session or room image found. Please start over.');
+      return;
+    }
+
+    setIsVisualizing(true);
+
+    try {
+      console.log('[CanvasPanel] Re-visualizing with new positions:', furniturePositions);
+
+      // Step 1: Save positions to backend
+      console.log('[CanvasPanel] Saving positions before re-visualization...');
+      await furniturePositionAPI.savePositions(sessionId, furniturePositions);
+      console.log('[CanvasPanel] Positions saved successfully');
+
+      // Step 2: Call visualization API with custom positions
+      console.log('[CanvasPanel] Calling visualization API with custom positions...');
+
+      // Prepare products for API
+      const productDetails = products.map(p => ({
+        id: p.id,
+        name: p.name,
+        full_name: p.name,
+        style: 0.8,
+        category: 'furniture'
+      }));
+
+      // Call API with custom_positions
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: roomImage,
+            products: productDetails,
+            analysis: {
+              design_style: 'modern',
+              color_palette: [],
+              room_type: 'living_room',
+            },
+            custom_positions: furniturePositions,  // Pass custom positions
+            is_incremental: false,
+            force_reset: false,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+        throw new Error(errorData.detail || 'Visualization failed');
+      }
+
+      const data = await response.json();
+      console.log('[CanvasPanel] Visualization response:', data);
+
+      if (!data.visualization?.rendered_image) {
+        throw new Error('No visualization image was generated');
+      }
+
+      // Update visualization result
+      setVisualizationResult(data.visualization.rendered_image);
+      setVisualizedProductIds(new Set(products.map(p => String(p.id))));
+      setNeedsRevisualization(false);
+
+      // Step 3: Exit edit mode and reset state
+      setIsEditingPositions(false);
+      setHasUnsavedPositions(false);
+      console.log('[CanvasPanel] Re-visualization complete, exited edit mode');
+    } catch (error: any) {
+      console.error('[CanvasPanel] Error re-visualizing with positions:', error);
+      alert(
+        error.response?.data?.detail ||
+        error.message ||
+        'Failed to re-visualize with new positions. Please try again.'
+      );
+    } finally {
+      setIsVisualizing(false);
+    }
   };
 
   // Get image URL from product (handles both old and new format)
@@ -807,13 +951,26 @@ export default function CanvasPanel({
                 {!isEditingPositions && (
                   <button
                     onClick={handleEnterEditMode}
-                    className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors flex items-center gap-1.5"
+                    disabled={isExtractingLayers}
+                    className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white text-xs font-medium transition-colors flex items-center gap-1.5 disabled:cursor-not-allowed"
                     title="Edit furniture positions"
                   >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                    Edit Positions
+                    {isExtractingLayers ? (
+                      <>
+                        <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Extracting Layers...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        Edit Positions
+                      </>
+                    )}
                   </button>
                 )}
 
@@ -869,8 +1026,11 @@ export default function CanvasPanel({
               {isEditingPositions ? (
                 <DraggableFurnitureCanvas
                   visualizationImage={visualizationResult}
+                  baseRoomLayer={baseRoomLayer}
+                  furnitureLayers={furnitureLayers}
                   furniturePositions={furniturePositions}
                   onPositionsChange={handlePositionsChange}
+                  products={products}
                   containerWidth={800}
                   containerHeight={450}
                 />
@@ -897,33 +1057,12 @@ export default function CanvasPanel({
 
             {/* Edit Mode Actions */}
             {isEditingPositions && (
-              <div className="mt-3 flex items-center gap-2 justify-between">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleExitEditMode}
-                    className="px-4 py-2 rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-sm font-medium transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSavePositions}
-                    disabled={!hasUnsavedPositions}
-                    className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 disabled:bg-neutral-400 text-white text-sm font-medium transition-colors disabled:cursor-not-allowed flex items-center gap-1.5"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Save Positions
-                  </button>
-                </div>
+              <div className="mt-3 flex items-center gap-2">
                 <button
-                  onClick={handleRevisualizeWithPositions}
-                  className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium transition-colors flex items-center gap-1.5"
+                  onClick={handleExitEditMode}
+                  className="px-4 py-2 rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-sm font-medium transition-colors"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Re-visualize with New Positions
+                  Cancel
                 </button>
               </div>
             )}
@@ -949,7 +1088,42 @@ export default function CanvasPanel({
 
       {/* Visualize Button with Smart States - Fixed at bottom */}
       <div className="p-4 border-t border-neutral-200 dark:border-neutral-700 flex-shrink-0">
-        {isUpToDate ? (
+        {isEditingPositions && hasUnsavedPositions ? (
+          // State: Edit Mode with Unsaved Positions (Purple, Enabled)
+          <button
+            onClick={handleRevisualizeWithPositions}
+            disabled={isVisualizing}
+            className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 disabled:bg-neutral-400 text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
+          >
+            {isVisualizing ? (
+              <>
+                <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                Re-visualizing...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Re-visualize with New Positions
+              </>
+            )}
+          </button>
+        ) : isUpToDate ? (
           // State 2: Up to Date (Green, Disabled)
           <button
             disabled

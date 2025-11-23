@@ -10,7 +10,7 @@ from services.furniture_removal_service import furniture_removal_service
 from services.google_ai_service import google_ai_service
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/furniture", tags=["furniture"])
+router = APIRouter()  # No prefix here - it's added in main.py
 
 
 class FurnitureRemovalRequest(BaseModel):

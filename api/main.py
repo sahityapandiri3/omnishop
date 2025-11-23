@@ -6,6 +6,15 @@ import os
 import sys
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+# Load environment variables from .env file FIRST (before any other imports)
+from dotenv import load_dotenv
+
+# Find and load .env file from api directory
+env_path = Path(__file__).parent / ".env"
+load_dotenv(dotenv_path=env_path)
+print(f"✅ Loaded .env file from: {env_path}")
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -270,7 +279,7 @@ if "stores" in dir():
     app.include_router(stores.router, tags=["stores"])
 
 if "furniture" in dir():
-    app.include_router(furniture.router, tags=["furniture"])
+    app.include_router(furniture.router, prefix="/api/furniture", tags=["furniture"])
 
 # Additional routers can be added here as needed
 

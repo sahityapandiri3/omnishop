@@ -9,9 +9,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from core.database import get_db
 from database.models import Product
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
+from pydantic import BaseModel
 from schemas.chat import ChatMessageSchema
 from services.chatgpt_service import chatgpt_service
+from services.furniture_layer_service import get_furniture_layer_service
 from services.google_ai_service import google_ai_service
 from services.ml_recommendation_model import ml_recommendation_model
 from services.recommendation_engine import RecommendationRequest, recommendation_engine
@@ -41,6 +43,13 @@ class VisualizationGenerationRequest:
         self.base_image = base_image
         self.products = products
         self.placement_preferences = placement_preferences or {}
+
+
+class ExtractLayersRequest(BaseModel):
+    """Request model for furniture layer extraction"""
+
+    visualization_image: str
+    products: List[Dict[str, Any]]
 
 
 @router.post("/analyze-room")
@@ -231,6 +240,56 @@ async def upload_room_image(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Error uploading image: {e}")
         raise HTTPException(status_code=500, detail=f"Image upload failed: {str(e)}")
+
+
+@router.post("/sessions/{session_id}/extract-layers")
+async def extract_furniture_layers(session_id: str, request: ExtractLayersRequest):
+    """
+    Extract individual furniture pieces as separate layers from a visualization
+
+    This endpoint uses AI to isolate each furniture piece on a transparent background,
+    creating a Photoshop-like layer system for furniture position editing.
+
+    Args:
+        session_id: The session ID for this visualization
+        request: Request body containing visualization_image and products
+
+    Returns:
+        base_layer: Clean room image (furniture removed)
+        furniture_layers: List of individual furniture layers with positions
+    """
+    try:
+        logger.info(f"[ExtractLayers] Starting layer extraction for session {session_id}")
+        logger.info(f"[ExtractLayers] Extracting {len(request.products)} furniture pieces")
+
+        # Get furniture layer service
+        layer_service = get_furniture_layer_service()
+
+        # Extract all layers
+        result = await layer_service.extract_all_layers(
+            visualization_image=request.visualization_image, products=request.products, session_id=session_id
+        )
+
+        if result.get("extraction_status") == "failed":
+            logger.error(f"[ExtractLayers] Layer extraction failed: {result.get('error')}")
+            raise HTTPException(status_code=500, detail=f"Layer extraction failed: {result.get('error', 'Unknown error')}")
+
+        logger.info(f"[ExtractLayers] Successfully extracted {result.get('total_layers')} layers")
+
+        return {
+            "session_id": session_id,
+            "base_layer": result.get("base_layer"),
+            "furniture_layers": result.get("furniture_layers", []),
+            "total_layers": result.get("total_layers", 0),
+            "extraction_timestamp": datetime.utcnow().isoformat(),
+            "status": "success",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[ExtractLayers] Error extracting layers: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Layer extraction failed: {str(e)}")
 
 
 @router.get("/session/{session_id}/room-context")

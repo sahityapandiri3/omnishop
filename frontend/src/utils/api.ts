@@ -335,5 +335,22 @@ export const furniturePositionAPI = {
       console.error('Error deleting furniture positions:', error);
       throw error;
     }
+  },
+
+  /**
+   * Extract furniture layers from a visualization
+   * Returns base layer (empty room) and individual furniture layers
+   */
+  extractLayers: async (sessionId: string, visualizationImage: string, products: any[]) => {
+    try {
+      const response = await api.post(`/api/visualization/sessions/${sessionId}/extract-layers`, {
+        visualization_image: visualizationImage,
+        products: products
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error extracting furniture layers:', error);
+      throw error;
+    }
   }
 };

@@ -78,7 +78,23 @@ export default function DesignPage() {
     setIsProcessingFurniture(true);
     setProcessingStatus('Removing existing furniture from your room...');
 
+    let pollAttempts = 0;
+    const MAX_POLL_ATTEMPTS = 30; // 30 attempts * 2 seconds = 60 seconds max
+
     const pollInterval = setInterval(async () => {
+      pollAttempts++;
+
+      // Timeout after max attempts
+      if (pollAttempts > MAX_POLL_ATTEMPTS) {
+        console.error('[DesignPage] Furniture removal timed out after 60 seconds');
+        sessionStorage.removeItem('furnitureRemovalJobId');
+        setIsProcessingFurniture(false);
+        setProcessingStatus('');
+        clearInterval(pollInterval);
+        alert('Furniture removal took too long. Using original image.');
+        return;
+      }
+
       try {
         const status = await checkFurnitureRemovalStatus(jobId);
         console.log('[DesignPage] Furniture removal status:', status);
@@ -104,7 +120,14 @@ export default function DesignPage() {
         }
       } catch (error) {
         console.error('[DesignPage] Error checking furniture removal status:', error);
-        // Don't stop polling on error, the job might still be processing
+        // Stop polling after 3 consecutive errors
+        if (pollAttempts > 3) {
+          console.error('[DesignPage] Too many errors, stopping furniture removal polling');
+          sessionStorage.removeItem('furnitureRemovalJobId');
+          setIsProcessingFurniture(false);
+          setProcessingStatus('');
+          clearInterval(pollInterval);
+        }
       }
     }, 2000); // Poll every 2 seconds
 
@@ -209,6 +232,14 @@ export default function DesignPage() {
   const handleRoomImageUpload = async (imageData: string) => {
     try {
       console.log('[DesignPage] Starting furniture removal for uploaded image...');
+
+      // IMPORTANT: Clear any existing furniture removal job to prevent infinite loop
+      const existingJobId = sessionStorage.getItem('furnitureRemovalJobId');
+      if (existingJobId) {
+        console.log('[DesignPage] Clearing existing furniture removal job:', existingJobId);
+        sessionStorage.removeItem('furnitureRemovalJobId');
+      }
+
       setIsProcessingFurniture(true);
       setProcessingStatus('Removing existing furniture from your room...');
 
@@ -218,7 +249,8 @@ export default function DesignPage() {
       sessionStorage.setItem('roomImage', imageData);
 
       console.log('[DesignPage] Furniture removal started:', response);
-      // Polling will be handled by the useEffect
+      // Trigger page reload to restart the polling useEffect with new job ID
+      window.location.reload();
     } catch (error) {
       console.error('[DesignPage] Error starting furniture removal:', error);
       // On error, use original image

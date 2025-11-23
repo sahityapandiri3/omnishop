@@ -90,7 +90,7 @@ class GoogleAIStudioService:
 
         self._validate_api_key()
 
-        # Initialize Google GenAI client for Gemini 2.5 Flash Image (only if API key is configured)
+        # Initialize Google GenAI client for Gemini 3 Pro Image / Nano Banana Pro (only if API key is configured)
         if self.api_key:
             self.genai_client = genai.Client(api_key=self.api_key)
             self.genai_configured = True
@@ -100,13 +100,13 @@ class GoogleAIStudioService:
                 masked_key = f"{self.api_key[:8]}...{self.api_key[-4:]}"
                 logger.info(f"Google AI API Key loaded: {masked_key}")
 
-            logger.info("Google GenAI Client initialized successfully for Gemini 2.5 Flash Image")
+            logger.info("Google GenAI Client initialized successfully for Gemini 3 Pro Image (Nano Banana Pro)")
         else:
             self.genai_configured = False
             self.genai_client = None
             logger.warning("Google AI API key not configured - image generation will not be available")
 
-        logger.info("Google AI Studio service initialized with Gemini 2.5 Flash Image support")
+        logger.info("Google AI Studio service initialized with Gemini 3 Pro Image (Nano Banana Pro) support")
 
     def _validate_api_key(self):
         """Validate Google AI API key"""
@@ -553,7 +553,7 @@ CRITICAL: Keep sofas, chairs, tables, and lamps SEPARATE:
             logger.error(f"Error checking furniture existence: {e}")
             return (False, [])
 
-    async def remove_furniture(self, image_base64: str, max_retries: int = 3) -> Optional[str]:
+    async def remove_furniture(self, image_base64: str, max_retries: int = 5) -> Optional[str]:
         """
         Remove all furniture from room image
         Returns: base64 encoded image with furniture removed, or None on failure
@@ -561,82 +561,110 @@ CRITICAL: Keep sofas, chairs, tables, and lamps SEPARATE:
         try:
             processed_image = self._preprocess_image(image_base64)
 
-            prompt = """You are an expert at removing ALL moveable objects from room images.
+            prompt = """🚨 CRITICAL FURNITURE REMOVAL TASK 🚨
 
-CRITICAL TASK: Remove EVERY SINGLE moveable item from this room. The room must be COMPLETELY EMPTY except for permanent architectural features.
+YOUR TASK: Generate an image of this EXACT SAME ROOM but with ZERO furniture or moveable items. Show ONLY the empty architectural shell.
 
-MUST REMOVE - DO NOT LEAVE ANY OF THESE ITEMS:
+🔴 THINK OF THIS AS: "Show me what this room looked like BEFORE any furniture was moved in" - completely empty, ready to be furnished.
 
-FURNITURE (remove ALL):
-- Sofas, couches, sectionals, loveseats
-- Chairs: dining chairs, armchairs, office chairs, accent chairs, stools, benches
-- Tables: coffee tables, side tables, end tables, console tables, dining tables, desks
-- Beds, bed frames, mattresses, headboards
-- Storage: dressers, cabinets, shelving units, bookcases, media consoles, TV stands
-- Ottomans, poufs, storage cubes
+═══════════════════════════════════════════════════════════════
+STEP 1: IDENTIFY THE ROOM STRUCTURE (preserve exactly)
+═══════════════════════════════════════════════════════════════
+Look at the input image and note:
+- Wall color, texture, material (keep EXACTLY the same)
+- Floor color, texture, material (keep EXACTLY the same)
+- Window positions, size, style (keep EXACTLY the same)
+- Door positions, style (keep EXACTLY the same)
+- Room dimensions and perspective (keep EXACTLY the same)
+- Natural lighting direction and intensity (keep EXACTLY the same)
+- Built-in ceiling lights or wall sconces (keep these ONLY)
 
-ELECTRONICS & APPLIANCES (remove ALL):
-- Televisions (wall-mounted or on stands)
-- Computers, monitors, laptops
-- Speakers, sound systems
-- Gaming consoles
-- Any other electronic devices
+═══════════════════════════════════════════════════════════════
+STEP 2: DELETE EVERYTHING MOVEABLE (remove completely)
+═══════════════════════════════════════════════════════════════
+Remove EVERY SINGLE item that can be moved:
 
-LIGHTING FIXTURES (remove ALL MOVEABLE):
-- Table lamps (all types - bedside lamps, desk lamps, decorative lamps)
-- Floor lamps (all types - arc lamps, standing lamps, torchiere lamps)
-- Portable task lights
-- DO NOT remove: ceiling lights, wall sconces, recessed lighting (these are fixed)
+❌ FURNITURE - DELETE ALL:
+• Sofas, couches, sectionals, loveseats
+• ALL chairs (dining, office, accent, armchair, stool, bench)
+• ALL tables (coffee, side, end, console, dining, desk)
+• Beds, bed frames, mattresses, headboards
+• Dressers, cabinets, shelving, bookcases, TV stands, consoles
+• Ottomans, poufs, storage cubes
 
-DECORATIVE ITEMS (remove ALL):
-- Picture frames, wall art that is not built-in
-- Vases, sculptures, figurines
-- Decorative bowls, trays, objects
-- Candles, candle holders
-- Clocks (unless built into wall)
-- Mirrors (unless built into wall/architecture)
+❌ ELECTRONICS - DELETE ALL:
+• TVs (wall-mounted or on furniture)
+• Computers, monitors, laptops, tablets
+• Speakers, sound systems, gaming consoles
 
-TEXTILES (remove ALL):
-- Rugs, carpets, area rugs, runners (all floor coverings that are not permanent flooring)
-- Curtains, drapes, window treatments (unless they are architectural/built-in)
-- Cushions, pillows, throws, blankets
-- Bedding, linens
+❌ LAMPS - DELETE ALL PORTABLE LIGHTS:
+• Table lamps (bedside, desk, decorative) - REMOVE
+• Floor lamps (arc, standing, torchiere) - REMOVE
+• Portable task lights - REMOVE
+✅ KEEP ONLY: Ceiling lights, recessed lights, hardwired wall sconces
 
-PLANTS & NATURE (remove ALL):
-- Potted plants, planters (all sizes)
-- Flower arrangements
-- Decorative branches, greenery
+❌ RUGS & TEXTILES - DELETE ALL:
+• Rugs, carpets, area rugs, runners (the FLOOR underneath must be visible)
+• Curtains, drapes, blinds, window treatments
+• Cushions, pillows, throws, blankets, bedding
 
-MISCELLANEOUS (remove ALL):
-- Baskets, bins, storage containers
-- Books, magazines
-- Toys, games
-- Any other moveable objects
+❌ DECORATIONS - DELETE ALL:
+• Wall art, picture frames, paintings, posters
+• Vases, sculptures, figurines, bowls, trays
+• Candles, candle holders, clocks
+• Plants, planters, flowers, greenery
 
-PRESERVE ONLY THESE (do NOT remove):
-- Walls, ceiling, floors (permanent structure)
-- Windows, doors, door frames, window frames
-- Built-in architectural elements: moldings, baseboards, crown molding, wainscoting
-- ONLY fixed/permanent lighting: ceiling lights, recessed lights, wall sconces that are hardwired
-- Permanent flooring material (wood, tile, concrete - NOT rugs)
-- Built-in shelving or cabinets that are part of the architecture
-- Fireplace (if built-in)
-- Radiators, vents (if built-in)
+❌ MISCELLANEOUS - DELETE ALL:
+• Books, magazines, baskets, bins, containers
+• Toys, games, personal items
 
-QUALITY REQUIREMENTS:
-1. The room MUST be completely empty - no moveable items remaining
-2. Maintain exact wall colors, floor colors, textures, materials
-3. Preserve lighting conditions, shadows, and ambiance
-4. Do NOT change room dimensions, perspective, or angle
-5. Fill areas where furniture was removed to match surrounding floor/wall seamlessly
-6. Result must look like a completely empty, unfurnished room ready for new furniture
+═══════════════════════════════════════════════════════════════
+STEP 3: GENERATE THE EMPTY ROOM
+═══════════════════════════════════════════════════════════════
+Create an image showing:
+✅ SAME room structure (walls, floor, windows, doors)
+✅ SAME colors and materials
+✅ SAME lighting conditions and perspective
+✅ COMPLETELY BARE FLOOR - not a single item on it
+✅ COMPLETELY BARE WALLS (except architectural elements like baseboards)
+✅ Clean, empty space ready for new furniture
 
-DOUBLE CHECK: Look at the image again and ensure EVERY table lamp, floor lamp, TV, console, rug, and moveable item has been removed. The room should be BARE."""
+The floor should be COMPLETELY VISIBLE with NO objects on it.
+The walls should be CLEAN with NO decorations.
+The room should look like a professional real estate photo of an EMPTY, unfurnished space.
+
+═══════════════════════════════════════════════════════════════
+⚠️ MANDATORY VERIFICATION CHECKLIST ⚠️
+═══════════════════════════════════════════════════════════════
+Before returning the image, verify EVERY item:
+
+[ ] NO sofa or couch visible
+[ ] NO chairs of any kind visible
+[ ] NO tables of any kind visible
+[ ] NO bed or mattress visible
+[ ] NO lamps (table or floor) visible
+[ ] NO TV or electronics visible
+[ ] NO rugs or carpets on floor (floor material is visible)
+[ ] NO curtains or drapes on windows
+[ ] NO plants or planters visible
+[ ] NO wall art or decorations visible
+[ ] NO books or personal items visible
+[ ] Floor is COMPLETELY EMPTY and BARE
+[ ] Walls are CLEAN (only architectural elements)
+
+🚨 IF YOU SEE ANY FURNITURE OR MOVEABLE ITEMS IN YOUR GENERATED IMAGE, YOU HAVE FAILED.
+
+The final image must show a completely empty room - think "vacant apartment ready for new tenants" or "unfurnished model home before staging".
+
+DO NOT leave ANY furniture behind. The room must be 100% empty."""
 
             # Retry loop with exponential backoff
             for attempt in range(max_retries):
                 try:
                     logger.info(f"Furniture removal attempt {attempt + 1} of {max_retries}")
+                    logger.info(
+                        f"Sending detailed furniture removal prompt (length: {len(prompt)} chars) to Gemini 3 Pro Image (Nano Banana Pro)"
+                    )
 
                     parts = [
                         types.Part.from_text(text=prompt),
@@ -645,13 +673,18 @@ DOUBLE CHECK: Look at the image again and ensure EVERY table lamp, floor lamp, T
 
                     contents = [types.Content(role="user", parts=parts)]
                     generate_content_config = types.GenerateContentConfig(
-                        response_modalities=["IMAGE"], temperature=0.3  # Lower temperature for consistency
+                        response_modalities=["IMAGE"],
+                        temperature=0.7,  # Higher temperature for more aggressive furniture removal
+                    )
+
+                    logger.info(
+                        f"Gemini config: model=gemini-3-pro-image-preview, temperature=0.7, response_modalities=['IMAGE']"
                     )
 
                     # Generate furniture removal
                     generated_image = None
                     for chunk in self.genai_client.models.generate_content_stream(
-                        model="gemini-2.5-flash-image", contents=contents, config=generate_content_config
+                        model="gemini-3-pro-image-preview", contents=contents, config=generate_content_config
                     ):
                         if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
                             for part in chunk.candidates[0].content.parts:
@@ -779,12 +812,12 @@ OUTPUT: One photorealistic image showing THE SAME ROOM with the {product_name} a
 
             contents = [types.Content(role="user", parts=parts)]
 
-            # Generate visualization with Gemini 2.5 Flash Image
+            # Generate visualization with Gemini 3 Pro Image (Nano Banana Pro)
             generate_content_config = types.GenerateContentConfig(response_modalities=["IMAGE"], temperature=0.3)
 
             generated_image = None
             for chunk in self.genai_client.models.generate_content_stream(
-                model="gemini-2.5-flash-image",
+                model="gemini-3-pro-image-preview",
                 contents=contents,
                 config=generate_content_config,
             ):
@@ -842,13 +875,13 @@ Generate a photorealistic image of the room with the {product_name} replacing th
 
             contents = [types.Content(role="user", parts=parts)]
 
-            # Generate visualization with Gemini 2.5 Flash Image
+            # Generate visualization with Gemini 3 Pro Image (Nano Banana Pro)
             # Use temperature 0.4 to match Google AI Studio's default
             generate_content_config = types.GenerateContentConfig(response_modalities=["IMAGE"], temperature=0.4)
 
             generated_image = None
             for chunk in self.genai_client.models.generate_content_stream(
-                model="gemini-2.5-flash-image",
+                model="gemini-3-pro-image-preview",
                 contents=contents,
                 config=generate_content_config,
             ):
@@ -963,6 +996,14 @@ TREAT THE INPUT IMAGE AS SACRED - IT CANNOT BE MODIFIED.
 8. ROOM DIMENSIONS - Same size, proportions, layout - room size is fixed
 9. ARCHITECTURAL FEATURES - Same moldings, trim, baseboards - decorative elements stay
 10. BACKGROUND ELEMENTS - Same wall decorations, fixtures, outlets - all fixed elements remain
+11. 🛋️ EXISTING FURNITURE (CRITICAL FOR CONSISTENCY) - If the input image already contains furniture (sofa, table, chair, decor, etc.), you MUST preserve the EXACT appearance of that furniture:
+   - DO NOT change the COLOR of existing furniture (e.g., if sofa is blue, keep it blue)
+   - DO NOT change the MATERIAL or TEXTURE of existing furniture
+   - DO NOT change the STYLE or DESIGN of existing furniture
+   - DO NOT change the SIZE or PROPORTIONS of existing furniture
+   - Keep existing furniture looking IDENTICAL to the input image
+   - You are ONLY adding NEW products, NOT modifying existing ones
+   - Example: If input has a blue velvet sofa, the output MUST show the same blue velvet sofa + your new products
 
 IF THE ROOM HAS:
 - White walls → Keep white walls
@@ -970,6 +1011,9 @@ IF THE ROOM HAS:
 - A window on the left → Keep window on the left
 - 10ft ceiling → Keep 10ft ceiling
 - Modern style → Keep modern style base
+- A blue sofa → Keep the EXACT same blue sofa (same color, same style, same size)
+- A gray coffee table → Keep the EXACT same gray coffee table
+- Any existing furniture → Keep it IDENTICAL to the input image
 
 ═══════════════════════════════════════════════════════════════
 ✅ YOUR ONLY TASK - PRODUCT PLACEMENT ONLY
@@ -1001,6 +1045,29 @@ PLACEMENT STRATEGY:
    - Avoid clustering all products on one side of the room
    - Create symmetry and balance in the overall layout
 
+🎯 CUSTOM POSITION OVERRIDE (IF PROVIDED):
+{self._build_custom_position_instructions(visualization_request.placement_positions, visualization_request.products_to_place)}
+
+⚠️ CRITICAL: DO NOT BLOCK EXISTING FURNITURE
+═══════════════════════════════════════════════════════════════
+BEFORE placing any new product, you MUST:
+1. 🔍 ANALYZE THE SCENE: Identify ALL existing furniture already in the room
+2. 🚫 NEVER BLOCK: Do NOT place new furniture in front of existing furniture
+3. 🎯 FIND EMPTY SPACES: Look for empty floor areas where nothing exists
+4. 👁️ MAINTAIN SIGHT LINES: Every piece of furniture should be fully visible
+5. 📐 RESPECT BOUNDARIES: New furniture should not obstruct the view of any existing item
+
+SPECIFIC BLOCKING PREVENTION RULES:
+- If a planter/decor item exists next to the sofa, do NOT place a side table in front of it
+- If a side table exists, do NOT place planters/decor items in front of it
+- New items should be placed in DIFFERENT locations, not overlapping with existing items
+- When multiple items exist on one side, place new items on the OPPOSITE side
+- Think: "Can I see the full outline of every existing furniture piece after adding this new one?"
+
+❌ WRONG: Side table placed in front of planter → blocks planter view
+✅ CORRECT: Side table on opposite side of sofa → both planter and table fully visible
+═══════════════════════════════════════════════════════════════
+
 📍 TYPE-SPECIFIC PLACEMENT RULES:
 
 🪑 SOFAS:
@@ -1024,8 +1091,10 @@ PLACEMENT STRATEGY:
 - Should be at ARM'S REACH from someone sitting on sofa
 - Distance: 0-6 inches from sofa's side
 - ⚖️ BALANCE: If planter/lamp/decor exists on one side, place side table on the OPPOSITE side
+- 🚫 BLOCKING CHECK: Before placing, ensure you are NOT blocking any existing planter, lamp, or decor item
 - ❌ INCORRECT: Placing in front of sofa but shifted to the side
-- ✅ CORRECT: Directly touching or very close to sofa's side panel/armrest
+- ❌ INCORRECT: Placing in front of an existing planter next to the sofa
+- ✅ CORRECT: Directly touching or very close to sofa's side panel/armrest on the EMPTY side
 
 📚 STORAGE (bookshelf, cabinet, dresser):
 - Place against walls, not blocking pathways
@@ -1043,8 +1112,10 @@ PLACEMENT STRATEGY:
 - Place on floor next to sofa, chair, or table
 - Can be placed on existing side tables or shelves
 - ⚖️ BALANCE: If placing next to sofa, position on one side; if side table is needed, place it on the OPPOSITE side
+- 🚫 BLOCKING CHECK: Ensure planters do not block existing side tables or other furniture
 - Avoid blocking pathways or clustering all decor on one side
 - Create visual balance by distributing decor items across the room
+- ✅ CORRECT: Planter on left side of sofa, side table on right side (both fully visible)
 
 IMPORTANT FOR MULTIPLE PRODUCTS ({product_count} products):
 - When placing {product_count} products, the room STILL stays the same
@@ -1109,8 +1180,8 @@ OUTPUT: One photorealistic image of THE SAME ROOM with {product_count} product(s
 
 Create a photorealistic interior design visualization that addresses the user's request while maintaining realistic proportions, lighting, and materials."""
 
-            # Use Gemini 2.5 Flash Image with LOWER temperature for more consistent results
-            model = "gemini-2.5-flash-image"
+            # Use Gemini 3 Pro Image (Nano Banana Pro) with LOWER temperature for more consistent results
+            model = "gemini-3-pro-image-preview"
             transformed_image = None
             transformation_description = ""
 
@@ -1258,8 +1329,8 @@ QUALITY REQUIREMENTS:
 
 🎯 RESULT: The output must show THE SAME ROOM from the input image, just with design changes applied to furniture/decor."""
 
-            # Use Gemini 2.5 Flash Image for generation
-            model = "gemini-2.5-flash-image"
+            # Use Gemini 3 Pro Image (Nano Banana Pro) for generation
+            model = "gemini-3-pro-image-preview"
             parts = [
                 types.Part.from_text(text=visualization_prompt),
                 types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_image))),
@@ -1396,8 +1467,8 @@ QUALITY REQUIREMENTS:
 
 🎯 RESULT: Output must show THIS EXACT ROOM with ALL existing products preserved and only the requested modification applied. Same walls, same windows, same floor, same furniture, same perspective - just with the specific change requested."""
 
-            # Use Gemini 2.5 Flash Image for generation
-            model = "gemini-2.5-flash-image"
+            # Use Gemini 3 Pro Image (Nano Banana Pro) for generation
+            model = "gemini-3-pro-image-preview"
             parts = [
                 types.Part.from_text(text=visualization_prompt),
                 types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_image))),
@@ -1500,6 +1571,51 @@ QUALITY REQUIREMENTS:
                 lighting_realism=0.0,
                 confidence_score=0.3,
             )
+
+    def _build_custom_position_instructions(self, positions: list, products: list) -> str:
+        """Build custom position instructions for Gemini prompt"""
+        if not positions or len(positions) == 0:
+            return "No custom positions provided. Use default placement strategy above."
+
+        instructions = []
+        instructions.append("⚠️ CRITICAL: USER HAS SPECIFIED CUSTOM POSITIONS - YOU MUST FOLLOW THESE EXACTLY:")
+        instructions.append("")
+
+        for pos in positions:
+            # Find the corresponding product
+            product_id = pos.get("productId") or pos.get("product_id")
+            matching_product = None
+            for idx, product in enumerate(products):
+                if str(product.get("id")) == str(product_id):
+                    matching_product = (idx + 1, product.get("full_name") or product.get("name", "unknown"))
+                    break
+
+            if matching_product:
+                product_num, product_name = matching_product
+                x = pos.get("x", 0.5)
+                y = pos.get("y", 0.5)
+
+                # Convert x,y percentages (0-1) to room position instructions
+                horizontal = "center"
+                if x < 0.33:
+                    horizontal = "left side"
+                elif x > 0.67:
+                    horizontal = "right side"
+
+                vertical = "middle"
+                if y < 0.33:
+                    vertical = "back/far"
+                elif y > 0.67:
+                    vertical = "front/near"
+
+                instructions.append(f"Product {product_num} ({product_name}): Place at {horizontal} of room, {vertical} depth")
+                instructions.append(f"  - Horizontal position: {int(x * 100)}% from left edge")
+                instructions.append(f"  - Depth position: {int(y * 100)}% from back wall")
+
+        instructions.append("")
+        instructions.append("🔒 THESE POSITIONS ARE MANDATORY - Place products at these exact locations!")
+
+        return "\n".join(instructions)
 
     async def _download_image(self, image_url: str) -> Optional[str]:
         """Download and preprocess product image from URL"""
@@ -1619,6 +1735,76 @@ QUALITY REQUIREMENTS:
 
         except Exception as e:
             return {"status": "unhealthy", "error": str(e), "api_key_valid": bool(self.api_key)}
+
+    async def analyze_image_with_prompt(self, image: str, prompt: str) -> str:
+        """
+        Analyze an image with a custom prompt using Gemini Vision
+
+        Args:
+            image: Base64 encoded image data
+            prompt: Custom prompt for analysis
+
+        Returns:
+            str: Gemini's text response
+        """
+        logger.info("[GoogleAIStudioService] Analyzing image with custom prompt")
+
+        # Prepare image data
+        image_data = self._preprocess_image(image)
+
+        # Build request payload
+        payload = {
+            "contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "image/png", "data": image_data}}]}]
+        }
+
+        try:
+            # Make API request
+            response = await self._make_api_request("generateContent", payload)
+
+            # Extract text response
+            if response and "candidates" in response:
+                candidate = response["candidates"][0]
+                if "content" in candidate and "parts" in candidate["content"]:
+                    parts = candidate["content"]["parts"]
+                    if parts and "text" in parts[0]:
+                        return parts[0]["text"]
+
+            logger.warning("[GoogleAIStudioService] No valid response from Gemini")
+            return ""
+
+        except Exception as e:
+            logger.error(f"[GoogleAIStudioService] Error analyzing image: {str(e)}")
+            raise
+
+    async def generate_image_with_prompt(self, base_image: str, prompt: str) -> str:
+        """
+        Generate/modify an image using Gemini with a custom prompt
+
+        Note: Gemini 2.5 Flash currently doesn't directly support image generation.
+        This method uses Gemini to analyze and describe the transformation,
+        then returns the base image (in production, you'd use an image generation model)
+
+        Args:
+            base_image: Base64 encoded source image
+            prompt: Prompt describing the desired transformation
+
+        Returns:
+            str: Base64 encoded result image
+
+        TODO: Integrate with actual image generation/editing model (like DALL-E, Stable Diffusion, etc.)
+        """
+        logger.info("[GoogleAIStudioService] Generating image with prompt (placeholder)")
+        logger.warning("[GoogleAIStudioService] Image generation not yet fully implemented - returning base image")
+
+        # For now, return the base image
+        # In production, this would:
+        # 1. Use Gemini to understand the prompt
+        # 2. Call an image generation/editing API (Replicate, DALL-E, etc.)
+        # 3. Return the generated image
+
+        # Placeholder: Just return the base image
+        # TODO: Implement actual image isolation using background removal or segmentation
+        return base_image
 
     async def close(self):
         """Close HTTP session"""

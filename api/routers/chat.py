@@ -562,6 +562,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         user_action = request.get("action")  # "replace_one", "replace_all", "add", or None
         is_incremental = request.get("is_incremental", False)  # Smart re-visualization flag
         force_reset = request.get("force_reset", False)  # Force fresh visualization
+        custom_positions = request.get("custom_positions", [])  # Optional furniture positions for edit mode
 
         if not base_image:
             raise HTTPException(status_code=400, detail="Image is required")
@@ -718,7 +719,8 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             visualization_instruction = "Place the selected product naturally in an appropriate location in the room."
 
         # Get full product details with images from database
-        product_ids = [p.get("id") for p in products if p.get("id")]
+        # ISSUE #3 FIX: Cast product IDs to integers for database query (PostgreSQL requires type matching)
+        product_ids = [int(p.get("id")) for p in products if p.get("id")]
         if product_ids:
             from sqlalchemy.orm import selectinload
 
@@ -879,12 +881,16 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             viz_request = VisualizationRequest(
                 base_image=base_image,
                 products_to_place=products,
-                placement_positions=[],
+                placement_positions=custom_positions if custom_positions else [],
                 lighting_conditions=lighting_conditions,
                 render_quality="high",
                 style_consistency=True,
                 user_style_description=user_style_description,
             )
+
+            # Log if using custom positions
+            if custom_positions:
+                logger.info(f"Using {len(custom_positions)} custom furniture positions from edit mode")
 
             # Generate visualization using Google AI Studio
             viz_result = await google_ai_service.generate_room_visualization(viz_request)
@@ -906,11 +912,20 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         conversation_context_manager.push_visualization_state(session_id, visualization_data)
 
         # Verify that we have a valid visualization result
-        if not viz_result or not viz_result.rendered_image:
-            logger.error(f"Visualization failed: viz_result.rendered_image is empty or None")
+        # Check for None, empty string, or very short base64 strings (likely malformed)
+        if (
+            not viz_result
+            or not viz_result.rendered_image
+            or len(viz_result.rendered_image.strip()) < 100  # Valid base64 images are much longer
+            or viz_result.rendered_image == base_image  # AI returned unchanged image (failure)
+        ):
+            logger.error(
+                f"Visualization failed: rendered_image is empty, malformed, or unchanged "
+                f"(length: {len(viz_result.rendered_image) if viz_result and viz_result.rendered_image else 0})"
+            )
             raise HTTPException(
                 status_code=500,
-                detail="Visualization generation failed. The AI service did not return a valid image. Please try again.",
+                detail="Visualization generation failed. The AI service did not return a valid image. Please try again or try with fewer products.",
             )
 
         # Prepare response message based on visualization mode
@@ -2033,5 +2048,41 @@ async def generate_style_guide(
         import traceback
 
         logger.error(f"Error generating style guide: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
+
+
+@router.post("/sessions/{session_id}/remove-furniture")
+async def remove_furniture_from_visualization(session_id: str, request: dict, db: AsyncSession = Depends(get_db)):
+    """
+    Remove furniture from a visualization image for edit mode.
+    Synchronous endpoint that directly calls Google AI service.
+
+    Request body should contain:
+    - image: base64 encoded image
+    """
+    try:
+        logger.info(f"Removing furniture for edit mode, session: {session_id}")
+
+        # Extract image from request
+        image = request.get("image")
+        if not image:
+            raise HTTPException(status_code=400, detail="No image provided")
+
+        # Call Google AI service to remove furniture (with retries)
+        clean_image = await google_ai_service.remove_furniture(image, max_retries=3)
+
+        if not clean_image:
+            raise HTTPException(status_code=500, detail="Failed to remove furniture after retries")
+
+        logger.info(f"Successfully removed furniture for session {session_id}")
+        return {"clean_image": clean_image, "session_id": session_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+
+        logger.error(f"Error removing furniture: {e}\n{traceback.format_exc()}")
         error_type = type(e).__name__
         raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")

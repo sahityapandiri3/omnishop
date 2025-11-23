@@ -28,7 +28,7 @@ export default function ChatPanel({
     {
       role: 'assistant',
       content:
-        "Hi! I'm your interior design assistant. Tell me about your space and what you're looking for!",
+        "Hi! I'm your interior styling assistant. Tell me about your space and what you're looking for!",
       timestamp: new Date(),
     },
   ]);
@@ -178,7 +178,7 @@ export default function ChatPanel({
           </div>
           <div>
             <h2 className="font-semibold text-neutral-900 dark:text-white">
-              Design Assistant
+              Styling Assistant
             </h2>
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
               Ask me anything about furniture

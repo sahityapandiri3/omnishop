@@ -275,6 +275,10 @@ class FurniturePosition(Base):
     label = Column(String(200), nullable=True)  # Product display name
     is_ai_placed = Column(Boolean, default=True)  # True if AI placed, False if user adjusted
 
+    # Layer data for drag-and-drop editing
+    layer_image_url = Column(Text, nullable=True)  # Base64 image data of isolated furniture layer
+    z_index = Column(Integer, default=1, nullable=False)  # Layer stacking order (higher = on top)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
