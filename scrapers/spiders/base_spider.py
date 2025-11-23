@@ -63,6 +63,17 @@ class BaseProductSpider(scrapy.Spider):
         except Exception:
             return default
 
+    def extract_text_from_selectors(self, response, selectors: List[str], default: str = None) -> Optional[str]:
+        """Try multiple CSS selectors in order until one returns a value"""
+        for selector_str in selectors:
+            try:
+                text = response.css(selector_str).get()
+                if text:
+                    return text.strip()
+            except Exception:
+                continue
+        return default
+
     def extract_text_list(self, selector) -> List[str]:
         """Extract list of text values from selector"""
         try:

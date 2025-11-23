@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { ProductDetailModal } from '../ProductDetailModal';
 import { Product } from '@/types';
@@ -32,6 +32,20 @@ export default function ProductDiscoveryPanel({
   // Filter states
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
   const [priceRange, setPriceRange] = useState<{ min: number; max: number }>({ min: 0, max: Infinity });
+
+  // Ref for the scrollable products container
+  const productsContainerRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to top when new products arrive
+  useEffect(() => {
+    if (products.length > 0 && productsContainerRef.current) {
+      productsContainerRef.current.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      });
+      console.log('[ProductDiscoveryPanel] Scrolling to top - new products loaded');
+    }
+  }, [products]);
 
   // Transform raw product to Product type
   const transformProduct = (rawProduct: any): Product => {
@@ -271,7 +285,7 @@ export default function ProductDiscoveryPanel({
         </div>
 
         {/* Products Grid */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div ref={productsContainerRef} className="flex-1 overflow-y-auto p-4">
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
             {sortedProducts.map((product) => {
               const productInCanvas = isInCanvas(product.id);

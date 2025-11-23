@@ -147,6 +147,14 @@ export default function DesignPage() {
     }
   };
 
+  // Furniture quantity restriction rules
+  // SINGLE_INSTANCE: Only one of this type allowed in the canvas (replaces existing)
+  // UNLIMITED: Multiple instances allowed (always adds new)
+  const FURNITURE_QUANTITY_RULES = {
+    SINGLE_INSTANCE: ['sofa', 'bed', 'coffee_table', 'floor_rug', 'ceiling_lamp'],
+    UNLIMITED: ['planter', 'floor_lamp', 'standing_lamp', 'side_table', 'ottoman', 'table_lamp'],
+  };
+
   // Extract product type from product name
   const extractProductType = (productName: string): string => {
     const name = productName.toLowerCase();
@@ -161,8 +169,9 @@ export default function DesignPage() {
     if (name.includes('dining chair')) return 'dining_chair';
     if (name.includes('office chair')) return 'office_chair';
     if (name.includes('table lamp') || name.includes('desk lamp')) return 'table_lamp';
-    if (name.includes('floor lamp')) return 'floor_lamp';
+    if (name.includes('floor lamp') || name.includes('standing lamp')) return 'floor_lamp';
     if (name.includes('ceiling lamp') || name.includes('pendant') || name.includes('chandelier')) return 'ceiling_lamp';
+    if (name.includes('planter') || name.includes('plant pot') || name.includes('flower pot')) return 'planter';
     if (name.includes('table')) return 'table';
     if (name.includes('chair')) return 'chair';
     if (name.includes('lamp')) return 'lamp';
@@ -193,23 +202,40 @@ export default function DesignPage() {
     console.log('[DesignPage] Product type:', productType);
     console.log('[DesignPage] Current canvas products:', canvasProducts.map(p => ({ name: p.name, type: p.productType })));
 
-    // Check if product type already exists (for replaceable items like sofas, tables)
-    const existingIndex = canvasProducts.findIndex(
-      (p) => p.productType === productType
-    );
+    // Check if this product type has quantity restrictions
+    const isSingleInstance = FURNITURE_QUANTITY_RULES.SINGLE_INSTANCE.includes(productType);
+    const isUnlimited = FURNITURE_QUANTITY_RULES.UNLIMITED.includes(productType);
 
-    console.log('[DesignPage] Existing product index:', existingIndex);
+    if (isSingleInstance) {
+      // SINGLE INSTANCE: Replace existing product of same type
+      const existingIndex = canvasProducts.findIndex((p) => p.productType === productType);
 
-    if (existingIndex >= 0) {
-      // Replace existing product of same type
-      console.log('[DesignPage] Replacing existing product at index', existingIndex);
-      const updated = [...canvasProducts];
-      updated[existingIndex] = productWithType;
-      setCanvasProducts(updated);
-    } else {
-      // Add new product
-      console.log('[DesignPage] Adding new product (no existing match)');
+      if (existingIndex >= 0) {
+        console.log('[DesignPage] Replacing existing single-instance product at index', existingIndex);
+        const updated = [...canvasProducts];
+        updated[existingIndex] = productWithType;
+        setCanvasProducts(updated);
+      } else {
+        console.log('[DesignPage] Adding new single-instance product');
+        setCanvasProducts([...canvasProducts, productWithType]);
+      }
+    } else if (isUnlimited) {
+      // UNLIMITED: Always add new instance (allow multiples)
+      console.log('[DesignPage] Adding new unlimited-instance product (multiples allowed)');
       setCanvasProducts([...canvasProducts, productWithType]);
+    } else {
+      // DEFAULT: For unclassified items, use the old replacement behavior
+      const existingIndex = canvasProducts.findIndex((p) => p.productType === productType);
+
+      if (existingIndex >= 0) {
+        console.log('[DesignPage] Replacing existing product at index', existingIndex);
+        const updated = [...canvasProducts];
+        updated[existingIndex] = productWithType;
+        setCanvasProducts(updated);
+      } else {
+        console.log('[DesignPage] Adding new product');
+        setCanvasProducts([...canvasProducts, productWithType]);
+      }
     }
 
     // Auto-switch to canvas tab on mobile

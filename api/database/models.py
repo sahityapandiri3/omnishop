@@ -4,10 +4,8 @@ Database models for Omnishop scraping system
 import enum
 import uuid
 from datetime import datetime
-from typing import List, Optional
 
 from sqlalchemy import JSON, Boolean, Column, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
@@ -51,7 +49,7 @@ class Product(Base):
     external_id = Column(String(100), nullable=False, index=True)  # ID from source website
     name = Column(String(500), nullable=False, index=True)
     description = Column(Text, nullable=True)
-    price = Column(Float, nullable=False, index=True)
+    price = Column(Float, nullable=True, index=True)  # Allow NULL for enquiry-based pricing
     original_price = Column(Float, nullable=True)  # For sale items
     currency = Column(String(3), default="USD")
     brand = Column(String(100), nullable=True, index=True)

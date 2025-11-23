@@ -30,13 +30,13 @@ class ValidationPipeline:
         adapter = ItemAdapter(item)
 
         if isinstance(item, ProductItem):
-            # Required fields validation
-            required_fields = ['name', 'price', 'source_url', 'source_website']
+            # Required fields validation (price is optional for enquiry-based pricing)
+            required_fields = ['name', 'source_url', 'source_website']
             for field in required_fields:
                 if not adapter.get(field):
                     raise DropItem(f"Missing required field: {field} in {adapter.get('source_url', 'unknown')}")
 
-            # Price validation
+            # Price validation (if price exists, it must be valid)
             price = adapter.get('price')
             if price is not None and (price <= 0 or price > 1000000):
                 raise DropItem(f"Invalid price: {price} for item {adapter.get('name', 'unknown')}")
