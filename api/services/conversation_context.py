@@ -234,10 +234,26 @@ class ConversationContextManager:
         if context.visualization_redo_stack is None:
             context.visualization_redo_stack = []
 
-        # Need at least 2 items (current + previous) to undo
-        if len(context.visualization_history) < 2:
-            logger.info(f"Cannot undo: insufficient history for session {session_id}")
+        # If no history at all, cannot undo
+        if len(context.visualization_history) == 0:
+            logger.info(f"Cannot undo: no visualization history for session {session_id}")
             return None
+
+        # If only 1 visualization exists, undo should return the original uploaded image
+        if len(context.visualization_history) == 1:
+            # Pop current state and move to redo stack
+            current_state = context.visualization_history.pop()
+            context.visualization_redo_stack.append(current_state)
+
+            # Return original uploaded image as the previous state
+            context.last_updated = datetime.now()
+            logger.info(f"Undo to original image for session {session_id}. History: {len(context.visualization_history)}, Redo: {len(context.visualization_redo_stack)}")
+
+            return {
+                "image": context.last_uploaded_image,
+                "timestamp": datetime.now().isoformat(),
+                "is_original": True
+            }
 
         # Pop current state and move to redo stack
         current_state = context.visualization_history.pop()
