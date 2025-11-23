@@ -287,11 +287,9 @@ export default function CanvasPanel({
       setVisualizedProducts(products); // Store actual product objects for edit mode
       setNeedsRevisualization(false); // Reset change flag
 
-      // Update undo/redo availability (need to check backend state)
-      // After visualization, undo should be available if there's history
-      if (sessionId) {
-        await updateUndoRedoState(sessionId);
-      }
+      // Update undo/redo availability from backend response
+      setCanUndo(data.can_undo || false);
+      setCanRedo(data.can_redo || false);
 
       console.log(`[CanvasPanel] Visualization successful. Tracked ${products.length} products as visualized.`);
     } catch (error: any) {

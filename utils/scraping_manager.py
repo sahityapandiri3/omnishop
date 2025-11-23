@@ -20,7 +20,11 @@ class ScrapingManager:
     """Manage scraping operations and scheduling"""
 
     def __init__(self):
-        self.spiders = ['pelicanessentials', 'sageliving', 'objectry']
+        # Active spiders with configured scrapers
+        self.spiders = ['pelicanessentials', 'sageliving', 'objectry', 'josmo', 'magari', 'phantomhands']
+        # All sources (including legacy scraped data)
+        self.all_sources = ['pelicanessentials', 'sageliving', 'objectry', 'josmo', 'magari', 'phantomhands',
+                           'thehouseofthings', 'modernquests', 'masonhome', 'palasa', 'fleck']
         self.project_root = Path(__file__).parent.parent
 
     def run_spider(self, spider_name: str, **kwargs) -> Dict:
@@ -157,9 +161,9 @@ class ScrapingManager:
                 ScrapingLog.created_at >= datetime.utcnow() - timedelta(hours=24)
             ).order_by(ScrapingLog.created_at.desc()).limit(50).all()
 
-            # Get latest log for each spider
+            # Get latest log for each source
             latest_logs = {}
-            for spider in self.spiders:
+            for spider in self.all_sources:
                 latest = session.query(ScrapingLog).filter(
                     ScrapingLog.spider_name == spider
                 ).order_by(ScrapingLog.created_at.desc()).first()
@@ -173,7 +177,7 @@ class ScrapingManager:
 
             # Calculate success rates
             success_rates = {}
-            for spider in self.spiders:
+            for spider in self.all_sources:
                 logs = session.query(ScrapingLog).filter(
                     ScrapingLog.spider_name == spider,
                     ScrapingLog.created_at >= datetime.utcnow() - timedelta(days=7)
@@ -200,7 +204,15 @@ class ScrapingManager:
             'orangetree': 'orangetree.com',
             'pelicanessentials': 'pelicanessentials.com',
             'sageliving': 'sageliving.in',
-            'objectry': 'objectry.com'
+            'objectry': 'objectry.com',
+            'josmo': 'josmo.in',
+            'magari': 'magari.in',
+            'phantomhands': 'phantomhands.in',
+            'thehouseofthings': 'thehouseofthings.com',
+            'modernquests': 'modernquests.com',
+            'masonhome': 'masonhome.in',
+            'palasa': 'palasa.co.in',
+            'fleck': 'fleck.co.in'
         }
 
         with get_db_session() as session:
@@ -286,7 +298,7 @@ class ScrapingManager:
 
         with get_db_session() as session:
             totals = {}
-            for spider in self.spiders:
+            for spider in self.all_sources:
                 count = session.query(Product).filter(
                     Product.source_website == spider
                 ).count()

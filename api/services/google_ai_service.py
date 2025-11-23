@@ -977,6 +977,19 @@ DO NOT redesign the space.
 DO NOT change ANY aspect of the room structure.
 DO NOT alter floors, walls, windows, doors, or ceiling in ANY way.
 
+🚨 CRITICAL DIMENSIONAL REQUIREMENTS 🚨
+═══════════════════════════════════════════════════════════════
+1. OUTPUT IMAGE DIMENSIONS: The output image MUST have the EXACT SAME width and height (in pixels) as the input image
+2. ASPECT RATIO: The aspect ratio of the output MUST be IDENTICAL to the input image
+3. ROOM PROPORTIONS: The room's length and width proportions MUST remain unchanged
+4. IMAGE RESOLUTION: Match the exact resolution of the input - do NOT resize or crop
+5. NO DIMENSIONAL CHANGES: The room's physical dimensions (length, width, height) MUST stay the same
+
+⚠️ VERIFICATION CHECK:
+- If input image is 1024x768 pixels → output MUST be 1024x768 pixels
+- If input room appears 15ft x 12ft → output room MUST appear 15ft x 12ft
+- If input has 16:9 aspect ratio → output MUST have 16:9 aspect ratio
+
 THE INPUT IMAGE SHOWS THE USER'S ACTUAL ROOM.
 YOU ARE ADDING PRODUCTS TO THEIR REAL SPACE.
 TREAT THE INPUT IMAGE AS SACRED - IT CANNOT BE MODIFIED.
@@ -1310,6 +1323,14 @@ Create a photorealistic interior design visualization that addresses the user's 
 
 USER'S DESIGN REQUEST: {user_request}
 
+🚨 CRITICAL DIMENSIONAL REQUIREMENTS 🚨
+═══════════════════════════════════════════════════════════════
+1. OUTPUT IMAGE DIMENSIONS: The output image MUST have the EXACT SAME width and height (in pixels) as the input image
+2. ASPECT RATIO: The aspect ratio of the output MUST be IDENTICAL to the input image
+3. ROOM PROPORTIONS: The room's length and width proportions MUST remain unchanged
+4. IMAGE RESOLUTION: Match the exact resolution of the input - do NOT resize or crop
+5. NO DIMENSIONAL CHANGES: The room's physical dimensions (length, width, height) MUST stay the same
+
 🔒 CRITICAL PRESERVATION RULES:
 1. USE THIS EXACT ROOM: Keep the same walls, windows, doors, flooring, ceiling, and architectural features shown in the image
 2. PRESERVE THE SPACE: Maintain the exact room dimensions, layout, and perspective
@@ -1439,6 +1460,14 @@ QUALITY REQUIREMENTS:
 
 MODIFICATION REQUEST: {modification_request}
 {existing_products_description}
+
+🚨 CRITICAL DIMENSIONAL REQUIREMENTS 🚨
+═══════════════════════════════════════════════════════════════
+1. OUTPUT IMAGE DIMENSIONS: The output image MUST have the EXACT SAME width and height (in pixels) as the input image
+2. ASPECT RATIO: The aspect ratio of the output MUST be IDENTICAL to the input image
+3. ROOM PROPORTIONS: The room's length and width proportions MUST remain unchanged
+4. IMAGE RESOLUTION: Match the exact resolution of the input - do NOT resize or crop
+5. NO DIMENSIONAL CHANGES: The room's physical dimensions (length, width, height) MUST stay the same
 
 🔒 CRITICAL PRESERVATION RULES:
 1. USE THIS EXACT ROOM: Keep the same walls, windows, doors, flooring, ceiling shown in this image

@@ -589,6 +589,19 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             context.visualization_history = []
             context.visualization_redo_stack = []
 
+        # CRITICAL FIX: For incremental visualization, use the last visualization as base image
+        # This ensures that when adding product 4 after products 1, 2, 3, we add to the
+        # existing visualization (with all 3 products) rather than starting from the original empty room
+        if is_incremental:
+            context = conversation_context_manager.get_or_create_context(session_id)
+            if context.visualization_history:
+                # Use the most recent visualization as the base
+                last_visualization = context.visualization_history[-1]
+                base_image = last_visualization.get("rendered_image")
+                logger.info(f"Incremental mode: Using last visualization from history as base image (history length: {len(context.visualization_history)})")
+            else:
+                logger.info(f"Incremental mode: No history available, using provided base image")
+
         # Store original image if this is a new upload
         # This is critical for undo functionality - allows undo to return to base image
         user_uploaded_new_image = request.get("user_uploaded_new_image", False)
@@ -947,6 +960,8 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             },
             "message": message,
             "technical_note": "Generative AI models create new images rather than edit existing ones. Some variation in room structure is expected.",
+            "can_undo": conversation_context_manager.can_undo(session_id),
+            "can_redo": conversation_context_manager.can_redo(session_id),
         }
 
     except HTTPException:
