@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Stage, Layer, Image as KonvaImage, Rect, Text, Group } from 'react-konva';
+import type Konva from 'konva';
 import useImage from 'use-image';
 
 export interface FurniturePosition {
@@ -67,7 +68,7 @@ const DraggableFurnitureItem: React.FC<DraggableFurnitureItemProps> = ({
       x={x}
       y={y}
       draggable
-      onDragEnd={(e) => {
+      onDragEnd={(e: Konva.KonvaEventObject<DragEvent>) => {
         const newX = Math.max(0, Math.min(e.target.x(), canvasWidth - boxWidth));
         const newY = Math.max(0, Math.min(e.target.y(), canvasHeight - boxHeight));
 
@@ -151,7 +152,7 @@ export const DraggableFurnitureCanvas: React.FC<DraggableFurnitureCanvasProps> =
     onPositionsChange(updatedPositions);
   };
 
-  const handleStageClick = (e: any) => {
+  const handleStageClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
     if (e.target === e.target.getStage()) {
       setSelectedId(null);
     }
