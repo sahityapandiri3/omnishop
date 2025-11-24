@@ -220,11 +220,59 @@ export const checkFurnitureRemovalStatus = async (jobId: string): Promise<{ job_
   }
 };
 
-// Stores API
+// Stores API with localStorage caching
+const STORES_CACHE_KEY = 'omnishop_stores_cache';
+const STORES_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+interface StoresCache {
+  stores: string[];
+  timestamp: number;
+}
+
 export const getAvailableStores = async (): Promise<{ stores: string[] }> => {
   try {
+    // Check if we're in a browser environment
+    if (typeof window !== 'undefined' && window.localStorage) {
+      // Try to get cached data
+      const cached = localStorage.getItem(STORES_CACHE_KEY);
+
+      if (cached) {
+        try {
+          const cacheData: StoresCache = JSON.parse(cached);
+          const age = Date.now() - cacheData.timestamp;
+
+          // If cache is less than 24 hours old, return it
+          if (age < STORES_CACHE_TTL) {
+            console.log('[Stores Cache] Using cached stores data (age:', Math.round(age / 1000 / 60), 'minutes)');
+            return { stores: cacheData.stores };
+          } else {
+            console.log('[Stores Cache] Cache expired, fetching fresh data');
+          }
+        } catch (e) {
+          console.warn('[Stores Cache] Failed to parse cached data, fetching fresh');
+        }
+      }
+    }
+
+    // Fetch from API
     const response = await api.get('/api/stores');
-    return response.data;
+    const storesData = response.data;
+
+    // Cache the result
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const cacheData: StoresCache = {
+          stores: storesData.stores,
+          timestamp: Date.now(),
+        };
+        localStorage.setItem(STORES_CACHE_KEY, JSON.stringify(cacheData));
+        console.log('[Stores Cache] Cached fresh stores data');
+      } catch (e) {
+        console.warn('[Stores Cache] Failed to cache data:', e);
+      }
+    }
+
+    return storesData;
   } catch (error) {
     console.error('Error fetching available stores:', error);
     throw error;
