@@ -926,9 +926,31 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         # Push visualization to history for undo/redo support
         # Note: We only store states with furniture, not the empty original room
         # This allows undo to work through furniture additions without going back to empty
+
+        # CRITICAL FIX: For incremental visualizations, we need to accumulate products
+        # from the previous state. Otherwise, undo will only see the most recently added
+        # products, not the full list of products in the scene.
+        if is_incremental:
+            context = conversation_context_manager.get_or_create_context(session_id)
+            if context.visualization_history and len(context.visualization_history) > 0:
+                # Get products from previous visualization
+                previous_products = context.visualization_history[-1].get("products", [])
+                # Combine previous products with newly added products
+                accumulated_products = previous_products + products
+                logger.info(
+                    f"Incremental mode: Accumulating products. Previous: {len(previous_products)}, New: {len(products)}, Total: {len(accumulated_products)}"
+                )
+            else:
+                # First visualization, no previous products
+                accumulated_products = products
+                logger.info(f"Incremental mode: First visualization with {len(products)} products")
+        else:
+            # Standard (non-incremental) mode: products array already contains all products
+            accumulated_products = products
+
         visualization_data = {
             "rendered_image": viz_result.rendered_image,
-            "products": products,
+            "products": accumulated_products,
             "user_action": user_action,
             "existing_furniture": existing_furniture,
         }
