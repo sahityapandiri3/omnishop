@@ -6,8 +6,6 @@ import uuid
 from datetime import datetime
 from typing import List, Optional, Tuple
 
-from core.database import get_db
-from database.models import ChatMessage, ChatSession, Product
 from fastapi import APIRouter, Depends, HTTPException
 from schemas.chat import (
     ChatHistoryResponse,
@@ -29,6 +27,9 @@ from services.recommendation_engine import RecommendationRequest, recommendation
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from core.database import get_db
+from database.models import ChatMessage, ChatSession, Product
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
@@ -598,7 +599,9 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 # Use the most recent visualization as the base
                 last_visualization = context.visualization_history[-1]
                 base_image = last_visualization.get("rendered_image")
-                logger.info(f"Incremental mode: Using last visualization from history as base image (history length: {len(context.visualization_history)})")
+                logger.info(
+                    f"Incremental mode: Using last visualization from history as base image (history length: {len(context.visualization_history)})"
+                )
             else:
                 logger.info(f"Incremental mode: No history available, using provided base image")
 
@@ -681,10 +684,12 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     break
 
         # If we found matching furniture and user hasn't specified action yet, ask for clarification
-        if matching_existing and not user_action:
+        # IMPORTANT: Skip clarification if custom_positions are provided (user explicitly positioned items)
+        if matching_existing and not user_action and not custom_positions:
             product_type_display = list(selected_product_types)[0].replace("_", " ")
             count = len(matching_existing)
             plural = "s" if count > 1 else ""
+            logger.info(f"Requesting clarification: found {count} matching {product_type_display}{plural} in room")
 
             clarification_message = f"I see there {'are' if count > 1 else 'is'} {count} {product_type_display}{plural} in your room. Would you like me to:\n\n"
 
@@ -713,6 +718,11 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 "matching_count": count,
                 "product_type": product_type_display,
             }
+        elif matching_existing and custom_positions:
+            # Skip clarification when custom positions are provided
+            logger.info(
+                f"Skipping clarification: custom_positions provided (user explicitly positioned {len(custom_positions)} items)"
+            )
 
         # If user provided action, prepare visualization instruction
         visualization_instruction = ""
