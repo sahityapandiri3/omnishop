@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: 'https://omnishop.com',
+    url: 'https://omni-shop.in',
     title: 'Omnishop - AI Interior Design Visualization',
     description: 'Transform your space with AI-powered interior design. Browse thousands of furniture and decor items.',
     siteName: 'Omnishop',
@@ -78,8 +78,8 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
 
         {/* Performance hints */}
-        <link rel="dns-prefetch" href="//api.omnishop.com" />
-        <link rel="preconnect" href="https://api.omnishop.com" />
+        <link rel="dns-prefetch" href="//app.omni-shop.in" />
+        <link rel="preconnect" href="https://app.omni-shop.in" />
       </head>
       <body className={`${inter.className} bg-neutral-50 text-neutral-900 antialiased`}>
         <Providers>
