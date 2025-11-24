@@ -34,11 +34,12 @@ import_error_message = None
 import_error_traceback = None
 
 try:
+    from routers import categories, chat, furniture, products, stores, visualization
+
     from core.config import settings
 
     # from core.database import database
     from core.logging import setup_logging
-    from routers import categories, chat, furniture, products, stores, visualization
 
     # Setup logging
     setup_logging()
@@ -138,7 +139,9 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
-        "https://omnishop-three.vercel.app",  # Production frontend
+        "https://omnishop-three.vercel.app",  # Old production frontend (keep during transition)
+        "https://omni-shop.in",  # Custom domain frontend
+        "https://www.omni-shop.in",  # Custom domain frontend with www
     ],
     allow_origin_regex=r"https://omnishop-.*\.vercel\.app",  # All Vercel preview deployments
     allow_credentials=True,

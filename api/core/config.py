@@ -1,10 +1,11 @@
 """
 Configuration settings for the FastAPI application
 """
-from pydantic_settings import BaseSettings
-from pydantic import field_validator
-from typing import List, Union
 import os
+from typing import List, Union
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -30,16 +31,18 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
-        "https://omnishop-three.vercel.app",  # Production frontend
-        "https://omnishop-*.vercel.app"  # All Vercel preview deployments
+        "https://omnishop-three.vercel.app",  # Old production frontend (keep during transition)
+        "https://omnishop-*.vercel.app",  # All Vercel preview deployments
+        "https://omni-shop.in",  # Custom domain frontend
+        "https://www.omni-shop.in",  # Custom domain frontend with www
     ]
 
-    @field_validator('cors_origins', mode='before')
+    @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):
         """Parse CORS origins from comma-separated string or list"""
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(',')]
+            return [origin.strip() for origin in v.split(",")]
         return v
 
     # OpenAI
@@ -57,8 +60,12 @@ class Settings(BaseSettings):
     # Replicate (for SDXL Inpainting)
     replicate_api_key: str = ""
     replicate_model_sdxl_inpaint: str = "stability-ai/sdxl:39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b"
-    replicate_model_interior_design: str = "adirik/interior-design:76604baddc85b1b4616e1c6475eca080da339c8875bd4996705440484a6879c2"
-    replicate_model_ip_adapter_sdxl: str = "ostris/ip-adapter-sdxl:7d00780da0e4fc2a8d8a89c3c4b89d5f99ebb04be6bd3e9c8c6b8e31b8c5e5b2"
+    replicate_model_interior_design: str = (
+        "adirik/interior-design:76604baddc85b1b4616e1c6475eca080da339c8875bd4996705440484a6879c2"
+    )
+    replicate_model_ip_adapter_sdxl: str = (
+        "ostris/ip-adapter-sdxl:7d00780da0e4fc2a8d8a89c3c4b89d5f99ebb04be6bd3e9c8c6b8e31b8c5e5b2"
+    )
 
     # File upload
     upload_path: str = "../data/uploads"
