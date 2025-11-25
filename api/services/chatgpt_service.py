@@ -836,6 +836,23 @@ User: "yes"
             print(f"[DEBUG] Extracted conversational_response: {conversational_response[:100]}")
 
             # Normalize the response data to match schema
+            # Handle camelCase to snake_case conversion for key fields
+            camel_to_snake_mappings = {
+                "designAnalysis": "design_analysis",
+                "productMatchingCriteria": "product_matching_criteria",
+                "visualizationMode": "visualization_mode",
+                "visualizationGuidance": "visualization_guidance",
+                "confidenceScores": "confidence_scores",
+                "userFriendlyResponse": "user_friendly_response",
+                "designSummary": "design_summary",
+                "layoutGuidance": "layout_guidance",
+                "colorPalette": "color_palette",
+                "stylingTips": "styling_tips",
+            }
+            for camel, snake in camel_to_snake_mappings.items():
+                if camel in response_data and snake not in response_data:
+                    response_data[snake] = response_data[camel]
+
             # If OpenAI returns 'message', 'user_friendly_message', or 'user_message', map it to 'user_friendly_response'
             if "message" in response_data and "user_friendly_response" not in response_data:
                 response_data["user_friendly_response"] = response_data["message"]
@@ -845,6 +862,7 @@ User: "yes"
                 response_data["user_friendly_response"] = response_data["user_message"]
 
             # Ensure all optional fields have defaults
+            response_data.setdefault("design_analysis", {})
             response_data.setdefault("product_matching_criteria", {})
             response_data.setdefault("visualization_mode", {})
             response_data.setdefault("visualization_guidance", {})
