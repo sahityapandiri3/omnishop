@@ -79,7 +79,7 @@ class ChatGPTService:
         # Enhanced authentication and configuration
         self.client = openai.AsyncOpenAI(
             api_key=settings.openai_api_key,
-            timeout=60.0,  # 60 second timeout (increased from 30s to reduce false timeouts on first request)
+            timeout=120.0,  # 120 second timeout (increased from 60s to reduce false timeouts, especially for image analysis)
             max_retries=2  # Retry up to 2 times before showing fallback (was 0)
         )
         self.system_prompt = self._load_system_prompt()
