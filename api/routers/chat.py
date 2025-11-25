@@ -1685,12 +1685,16 @@ async def _get_product_recommendations(
                     user_preferences["description_keywords"].extend(search_terms)
                     logger.info(f"Extracted search_terms from analysis: {search_terms}")
 
-        # FALLBACK: If no product keywords extracted from analysis, try to extract from original message
+        # CRITICAL FALLBACK: If no product keywords extracted from analysis, use keywords from user message
+        # This ensures "show me sofas" returns sofas even when AI doesn't populate product_matching_criteria
+        logger.info(
+            f"[KEYWORD CHECK] Before fallback - user_preferences.product_keywords: {user_preferences.get('product_keywords', [])}, extracted: {product_keywords}"
+        )
         if "product_keywords" not in user_preferences or not user_preferences["product_keywords"]:
-            # FIRST: Try using the result from _extract_product_keywords if available
+            # Use the keywords extracted from user message at the start of this function
             if product_keywords:
                 user_preferences["product_keywords"] = product_keywords
-                logger.info(f"Using extracted product keywords: {product_keywords}")
+                logger.info(f"[KEYWORD FALLBACK] Applied extracted keywords: {product_keywords}")
             else:
                 # Extract furniture keywords from the conversation context if available
                 import re
