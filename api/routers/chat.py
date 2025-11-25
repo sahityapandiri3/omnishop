@@ -179,7 +179,9 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     selected_stores=request.selected_stores,
                 )
             else:
-                logger.warning(f"Analysis is None for session {session_id}, using fallback recommendations")
+                logger.warning(f"Analysis is None for session {session_id}, attempting keyword-based search")
+                # Even without AI analysis, try to extract keywords from user message
+                # This ensures "show me sofas" returns sofas, not random products
                 from schemas.chat import DesignAnalysisSchema
 
                 fallback_analysis = DesignAnalysisSchema(
@@ -189,7 +191,25 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     confidence_scores={},
                     recommendations={},
                 )
-                recommended_products = await _get_basic_product_recommendations(fallback_analysis, db, limit=50)
+
+                # Extract keywords from user message for targeted search
+                extracted_keywords = _extract_product_keywords(request.message)
+                if extracted_keywords:
+                    logger.info(f"Extracted keywords from user message: {extracted_keywords}")
+                    # Use keyword-based search instead of random products
+                    recommended_products = await _get_product_recommendations(
+                        fallback_analysis,
+                        db,
+                        user_message=request.message,
+                        limit=50,
+                        user_id=session.user_id,
+                        session_id=session_id,
+                        selected_stores=request.selected_stores,
+                    )
+                else:
+                    # No keywords found, fall back to random products
+                    logger.warning("No keywords extracted, using basic random recommendations")
+                    recommended_products = await _get_basic_product_recommendations(fallback_analysis, db, limit=50)
 
             # Enhance conversational response based on whether products were found
             if recommended_products and len(recommended_products) > 0:
