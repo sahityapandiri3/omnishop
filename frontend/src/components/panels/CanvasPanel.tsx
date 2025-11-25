@@ -353,24 +353,24 @@ export default function CanvasPanel({
         console.log('[CanvasPanel] Updating to:', data.visualization.rendered_image ? 'previous visualization' : 'base room image');
         setVisualizationResult(imageToShow);
 
-        // Update canvas products to match the undone state
+        // Update visualized product IDs to match the undone state
         const previousProducts = data.visualization.products_in_scene || [];
-        console.log('[CanvasPanel] Previous products from undo:', previousProducts);
-        console.log('[CanvasPanel] Previous products detail:', JSON.stringify(previousProducts));
-        console.log('[CanvasPanel] Calling onSetProducts with:', previousProducts.length, 'products');
+        console.log('[CanvasPanel] Previous visualization had:', previousProducts.length, 'products');
 
-        // Convert product IDs to strings if they're numbers (for consistency)
+        // Convert product IDs to strings for consistency
+        const newVisualizedIds = new Set<string>(previousProducts.map((p: any) => String(p.id)));
+        console.log('[CanvasPanel] Updated visualizedProductIds to:', newVisualizedIds);
+        setVisualizedProductIds(newVisualizedIds);
+
+        // Update visualizedProducts list to match the reverted state
         const normalizedProducts = previousProducts.map((p: any) => ({
           ...p,
           id: String(p.id)
         }));
-        console.log('[CanvasPanel] Normalized products:', normalizedProducts);
-        onSetProducts(normalizedProducts);
+        setVisualizedProducts(normalizedProducts);
 
-        // Update visualized product IDs - use normalizedProducts to maintain string ID consistency
-        const newVisualizedIds = new Set<string>(normalizedProducts.map((p: Product) => String(p.id)));
-        console.log('[CanvasPanel] New visualizedProductIds:', newVisualizedIds);
-        setVisualizedProductIds(newVisualizedIds);
+        // Update canvas products to reflect the undone state
+        onSetProducts(normalizedProducts);
       } else {
         console.error('[CanvasPanel] No visualization object in response!', data);
       }
@@ -416,23 +416,24 @@ export default function CanvasPanel({
       if (data.visualization?.rendered_image) {
         setVisualizationResult(data.visualization.rendered_image);
 
-        // Update canvas products to match the redone state
+        // Update visualized product IDs to match the redone state
         const nextProducts = data.visualization.products_in_scene || [];
-        console.log('[CanvasPanel] Next products from redo:', nextProducts);
-        console.log('[CanvasPanel] Next products detail:', JSON.stringify(nextProducts));
+        console.log('[CanvasPanel] Redone visualization has:', nextProducts.length, 'products');
 
-        // Convert product IDs to strings if they're numbers (for consistency)
+        // Convert product IDs to strings for consistency
+        const newVisualizedIds = new Set<string>(nextProducts.map((p: any) => String(p.id)));
+        console.log('[CanvasPanel] Updated visualizedProductIds to:', newVisualizedIds);
+        setVisualizedProductIds(newVisualizedIds);
+
+        // Update visualizedProducts list to match the redone state
         const normalizedProducts = nextProducts.map((p: any) => ({
           ...p,
           id: String(p.id)
         }));
-        console.log('[CanvasPanel] Normalized products for redo:', normalizedProducts);
-        onSetProducts(normalizedProducts);
+        setVisualizedProducts(normalizedProducts);
 
-        // Update visualized product IDs - use normalizedProducts to maintain string ID consistency
-        const newVisualizedIds = new Set<string>(normalizedProducts.map((p: Product) => String(p.id)));
-        console.log('[CanvasPanel] New visualizedProductIds for redo:', newVisualizedIds);
-        setVisualizedProductIds(newVisualizedIds);
+        // Update canvas products to reflect the redone state
+        onSetProducts(normalizedProducts);
       }
 
       // Update undo/redo availability

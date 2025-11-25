@@ -12,10 +12,11 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
-from core.config import settings
 from google import genai
 from google.genai import types
 from PIL import Image, ImageEnhance
+
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -678,7 +679,7 @@ DO NOT leave ANY furniture behind. The room must be 100% empty."""
                     )
 
                     logger.info(
-                        f"Gemini config: model=gemini-3-pro-image-preview, temperature=0.7, response_modalities=['IMAGE']"
+                        "Gemini config: model=gemini-3-pro-image-preview, temperature=0.7, response_modalities=['IMAGE']"
                     )
 
                     # Generate furniture removal
@@ -797,7 +798,16 @@ PLACEMENT GUIDELINES:
 - Side tables should be 0-6 inches from sofa's side
 - Center tables should be 14-18 inches from sofa's front
 
-OUTPUT: One photorealistic image showing THE SAME ROOM with the {product_name} added naturally."""
+🔦 CRITICAL LIGHTING REQUIREMENTS:
+⚠️ THE PRODUCT MUST LOOK LIKE IT IS PART OF THE ROOM, NOT ADDED ON TOP OF IT ⚠️
+1. ANALYZE the room's lighting: identify light sources, direction, color temperature (warm/cool)
+2. MATCH lighting on the product: highlights must come from the same direction as room lighting
+3. MATCH shadow direction: product shadow must fall in the same direction as other shadows in room
+4. MATCH exposure: product should NOT be brighter or darker than similar surfaces in room
+5. NO "SPOTLIGHT" EFFECT: product must NOT look highlighted compared to the room
+6. SEAMLESS BLEND: a viewer should NOT be able to tell the product was digitally added
+
+OUTPUT: One photorealistic image showing THE SAME ROOM with the {product_name} added naturally, with lighting that perfectly matches the room."""
 
             # Build parts list
             parts = [types.Part.from_text(text=prompt)]
@@ -859,7 +869,16 @@ OUTPUT: One photorealistic image showing THE SAME ROOM with the {product_name} a
 
 Keep everything else in the room exactly the same - the walls, floor, windows, curtains, and all other furniture and decor should remain unchanged.
 
-Generate a photorealistic image of the room with the {product_name} replacing the {furniture_type}."""
+🔦 CRITICAL LIGHTING REQUIREMENTS:
+⚠️ THE REPLACEMENT PRODUCT MUST LOOK LIKE IT IS PART OF THE ROOM, NOT ADDED ON TOP OF IT ⚠️
+1. ANALYZE the room's lighting: identify light sources, direction, color temperature (warm/cool)
+2. MATCH lighting on the new product: highlights must come from the same direction as room lighting
+3. MATCH shadow direction: product shadow must fall in the same direction as other shadows in room
+4. MATCH exposure: product should NOT be brighter or darker than similar surfaces in room
+5. NO "SPOTLIGHT" EFFECT: product must NOT look highlighted compared to the room
+6. SEAMLESS BLEND: a viewer should NOT be able to tell the product was digitally added
+
+Generate a photorealistic image of the room with the {product_name} replacing the {furniture_type}, with lighting that perfectly matches the room's existing lighting conditions."""
 
             # Build parts list
             parts = [types.Part.from_text(text=prompt)]
@@ -1157,33 +1176,59 @@ QUALITY CHECKS:
 
 If ANY answer is NO, you've failed the task.
 
-LIGHTING & REALISM - CRITICAL FOR NATURAL APPEARANCE:
-- Match the EXACT lighting conditions from the input image
-- Products MUST cast realistic shadows that match the room's light sources
-- Maintain the same color temperature and brightness from the input image
-- Products should look like they PHYSICALLY EXIST in THIS specific room
-- Apply ambient occlusion where products meet the floor
-- Products should reflect or interact with the room's existing lighting
-- Ensure proper contact shadows where products touch the floor
-- Apply subtle color grading to match the room's atmosphere
+🔦 LIGHTING & REALISM - MOST CRITICAL FOR NATURAL APPEARANCE 🔦
+═══════════════════════════════════════════════════════════════
+⚠️ THE PRODUCTS MUST LOOK LIKE THEY ARE PART OF THE ROOM, NOT ADDED ON TOP OF IT ⚠️
+
+LIGHTING ANALYSIS (DO THIS FIRST):
+1. 🔍 IDENTIFY LIGHT SOURCES: Look at the input image and identify ALL light sources:
+   - Windows (natural daylight direction, intensity, color temperature)
+   - Artificial lights (lamps, ceiling lights, their warm/cool tone)
+   - Ambient light (reflected light from walls, floor)
+2. 🌡️ DETERMINE COLOR TEMPERATURE: Is the room warm (yellowish), cool (bluish), or neutral?
+3. 💡 NOTE LIGHT DIRECTION: Where are shadows falling? This tells you the primary light direction.
+4. 🌫️ ASSESS AMBIENT LIGHTING: How much fill light is in the shadows?
+
+APPLY MATCHING LIGHTING TO PRODUCTS:
+1. ☀️ SAME LIGHT DIRECTION: Product highlights MUST come from the same direction as room highlights
+2. 🎨 SAME COLOR TEMPERATURE: If room has warm lighting, products must have warm highlights
+3. 🌑 MATCHING SHADOWS: Product shadows must fall in the SAME DIRECTION as existing shadows in room
+4. 💫 CONSISTENT EXPOSURE: Products should NOT be brighter or darker than similar surfaces in the room
+5. 🪞 APPROPRIATE REFLECTIONS: Glossy products should reflect the room's lighting, not different lighting
+
+SHADOW REQUIREMENTS:
+- Products MUST cast shadows that match the room's shadow direction and softness
+- Shadow color must match existing shadows (not pure black, usually tinted by ambient light)
+- Shadow length and angle must be consistent with other objects in the room
+- Contact shadows (where product meets floor) must be present and realistic
+
+⚠️ CRITICAL: PRODUCTS MUST NOT LOOK "HIGHLIGHTED" OR "SPOTLIT"
+- Do NOT render products with studio lighting if the room has natural daylight
+- Do NOT make products appear brighter than their surroundings
+- Do NOT add artificial highlights that don't match the room's light sources
+- Products should blend seamlessly - a viewer should NOT be able to tell they were added
 
 🎨 PHOTOREALISTIC BLENDING REQUIREMENTS:
-1. NATURAL INTEGRATION: Products must look like real physical objects in the space, NOT pasted cutouts
-2. LIGHTING CONSISTENCY: Product highlights and shadows must match the room's lighting direction and intensity
-3. FLOOR CONTACT: Products must have realistic contact shadows and ground connection
+1. NATURAL INTEGRATION: Products must look like real physical objects photographed IN THIS ROOM, NOT pasted cutouts or digitally added
+2. LIGHTING CONSISTENCY: Product highlights and shadows MUST match the room's lighting direction, intensity, and color exactly
+3. FLOOR CONTACT: Products must have realistic contact shadows and ground connection - NO floating
 4. PERSPECTIVE MATCHING: Products must follow the exact same perspective and vanishing points as the room
-5. COLOR HARMONY: Product colors should be influenced by the room's ambient lighting
+5. COLOR HARMONY: Product colors should be influenced by the room's ambient lighting (e.g., warm room = warmer product tones)
 6. DEPTH AND DIMENSION: Products should have proper depth cues and look three-dimensional in the space
-7. MATERIAL REALISM: Reflections, textures, and material properties must look authentic in this lighting
-8. ATMOSPHERE MATCHING: Products should have the same depth-of-field, focus, and atmospheric effects as the room
+7. MATERIAL REALISM: Reflections, textures, and material properties must look authentic in THIS room's specific lighting
+8. ATMOSPHERE MATCHING: Products should have the same depth-of-field, focus, grain, and atmospheric effects as the room
+9. EXPOSURE MATCHING: Products should have the same exposure level as the rest of the room - not brighter, not darker
 
-⚠️ AVOID THESE COMMON MISTAKES:
-- Do NOT make products look like flat cutouts or stickers
-- Do NOT place products floating above the floor
-- Do NOT ignore the room's lighting when rendering products
-- Do NOT use different lighting conditions for products vs. room
-- Do NOT create harsh, unrealistic edges around products
-- Do NOT forget shadows and reflections
+⚠️ AVOID THESE COMMON MISTAKES (WILL MAKE PRODUCTS LOOK FAKE):
+- ❌ Do NOT make products look like flat cutouts or stickers
+- ❌ Do NOT place products floating above the floor
+- ❌ Do NOT ignore the room's lighting when rendering products
+- ❌ Do NOT use different lighting conditions for products vs. room (THIS IS THE MAIN ISSUE TO AVOID)
+- ❌ Do NOT create harsh, unrealistic edges around products
+- ❌ Do NOT forget shadows and reflections
+- ❌ Do NOT make products appear "highlighted" or "spotlit" compared to the room
+- ❌ Do NOT render products with neutral/studio lighting if room has warm/cool lighting
+- ❌ Do NOT make product shadows go in a different direction than room shadows
 
 OUTPUT: One photorealistic image of THE SAME ROOM with {product_count} product(s) naturally integrated, where products look like they physically exist in the space with proper lighting, shadows, and material interactions."""
 
@@ -1494,7 +1539,16 @@ QUALITY REQUIREMENTS:
 - Rendering: {render_quality} quality photorealism
 - Consistency: The room must look like the SAME physical space with the SAME products
 
-🎯 RESULT: Output must show THIS EXACT ROOM with ALL existing products preserved and only the requested modification applied. Same walls, same windows, same floor, same furniture, same perspective - just with the specific change requested."""
+🔦 CRITICAL LIGHTING REQUIREMENTS:
+⚠️ ALL PRODUCTS MUST LOOK LIKE THEY ARE PART OF THE ROOM, NOT ADDED ON TOP OF IT ⚠️
+1. ANALYZE the room's lighting: identify light sources, direction, color temperature (warm/cool)
+2. MATCH lighting on products: highlights must come from the same direction as room lighting
+3. MATCH shadow direction: product shadows must fall in the same direction as other shadows in room
+4. MATCH exposure: products should NOT be brighter or darker than similar surfaces in room
+5. NO "SPOTLIGHT" EFFECT: products must NOT look highlighted compared to the room
+6. SEAMLESS BLEND: a viewer should NOT be able to tell products were digitally added
+
+🎯 RESULT: Output must show THIS EXACT ROOM with ALL existing products preserved and only the requested modification applied. Same walls, same windows, same floor, same furniture, same perspective - just with the specific change requested. All products must have lighting that perfectly matches the room."""
 
             # Use Gemini 3 Pro Image (Nano Banana Pro) for generation
             model = "gemini-3-pro-image-preview"

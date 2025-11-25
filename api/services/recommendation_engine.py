@@ -8,9 +8,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from database.models import Product, ProductAttribute
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from database.models import Product, ProductAttribute
 
 logger = logging.getLogger(__name__)
 
@@ -692,6 +693,8 @@ class AdvancedRecommendationEngine:
 
         result = await db.execute(query)
         candidates = result.scalars().all()
+
+        logger.info(f"✓ Query returned {len(candidates)} candidate products")
 
         # NEW: Validate against AI product types if provided (hard filter)
         if request.ai_product_types:

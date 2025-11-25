@@ -144,5 +144,38 @@ fi
 log_info "Executing: uvicorn main:app --host 0.0.0.0 --port $PORT"
 log_success "Starting uvicorn..."
 
-# Start uvicorn (this will run in foreground)
-exec uvicorn main:app --host 0.0.0.0 --port $PORT
+# Start uvicorn in background temporarily to warm cache
+uvicorn main:app --host 0.0.0.0 --port $PORT &
+UVICORN_PID=$!
+
+# Wait for server to be ready
+log_info "Waiting for server to be ready..."
+for i in {1..30}; do
+    if curl -s http://localhost:$PORT/health > /dev/null 2>&1; then
+        log_success "Server is ready!"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        log_warning "Server health check timed out after 30 seconds"
+        log_warning "Skipping cache warming"
+        break
+    fi
+    sleep 1
+done
+
+# Warm the cache
+log_info "=== Cache Warming Phase ==="
+if curl -s http://localhost:$PORT/health > /dev/null 2>&1; then
+    log_info "Warming stores cache..."
+    if python scripts/warm_cache.py --url http://localhost:$PORT; then
+        log_success "Cache warmed successfully"
+    else
+        log_warning "Cache warming failed, but continuing..."
+    fi
+else
+    log_warning "Server not responding, skipping cache warming"
+fi
+
+# Bring uvicorn to foreground
+log_success "Cache warming complete, server running in foreground"
+wait $UVICORN_PID
