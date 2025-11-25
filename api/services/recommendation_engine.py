@@ -891,14 +891,8 @@ class AdvancedRecommendationEngine:
         # For now, we'll simulate based on product attributes
 
         for product in candidates:
-            # Simulate popularity based on price point and category
+            # Simulate popularity - no price-based adjustments
             base_popularity = 0.5
-
-            # Premium products might have lower popularity but higher conversion
-            if product.price > 2000:
-                base_popularity *= 0.8
-            elif product.price < 200:
-                base_popularity *= 1.2
 
             # Add some randomness to simulate real data
             import random
@@ -947,9 +941,14 @@ class AdvancedRecommendationEngine:
     async def _price_compatibility_scoring(
         self, candidates: List[Product], request: RecommendationRequest
     ) -> Dict[str, float]:
-        """Score products based on price compatibility with budget"""
+        """Score products based on price compatibility with budget
+
+        Only applies filtering when user explicitly sets a budget range.
+        Otherwise returns neutral scores for all products.
+        """
         scores = {}
 
+        # No budget specified by user - return neutral scores for all products
         if not request.budget_range:
             return {product.id: 1.0 for product in candidates}
 
@@ -957,6 +956,11 @@ class AdvancedRecommendationEngine:
         budget_range = max_budget - min_budget
 
         for product in candidates:
+            # Handle NULL prices - give neutral score
+            if product.price is None:
+                scores[product.id] = 0.5
+                continue
+
             if min_budget <= product.price <= max_budget:
                 # Score based on position within budget range
                 if budget_range > 0:
