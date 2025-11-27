@@ -611,17 +611,53 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             context.visualization_redo_stack = []
 
         # CRITICAL FIX: For incremental visualization, use the last visualization as base image
-        # This ensures that when adding product 4 after products 1, 2, 3, we add to the
-        # existing visualization (with all 3 products) rather than starting from the original empty room
+        # and only visualize NEW products (not already in the last visualization)
+        # This ensures efficient rendering - AI only adds new items to an image that already has previous items
+        previously_visualized_product_ids = set()
+        new_products_to_visualize = products  # Default: all products
+
         if is_incremental:
             context = conversation_context_manager.get_or_create_context(session_id)
             if context.visualization_history:
                 # Use the most recent visualization as the base
                 last_visualization = context.visualization_history[-1]
                 base_image = last_visualization.get("rendered_image")
+
+                # Track products already visualized to only process NEW products
+                previous_products = last_visualization.get("products", [])
+                previously_visualized_product_ids = {p.get("id") for p in previous_products if p.get("id")}
+
+                # Filter to only NEW products (not already in last visualization)
+                new_products_to_visualize = [
+                    p for p in products
+                    if p.get("id") not in previously_visualized_product_ids
+                ]
+
                 logger.info(
-                    f"Incremental mode: Using last visualization from history as base image (history length: {len(context.visualization_history)})"
+                    f"Incremental mode: Using last visualization as base image. "
+                    f"Previous products: {len(previously_visualized_product_ids)}, "
+                    f"New products to add: {len(new_products_to_visualize)}, "
+                    f"Total requested: {len(products)}"
                 )
+
+                # If no new products to visualize, return early with last visualization
+                if not new_products_to_visualize:
+                    logger.info("No new products to visualize - all products already in last visualization")
+                    return {
+                        "visualization": {
+                            "rendered_image": base_image,
+                            "processing_time": 0.0,
+                            "quality_metrics": {
+                                "overall_quality": 0.85,
+                                "placement_accuracy": 0.90,
+                                "lighting_realism": 0.85,
+                                "confidence_score": 0.87,
+                            },
+                        },
+                        "message": "All selected products are already visualized.",
+                        "can_undo": conversation_context_manager.can_undo(session_id),
+                        "can_redo": conversation_context_manager.can_redo(session_id),
+                    }
             else:
                 logger.info(f"Incremental mode: No history available, using provided base image")
 
@@ -884,18 +920,18 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
 
         logger.info(f"Generating visualization with instruction: {user_style_description}")
 
-        # Handle incremental visualization (add new products to existing visualization)
+        # Handle incremental visualization (add ONLY NEW products to existing visualization)
         if is_incremental:
-            logger.info(f"Incremental visualization: Adding {len(products)} new products to existing visualization")
+            logger.info(f"Incremental visualization: Adding {len(new_products_to_visualize)} NEW products (out of {len(products)} total)")
 
-            # Use sequential add visualization for each product
-            current_image = base_image  # Start with previous visualization
+            # Use sequential add visualization for each NEW product only
+            current_image = base_image  # Start with previous visualization (already has old products)
 
-            for product in products:
+            for product in new_products_to_visualize:
                 product_name = product.get("full_name") or product.get("name")
                 product_image_url = product.get("image_url")
 
-                logger.info(f"  Adding product: {product_name}")
+                logger.info(f"  Adding NEW product: {product_name}")
 
                 # Call add visualization for this product
                 add_result = await google_ai_service.generate_add_visualization(
@@ -950,15 +986,18 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         # CRITICAL FIX: For incremental visualizations, we need to accumulate products
         # from the previous state. Otherwise, undo will only see the most recently added
         # products, not the full list of products in the scene.
+        # We also track delta_products for accurate undo (knowing what was added in THIS step)
+        delta_products = new_products_to_visualize if is_incremental else products
         if is_incremental:
             context = conversation_context_manager.get_or_create_context(session_id)
             if context.visualization_history and len(context.visualization_history) > 0:
                 # Get products from previous visualization
                 previous_products = context.visualization_history[-1].get("products", [])
-                # Combine previous products with newly added products
-                accumulated_products = previous_products + products
+                # Combine previous products with newly added products (delta only)
+                accumulated_products = previous_products + new_products_to_visualize
                 logger.info(
-                    f"Incremental mode: Accumulating products. Previous: {len(previous_products)}, New: {len(products)}, Total: {len(accumulated_products)}"
+                    f"Incremental mode: Accumulating products. Previous: {len(previous_products)}, "
+                    f"Delta (new): {len(new_products_to_visualize)}, Total: {len(accumulated_products)}"
                 )
             else:
                 # First visualization, no previous products
@@ -970,7 +1009,8 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
 
         visualization_data = {
             "rendered_image": viz_result.rendered_image,
-            "products": accumulated_products,
+            "products": accumulated_products,  # All products in scene (for frontend display)
+            "delta_products": delta_products,  # Products added in THIS step (for accurate undo tracking)
             "user_action": user_action,
             "existing_furniture": existing_furniture,
         }
