@@ -1243,76 +1243,99 @@ Create a photorealistic interior design visualization that addresses the user's 
             transformed_image = None
             transformation_description = ""
 
-            try:
-                logger.info(f"Using {model} with product placement approach")
+            # Retry configuration for 503 errors
+            max_retries = 3
+            retry_delay = 2  # Initial delay in seconds
 
-                # Build parts list with room image and all product images
-                parts = [types.Part.from_text(text=visualization_prompt)]
+            for attempt in range(max_retries):
+                try:
+                    if attempt > 0:
+                        logger.info(f"Retry attempt {attempt + 1}/{max_retries} for visualization")
 
-                # Add room image
-                parts.append(
-                    types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_image)))
-                )
+                    logger.info(f"Using {model} with product placement approach")
 
-                # Add product images as references
-                for prod_img in product_images:
+                    # Build parts list with room image and all product images
+                    parts = [types.Part.from_text(text=visualization_prompt)]
+
+                    # Add room image
                     parts.append(
-                        types.Part.from_text(text=f"\nProduct {prod_img['index']} reference image ({prod_img['name']}):")
-                    )
-                    parts.append(
-                        types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(prod_img["data"])))
+                        types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_image)))
                     )
 
-                contents = [types.Content(role="user", parts=parts)]
+                    # Add product images as references
+                    for prod_img in product_images:
+                        parts.append(
+                            types.Part.from_text(text=f"\nProduct {prod_img['index']} reference image ({prod_img['name']}):")
+                        )
+                        parts.append(
+                            types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(prod_img["data"])))
+                        )
 
-                # Use response modalities for image and text generation
-                generate_content_config = types.GenerateContentConfig(
-                    response_modalities=["IMAGE", "TEXT"],
-                    temperature=0.25,  # Lower temperature for better room preservation consistency
-                )
+                    contents = [types.Content(role="user", parts=parts)]
 
-                # Stream response
-                for chunk in self.genai_client.models.generate_content_stream(
-                    model=model,
-                    contents=contents,
-                    config=generate_content_config,
-                ):
-                    if (
-                        chunk.candidates is None
-                        or chunk.candidates[0].content is None
-                        or chunk.candidates[0].content.parts is None
+                    # Use response modalities for image and text generation
+                    generate_content_config = types.GenerateContentConfig(
+                        response_modalities=["IMAGE", "TEXT"],
+                        temperature=0.25,  # Lower temperature for better room preservation consistency
+                    )
+
+                    # Stream response
+                    for chunk in self.genai_client.models.generate_content_stream(
+                        model=model,
+                        contents=contents,
+                        config=generate_content_config,
                     ):
-                        continue
+                        if (
+                            chunk.candidates is None
+                            or chunk.candidates[0].content is None
+                            or chunk.candidates[0].content.parts is None
+                        ):
+                            continue
 
-                    for part in chunk.candidates[0].content.parts:
-                        if part.inline_data and part.inline_data.data:
-                            # Extract generated image data
-                            inline_data = part.inline_data
-                            image_bytes = inline_data.data
-                            mime_type = inline_data.mime_type or "image/png"
+                        for part in chunk.candidates[0].content.parts:
+                            if part.inline_data and part.inline_data.data:
+                                # Extract generated image data
+                                inline_data = part.inline_data
+                                image_bytes = inline_data.data
+                                mime_type = inline_data.mime_type or "image/png"
 
-                            # Convert to base64 data URI
-                            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-                            transformed_image = f"data:{mime_type};base64,{image_base64}"
-                            logger.info(f"Generated image with {model} ({len(image_bytes)} bytes)")
+                                # Convert to base64 data URI
+                                image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+                                transformed_image = f"data:{mime_type};base64,{image_base64}"
+                                logger.info(f"Generated image with {model} ({len(image_bytes)} bytes)")
 
-                        elif part.text:
-                            transformation_description += part.text
+                            elif part.text:
+                                transformation_description += part.text
 
-            except asyncio.TimeoutError:
-                logger.error(f"TIMEOUT: Google Gemini API timed out after {time.time() - start_time:.2f}s")
-                # Return original image on timeout with clear error message
-                return VisualizationResult(
-                    rendered_image=visualization_request.base_image,
-                    processing_time=time.time() - start_time,
-                    quality_score=0.0,
-                    placement_accuracy=0.0,
-                    lighting_realism=0.0,
-                    confidence_score=0.0,
-                )
-            except Exception as model_error:
-                logger.error(f"Model failed: {str(model_error)}")
-                transformed_image = None
+                    # If we got here without exception, break the retry loop
+                    break
+
+                except asyncio.TimeoutError:
+                    logger.error(f"TIMEOUT: Google Gemini API timed out after {time.time() - start_time:.2f}s")
+                    # Return original image on timeout with clear error message
+                    return VisualizationResult(
+                        rendered_image=visualization_request.base_image,
+                        processing_time=time.time() - start_time,
+                        quality_score=0.0,
+                        placement_accuracy=0.0,
+                        lighting_realism=0.0,
+                        confidence_score=0.0,
+                    )
+                except Exception as model_error:
+                    error_str = str(model_error)
+                    # Check if it's a 503 (overloaded) error - retry these
+                    if "503" in error_str or "overloaded" in error_str.lower() or "UNAVAILABLE" in error_str:
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
+                            logger.warning(f"Model overloaded (503), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                            await asyncio.sleep(wait_time)
+                            continue
+                        else:
+                            logger.error(f"Model still overloaded after {max_retries} retries: {error_str}")
+                    else:
+                        logger.error(f"Model failed: {error_str}")
+                    transformed_image = None
+                    break  # Don't retry non-503 errors
 
             processing_time = time.time() - start_time
 
