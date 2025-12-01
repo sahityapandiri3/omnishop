@@ -72,6 +72,16 @@ class VisualizationResult:
     confidence_score: float
 
 
+@dataclass
+class SpaceFitnessResult:
+    """Result from space fitness validation"""
+
+    fits: bool  # Whether the product fits in the available space
+    confidence: float  # 0.0 to 1.0 confidence in the assessment
+    reason: str  # Explanation for the assessment
+    suggestion: Optional[str] = None  # Alternative suggestion if doesn't fit
+
+
 class GoogleAIStudioService:
     """Service for Google AI Studio integration"""
 
@@ -554,6 +564,180 @@ CRITICAL: Keep sofas, chairs, tables, and lamps SEPARATE:
             logger.error(f"Error checking furniture existence: {e}")
             return (False, [])
 
+    async def validate_space_fitness(
+        self,
+        room_image: str,
+        product_name: str,
+        product_image: Optional[str] = None,
+        product_description: Optional[str] = None,
+    ) -> SpaceFitnessResult:
+        """
+        Validate if a product can fit in the available space in the room.
+        Uses Gemini to analyze both the room space and product dimensions.
+
+        Returns:
+            SpaceFitnessResult with fits (bool), confidence, reason, and optional suggestion
+        """
+        try:
+            processed_room = self._preprocess_image(room_image)
+
+            # Download product image if URL provided
+            product_image_data = None
+            if product_image:
+                try:
+                    product_image_data = await self._download_image(product_image)
+                except Exception as e:
+                    logger.warning(f"Failed to download product image for space validation: {e}")
+
+            # Build prompt for space fitness validation
+            # IMPORTANT: Product description contains actual dimensions - prioritize these over image estimation
+            prompt = f"""🔍 SPACE FITNESS ANALYSIS TASK 🔍
+
+Analyze whether the following product can realistically fit in the available space shown in the room image.
+
+PRODUCT TO ANALYZE: {product_name}
+
+═══════════════════════════════════════════════════════════════
+⚠️ CRITICAL: PRODUCT DIMENSIONS (FROM DESCRIPTION) ⚠️
+═══════════════════════════════════════════════════════════════
+{f"PRODUCT DESCRIPTION: {product_description}" if product_description else "No description available - estimate from product image"}
+
+🚨 IMPORTANT: Extract the ACTUAL dimensions from the product description above.
+Look for measurements like:
+- Height, Width, Depth/Length (in inches, cm, feet, etc.)
+- Diameter (for round items)
+- Overall dimensions (L x W x H)
+- Size specifications
+
+If dimensions are found in the description, USE THESE EXACT MEASUREMENTS.
+Only estimate from the product image if NO dimensions are provided in the description.
+
+═══════════════════════════════════════════════════════════════
+STEP 1: EXTRACT PRODUCT DIMENSIONS
+═══════════════════════════════════════════════════════════════
+1. FIRST: Search the product description for any dimension/size information
+2. Extract exact measurements (e.g., "24 inches tall", "60cm x 40cm", "2 feet wide")
+3. Convert all measurements to a consistent unit (inches or cm) for comparison
+4. If no dimensions in description, estimate from the product image as a fallback
+
+═══════════════════════════════════════════════════════════════
+STEP 2: ANALYZE THE ROOM SPACE
+═══════════════════════════════════════════════════════════════
+1. Identify existing furniture and their approximate sizes
+2. Estimate the room dimensions using visual cues:
+   - Standard door heights (~80 inches / 6.6 feet)
+   - Standard ceiling heights (~8-10 feet)
+   - Standard furniture sizes (sofas ~84-96", coffee tables ~48", etc.)
+3. Identify available empty floor spaces and measure them approximately
+4. Note any spatial constraints (narrow pathways, corners, tight spaces)
+
+═══════════════════════════════════════════════════════════════
+STEP 3: COMPARE DIMENSIONS AND DETERMINE FITNESS
+═══════════════════════════════════════════════════════════════
+Using the ACTUAL product dimensions (from description):
+1. Is there enough floor space for this product's footprint?
+2. Will the product height fit without looking oversized for the space?
+3. Can the product be placed without blocking pathways or existing furniture?
+4. Is there a logical placement spot for this type of product?
+5. Would the product look proportionally appropriate in this space?
+
+BE STRICT about large items:
+- If a product is 6+ feet tall and the room appears small/crowded, it likely won't fit well
+- If a product's footprint is larger than the available floor space, it doesn't fit
+- Consider the visual weight - a large item in a small space will look cramped
+
+═══════════════════════════════════════════════════════════════
+OUTPUT FORMAT (respond in valid JSON only):
+═══════════════════════════════════════════════════════════════
+{{
+    "fits": true/false,
+    "confidence": 0.0-1.0,
+    "reason": "Brief explanation of why the product does or doesn't fit",
+    "product_dimensions_found": "The exact dimensions extracted from description (or 'estimated from image' if none found)",
+    "available_space_estimate": "Estimated available space in the room",
+    "suggestion": "If doesn't fit, suggest an alternative (e.g., 'Consider a smaller planter under 24 inches' or 'This 72-inch cabinet is too large for the available 48-inch wall space')"
+}}
+
+RESPOND WITH JSON ONLY - NO OTHER TEXT."""
+
+            # Build parts list
+            parts = [types.Part.from_text(text=prompt)]
+            parts.append(types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_room))))
+
+            # Add product reference image if available
+            if product_image_data:
+                parts.append(types.Part.from_text(text=f"\nProduct reference image ({product_name}):"))
+                parts.append(
+                    types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(product_image_data)))
+                )
+
+            contents = [types.Content(role="user", parts=parts)]
+
+            # Use text-only response for analysis
+            generate_content_config = types.GenerateContentConfig(
+                response_modalities=["TEXT"],
+                temperature=0.2,  # Low temperature for consistent analysis
+            )
+
+            response_text = ""
+            for chunk in self.genai_client.models.generate_content_stream(
+                model="gemini-2.0-flash",  # Use faster model for analysis
+                contents=contents,
+                config=generate_content_config,
+            ):
+                if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+                    for part in chunk.candidates[0].content.parts:
+                        if part.text:
+                            response_text += part.text
+
+            # Parse JSON response
+            try:
+                # Clean up response - remove markdown code blocks if present
+                cleaned_response = response_text.strip()
+                if cleaned_response.startswith("```json"):
+                    cleaned_response = cleaned_response[7:]
+                if cleaned_response.startswith("```"):
+                    cleaned_response = cleaned_response[3:]
+                if cleaned_response.endswith("```"):
+                    cleaned_response = cleaned_response[:-3]
+                cleaned_response = cleaned_response.strip()
+
+                result = json.loads(cleaned_response)
+
+                fits = result.get("fits", True)
+                confidence = result.get("confidence", 0.8)
+                reason = result.get("reason", "Unable to determine space fitness")
+                suggestion = result.get("suggestion") if not fits else None
+
+                logger.info(f"Space fitness validation for '{product_name}': fits={fits}, confidence={confidence}")
+
+                return SpaceFitnessResult(
+                    fits=fits,
+                    confidence=confidence,
+                    reason=reason,
+                    suggestion=suggestion,
+                )
+
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse space fitness response: {e}. Response: {response_text[:200]}")
+                # Default to allowing placement if we can't parse the response
+                return SpaceFitnessResult(
+                    fits=True,
+                    confidence=0.5,
+                    reason="Unable to analyze space fitness, proceeding with visualization",
+                    suggestion=None,
+                )
+
+        except Exception as e:
+            logger.error(f"Error validating space fitness: {e}")
+            # On error, allow visualization to proceed (fail open)
+            return SpaceFitnessResult(
+                fits=True,
+                confidence=0.3,
+                reason="Space fitness validation failed, proceeding with visualization",
+                suggestion=None,
+            )
+
     async def remove_furniture(self, image_base64: str, max_retries: int = 5) -> Optional[str]:
         """
         Remove all furniture from room image
@@ -741,17 +925,36 @@ DO NOT leave ANY furniture behind. The room must be 100% empty."""
 
 Product to add: {product_name}
 
+🚨🚨🚨 ABSOLUTE REQUIREMENT - ROOM DIMENSIONS 🚨🚨🚨
+═══════════════════════════════════════════════════════════════
+THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
+- If input is 1024x768 pixels → output MUST be 1024x768 pixels
+- If input is 800x600 pixels → output MUST be 800x600 pixels
+- NEVER change the aspect ratio
+- NEVER crop, resize, or alter the image dimensions in ANY way
+- The room's physical proportions (length, width, height) MUST appear IDENTICAL
+- The camera angle, perspective, and field of view MUST remain UNCHANGED
+- DO NOT zoom in or out
+- DO NOT change the viewing angle
+- The walls must be in the EXACT same positions
+- The floor area must appear the EXACT same size
+
+⚠️ IF THE OUTPUT IMAGE HAS DIFFERENT DIMENSIONS THAN THE INPUT, YOU HAVE FAILED THE TASK ⚠️
+═══════════════════════════════════════════════════════════════
+
 🔒 CRITICAL PRESERVATION RULES:
 1. KEEP ALL EXISTING FURNITURE: Do NOT remove or replace any furniture currently in the room
 2. FIND APPROPRIATE SPACE: Identify a suitable empty space to place the new furniture
 3. PRESERVE THE ROOM: Keep the same walls, windows, floors, ceiling, lighting, and camera angle
 4. NATURAL PLACEMENT: Place the product naturally where it would logically fit in this room layout
+5. ROOM SIZE UNCHANGED: The room must look the EXACT same size - not bigger, not smaller
 
 ✅ YOUR TASK:
 - Add the {product_name} to this room
 - Place it in an appropriate empty location
 - Do NOT remove or replace any existing furniture
 - Keep the room structure 100% identical
+- Keep the room DIMENSIONS 100% identical
 - Ensure the product looks naturally integrated with proper lighting and shadows
 
 PLACEMENT GUIDELINES:
@@ -867,7 +1070,24 @@ OUTPUT: One photorealistic image showing THE SAME ROOM with the {product_name} a
             # Build prompt for REPLACE action - simple and direct like Google AI Studio
             prompt = f"""Replace the {furniture_type} in the first image with the {product_name} shown in the second image.
 
-Keep everything else in the room exactly the same - the walls, floor, windows, curtains, and all other furniture and decor should remain unchanged.
+🚨🚨🚨 ABSOLUTE REQUIREMENT - ROOM DIMENSIONS 🚨🚨🚨
+═══════════════════════════════════════════════════════════════
+THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
+- If input is 1024x768 pixels → output MUST be 1024x768 pixels
+- If input is 800x600 pixels → output MUST be 800x600 pixels
+- NEVER change the aspect ratio
+- NEVER crop, resize, or alter the image dimensions in ANY way
+- The room's physical proportions (length, width, height) MUST appear IDENTICAL
+- The camera angle, perspective, and field of view MUST remain UNCHANGED
+- DO NOT zoom in or out
+- DO NOT change the viewing angle
+- The walls must be in the EXACT same positions
+- The floor area must appear the EXACT same size
+
+⚠️ IF THE OUTPUT IMAGE HAS DIFFERENT DIMENSIONS THAN THE INPUT, YOU HAVE FAILED THE TASK ⚠️
+═══════════════════════════════════════════════════════════════
+
+Keep everything else in the room exactly the same - the walls, floor, windows, curtains, and all other furniture and decor should remain unchanged. The room must look the EXACT same size - not bigger, not smaller.
 
 🔦 CRITICAL LIGHTING REQUIREMENTS:
 ⚠️ THE REPLACEMENT PRODUCT MUST LOOK LIKE IT IS PART OF THE ROOM, NOT ADDED ON TOP OF IT ⚠️
@@ -1326,8 +1546,10 @@ Create a photorealistic interior design visualization that addresses the user's 
                     # Check if it's a 503 (overloaded) error - retry these
                     if "503" in error_str or "overloaded" in error_str.lower() or "UNAVAILABLE" in error_str:
                         if attempt < max_retries - 1:
-                            wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
-                            logger.warning(f"Model overloaded (503), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                            wait_time = retry_delay * (2**attempt)  # Exponential backoff
+                            logger.warning(
+                                f"Model overloaded (503), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})"
+                            )
                             await asyncio.sleep(wait_time)
                             continue
                         else:

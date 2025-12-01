@@ -115,13 +115,17 @@ class BaseProductSpider(scrapy.Spider):
 
         item = ProductItem()
 
+        # Smart categorization: determine category from product name
+        # Uses the provided category as fallback if no match found in name
+        smart_category = self.determine_category_from_name(name, category)
+
         # Basic information
         item['name'] = name
         item['price'] = price
         item['external_id'] = external_id or self._generate_external_id(response.url)
         item['description'] = description
         item['brand'] = brand
-        item['category'] = category
+        item['category'] = smart_category
 
         # Source information
         item['source_website'] = self.name
@@ -206,6 +210,212 @@ class BaseProductSpider(scrapy.Spider):
         }
 
         return category_mapping.get(category, category)
+
+    def determine_category_from_name(self, product_name: str, fallback_category: str = None) -> str:
+        """
+        Determine the correct category based on product name.
+        This provides smart categorization by analyzing the product name for keywords.
+
+        Args:
+            product_name: The product's name/title
+            fallback_category: Category to use if no match found (e.g., from URL or breadcrumbs)
+
+        Returns:
+            The determined category name
+        """
+        if not product_name:
+            return fallback_category or 'Furniture'
+
+        name_lower = product_name.lower()
+
+        # Ottoman detection - must come before sofa check
+        if 'ottoman' in name_lower:
+            return 'Ottoman'
+
+        # Side table detection - must come before table check
+        if 'side table' in name_lower or 'sidetable' in name_lower or 'end table' in name_lower:
+            return 'Side Table'
+
+        # Coffee table detection
+        if 'coffee table' in name_lower:
+            return 'Coffee Table'
+
+        # Console table detection
+        if 'console' in name_lower and 'table' in name_lower:
+            return 'Console Table'
+
+        # Dining table detection
+        if 'dining table' in name_lower or ('dining' in name_lower and 'table' in name_lower):
+            return 'Dining Table'
+
+        # Center table detection
+        if 'center table' in name_lower or 'centre table' in name_lower:
+            return 'Center Table'
+
+        # Nightstand / Bedside table
+        if 'nightstand' in name_lower or 'night stand' in name_lower or 'bedside table' in name_lower or 'bedside' in name_lower:
+            return 'Nightstand'
+
+        # Sofa seater variations - categorize by seating capacity
+        if 'sofa' in name_lower or 'seater' in name_lower or 'couch' in name_lower:
+            if 'three seater' in name_lower or '3 seater' in name_lower or 'three-seater' in name_lower or '3-seater' in name_lower:
+                return 'Three Seater Sofa'
+            elif 'two seater' in name_lower or '2 seater' in name_lower or 'two-seater' in name_lower or '2-seater' in name_lower:
+                return 'Two Seater Sofa'
+            elif 'single seater' in name_lower or '1 seater' in name_lower or 'one seater' in name_lower or 'single-seater' in name_lower or '1-seater' in name_lower or 'one-seater' in name_lower:
+                return 'Single Seater Sofa'
+            elif 'sectional' in name_lower:
+                return 'Sectional Sofa'
+            elif 'sofa' in name_lower or 'couch' in name_lower:
+                return 'Sofa'
+
+        # Armchair detection
+        if 'armchair' in name_lower or 'arm chair' in name_lower:
+            return 'Armchair'
+
+        # Lounge chair detection
+        if 'lounge' in name_lower and 'chair' in name_lower:
+            return 'Lounge Chair'
+
+        # Accent chair detection
+        if 'accent' in name_lower and 'chair' in name_lower:
+            return 'Accent Chair'
+
+        # Dining chair detection
+        if 'dining' in name_lower and 'chair' in name_lower:
+            return 'Dining Chair'
+
+        # Office chair detection
+        if 'office' in name_lower and 'chair' in name_lower:
+            return 'Office Chair'
+
+        # Rocking chair detection
+        if 'rocking' in name_lower and 'chair' in name_lower:
+            return 'Rocking Chair'
+
+        # Recliner detection
+        if 'recliner' in name_lower:
+            return 'Recliner'
+
+        # Generic chair
+        if 'chair' in name_lower:
+            return 'Chair'
+
+        # Bench detection
+        if 'bench' in name_lower:
+            return 'Bench'
+
+        # Stool detection
+        if 'stool' in name_lower:
+            return 'Stool'
+
+        # Bed detection
+        if 'bed' in name_lower:
+            if 'king' in name_lower:
+                return 'King Bed'
+            elif 'queen' in name_lower:
+                return 'Queen Bed'
+            elif 'single' in name_lower or 'twin' in name_lower:
+                return 'Single Bed'
+            elif 'double' in name_lower:
+                return 'Double Bed'
+            return 'Bed'
+
+        # Wardrobe / Closet detection
+        if 'wardrobe' in name_lower or 'closet' in name_lower or 'armoire' in name_lower:
+            return 'Wardrobe'
+
+        # Dresser detection
+        if 'dresser' in name_lower:
+            return 'Dresser'
+
+        # Chest of drawers
+        if 'chest' in name_lower and 'drawer' in name_lower:
+            return 'Chest of Drawers'
+
+        # Bookshelf / Shelves detection
+        if 'bookshelf' in name_lower or 'book shelf' in name_lower or 'bookcase' in name_lower:
+            return 'Bookshelf'
+        if 'shelf' in name_lower or 'shelves' in name_lower or 'shelving' in name_lower:
+            return 'Shelves'
+
+        # TV Unit / Media console
+        if 'tv unit' in name_lower or 'tv stand' in name_lower or 'media console' in name_lower or 'entertainment' in name_lower:
+            return 'TV Unit'
+
+        # Sideboard / Buffet
+        if 'sideboard' in name_lower or 'buffet' in name_lower:
+            return 'Sideboard'
+
+        # Storage / Cabinet detection
+        if 'cabinet' in name_lower:
+            return 'Cabinet'
+        if 'storage' in name_lower:
+            return 'Storage'
+
+        # Desk detection
+        if 'desk' in name_lower:
+            return 'Desk'
+
+        # Lamp detection
+        if 'lamp' in name_lower or 'light' in name_lower:
+            if 'floor lamp' in name_lower or 'floor light' in name_lower:
+                return 'Floor Lamp'
+            elif 'table lamp' in name_lower or 'desk lamp' in name_lower:
+                return 'Table Lamp'
+            elif 'pendant' in name_lower:
+                return 'Pendant Lamp'
+            elif 'wall lamp' in name_lower or 'sconce' in name_lower or 'wall light' in name_lower:
+                return 'Wall Lamp'
+            elif 'chandelier' in name_lower:
+                return 'Chandelier'
+            elif 'ceiling' in name_lower:
+                return 'Ceiling Light'
+            elif 'lamp' in name_lower:
+                return 'Lamp'
+
+        # Mirror detection
+        if 'mirror' in name_lower:
+            return 'Mirror'
+
+        # Rug / Carpet detection
+        if 'rug' in name_lower or 'carpet' in name_lower:
+            return 'Rug'
+
+        # Planter detection
+        if 'planter' in name_lower or 'plant pot' in name_lower or 'flower pot' in name_lower:
+            return 'Planter'
+
+        # Vase detection
+        if 'vase' in name_lower:
+            return 'Vase'
+
+        # Clock detection
+        if 'clock' in name_lower:
+            return 'Clock'
+
+        # Divider detection
+        if 'divider' in name_lower or ('screen' in name_lower and 'room' in name_lower):
+            return 'Room Divider'
+
+        # Curtain detection
+        if 'curtain' in name_lower or 'drape' in name_lower:
+            return 'Curtain'
+
+        # Cushion / Pillow detection
+        if 'cushion' in name_lower or 'pillow' in name_lower:
+            return 'Cushion'
+
+        # Throw / Blanket detection
+        if 'throw' in name_lower or 'blanket' in name_lower:
+            return 'Throw'
+
+        # Table (generic) - after all specific table types
+        if 'table' in name_lower:
+            return 'Table'
+
+        # Return fallback category if no specific match
+        return fallback_category or 'Furniture'
 
     def extract_dimensions(self, text: str) -> Dict[str, str]:
         """Extract product dimensions from text"""

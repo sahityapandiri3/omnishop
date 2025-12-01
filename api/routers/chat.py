@@ -20,7 +20,11 @@ from schemas.chat import (
 )
 from services.chatgpt_service import chatgpt_service
 from services.conversation_context import conversation_context_manager
-from services.google_ai_service import VisualizationRequest, VisualizationResult, google_ai_service
+from services.google_ai_service import (
+    VisualizationRequest,
+    VisualizationResult,
+    google_ai_service,
+)
 from services.ml_recommendation_model import ml_recommendation_model
 from services.nlp_processor import design_nlp_processor
 from services.recommendation_engine import RecommendationRequest, recommendation_engine
@@ -367,6 +371,61 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             # Extract furniture type
             furniture_type = _extract_furniture_type(product.name)
 
+            # =================================================================
+            # SPACE FITNESS VALIDATION - Check if product fits before visualizing
+            # =================================================================
+            try:
+                logger.info(f"Validating space fitness for {product.name}")
+                space_fitness = await google_ai_service.validate_space_fitness(
+                    room_image=room_image,
+                    product_name=product.name,
+                    product_image=product_image_url,
+                    product_description=product.description,
+                )
+
+                # If product doesn't fit and we have high confidence, return helpful message
+                if not space_fitness.fits and space_fitness.confidence >= 0.7:
+                    logger.info(f"Product '{product.name}' doesn't fit in the space: {space_fitness.reason}")
+
+                    # Build a helpful response message
+                    response_message = f"I've analyzed the space and unfortunately this product may not fit well in your room. {space_fitness.reason}"
+                    if space_fitness.suggestion:
+                        response_message += f"\n\n💡 Suggestion: {space_fitness.suggestion}"
+                    response_message += (
+                        "\n\nWould you like me to suggest some alternatives that might work better for your space?"
+                    )
+
+                    # Update the conversational response with the space fitness message
+                    conversational_response = response_message
+
+                    # Don't generate visualization - return early with the message
+                    message_schema = ChatMessageSchema(
+                        id=assistant_message_id,
+                        type=MessageType.assistant,
+                        content=conversational_response,
+                        timestamp=assistant_message.timestamp,
+                        session_id=session_id,
+                        products=None,
+                        image_url=None,  # No visualization since product doesn't fit
+                    )
+
+                    return ChatMessageResponse(
+                        message=message_schema,
+                        analysis=analysis,
+                        recommended_products=None,
+                        detected_furniture=detected_furniture,
+                        similar_furniture_items=similar_furniture_items,
+                        requires_action_choice=False,
+                        action_options=None,
+                        background_task_id=background_task_id,
+                    )
+
+                logger.info(f"Space fitness validation passed: {space_fitness.reason}")
+
+            except Exception as fitness_error:
+                # Log the error but continue with visualization (fail open)
+                logger.warning(f"Space fitness validation failed, proceeding with visualization: {fitness_error}")
+
             # Generate visualization based on action
             try:
                 if request.user_action == "add":
@@ -628,10 +687,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 previously_visualized_product_ids = {p.get("id") for p in previous_products if p.get("id")}
 
                 # Filter to only NEW products (not already in last visualization)
-                new_products_to_visualize = [
-                    p for p in products
-                    if p.get("id") not in previously_visualized_product_ids
-                ]
+                new_products_to_visualize = [p for p in products if p.get("id") not in previously_visualized_product_ids]
 
                 logger.info(
                     f"Incremental mode: Using last visualization as base image. "
@@ -922,7 +978,9 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
 
         # Handle incremental visualization (add ONLY NEW products to existing visualization)
         if is_incremental:
-            logger.info(f"Incremental visualization: Adding {len(new_products_to_visualize)} NEW products (out of {len(products)} total)")
+            logger.info(
+                f"Incremental visualization: Adding {len(new_products_to_visualize)} NEW products (out of {len(products)} total)"
+            )
 
             # Use sequential add visualization for each NEW product only
             current_image = base_image  # Start with previous visualization (already has old products)

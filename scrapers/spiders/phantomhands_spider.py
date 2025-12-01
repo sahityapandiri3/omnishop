@@ -168,7 +168,8 @@ class PhantomHandsSpider(BaseProductSpider):
             ]
             sku = self.extract_text_from_selectors(response, sku_selectors) or ''
 
-            # Get category from meta
+            # Get category from meta (URL-based) as fallback
+            # Smart categorization is automatically applied in create_product_item()
             category = response.meta.get('category', 'Furniture')
 
             # Extract availability
@@ -249,6 +250,9 @@ class PhantomHandsSpider(BaseProductSpider):
             category = category.replace('-', ' ').replace('_', ' ').title()
             return category
         return 'Furniture'
+
+    # Note: determine_category_from_name is inherited from BaseProductSpider
+    # Smart categorization is now automatically applied in create_product_item()
 
     def looks_like_product_url(self, url: str) -> bool:
         """Check if URL looks like a product page"""
