@@ -345,14 +345,19 @@ def recategorize_products(dry_run: bool = False, store_filter: str = None):
             print("\n\nApplying changes...")
             print("-" * 50)
 
+            # Process in batches to avoid connection timeouts
+            BATCH_SIZE = 100
             for i, change in enumerate(changes):
                 product = session.query(Product).get(change['product_id'])
                 new_category = get_or_create_category(session, change['new_category'])
                 product.category_id = new_category.id
 
-                if (i + 1) % 100 == 0:
-                    print(f"  Processed {i + 1}/{len(changes)} products...")
+                # Commit every BATCH_SIZE products to avoid timeout
+                if (i + 1) % BATCH_SIZE == 0:
+                    session.commit()
+                    print(f"  Committed batch: {i + 1}/{len(changes)} products...")
 
+            # Final commit for remaining products
             session.commit()
             print(f"\n✅ Successfully updated {len(changes)} products!")
 

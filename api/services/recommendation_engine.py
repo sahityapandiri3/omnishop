@@ -522,18 +522,16 @@ class AdvancedRecommendationEngine:
             "wall_lighting": ["wall lamp", "sconce", "wall light"],
             "general_lighting": ["lamp", "lighting", "light"],
             # Furniture categories - IMPORTANT: Use actual database category names!
-            # Database has: "Sofa", "Sofa Chair", "Furniture" for sofas
-            # Database has: "Table", "Tables", "Console" for tables
-            # Note: "Furniture" is generic but necessary to catch all sofas
-            "sofas": ["sofa", "couch", "sectional", "loveseat", "furniture"],
-            "chairs": ["chair", "armchair", "seating"],
-            "other_seating": ["bench", "stool", "ottoman", "pouf"],
-            "center_tables": ["table", "tables", "console"],  # Fixed: use actual DB categories
-            "side_tables": ["table", "tables", "console"],  # Fixed: use actual DB categories
-            "dining_tables": ["table", "tables"],  # Fixed: use actual DB categories
-            "other_tables": ["console", "desk", "table", "tables"],  # Fixed: use actual DB categories
-            "storage_furniture": ["dresser", "chest", "cabinet", "bookshelf", "shelf", "storage"],
-            "bedroom_furniture": ["bed", "mattress", "headboard"],
+            # Updated to include new specific categories (Single Seater Sofa, Two Seater Sofa, etc.)
+            "sofas": ["sofa", "single seater sofa", "two seater sofa", "three seater sofa", "sectional sofa", "couch", "loveseat", "furniture"],
+            "chairs": ["chair", "armchair", "lounge chair", "accent chair", "dining chair", "office chair", "rocking chair", "seating"],
+            "other_seating": ["bench", "stool", "ottoman", "pouf", "recliner"],
+            "center_tables": ["table", "tables", "coffee table", "center table", "console"],
+            "side_tables": ["table", "tables", "side table", "nightstand", "console"],
+            "dining_tables": ["table", "tables", "dining table"],
+            "other_tables": ["console", "console table", "desk", "table", "tables"],
+            "storage_furniture": ["dresser", "chest of drawers", "cabinet", "bookshelf", "shelves", "storage", "wardrobe", "sideboard", "tv unit"],
+            "bedroom_furniture": ["bed", "king bed", "queen bed", "double bed", "single bed", "mattress", "headboard", "nightstand"],
             # Decor categories - split out planters and wall decor separately!
             "wall_decor": ["wall art", "wall decor", "wall accessories", "wall hanging", "tapestry"],
             "decor": ["planter", "pot", "vase", "mirror", "rug", "carpet", "mat", "sculpture", "decor", "accessory"],
@@ -541,18 +539,44 @@ class AdvancedRecommendationEngine:
 
         # Special handling for specific items to prevent cross-category contamination
         specific_mappings = {
-            "sofa": ["sofa", "furniture"],  # Sofas are in both "Sofa" and "Furniture" categories
-            "couch": ["sofa", "furniture"],  # Couches same as sofas
-            "planter": ["planter", "pot"],  # Only planter/pot categories
-            "pot": ["planter", "pot"],  # Only planter/pot categories
-            "lamp": ["lamp", "lighting", "light"],  # Only lighting categories
-            "lighting": ["lamp", "lighting", "light"],  # Only lighting categories
-            "rug": ["rug", "carpet", "mat"],  # Only rug categories
-            "vase": ["vase"],  # Only vase categories
-            "wall art": ["wall art", "wall decor", "wall accessories"],  # Only wall art/decor categories
-            "wall decor": ["wall art", "wall decor", "wall accessories"],  # Only wall art/decor categories
-            "wall hanging": ["wall art", "wall decor", "wall accessories", "wall hanging"],  # Only wall art/decor categories
-            "tapestry": ["tapestry", "wall hanging", "wall art"],  # Only tapestry/wall art categories
+            # Sofas - include all seater variants
+            "sofa": ["sofa", "single seater sofa", "two seater sofa", "three seater sofa", "sectional sofa", "furniture"],
+            "couch": ["sofa", "single seater sofa", "two seater sofa", "three seater sofa", "sectional sofa", "furniture"],
+            "sectional": ["sectional sofa", "sofa", "furniture"],
+            # Chairs - include all chair variants
+            "chair": ["chair", "armchair", "lounge chair", "accent chair", "dining chair", "office chair", "rocking chair"],
+            "armchair": ["armchair", "chair", "lounge chair", "accent chair"],
+            "lounge chair": ["lounge chair", "armchair", "chair"],
+            # Tables - include specific table types
+            "coffee table": ["coffee table", "center table", "table"],
+            "side table": ["side table", "nightstand", "table"],
+            "dining table": ["dining table", "table"],
+            "console table": ["console table", "console", "table"],
+            # Beds - include all bed sizes
+            "bed": ["bed", "king bed", "queen bed", "double bed", "single bed"],
+            # Other furniture
+            "ottoman": ["ottoman", "pouf"],
+            "bookshelf": ["bookshelf", "shelves", "bookcase"],
+            "cabinet": ["cabinet", "storage", "sideboard"],
+            "wardrobe": ["wardrobe", "closet", "armoire"],
+            # Lighting
+            "lamp": ["lamp", "table lamp", "floor lamp", "pendant lamp", "wall lamp", "lighting", "light"],
+            "lighting": ["lamp", "table lamp", "floor lamp", "pendant lamp", "wall lamp", "chandelier", "lighting", "light"],
+            "chandelier": ["chandelier", "pendant lamp", "ceiling light"],
+            # Decor
+            "planter": ["planter", "pot"],
+            "pot": ["planter", "pot"],
+            "rug": ["rug", "carpet", "mat"],
+            "vase": ["vase"],
+            "cushion": ["cushion", "pillow"],
+            "throw": ["throw", "blanket"],
+            "mirror": ["mirror"],
+            "clock": ["clock"],
+            # Wall decor
+            "wall art": ["wall art", "wall decor", "wall accessories"],
+            "wall decor": ["wall art", "wall decor", "wall accessories"],
+            "wall hanging": ["wall art", "wall decor", "wall accessories", "wall hanging"],
+            "tapestry": ["tapestry", "wall hanging", "wall art"],
         }
 
         # Check if this is a specific item first
