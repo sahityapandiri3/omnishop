@@ -26,6 +26,14 @@ interface Product {
   source?: string;
 }
 
+// Visualization history entry for local undo/redo tracking
+// This fixes the issue where backend in-memory state is lost on server restart
+interface VisualizationHistoryEntry {
+  image: string;
+  products: Product[];
+  productIds: Set<string>;
+}
+
 interface CanvasPanelProps {
   products: Product[];
   roomImage: string | null;
@@ -33,6 +41,7 @@ interface CanvasPanelProps {
   onClearCanvas: () => void;
   onRoomImageUpload: (imageData: string) => void;
   onSetProducts: (products: Product[]) => void;
+  initialVisualizationImage?: string | null;  // Pre-loaded visualization from curated looks
 }
 
 /**
@@ -46,10 +55,12 @@ export default function CanvasPanel({
   onClearCanvas,
   onRoomImageUpload,
   onSetProducts,
+  initialVisualizationImage,
 }: CanvasPanelProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isVisualizing, setIsVisualizing] = useState(false);
   const [visualizationResult, setVisualizationResult] = useState<string | null>(null);
+  // Start expanded if user needs to upload their room image (no roomImage but has curated visualization)
   const [isRoomImageCollapsed, setIsRoomImageCollapsed] = useState(false);
 
   // Smart re-visualization tracking
@@ -60,6 +71,10 @@ export default function CanvasPanel({
   // Undo/Redo state
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+
+  // Local visualization history for reliable undo/redo (fixes server restart issue)
+  const [visualizationHistory, setVisualizationHistory] = useState<VisualizationHistoryEntry[]>([]);
+  const [redoStack, setRedoStack] = useState<VisualizationHistoryEntry[]>([]);
 
   // Furniture position editing state
   const [isEditingPositions, setIsEditingPositions] = useState(false);
@@ -120,6 +135,52 @@ export default function CanvasPanel({
       }, 100);
     }
   }, [visualizationResult]); // Trigger when visualization result changes
+
+  // Debug logging for curated visualization
+  useEffect(() => {
+    console.log('[CanvasPanel] Props received:', {
+      hasInitialVisualizationImage: !!initialVisualizationImage,
+      initialVisualizationImageLength: initialVisualizationImage?.length || 0,
+      hasRoomImage: !!roomImage,
+      productsCount: products.length,
+      currentVisualizationResult: !!visualizationResult,
+    });
+  }, [initialVisualizationImage, roomImage, products.length, visualizationResult]);
+
+  // Initialize visualization from curated look (pre-loaded image)
+  // This runs when initialVisualizationImage is provided (e.g., from curated looks)
+  useEffect(() => {
+    console.log('[CanvasPanel] Init effect running:', {
+      hasInitialViz: !!initialVisualizationImage,
+      hasCurrentViz: !!visualizationResult,
+    });
+
+    if (initialVisualizationImage && !visualizationResult) {
+      console.log('[CanvasPanel] Initializing visualization from curated look image, length:', initialVisualizationImage.length);
+      // Format the image properly (ensure data URI format)
+      const formattedImage = initialVisualizationImage.startsWith('data:')
+        ? initialVisualizationImage
+        : `data:image/png;base64,${initialVisualizationImage}`;
+
+      console.log('[CanvasPanel] Setting visualizationResult with formatted image, starts with data:', formattedImage.startsWith('data:'));
+      setVisualizationResult(formattedImage);
+
+      // Also track the initial products as visualized
+      const productIds = new Set(products.map(p => String(p.id)));
+      setVisualizedProductIds(productIds);
+      setVisualizedProducts([...products]);
+
+      // Add to history for undo support
+      setVisualizationHistory([{
+        image: formattedImage,
+        products: [...products],
+        productIds: productIds
+      }]);
+      setCanUndo(false); // No previous state to undo to initially
+
+      console.log('[CanvasPanel] Curated visualization initialized successfully');
+    }
+  }, [initialVisualizationImage, visualizationResult, products]); // Include visualizationResult to prevent re-running after set
 
   // Handle file upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -241,13 +302,16 @@ export default function CanvasPanel({
         console.log('[CanvasPanel] Initial visualization: visualizing all products');
       }
 
-      // Prepare products for V1 API
+      // Prepare products for V1 API with complete context
+      // Including image_url is crucial for AI to render exact product appearance
       const productDetails = productsToVisualize.map(p => ({
         id: p.id,
         name: p.name,
         full_name: p.name,
+        image_url: p.image_url || getProductImageUrl(p),  // Include product image for AI reference
+        product_type: p.productType || 'furniture',
         style: 0.8,
-        category: 'furniture'
+        category: p.productType || 'furniture'
       }));
 
       // V1 Visualization API call
@@ -281,17 +345,27 @@ export default function CanvasPanel({
       }
 
       // Set visualization result and update tracking
-      setVisualizationResult(data.visualization.rendered_image);
+      const newImage = data.visualization.rendered_image;
+      const newProductIds = new Set(products.map(p => String(p.id)));
+
+      setVisualizationResult(newImage);
       // Ensure IDs are strings for consistency with undo/redo
-      setVisualizedProductIds(new Set(products.map(p => String(p.id)))); // Track all current products as visualized
-      setVisualizedProducts(products); // Store actual product objects for edit mode
+      setVisualizedProductIds(newProductIds); // Track all current products as visualized
+      setVisualizedProducts([...products]); // Store actual product objects for edit mode
       setNeedsRevisualization(false); // Reset change flag
 
-      // Update undo/redo availability from backend response
-      setCanUndo(data.can_undo || false);
-      setCanRedo(data.can_redo || false);
+      // Push to local visualization history for reliable undo (fixes server restart issue)
+      setVisualizationHistory(prev => [...prev, {
+        image: newImage,
+        products: [...products],
+        productIds: newProductIds
+      }]);
+      // Clear redo stack when new visualization is added
+      setRedoStack([]);
+      setCanUndo(true);
+      setCanRedo(false);
 
-      console.log(`[CanvasPanel] Visualization successful. Tracked ${products.length} products as visualized.`);
+      console.log(`[CanvasPanel] Visualization successful. Tracked ${products.length} products as visualized. History size: ${visualizationHistory.length + 1}`);
     } catch (error: any) {
       console.error('[CanvasPanel] Visualization error:', error);
       alert(
@@ -318,133 +392,84 @@ export default function CanvasPanel({
     }
   };
 
-  // Handle undo visualization
-  const handleUndo = async () => {
-    const sessionId = sessionStorage.getItem('design_session_id');
-    if (!sessionId) {
-      console.error('[CanvasPanel] No session ID found');
+  // Handle undo visualization - uses local history instead of backend API
+  // This fixes the issue where backend in-memory state is lost on server restart
+  const handleUndo = () => {
+    if (visualizationHistory.length === 0) {
+      console.log('[CanvasPanel] Cannot undo: no visualization history');
       return;
     }
 
-    try {
-      console.log('[CanvasPanel] Undoing visualization...');
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualization/undo`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
+    console.log('[CanvasPanel] Undoing visualization using local history...');
+    console.log('[CanvasPanel] Current history size:', visualizationHistory.length);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Undo failed' }));
-        throw new Error(errorData.detail || 'Undo failed');
-      }
+    // Pop the current state from history
+    const newHistory = [...visualizationHistory];
+    const currentState = newHistory.pop();
 
-      const data = await response.json();
-      console.log('[CanvasPanel] Undo response:', data);
-      console.log('[CanvasPanel] Visualization object:', data.visualization);
-      console.log('[CanvasPanel] Has rendered_image?:', !!data.visualization?.rendered_image);
-
-      // Update visualization with previous state
-      // If rendered_image is null, it means we've undone to the base image (original room)
-      if (data.visualization) {
-        const imageToShow = data.visualization.rendered_image || roomImage;
-        console.log('[CanvasPanel] Updating to:', data.visualization.rendered_image ? 'previous visualization' : 'base room image');
-        setVisualizationResult(imageToShow);
-
-        // Update visualized product IDs to match the undone state
-        const previousProducts = data.visualization.products_in_scene || [];
-        console.log('[CanvasPanel] Previous visualization had:', previousProducts.length, 'products');
-
-        // Convert product IDs to strings for consistency
-        const newVisualizedIds = new Set<string>(previousProducts.map((p: any) => String(p.id)));
-        console.log('[CanvasPanel] Updated visualizedProductIds to:', newVisualizedIds);
-        setVisualizedProductIds(newVisualizedIds);
-
-        // Update visualizedProducts list to match the reverted state
-        const normalizedProducts = previousProducts.map((p: any) => ({
-          ...p,
-          id: String(p.id)
-        }));
-        setVisualizedProducts(normalizedProducts);
-
-        // Update canvas products to reflect the undone state
-        onSetProducts(normalizedProducts);
-      } else {
-        console.error('[CanvasPanel] No visualization object in response!', data);
-      }
-
-      // Update undo/redo availability
-      setCanUndo(data.can_undo || false);
-      setCanRedo(data.can_redo || false);
-
-      console.log('[CanvasPanel] Undo successful');
-    } catch (error: any) {
-      console.error('[CanvasPanel] Undo error:', error);
-      alert(error.message || 'Failed to undo visualization');
+    // Push current state to redo stack
+    if (currentState) {
+      setRedoStack(prev => [...prev, currentState]);
     }
+
+    // Restore previous state
+    if (newHistory.length > 0) {
+      const previousState = newHistory[newHistory.length - 1];
+      console.log('[CanvasPanel] Restoring previous state with', previousState.products.length, 'products');
+
+      setVisualizationResult(previousState.image);
+      setVisualizedProductIds(previousState.productIds);
+      setVisualizedProducts(previousState.products);
+      onSetProducts(previousState.products);
+    } else {
+      // No previous state - clear visualization (back to base room image)
+      console.log('[CanvasPanel] No previous state - clearing visualization');
+      setVisualizationResult(null);
+      setVisualizedProductIds(new Set());
+      setVisualizedProducts([]);
+      onSetProducts([]);
+    }
+
+    // Update history and undo/redo availability
+    setVisualizationHistory(newHistory);
+    setCanUndo(newHistory.length > 0);
+    setCanRedo(true);
+
+    console.log('[CanvasPanel] Undo successful. New history size:', newHistory.length);
   };
 
-  // Handle redo visualization
-  const handleRedo = async () => {
-    const sessionId = sessionStorage.getItem('design_session_id');
-    if (!sessionId) {
-      console.error('[CanvasPanel] No session ID found');
+  // Handle redo visualization - uses local redo stack instead of backend API
+  // This fixes the issue where backend in-memory state is lost on server restart
+  const handleRedo = () => {
+    if (redoStack.length === 0) {
+      console.log('[CanvasPanel] Cannot redo: no redo history');
       return;
     }
 
-    try {
-      console.log('[CanvasPanel] Redoing visualization...');
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualization/redo`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
+    console.log('[CanvasPanel] Redoing visualization using local redo stack...');
+    console.log('[CanvasPanel] Current redo stack size:', redoStack.length);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Redo failed' }));
-        throw new Error(errorData.detail || 'Redo failed');
-      }
+    // Pop state from redo stack
+    const newRedoStack = [...redoStack];
+    const stateToRestore = newRedoStack.pop();
 
-      const data = await response.json();
-      console.log('[CanvasPanel] Redo response:', data);
+    if (stateToRestore) {
+      // Push to history and restore state
+      setVisualizationHistory(prev => [...prev, stateToRestore]);
+      setVisualizationResult(stateToRestore.image);
+      setVisualizedProductIds(stateToRestore.productIds);
+      setVisualizedProducts(stateToRestore.products);
+      onSetProducts(stateToRestore.products);
 
-      // Update visualization with next state
-      if (data.visualization?.rendered_image) {
-        setVisualizationResult(data.visualization.rendered_image);
-
-        // Update visualized product IDs to match the redone state
-        const nextProducts = data.visualization.products_in_scene || [];
-        console.log('[CanvasPanel] Redone visualization has:', nextProducts.length, 'products');
-
-        // Convert product IDs to strings for consistency
-        const newVisualizedIds = new Set<string>(nextProducts.map((p: any) => String(p.id)));
-        console.log('[CanvasPanel] Updated visualizedProductIds to:', newVisualizedIds);
-        setVisualizedProductIds(newVisualizedIds);
-
-        // Update visualizedProducts list to match the redone state
-        const normalizedProducts = nextProducts.map((p: any) => ({
-          ...p,
-          id: String(p.id)
-        }));
-        setVisualizedProducts(normalizedProducts);
-
-        // Update canvas products to reflect the redone state
-        onSetProducts(normalizedProducts);
-      }
-
-      // Update undo/redo availability
-      setCanUndo(data.can_undo || false);
-      setCanRedo(data.can_redo || false);
-
-      console.log('[CanvasPanel] Redo successful');
-    } catch (error: any) {
-      console.error('[CanvasPanel] Redo error:', error);
-      alert(error.message || 'Failed to redo visualization');
+      console.log('[CanvasPanel] Restored state with', stateToRestore.products.length, 'products');
     }
+
+    // Update redo stack and undo/redo availability
+    setRedoStack(newRedoStack);
+    setCanUndo(true);
+    setCanRedo(newRedoStack.length > 0);
+
+    console.log('[CanvasPanel] Redo successful. Remaining redo stack size:', newRedoStack.length);
   };
 
   // Position editing handlers
@@ -652,8 +677,105 @@ export default function CanvasPanel({
   const isUpToDate = canVisualize && !needsRevisualization && visualizationResult !== null;
   const isReady = canVisualize && (needsRevisualization || visualizationResult === null);
 
+  // Check if user came from curated looks with products but no room image
+  // Don't show full-screen overlay if we have a visualization already (from curated looks)
+  const needsRoomImageUpload = products.length > 0 && !roomImage && !visualizationResult && !initialVisualizationImage;
+
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden relative">
+      {/* Prominent Upload Prompt - shown when products loaded but no room image */}
+      {needsRoomImageUpload && (
+        <div className="absolute inset-0 z-20 bg-gradient-to-br from-primary-50 to-secondary-50 dark:from-neutral-800 dark:to-neutral-900 flex flex-col items-center justify-center p-6">
+          <div className="max-w-sm text-center">
+            {/* Icon */}
+            <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-primary-500 to-secondary-500 rounded-2xl flex items-center justify-center shadow-lg">
+              <svg
+                className="w-10 h-10 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
+            </div>
+
+            {/* Title */}
+            <h2 className="text-2xl font-bold text-neutral-900 dark:text-white mb-3">
+              Upload Your Room
+            </h2>
+
+            {/* Description */}
+            <p className="text-neutral-600 dark:text-neutral-400 mb-2">
+              You have <span className="font-semibold text-primary-600 dark:text-primary-400">{products.length} curated products</span> ready to visualize!
+            </p>
+            <p className="text-sm text-neutral-500 dark:text-neutral-500 mb-6">
+              Upload a photo of your room to see how these products will look in your space.
+            </p>
+
+            {/* Upload Button */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full py-4 px-6 bg-gradient-to-r from-primary-600 to-secondary-600 hover:from-primary-700 hover:to-secondary-700 text-white text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              Upload Room Photo
+            </button>
+
+            {/* File format info */}
+            <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-3">
+              JPG, PNG, WEBP • Max 10MB
+            </p>
+
+            {/* Products preview */}
+            <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">Products ready to visualize:</p>
+              <div className="flex justify-center gap-2 flex-wrap">
+                {products.slice(0, 4).map((product) => (
+                  <div key={product.id} className="w-12 h-12 bg-white dark:bg-neutral-700 rounded-lg shadow overflow-hidden">
+                    {product.image_url ? (
+                      <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-neutral-400">
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {products.length > 4 && (
+                  <div className="w-12 h-12 bg-neutral-100 dark:bg-neutral-700 rounded-lg flex items-center justify-center text-xs font-semibold text-neutral-600 dark:text-neutral-300">
+                    +{products.length - 4}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+        </div>
+      )}
+
       {/* Header */}
       <div className="p-4 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0">
         <div className="flex items-center justify-between mb-2">
@@ -722,9 +844,12 @@ export default function CanvasPanel({
                   )}
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="absolute bottom-2 right-2 px-3 py-1.5 bg-white/90 dark:bg-neutral-900/90 backdrop-blur text-xs font-medium text-neutral-900 dark:text-white rounded-lg hover:bg-white dark:hover:bg-neutral-900 transition-colors"
+                    className="absolute bottom-2 right-2 px-3 py-1.5 bg-gradient-to-r from-primary-600 to-secondary-600 hover:from-primary-700 hover:to-secondary-700 backdrop-blur text-xs font-medium text-white rounded-lg transition-all shadow-md hover:shadow-lg flex items-center gap-1.5"
                   >
-                    Change
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Upload Your Room
                   </button>
                 </div>
               ) : (
@@ -746,9 +871,12 @@ export default function CanvasPanel({
                     onClick={() => fileInputRef.current?.click()}
                     className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors"
                   >
-                    Upload Room Image
+                    Upload Your Room Image
                   </button>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
+                  <p className="text-xs text-neutral-600 dark:text-neutral-300 mt-2 text-center">
+                    Add your room image to style with these products
+                  </p>
+                  <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
                     JPG, PNG, WEBP • Max 10MB
                   </p>
                 </div>

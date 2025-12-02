@@ -34,7 +34,7 @@ import_error_message = None
 import_error_traceback = None
 
 try:
-    from routers import categories, chat, furniture, products, stores, visualization
+    from routers import admin_curated, categories, chat, curated, furniture, products, stores, visualization
 
     from core.config import settings
 
@@ -283,6 +283,12 @@ if "stores" in dir():
 
 if "furniture" in dir():
     app.include_router(furniture.router, prefix="/api/furniture", tags=["furniture"])
+
+if "curated" in dir():
+    app.include_router(curated.router, prefix="/api", tags=["curated"])
+
+if "admin_curated" in dir():
+    app.include_router(admin_curated.router, prefix="/api", tags=["admin-curated"])
 
 # Additional routers can be added here as needed
 

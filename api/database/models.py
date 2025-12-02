@@ -292,3 +292,58 @@ class FurniturePosition(Base):
 
     def __repr__(self):
         return f"<FurniturePosition(id={self.id}, session_id={self.session_id}, product_id={self.product_id}, x={self.x}, y={self.y})>"
+
+
+class CuratedLook(Base):
+    """Pre-curated room looks created by admin"""
+
+    __tablename__ = "curated_looks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    style_theme = Column(String(100), nullable=False)  # "Modern", "Traditional", "Bohemian", etc.
+    style_description = Column(Text, nullable=True)
+    room_type = Column(String(50), nullable=False, index=True)  # "living_room", "bedroom"
+
+    # Images
+    room_image = Column(Text, nullable=True)  # Base64 of original room (optional)
+    visualization_image = Column(Text, nullable=True)  # Base64 of AI visualization
+
+    # Metadata
+    total_price = Column(Float, default=0)
+    is_published = Column(Boolean, default=False, index=True)
+    display_order = Column(Integer, default=0)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    products = relationship("CuratedLookProduct", back_populates="look", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<CuratedLook(id={self.id}, title='{self.title}', room_type='{self.room_type}', is_published={self.is_published})>"
+
+
+class CuratedLookProduct(Base):
+    """Products included in a curated look"""
+
+    __tablename__ = "curated_look_products"
+
+    id = Column(Integer, primary_key=True, index=True)
+    curated_look_id = Column(Integer, ForeignKey("curated_looks.id"), nullable=False, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+
+    product_type = Column(String(50), nullable=True)  # "sofa", "coffee_table", "lamp", etc.
+    display_order = Column(Integer, default=0)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    look = relationship("CuratedLook", back_populates="products")
+    product = relationship("Product")
+
+    # Indexes and constraints
+    __table_args__ = (Index("idx_curated_look_product", "curated_look_id", "product_id", unique=True),)
+
+    def __repr__(self):
+        return f"<CuratedLookProduct(id={self.id}, look_id={self.curated_look_id}, product_id={self.product_id})>"

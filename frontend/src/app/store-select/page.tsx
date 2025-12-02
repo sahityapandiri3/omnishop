@@ -47,7 +47,7 @@ export default function StoreSelectPage() {
 
   const handleContinue = () => {
     sessionStorage.setItem('primaryStores', JSON.stringify(selectedStores));
-    router.push('/design');
+    router.push('/curated');
   };
 
   if (loading) {
@@ -244,7 +244,7 @@ export default function StoreSelectPage() {
               className="group sm:flex-[2] bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 bg-size-200 bg-pos-0 hover:bg-pos-100 text-white py-4 px-8 rounded-xl transition-all duration-500 font-semibold text-lg shadow-xl hover:shadow-2xl transform hover:scale-[1.02] active:scale-[0.98]"
             >
               <span className="flex items-center justify-center gap-2">
-                Continue to Design Studio
+                See Curated Looks
                 <svg className="w-5 h-5 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                 </svg>

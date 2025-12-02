@@ -321,6 +321,88 @@ export const analyticsAPI = {
   trackChatInteraction: async (sessionId: string, messageType: string) => { /* Mock */ }
 };
 
+// Curated Styling API
+export interface CuratedLook {
+  look_id: string;
+  style_theme: string;
+  style_description: string;
+  room_image: string | null;  // Base room image (furniture removed)
+  visualization_image: string | null;
+  products: Array<{
+    id: number;
+    name: string;
+    price: number;
+    image_url: string | null;
+    source_website: string;
+    source_url: string | null;
+    product_type: string;
+    description?: string;
+  }>;
+  total_price: number;
+  generation_status: 'pending' | 'generating' | 'completed' | 'failed';
+  error_message?: string | null;
+}
+
+export interface CuratedLooksResponse {
+  session_id: string;
+  room_type: string;
+  looks: CuratedLook[];
+  generation_complete: boolean;
+}
+
+export const generateCuratedLooks = async (data: {
+  room_image: string;
+  selected_stores: string[];
+  num_looks?: number;
+}): Promise<CuratedLooksResponse> => {
+  // This is a long-running operation that generates AI visualizations
+  // Each look takes ~30 seconds for visualization, so 3 looks = ~2 minutes minimum
+  // We use a longer timeout and NO retries to avoid duplicate requests
+  const CURATED_LOOKS_TIMEOUT = 300000; // 5 minutes for this specific operation
+
+  try {
+    console.log('[Curated Looks] Starting generation (timeout: 5 minutes)...');
+    const response = await api.post('/api/curated/generate', {
+      room_image: data.room_image,
+      selected_stores: data.selected_stores,
+      num_looks: data.num_looks || 3,
+    }, {
+      timeout: CURATED_LOOKS_TIMEOUT, // Override default timeout for this long operation
+    });
+    console.log('[Curated Looks] Success!');
+    return response.data;
+  } catch (error: any) {
+    const isTimeout = error.code === 'ECONNABORTED' || error.message?.includes('timeout');
+    const isConnectionError = error.code === 'ERR_NETWORK' ||
+                              error.message?.includes('Network Error') ||
+                              error.code === 'ERR_CONNECTION_REFUSED';
+
+    console.error('[Curated Looks] Failed:', {
+      code: error.code,
+      message: error.message,
+      status: error.response?.status,
+      isTimeout,
+      isConnectionError
+    });
+
+    // Create enhanced error with specific messages
+    let errorMessage: string;
+    if (isTimeout) {
+      errorMessage = 'Generation is taking longer than expected. Please try with fewer looks or try again later.';
+    } else if (isConnectionError) {
+      errorMessage = 'Could not connect to server. Please check your internet connection and try again.';
+    } else {
+      errorMessage = error.response?.data?.detail || error.message || 'Failed to generate curated looks';
+    }
+
+    const enhancedError = new Error(errorMessage);
+    (enhancedError as any).originalError = error;
+    (enhancedError as any).isTimeout = isTimeout;
+    (enhancedError as any).isConnectionError = isConnectionError;
+    throw enhancedError;
+  }
+};
+
 // Furniture Position Management API
 export interface FurniturePositionData {
   productId: string;
@@ -400,5 +482,237 @@ export const furniturePositionAPI = {
       console.error('Error extracting furniture layers:', error);
       throw error;
     }
+  }
+};
+
+// Admin Curated Looks API
+export interface AdminCuratedLookSummary {
+  id: number;
+  title: string;
+  style_theme: string;
+  style_description: string | null;
+  room_type: string;
+  visualization_image: string | null;
+  total_price: number;
+  is_published: boolean;
+  display_order: number;
+  product_count: number;
+  created_at: string;
+}
+
+export interface AdminCuratedLookProduct {
+  id: number;
+  name: string;
+  price: number | null;
+  image_url: string | null;
+  source_website: string;
+  source_url: string | null;
+  product_type: string | null;
+  description: string | null;
+}
+
+export interface AdminCuratedLook {
+  id: number;
+  title: string;
+  style_theme: string;
+  style_description: string | null;
+  room_type: string;
+  room_image: string | null;
+  visualization_image: string | null;
+  total_price: number;
+  is_published: boolean;
+  display_order: number;
+  products: AdminCuratedLookProduct[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminCuratedLooksListResponse {
+  items: AdminCuratedLookSummary[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+}
+
+export interface AdminCuratedLookCreate {
+  title: string;
+  style_theme: string;
+  style_description?: string;
+  room_type: 'living_room' | 'bedroom';
+  room_image?: string;
+  visualization_image?: string;
+  is_published?: boolean;
+  display_order?: number;
+  product_ids: number[];
+  product_types?: string[];
+}
+
+export const adminCuratedAPI = {
+  /**
+   * List all curated looks (admin view)
+   */
+  list: async (params?: { page?: number; size?: number; room_type?: string; is_published?: boolean }): Promise<AdminCuratedLooksListResponse> => {
+    try {
+      const response = await api.get('/api/admin/curated/', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Error listing curated looks:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get a single curated look with full details
+   */
+  get: async (lookId: number): Promise<AdminCuratedLook> => {
+    try {
+      const response = await api.get(`/api/admin/curated/${lookId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error getting curated look:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Create a new curated look
+   */
+  create: async (data: AdminCuratedLookCreate): Promise<AdminCuratedLook> => {
+    try {
+      console.log('[adminCuratedAPI.create] Starting request...');
+      const startTime = Date.now();
+      const response = await api.post('/api/admin/curated/', data);
+      console.log(`[adminCuratedAPI.create] Success in ${Date.now() - startTime}ms`);
+      return response.data;
+    } catch (error: any) {
+      console.error('[adminCuratedAPI.create] Error:', error.message);
+      console.error('[adminCuratedAPI.create] Response:', error.response?.status, error.response?.data);
+      throw error;
+    }
+  },
+
+  /**
+   * Update a curated look
+   */
+  update: async (lookId: number, data: Partial<AdminCuratedLookCreate>): Promise<AdminCuratedLook> => {
+    try {
+      const response = await api.put(`/api/admin/curated/${lookId}`, data);
+      return response.data;
+    } catch (error) {
+      console.error('Error updating curated look:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Update products in a curated look
+   */
+  updateProducts: async (lookId: number, productIds: number[], productTypes?: string[]): Promise<AdminCuratedLook> => {
+    try {
+      const response = await api.put(`/api/admin/curated/${lookId}/products`, {
+        product_ids: productIds,
+        product_types: productTypes
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error updating curated look products:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Delete a curated look
+   */
+  delete: async (lookId: number): Promise<void> => {
+    try {
+      await api.delete(`/api/admin/curated/${lookId}`);
+    } catch (error) {
+      console.error('Error deleting curated look:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Publish a curated look
+   */
+  publish: async (lookId: number): Promise<void> => {
+    try {
+      await api.post(`/api/admin/curated/${lookId}/publish`);
+    } catch (error) {
+      console.error('Error publishing curated look:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Unpublish a curated look
+   */
+  unpublish: async (lookId: number): Promise<void> => {
+    try {
+      await api.post(`/api/admin/curated/${lookId}/unpublish`);
+    } catch (error) {
+      console.error('Error unpublishing curated look:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get product categories for filtering
+   */
+  getCategories: async (): Promise<{ categories: { id: number; name: string; slug: string }[] }> => {
+    try {
+      const response = await api.get('/api/admin/curated/categories');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Search products for adding to a look
+   */
+  searchProducts: async (params: {
+    query?: string;
+    categoryId?: number;
+    sourceWebsite?: string;
+    minPrice?: number;
+    maxPrice?: number;
+    colors?: string;
+    limit?: number;
+  }): Promise<{ products: any[] }> => {
+    try {
+      const response = await api.get('/api/admin/curated/search/products', {
+        params: {
+          query: params.query,
+          category_id: params.categoryId,
+          source_website: params.sourceWebsite,
+          min_price: params.minPrice,
+          max_price: params.maxPrice,
+          colors: params.colors,
+          limit: params.limit
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error searching products:', error);
+      throw error;
+    }
+  }
+};
+
+// Get pre-curated looks from database (public endpoint)
+export const getCuratedLooks = async (roomType?: string): Promise<CuratedLooksResponse> => {
+  try {
+    const response = await api.get('/api/curated/looks', {
+      params: roomType ? { room_type: roomType } : {}
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching curated looks:', error);
+    throw error;
   }
 };

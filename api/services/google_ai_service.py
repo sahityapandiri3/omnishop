@@ -6,6 +6,7 @@ import base64
 import io
 import json
 import logging
+import random
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -866,21 +867,36 @@ DO NOT leave ANY furniture behind. The room must be 100% empty."""
                         "Gemini config: model=gemini-3-pro-image-preview, temperature=0.7, response_modalities=['IMAGE']"
                     )
 
-                    # Generate furniture removal
+                    # Generate furniture removal with timeout (90 seconds max per attempt)
+                    import time
+
+                    start_time = time.time()
+                    timeout_seconds = 90
                     generated_image = None
-                    for chunk in self.genai_client.models.generate_content_stream(
-                        model="gemini-3-pro-image-preview", contents=contents, config=generate_content_config
-                    ):
-                        if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
-                            for part in chunk.candidates[0].content.parts:
-                                if part.inline_data and part.inline_data.data:
-                                    image_bytes = part.inline_data.data
-                                    mime_type = part.inline_data.mime_type or "image/png"
-                                    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-                                    generated_image = f"data:{mime_type};base64,{image_base64}"
-                                    logger.info(
-                                        f"Furniture removal successful on attempt {attempt + 1} ({len(image_bytes)} bytes)"
-                                    )
+
+                    try:
+                        for chunk in self.genai_client.models.generate_content_stream(
+                            model="gemini-3-pro-image-preview", contents=contents, config=generate_content_config
+                        ):
+                            # Check for timeout
+                            if time.time() - start_time > timeout_seconds:
+                                logger.error(
+                                    f"Furniture removal attempt {attempt + 1} timed out after {timeout_seconds} seconds"
+                                )
+                                break
+
+                            if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+                                for part in chunk.candidates[0].content.parts:
+                                    if part.inline_data and part.inline_data.data:
+                                        image_bytes = part.inline_data.data
+                                        mime_type = part.inline_data.mime_type or "image/png"
+                                        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+                                        generated_image = f"data:{mime_type};base64,{image_base64}"
+                                        logger.info(
+                                            f"Furniture removal successful on attempt {attempt + 1} ({len(image_bytes)} bytes)"
+                                        )
+                    except Exception as stream_error:
+                        logger.error(f"Furniture removal streaming error on attempt {attempt + 1}: {stream_error}")
 
                     if generated_image:
                         return generated_image
@@ -942,12 +958,48 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 ⚠️ IF THE OUTPUT IMAGE HAS DIFFERENT DIMENSIONS THAN THE INPUT, YOU HAVE FAILED THE TASK ⚠️
 ═══════════════════════════════════════════════════════════════
 
+🚨🚨🚨 ABSOLUTE REQUIREMENT - EXISTING FURNITURE SIZE PRESERVATION 🚨🚨🚨
+═══════════════════════════════════════════════════════════════
+ALL EXISTING FURNITURE MUST REMAIN THE EXACT SAME SIZE AND SCALE:
+- ⚠️ NEVER make existing furniture (sofas, chairs, tables) appear larger or smaller
+- ⚠️ NEVER expand the room to accommodate new items
+- ⚠️ NEVER shrink existing furniture to make space for new items
+- ⚠️ NEVER change the perspective to make the room appear larger
+- ⚠️ The sofa that was 6 feet wide MUST still appear 6 feet wide
+- ⚠️ The coffee table that was 4 feet long MUST still appear 4 feet long
+- ⚠️ All proportions between existing objects MUST remain IDENTICAL
+
+📏 TRUE SIZE REPRESENTATION:
+- New furniture must be added at its REAL-WORLD proportional size
+- A new 3-seater sofa should look proportional to an existing 3-seater sofa
+- A new side table should look smaller than an existing dining table
+- Use the existing furniture as SIZE REFERENCE for new items
+- Do NOT artificially shrink new products to fit - if they don't fit, they don't fit
+
+🚫 ROOM EXPANSION IS FORBIDDEN:
+- The room boundaries (walls, floor, ceiling) are FIXED
+- Do NOT push walls back to create more space
+- Do NOT make the ceiling appear higher
+- Do NOT extend the floor area
+- The room's cubic volume must remain IDENTICAL
+- If there's not enough space for the product, do NOT modify the room
+
+⚠️ IF EXISTING FURNITURE CHANGES SIZE OR ROOM EXPANDS, YOU HAVE FAILED THE TASK ⚠️
+═══════════════════════════════════════════════════════════════
+
 🔒 CRITICAL PRESERVATION RULES:
 1. KEEP ALL EXISTING FURNITURE: Do NOT remove or replace any furniture currently in the room
-2. FIND APPROPRIATE SPACE: Identify a suitable empty space to place the new furniture
-3. PRESERVE THE ROOM: Keep the same walls, windows, floors, ceiling, lighting, and camera angle
-4. NATURAL PLACEMENT: Place the product naturally where it would logically fit in this room layout
-5. ROOM SIZE UNCHANGED: The room must look the EXACT same size - not bigger, not smaller
+2. ⚠️ ESPECIALLY PRESERVE SOFAS: If there is a sofa/couch in the room, it MUST remain in the final image - NEVER remove a sofa unless explicitly told to replace it
+3. FIND APPROPRIATE SPACE: Identify a suitable empty space to place the new furniture
+4. PRESERVE THE ROOM: Keep the same walls, windows, floors, ceiling, lighting, and camera angle
+5. NATURAL PLACEMENT: Place the product naturally where it would logically fit in this room layout
+6. ROOM SIZE UNCHANGED: The room must look the EXACT same size - not bigger, not smaller
+
+🚫 FURNITURE YOU MUST NEVER REMOVE:
+- Sofas/couches (main seating)
+- Beds
+- Existing accent chairs
+- Any furniture that was in the input image
 
 ✅ YOUR TASK:
 - Add the {product_name} to this room
@@ -956,6 +1008,29 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 - Keep the room structure 100% identical
 - Keep the room DIMENSIONS 100% identical
 - Ensure the product looks naturally integrated with proper lighting and shadows
+
+🔴🔴🔴 EXACT PRODUCT REPLICATION - MANDATORY 🔴🔴🔴
+═══════════════════════════════════════════════════════════════
+If a product reference image is provided, you MUST render the EXACT SAME product:
+
+1. 🎨 EXACT COLOR - The color in output MUST match the reference image precisely
+   - If reference shows light gray, render LIGHT GRAY (not dark gray, not beige)
+   - If reference shows walnut wood, render WALNUT WOOD (not oak, not black)
+
+2. 🪵 EXACT MATERIAL & TEXTURE - Replicate the exact material appearance
+   - Velvet → Velvet, Leather → Leather, Wood grain → Same wood grain
+
+3. 📐 EXACT SHAPE & DESIGN - Match the reference's silhouette and design
+   - Same arm style, same leg style, same proportions
+
+4. 🏷️ EXACT STYLE - Keep the same style character
+   - Modern → Modern, Traditional → Traditional, Mid-century → Mid-century
+
+⚠️ CRITICAL: The product in the output MUST look like the SAME EXACT product from the reference image.
+❌ DO NOT generate a "similar" or "inspired by" version
+❌ DO NOT change colors to "match the room better"
+✅ COPY the EXACT appearance from the product reference image
+═══════════════════════════════════════════════════════════════
 
 PLACEMENT GUIDELINES:
 
@@ -990,11 +1065,41 @@ PLACEMENT GUIDELINES:
 - ❌ INCORRECT: Placing table in front of the sofa but shifted to the side
 - ✅ CORRECT: Placing table directly touching or very close to sofa's side panel/armrest
 
+🔲 CONSOLE TABLE / ENTRYWAY TABLE / FOYER TABLE:
+- ⚠️ ABSOLUTE RULE: Console tables are COMPLETELY DIFFERENT from sofas - NEVER remove a sofa when adding a console
+- Console tables are NARROW, LONG tables that go AGAINST A WALL (not in front of seating)
+- Place against an empty wall space, NOT in the seating area
+- Typical placement: behind a sofa (against wall), in entryways, hallways, or against any bare wall
+- Console tables are ACCENT furniture - they do NOT replace ANY seating furniture
+- ⚠️ CRITICAL: If there is a sofa in the room, it MUST remain - console tables are ADDITIONAL furniture
+- Console tables are typically 28-32 inches tall and very narrow (12-18 inches deep)
+
 💡 LAMPS:
 - Place on an existing table or directly on the floor (for floor lamps)
 
 🛏️ BEDS:
 - Place against a wall
+
+🪴 PLANTERS / PLANTS / VASES (DECORATIVE ITEMS):
+🚨🚨🚨 CRITICAL FOR PLANTERS - DO NOT ZOOM 🚨🚨🚨
+- ⚠️ ABSOLUTE RULE: The output image MUST show THE ENTIRE ROOM - NOT a close-up of the planter
+- ⚠️ The planter is a TINY ACCENT piece - it should be BARELY NOTICEABLE in the image
+- ⚠️ The planter should appear SMALL in the corner or edge of the image, NOT in the center
+- ⚠️ NEVER zoom in, crop, or focus on the planter
+- ⚠️ The camera view MUST BE IDENTICAL to the input image - same angle, same distance, same field of view
+- Place in a FAR CORNER, next to furniture (against a wall), or tucked beside existing items
+- The planter should occupy LESS than 5-10% of the visible image area
+- Keep planters proportionally SMALL relative to furniture (floor planters are typically 2-3 feet tall MAX)
+- Large/tall planters: place in a FAR CORNER of the room, NOT in the center or foreground
+- 🚫 WRONG: Zooming in to show planter details - this FAILS the task
+- 🚫 WRONG: Planter appearing large or prominent in the image
+- ✅ CORRECT: Full room view with tiny planter visible in corner/edge
+- The ENTIRE input room must be visible in the output - planter is just a small addition
+
+🖼️ WALL ART / MIRRORS / DECORATIVE ITEMS:
+- Mount on walls at appropriate eye level
+- These are accent pieces - maintain the full room view
+- DO NOT zoom in on decorative items
 
 📏 SPACING:
 - Maintain realistic spacing and proportions
@@ -1010,7 +1115,10 @@ PLACEMENT GUIDELINES:
 5. NO "SPOTLIGHT" EFFECT: product must NOT look highlighted compared to the room
 6. SEAMLESS BLEND: a viewer should NOT be able to tell the product was digitally added
 
-OUTPUT: One photorealistic image showing THE SAME ROOM with the {product_name} added naturally, with lighting that perfectly matches the room."""
+OUTPUT: One photorealistic image showing THE ENTIRE ROOM (same wide-angle view as input) with the {product_name} added naturally.
+🚨 FOR PLANTERS/PLANTS: The planter must appear SMALL (5-10% of image) in a FAR CORNER - DO NOT zoom in or make it prominent!
+🚨 SIZE PRESERVATION: All existing furniture MUST remain THE EXACT SAME SIZE - no enlarging, no shrinking. The room MUST NOT expand or change shape.
+The room structure, walls, and camera angle MUST be identical to the input image. DO NOT zoom in or crop - the output MUST show the exact same room view as the input. The product should be visible but NOT dominate the image - show the full room context."""
 
             # Build parts list
             parts = [types.Part.from_text(text=prompt)]
@@ -1043,11 +1151,18 @@ OUTPUT: One photorealistic image showing THE SAME ROOM with the {product_name} a
                             generated_image = f"data:{mime_type};base64,{image_base64}"
                             logger.info(f"Generated ADD visualization ({len(image_bytes)} bytes)")
 
-            return generated_image if generated_image else room_image
+            if not generated_image:
+                logger.error("AI failed to generate visualization - no image returned")
+                raise ValueError("AI failed to generate visualization image")
 
+            return generated_image
+
+        except ValueError:
+            # Re-raise ValueError for proper handling
+            raise
         except Exception as e:
             logger.error(f"Error generating ADD visualization: {e}")
-            return room_image
+            raise ValueError(f"Visualization generation failed: {e}")
 
     async def generate_replace_visualization(
         self, room_image: str, product_name: str, furniture_type: str, product_image: Optional[str] = None
@@ -1085,6 +1200,24 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 - The floor area must appear the EXACT same size
 
 ⚠️ IF THE OUTPUT IMAGE HAS DIFFERENT DIMENSIONS THAN THE INPUT, YOU HAVE FAILED THE TASK ⚠️
+═══════════════════════════════════════════════════════════════
+
+🚨🚨🚨 ABSOLUTE REQUIREMENT - SIZE PRESERVATION 🚨🚨🚨
+═══════════════════════════════════════════════════════════════
+ALL OTHER FURNITURE MUST REMAIN THE EXACT SAME SIZE AND SCALE:
+- ⚠️ NEVER make remaining furniture appear larger or smaller
+- ⚠️ NEVER expand the room to accommodate the new item
+- ⚠️ NEVER change the perspective to make the room appear larger
+- ⚠️ All proportions between remaining objects MUST remain IDENTICAL
+
+🚫 ROOM EXPANSION IS FORBIDDEN:
+- The room boundaries (walls, floor, ceiling) are FIXED
+- Do NOT push walls back to create more space
+- Do NOT make the ceiling appear higher
+- Do NOT extend the floor area
+- The room's cubic volume must remain IDENTICAL
+
+⚠️ IF REMAINING FURNITURE CHANGES SIZE OR ROOM EXPANDS, YOU HAVE FAILED THE TASK ⚠️
 ═══════════════════════════════════════════════════════════════
 
 Keep everything else in the room exactly the same - the walls, floor, windows, curtains, and all other furniture and decor should remain unchanged. The room must look the EXACT same size - not bigger, not smaller.
@@ -1133,11 +1266,18 @@ Generate a photorealistic image of the room with the {product_name} replacing th
                             generated_image = f"data:{mime_type};base64,{image_base64}"
                             logger.info(f"Generated REPLACE visualization ({len(image_bytes)} bytes)")
 
-            return generated_image if generated_image else room_image
+            if not generated_image:
+                logger.error("AI failed to generate REPLACE visualization - no image returned")
+                raise ValueError("AI failed to generate visualization image")
 
+            return generated_image
+
+        except ValueError:
+            # Re-raise ValueError for proper handling
+            raise
         except Exception as e:
             logger.error(f"Error generating REPLACE visualization: {e}")
-            return room_image
+            raise ValueError(f"Visualization generation failed: {e}")
 
     async def generate_room_visualization(self, visualization_request: VisualizationRequest) -> VisualizationResult:
         """
@@ -1272,6 +1412,46 @@ IF THE ROOM HAS:
 ═══════════════════════════════════════════════════════════════
 You are placing {product_count} products into the room:
 {products_detail}
+
+🔴🔴🔴 EXACT PRODUCT REPLICATION - HIGHEST PRIORITY 🔴🔴🔴
+═══════════════════════════════════════════════════════════════
+For EACH product reference image provided, you MUST render the EXACT SAME product:
+
+1. 🎨 EXACT COLOR - Copy the PRECISE color from the reference image
+   - If the reference sofa is light gray, render LIGHT GRAY (not dark gray, not beige, not white)
+   - If the reference table is dark walnut wood, render DARK WALNUT WOOD (not oak, not pine, not black)
+   - If the reference rug is beige/cream, render BEIGE/CREAM (not brown, not white, not gray)
+
+2. 🪵 EXACT MATERIAL & TEXTURE - Match the reference image exactly
+   - If reference shows velvet fabric, render VELVET (not leather, not cotton)
+   - If reference shows marble top, render MARBLE (not wood, not glass)
+   - If reference shows brass legs, render BRASS (not chrome, not black metal)
+
+3. 📐 EXACT SHAPE & DESIGN - Replicate the reference design precisely
+   - If reference sofa has L-shaped sectional, render L-SHAPED SECTIONAL
+   - If reference table has sleek rectangular design, render SLEEK RECTANGULAR
+   - If reference has round legs, render ROUND LEGS (not square)
+
+4. 🏷️ EXACT STYLE - Match the product's style character
+   - Modern minimalist → Keep modern minimalist
+   - Traditional ornate → Keep traditional ornate
+   - Mid-century → Keep mid-century
+
+⚠️ CRITICAL: Look VERY CAREFULLY at each product reference image and replicate it AS-IS.
+❌ DO NOT generate a "similar looking" or "inspired by" version
+❌ DO NOT substitute with a different style of the same furniture type
+❌ DO NOT change the color to "match the room better"
+✅ DO render EXACTLY what you see in the product reference image
+✅ The product in the output MUST look like the same exact product as the reference
+
+REFERENCE IMAGE MATCHING CHECKLIST (for each product):
+□ Same exact color/shade
+□ Same exact material appearance
+□ Same exact shape/silhouette
+□ Same exact style characteristics
+□ Same exact proportions
+
+═══════════════════════════════════════════════════════════════
 
 📏 CRITICAL SIZING INSTRUCTION:
 Each product has its own real-world dimensions. You MUST honor these dimensions exactly:
@@ -1945,35 +2125,53 @@ QUALITY REQUIREMENTS:
 
         return "\n".join(instructions)
 
-    async def _download_image(self, image_url: str) -> Optional[str]:
-        """Download and preprocess product image from URL"""
-        try:
-            session = await self._get_session()
-            async with session.get(image_url) as response:
-                if response.status == 200:
-                    image_bytes = await response.read()
-                    image = Image.open(io.BytesIO(image_bytes))
+    async def _download_image(self, image_url: str, max_retries: int = 3) -> Optional[str]:
+        """Download and preprocess product image from URL with retry logic"""
+        last_error = None
 
-                    # Convert to RGB
-                    if image.mode != "RGB":
-                        image = image.convert("RGB")
+        for attempt in range(max_retries):
+            try:
+                session = await self._get_session()
+                async with session.get(image_url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    if response.status == 200:
+                        image_bytes = await response.read()
+                        image = Image.open(io.BytesIO(image_bytes))
 
-                    # Resize for optimal processing (max 1024px for product images)
-                    # Increased from 512px to preserve more product detail
-                    max_size = 1024
-                    if image.width > max_size or image.height > max_size:
-                        image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+                        # Convert to RGB
+                        if image.mode != "RGB":
+                            image = image.convert("RGB")
 
-                    # Convert to base64
-                    buffer = io.BytesIO()
-                    image.save(buffer, format="JPEG", quality=85, optimize=True)
-                    return base64.b64encode(buffer.getvalue()).decode()
-                else:
-                    logger.warning(f"Failed to download image from {image_url}: {response.status}")
-                    return None
-        except Exception as e:
-            logger.error(f"Error downloading image from {image_url}: {e}")
-            return None
+                        # Resize for optimal processing (max 1024px for product images)
+                        # Increased from 512px to preserve more product detail
+                        max_size = 1024
+                        if image.width > max_size or image.height > max_size:
+                            image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+
+                        # Convert to base64
+                        buffer = io.BytesIO()
+                        image.save(buffer, format="JPEG", quality=85, optimize=True)
+                        return base64.b64encode(buffer.getvalue()).decode()
+                    else:
+                        logger.warning(f"Failed to download image from {image_url}: {response.status}")
+                        last_error = f"HTTP {response.status}"
+            except asyncio.TimeoutError as e:
+                logger.warning(f"Timeout downloading image (attempt {attempt + 1}/{max_retries}): {image_url}")
+                last_error = e
+            except (aiohttp.ClientError, OSError) as e:
+                logger.warning(f"Network error downloading image (attempt {attempt + 1}/{max_retries}): {e}")
+                last_error = e
+            except Exception as e:
+                logger.error(f"Error downloading image from {image_url}: {e}")
+                last_error = e
+
+            # Exponential backoff before retry
+            if attempt < max_retries - 1:
+                wait_time = (2**attempt) + (random.random() * 0.5)
+                logger.info(f"Retrying image download in {wait_time:.1f}s...")
+                await asyncio.sleep(wait_time)
+
+        logger.error(f"Failed to download image after {max_retries} attempts: {image_url}, last error: {last_error}")
+        return None
 
     def _preprocess_image(self, image_data: str) -> str:
         """Preprocess image for AI analysis"""

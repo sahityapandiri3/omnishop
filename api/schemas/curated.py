@@ -1,0 +1,173 @@
+"""
+Pydantic schemas for curated looks API endpoints
+"""
+from datetime import datetime
+from enum import Enum
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
+
+
+class RoomType(str, Enum):
+    """Available room types for curated looks"""
+
+    living_room = "living_room"
+    bedroom = "bedroom"
+
+
+class GenerationStatus(str, Enum):
+    """Status for curated look generation"""
+
+    pending = "pending"
+    generating = "generating"
+    completed = "completed"
+    failed = "failed"
+
+
+# Product schemas for curated looks
+class CuratedLookProductBase(BaseModel):
+    """Base schema for a product in a curated look"""
+
+    product_id: int
+    product_type: Optional[str] = None
+    display_order: int = 0
+
+
+class CuratedLookProductCreate(CuratedLookProductBase):
+    """Schema for adding a product to a curated look"""
+
+    pass
+
+
+class CuratedLookProductSchema(BaseModel):
+    """Product included in a curated look with full details"""
+
+    id: int
+    name: str
+    price: Optional[float] = None
+    image_url: Optional[str] = None
+    source_website: str
+    source_url: Optional[str] = None
+    product_type: Optional[str] = None
+    description: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Curated look schemas
+class CuratedLookBase(BaseModel):
+    """Base schema for curated look"""
+
+    title: str = Field(..., max_length=200)
+    style_theme: str = Field(..., max_length=100)
+    style_description: Optional[str] = None
+    room_type: RoomType
+
+
+class CuratedLookCreate(CuratedLookBase):
+    """Schema for creating a new curated look"""
+
+    room_image: Optional[str] = None  # Base64 encoded
+    visualization_image: Optional[str] = None  # Base64 encoded
+    is_published: bool = False
+    display_order: int = 0
+    product_ids: List[int] = []  # Products to include with types
+    product_types: Optional[List[str]] = None  # Types for each product
+
+
+class CuratedLookUpdate(BaseModel):
+    """Schema for updating a curated look"""
+
+    title: Optional[str] = Field(None, max_length=200)
+    style_theme: Optional[str] = Field(None, max_length=100)
+    style_description: Optional[str] = None
+    room_type: Optional[RoomType] = None
+    room_image: Optional[str] = None
+    visualization_image: Optional[str] = None
+    is_published: Optional[bool] = None
+    display_order: Optional[int] = None
+
+
+class CuratedLookProductUpdate(BaseModel):
+    """Schema for updating products in a curated look"""
+
+    product_ids: List[int]
+    product_types: Optional[List[str]] = None
+
+
+class CuratedLookSchema(BaseModel):
+    """Complete curated look schema"""
+
+    id: int
+    title: str
+    style_theme: str
+    style_description: Optional[str] = None
+    room_type: str
+    room_image: Optional[str] = None
+    visualization_image: Optional[str] = None
+    total_price: float = 0
+    is_published: bool = False
+    display_order: int = 0
+    products: List[CuratedLookProductSchema] = []
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CuratedLookSummarySchema(BaseModel):
+    """Summary schema for curated look listings"""
+
+    id: int
+    title: str
+    style_theme: str
+    style_description: Optional[str] = None
+    room_type: str
+    visualization_image: Optional[str] = None
+    total_price: float = 0
+    is_published: bool = False
+    display_order: int = 0
+    product_count: int = 0
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Public API response schema (matches frontend CuratedLook interface)
+class CuratedLookPublicSchema(BaseModel):
+    """Public schema for curated looks (user-facing)"""
+
+    look_id: str
+    style_theme: str
+    style_description: Optional[str] = None
+    room_image: Optional[str] = None  # Base room image for visualization
+    visualization_image: Optional[str] = None
+    products: List[CuratedLookProductSchema] = []
+    total_price: float = 0
+    generation_status: GenerationStatus = GenerationStatus.completed
+    error_message: Optional[str] = None
+
+
+class CuratedLooksPublicResponse(BaseModel):
+    """Response schema for public curated looks endpoint"""
+
+    session_id: str
+    room_type: str
+    looks: List[CuratedLookPublicSchema]
+    generation_complete: bool = True
+
+
+# Admin list response
+class CuratedLookListResponse(BaseModel):
+    """Response for admin curated looks list"""
+
+    items: List[CuratedLookSummarySchema]
+    total: int
+    page: int
+    size: int
+    pages: int
+    has_next: bool
+    has_prev: bool

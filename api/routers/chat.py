@@ -20,11 +20,7 @@ from schemas.chat import (
 )
 from services.chatgpt_service import chatgpt_service
 from services.conversation_context import conversation_context_manager
-from services.google_ai_service import (
-    VisualizationRequest,
-    VisualizationResult,
-    google_ai_service,
-)
+from services.google_ai_service import VisualizationRequest, VisualizationResult, google_ai_service
 from services.ml_recommendation_model import ml_recommendation_model
 from services.nlp_processor import design_nlp_processor
 from services.recommendation_engine import RecommendationRequest, recommendation_engine
@@ -309,6 +305,10 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                         "floor rug",
                         "tapestry",
                         "decor",
+                        "sculpture",
+                        "figurine",
+                        "statue",
+                        "art piece",
                     ]
 
                     # Check if this furniture type is additive-only
@@ -992,16 +992,23 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 logger.info(f"  Adding NEW product: {product_name}")
 
                 # Call add visualization for this product
-                add_result = await google_ai_service.generate_add_visualization(
-                    room_image=current_image, product_name=product_name, product_image=product_image_url
-                )
+                try:
+                    add_result = await google_ai_service.generate_add_visualization(
+                        room_image=current_image, product_name=product_name, product_image=product_image_url
+                    )
 
-                # Use the result as base for next product
-                # add_result is already a base64 string, not an object
-                if add_result:
-                    current_image = add_result
-                else:
-                    logger.warning(f"Failed to add product {product_name}, skipping")
+                    # Use the result as base for next product
+                    # add_result is already a base64 string, not an object
+                    if add_result:
+                        current_image = add_result
+                    else:
+                        logger.warning(f"Failed to add product {product_name}, skipping")
+                except ValueError as e:
+                    logger.error(f"Visualization error for {product_name}: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to add {product_name} to visualization. Please try again.",
+                    )
 
             # Final result
             viz_result = VisualizationResult(
@@ -1232,8 +1239,19 @@ def _extract_furniture_type(product_name: str) -> str:
     """Extract furniture type from product name with specific table categorization"""
     name_lower = product_name.lower()
 
+    # Check DECOR ITEMS FIRST (before table) to prevent "Table Top Figurine" being classified as table
+    if "figurine" in name_lower or "figurines" in name_lower:
+        return "figurine"
+    elif "sculpture" in name_lower or "sculptures" in name_lower:
+        return "sculpture"
+    elif "statue" in name_lower or "statues" in name_lower:
+        return "statue"
+    elif "mirror" in name_lower:
+        return "mirror"
+    elif "planter" in name_lower or "pot" in name_lower or "vase" in name_lower:
+        return "decor"
     # Check ottoman FIRST (before sofa) to handle "Sofa Ottoman" products correctly
-    if "ottoman" in name_lower:
+    elif "ottoman" in name_lower:
         return "ottoman"
     elif "sofa" in name_lower or "couch" in name_lower or "sectional" in name_lower:
         return "sofa"
@@ -2033,7 +2051,7 @@ async def _get_basic_product_recommendations(analysis: DesignAnalysisSchema, db:
             select(Product)
             .options(selectinload(Product.images))
             .where(
-                Product.is_available == True,
+                Product.is_available.is_(True),
                 ~Product.name.ilike("%pillow%"),
                 ~Product.name.ilike("%cushion%"),
                 ~Product.name.ilike("%throw%"),

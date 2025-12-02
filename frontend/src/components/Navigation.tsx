@@ -7,10 +7,11 @@ import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline'
 
 const navigation = [
   { name: 'Home', href: '/' },
+  { name: 'Curated Looks', href: '/curated', badge: 'New' },
+  { name: 'Design Studio', href: '/design' },
   { name: 'Products', href: '/products' },
   { name: 'Chat', href: '/chat' },
-  { name: 'Visualize', href: '/visualize' },
-  { name: 'Design Studio', href: '/design', badge: 'New' },
+  { name: 'Admin', href: '/admin', admin: true },
 ]
 
 export function Navigation() {
@@ -47,11 +48,19 @@ export function Navigation() {
                     key={item.name}
                     href={item.href}
                     className={`px-3 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2 ${
-                      isActive
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      (item as any).admin
+                        ? 'text-purple-600 hover:text-purple-800 hover:bg-purple-50'
+                        : isActive
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                     }`}
                   >
+                    {(item as any).admin && (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    )}
                     {item.name}
                     {item.badge && (
                       <span className="px-2 py-0.5 bg-gradient-to-r from-primary-500 to-secondary-500 text-white text-xs font-bold rounded-full">

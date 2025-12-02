@@ -22,6 +22,7 @@ export default function DesignPage() {
   const [roomImage, setRoomImage] = useState<string | null>(null);
   const [canvasProducts, setCanvasProducts] = useState<any[]>([]);
   const [productRecommendations, setProductRecommendations] = useState<any[]>([]);
+  const [initialVisualizationImage, setInitialVisualizationImage] = useState<string | null>(null);
 
   // Furniture removal state
   const [isProcessingFurniture, setIsProcessingFurniture] = useState(false);
@@ -32,13 +33,75 @@ export default function DesignPage() {
   const [showStoreModal, setShowStoreModal] = useState(false);
   const [availableStores, setAvailableStores] = useState<string[]>([]);
 
-  // Load room image and stores from sessionStorage on mount
+  // Load room image, products, and stores from sessionStorage on mount
   useEffect(() => {
-    const storedImage = sessionStorage.getItem('roomImage');
-    if (storedImage) {
-      setRoomImage(storedImage);
-      // Don't clear sessionStorage immediately - keep it for refresh
+    // Check if user has uploaded their own room image
+    const userUploadedImage = sessionStorage.getItem('roomImage');
+
+    // Check for curated look data
+    const curatedRoomImage = sessionStorage.getItem('curatedRoomImage');
+    const curatedVisualizationImage = sessionStorage.getItem('curatedVisualizationImage');
+    const preselectedProducts = sessionStorage.getItem('preselectedProducts');
+
+    console.log('[DesignPage] Session storage check:', {
+      hasUserUploadedImage: !!userUploadedImage,
+      hasCuratedVisualization: !!curatedVisualizationImage,
+      curatedVizLength: curatedVisualizationImage?.length || 0,
+      hasPreselectedProducts: !!preselectedProducts,
+    });
+
+    // Room image logic:
+    // - If user uploaded image exists, use it and clear curated data
+    // - Otherwise, load curated visualization if it exists
+    if (userUploadedImage) {
+      setRoomImage(userUploadedImage);
+      console.log('[DesignPage] Using user-uploaded room image');
+      // Clear curated data since we're using user's room
+      sessionStorage.removeItem('curatedVisualizationImage');
+      sessionStorage.removeItem('curatedRoomImage');
+    } else if (curatedVisualizationImage) {
+      // Load curated visualization image (shows in visualization result section at bottom)
+      // Don't load curatedRoomImage into roomImage - user should upload their own room
+      // Ensure proper data URI prefix
+      const formattedVizImage = curatedVisualizationImage.startsWith('data:')
+        ? curatedVisualizationImage
+        : `data:image/png;base64,${curatedVisualizationImage}`;
+      setInitialVisualizationImage(formattedVizImage);
+      console.log('[DesignPage] Loaded curated visualization image:', {
+        originalLength: curatedVisualizationImage.length,
+        formattedLength: formattedVizImage.length,
+        startsWithData: formattedVizImage.startsWith('data:'),
+      });
+      sessionStorage.removeItem('curatedVisualizationImage');
     }
+
+    // Load preselected products from curated look
+    if (preselectedProducts) {
+      try {
+        const products = JSON.parse(preselectedProducts);
+        // Transform products to match design page format - preserve ALL context for visualization
+        const formattedProducts = products.map((p: any) => ({
+          id: String(p.id),
+          name: p.name,
+          price: p.price || 0,
+          image_url: p.image_url,
+          productType: p.product_type || 'other',
+          source: p.source_website,
+          source_url: p.source_url,  // Preserve source URL
+          description: p.description,  // Preserve description for AI context
+        }));
+        setCanvasProducts(formattedProducts);
+        console.log('[DesignPage] Loaded', formattedProducts.length, 'preselected products from curated look with full context');
+        // Clear after loading
+        sessionStorage.removeItem('preselectedProducts');
+        sessionStorage.removeItem('preselectedLookTheme');
+      } catch (e) {
+        console.error('[DesignPage] Failed to parse preselected products:', e);
+      }
+    }
+
+    // Clean up curated room image after loading
+    sessionStorage.removeItem('curatedRoomImage');
 
     // Load primary store selection from sessionStorage
     const storedStores = sessionStorage.getItem('primaryStores');
@@ -451,6 +514,7 @@ export default function DesignPage() {
               onClearCanvas={handleClearCanvas}
               onRoomImageUpload={handleRoomImageUpload}
               onSetProducts={setCanvasProducts}
+              initialVisualizationImage={initialVisualizationImage}
             />
           </div>
         </div>
@@ -479,6 +543,7 @@ export default function DesignPage() {
               onClearCanvas={handleClearCanvas}
               onRoomImageUpload={handleRoomImageUpload}
               onSetProducts={setCanvasProducts}
+              initialVisualizationImage={initialVisualizationImage}
             />
           </div>
         </div>
