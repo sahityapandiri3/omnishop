@@ -2249,7 +2249,7 @@ QUALITY REQUIREMENTS:
             }
 
             start_time = time.time()
-            await self._make_api_request("models/gemini-1.5-pro:generateContent", test_payload)
+            await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", test_payload)
             response_time = time.time() - start_time
 
             return {
