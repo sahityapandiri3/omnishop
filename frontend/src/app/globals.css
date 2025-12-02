@@ -151,37 +151,37 @@
     @apply animate-pulse bg-neutral-200 rounded;
   }
 
-  /* Typography */
+  /* Typography - compact sizes */
   .heading-1 {
-    @apply text-4xl font-bold tracking-tight lg:text-5xl;
+    @apply text-2xl font-bold tracking-tight lg:text-3xl;
   }
 
   .heading-2 {
-    @apply text-3xl font-bold tracking-tight lg:text-4xl;
+    @apply text-xl font-bold tracking-tight lg:text-2xl;
   }
 
   .heading-3 {
-    @apply text-2xl font-semibold tracking-tight lg:text-3xl;
+    @apply text-lg font-semibold tracking-tight lg:text-xl;
   }
 
   .heading-4 {
-    @apply text-xl font-semibold tracking-tight lg:text-2xl;
+    @apply text-base font-semibold tracking-tight lg:text-lg;
   }
 
   .body-large {
-    @apply text-lg text-neutral-700;
-  }
-
-  .body-medium {
-    @apply text-base text-neutral-700;
-  }
-
-  .body-small {
     @apply text-sm text-neutral-600;
   }
 
-  .caption {
+  .body-medium {
+    @apply text-sm text-neutral-600;
+  }
+
+  .body-small {
     @apply text-xs text-neutral-500;
+  }
+
+  .caption {
+    @apply text-xs text-neutral-400;
   }
 
   /* Product grid */

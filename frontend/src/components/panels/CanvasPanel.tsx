@@ -24,6 +24,7 @@ interface Product {
   }>;
   productType?: string;
   source?: string;
+  description?: string;
 }
 
 // Visualization history entry for local undo/redo tracking
