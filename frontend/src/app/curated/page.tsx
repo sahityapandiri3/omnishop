@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { getCuratedLooks, CuratedLook, CuratedLooksResponse } from '@/utils/api';
+import { getCuratedLooks, getCuratedLookById, CuratedLook, CuratedLooksResponse } from '@/utils/api';
 import { CuratedLookCard } from '@/components/curated/CuratedLookCard';
 import { LookDetailModal } from '@/components/curated/LookDetailModal';
 
@@ -43,30 +43,50 @@ export default function CuratedPage() {
     setIsModalOpen(true);
   }, []);
 
-  const handleStyleThisLook = useCallback((look: CuratedLook) => {
-    // Clear any existing room image and session data to start fresh with curated look
-    // This ensures the curated visualization takes precedence
-    sessionStorage.removeItem('roomImage');
-    sessionStorage.removeItem('design_session_id');
+  const handleStyleThisLook = useCallback(async (look: CuratedLook) => {
+    try {
+      // Check if user has uploaded their own room image
+      const userRoomImage = sessionStorage.getItem('roomImage');
+      const hasUserRoom = !!userRoomImage;
 
-    // Store selected look data in sessionStorage for design studio
-    sessionStorage.setItem('preselectedProducts', JSON.stringify(look.products));
-    sessionStorage.setItem('preselectedLookTheme', look.style_theme);
+      console.log('[CuratedPage] User has own room image:', hasUserRoom);
 
-    // Store room image (base image from curation if user hasn't uploaded their own)
-    if (look.room_image) {
-      sessionStorage.setItem('curatedRoomImage', look.room_image);
+      // Clear session data for fresh start
+      sessionStorage.removeItem('design_session_id');
+      sessionStorage.removeItem('curatedVisualizationImage');
+      sessionStorage.removeItem('curatedRoomImage');
+
+      // Store selected look data in sessionStorage for design studio
+      sessionStorage.setItem('preselectedProducts', JSON.stringify(look.products));
+      sessionStorage.setItem('preselectedLookTheme', look.style_theme);
+
+      if (hasUserRoom) {
+        // User uploaded their own room - keep their room, leave visualization blank
+        // They will hit "Visualize" to see products in their space
+        console.log('[CuratedPage] Using user room image, visualization will be blank');
+      } else {
+        // No user room - fetch and use the curated look's images
+        console.log('[CuratedPage] No user room, fetching curated look images for ID:', look.look_id);
+        const fullLook = await getCuratedLookById(look.look_id);
+
+        if (fullLook.room_image) {
+          sessionStorage.setItem('curatedRoomImage', fullLook.room_image);
+        }
+        if (fullLook.visualization_image) {
+          sessionStorage.setItem('curatedVisualizationImage', fullLook.visualization_image);
+          console.log('[CuratedPage] Stored visualization_image, length:', fullLook.visualization_image.length);
+        }
+      }
+
+      router.push('/design');
+    } catch (error) {
+      console.error('[CuratedPage] Error in handleStyleThisLook:', error);
+      // Fallback: just use the products
+      sessionStorage.removeItem('design_session_id');
+      sessionStorage.setItem('preselectedProducts', JSON.stringify(look.products));
+      sessionStorage.setItem('preselectedLookTheme', look.style_theme);
+      router.push('/design');
     }
-
-    // Store visualization image (curated result)
-    if (look.visualization_image) {
-      sessionStorage.setItem('curatedVisualizationImage', look.visualization_image);
-      console.log('[CuratedPage] Stored visualization_image, length:', look.visualization_image.length);
-    } else {
-      console.warn('[CuratedPage] No visualization_image on look:', look.look_id);
-    }
-
-    router.push('/design');
   }, [router]);
 
   const handleStyleFromScratch = useCallback(() => {
@@ -105,12 +125,8 @@ export default function CuratedPage() {
         <div className="max-w-7xl mx-auto">
           {/* Header */}
           <div className="text-center mb-8">
-            <div className="inline-flex items-center gap-2 bg-white/50 backdrop-blur-sm px-4 py-2 rounded-full mb-6 border border-white/20">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-sm font-medium text-gray-700">Curated by Design Experts</span>
-            </div>
-            <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 bg-clip-text text-transparent mb-4">
-              Designer Looks
+            <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 bg-clip-text text-transparent mb-4 pb-1 leading-normal">
+              Designer's Choice
             </h1>
             <p className="text-gray-600 text-lg max-w-2xl mx-auto">
               Browse our collection of professionally curated room designs.

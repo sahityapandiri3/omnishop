@@ -704,7 +704,7 @@ export const adminCuratedAPI = {
   }
 };
 
-// Get pre-curated looks from database (public endpoint)
+// Get pre-curated looks from database (public endpoint) - without large images for fast listing
 export const getCuratedLooks = async (roomType?: string): Promise<CuratedLooksResponse> => {
   try {
     const response = await api.get('/api/curated/looks', {
@@ -713,6 +713,17 @@ export const getCuratedLooks = async (roomType?: string): Promise<CuratedLooksRe
     return response.data;
   } catch (error) {
     console.error('Error fetching curated looks:', error);
+    throw error;
+  }
+};
+
+// Get a single curated look by ID with full images (for "Use Style" action)
+export const getCuratedLookById = async (lookId: string | number): Promise<CuratedLook> => {
+  try {
+    const response = await api.get(`/api/curated/looks/${lookId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching curated look:', error);
     throw error;
   }
 };

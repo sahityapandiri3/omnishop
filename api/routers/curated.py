@@ -1,11 +1,14 @@
 """
 Curated Styling API routes for AI-generated room looks
 """
+import base64
+import io
 import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from PIL import Image
 from pydantic import BaseModel, Field
 from services.curated_styling_service import curated_styling_service
 from sqlalchemy import select
@@ -15,6 +18,36 @@ from sqlalchemy.orm import selectinload
 from core.database import get_db
 from database.models import CuratedLook as CuratedLookModel
 from database.models import CuratedLookProduct, Product
+
+
+def create_thumbnail(base64_image: str, max_width: int = 400, quality: int = 60) -> str:
+    """Create a compressed thumbnail from a base64 image."""
+    try:
+        # Decode base64
+        image_data = base64.b64decode(base64_image)
+        image = Image.open(io.BytesIO(image_data))
+
+        # Calculate new size maintaining aspect ratio
+        width, height = image.size
+        if width > max_width:
+            ratio = max_width / width
+            new_size = (max_width, int(height * ratio))
+            image = image.resize(new_size, Image.Resampling.LANCZOS)
+
+        # Convert to RGB if necessary (for JPEG)
+        if image.mode in ("RGBA", "P"):
+            image = image.convert("RGB")
+
+        # Save as compressed JPEG
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=quality, optimize=True)
+        buffer.seek(0)
+
+        return base64.b64encode(buffer.getvalue()).decode("utf-8")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Failed to create thumbnail: {e}")
+        return base64_image  # Return original if compression fails
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/curated", tags=["curated"])
@@ -148,6 +181,7 @@ def get_primary_image_url(product: Product) -> Optional[str]:
 @router.get("/looks", response_model=CuratedLooksResponse)
 async def get_curated_looks(
     room_type: Optional[str] = Query(None, description="Filter by room type (living_room, bedroom)"),
+    include_images: bool = Query(False, description="Include large base64 images (room_image, visualization_image)"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -204,13 +238,18 @@ async def get_curated_looks(
                         }
                     )
 
+            # Create thumbnail for listing (compressed version)
+            thumbnail = None
+            if look.visualization_image:
+                thumbnail = create_thumbnail(look.visualization_image, max_width=400, quality=60)
+
             looks.append(
                 CuratedLook(
                     look_id=str(look.id),
                     style_theme=look.style_theme,
                     style_description=look.style_description or "",
-                    room_image=look.room_image,  # Include base room image
-                    visualization_image=look.visualization_image,
+                    room_image=look.room_image if include_images else None,
+                    visualization_image=thumbnail,  # Use compressed thumbnail for listing
                     products=products,
                     total_price=look.total_price or 0,
                     generation_status="completed",
@@ -229,3 +268,68 @@ async def get_curated_looks(
     except Exception as e:
         logger.error(f"Error fetching curated looks: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch curated looks: {str(e)}")
+
+
+@router.get("/looks/{look_id}", response_model=CuratedLook)
+async def get_curated_look_by_id(
+    look_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get a single curated look by ID with full images.
+
+    Use this endpoint when user clicks "Use Style" to get the visualization images.
+    """
+    try:
+        logger.info(f"Fetching curated look ID: {look_id}")
+
+        query = (
+            select(CuratedLookModel)
+            .where(CuratedLookModel.id == look_id)
+            .where(CuratedLookModel.is_published.is_(True))
+            .options(
+                selectinload(CuratedLookModel.products).selectinload(CuratedLookProduct.product).selectinload(Product.images)
+            )
+        )
+
+        result = await db.execute(query)
+        look = result.scalars().first()
+
+        if not look:
+            raise HTTPException(status_code=404, detail=f"Curated look {look_id} not found")
+
+        # Build product list
+        products = []
+        for lp in sorted(look.products, key=lambda x: x.display_order or 0):
+            product = lp.product
+            if product:
+                products.append(
+                    {
+                        "id": product.id,
+                        "name": product.name,
+                        "price": product.price or 0,
+                        "image_url": get_primary_image_url(product),
+                        "source_website": product.source_website,
+                        "source_url": product.source_url,
+                        "product_type": lp.product_type or "",
+                        "description": product.description,
+                    }
+                )
+
+        return CuratedLook(
+            look_id=str(look.id),
+            style_theme=look.style_theme,
+            style_description=look.style_description or "",
+            room_image=look.room_image,
+            visualization_image=look.visualization_image,
+            products=products,
+            total_price=look.total_price or 0,
+            generation_status="completed",
+            error_message=None,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching curated look {look_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch curated look: {str(e)}")

@@ -75,7 +75,8 @@ export default function DesignPage() {
       sessionStorage.removeItem('curatedVisualizationImage');
     }
 
-    // Load preselected products from curated look
+    // Load preselected products from curated look OR persisted canvas products (after page reload)
+    const persistedCanvasProducts = sessionStorage.getItem('persistedCanvasProducts');
     if (preselectedProducts) {
       try {
         const products = JSON.parse(preselectedProducts);
@@ -97,6 +98,17 @@ export default function DesignPage() {
         sessionStorage.removeItem('preselectedLookTheme');
       } catch (e) {
         console.error('[DesignPage] Failed to parse preselected products:', e);
+      }
+    } else if (persistedCanvasProducts) {
+      // Restore canvas products after page reload (e.g., after uploading a new room image)
+      try {
+        const products = JSON.parse(persistedCanvasProducts);
+        setCanvasProducts(products);
+        console.log('[DesignPage] Restored', products.length, 'canvas products after page reload');
+        // Clear after loading
+        sessionStorage.removeItem('persistedCanvasProducts');
+      } catch (e) {
+        console.error('[DesignPage] Failed to parse persisted canvas products:', e);
       }
     }
 
@@ -336,6 +348,12 @@ export default function DesignPage() {
       const response = await startFurnitureRemoval(imageData);
       sessionStorage.setItem('furnitureRemovalJobId', response.job_id);
       sessionStorage.setItem('roomImage', imageData);
+
+      // Persist canvas products before page reload so they survive the reload
+      if (canvasProducts.length > 0) {
+        sessionStorage.setItem('persistedCanvasProducts', JSON.stringify(canvasProducts));
+        console.log('[DesignPage] Persisted', canvasProducts.length, 'canvas products before reload');
+      }
 
       console.log('[DesignPage] Furniture removal started:', response);
       // Trigger page reload to restart the polling useEffect with new job ID

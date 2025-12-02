@@ -303,12 +303,13 @@ export default function CanvasPanel({
       }
 
       // Prepare products for V1 API with complete context
-      // Including image_url is crucial for AI to render exact product appearance
+      // Including image_url and description is crucial for AI to render exact product appearance
       const productDetails = productsToVisualize.map(p => ({
         id: p.id,
         name: p.name,
         full_name: p.name,
         image_url: p.image_url || getProductImageUrl(p),  // Include product image for AI reference
+        description: p.description || '',  // Include description for AI context (materials, colors, style)
         product_type: p.productType || 'furniture',
         style: 0.8,
         category: p.productType || 'furniture'

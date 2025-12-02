@@ -65,7 +65,7 @@ export default function HomePage() {
     }
   };
 
-  // Navigate to store selection with image and start furniture removal
+  // Navigate to curated looks page with image and start furniture removal
   const handleContinueWithImage = async () => {
     if (!roomImage) {
       console.warn('[HomePage] No room image to upload');
@@ -85,25 +85,25 @@ export default function HomePage() {
       sessionStorage.setItem('furnitureRemovalJobId', response.job_id);
       sessionStorage.setItem('roomImage', roomImage);
 
-      console.log('[HomePage] Navigating to /store-select...');
-      // Navigate to store selection immediately (processing continues in background)
-      router.push('/store-select');
+      console.log('[HomePage] Navigating to /curated...');
+      // Navigate to curated looks page (processing continues in background)
+      router.push('/curated');
     } catch (error) {
       console.error('[HomePage] Error starting furniture removal:', error);
       // On error, still allow user to proceed with original image
       sessionStorage.setItem('roomImage', roomImage);
       sessionStorage.removeItem('furnitureRemovalJobId'); // Clear any existing job
-      router.push('/store-select');
+      router.push('/curated');
     } finally {
       setIsStartingRemoval(false);
     }
   };
 
-  // Navigate to store selection without image
+  // Navigate to curated page without image
   const handleSkipUpload = () => {
     sessionStorage.removeItem('roomImage');
     sessionStorage.removeItem('furnitureRemovalJobId');
-    router.push('/store-select');
+    router.push('/curated');
   };
 
   return (
