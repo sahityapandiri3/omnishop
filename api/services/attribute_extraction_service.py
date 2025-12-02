@@ -152,7 +152,7 @@ class AttributeExtractionService:
 
             # Call Gemini API
             response = await self.google_ai_service._make_api_request(
-                "models/gemini-2.0-flash-exp:generateContent",
+                "models/gemini-3-pro-preview:generateContent",
                 payload
             )
 

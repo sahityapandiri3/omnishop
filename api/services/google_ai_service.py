@@ -251,7 +251,7 @@ Provide accurate measurements and detailed observations."""
                 },
             }
 
-            result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
+            result = await self._make_api_request("models/gemini-3-pro-preview:generateContent", payload)
 
             # Parse response
             content = result.get("candidates", [{}])[0].get("content", {})
@@ -328,7 +328,7 @@ Provide detailed spatial analysis in JSON format:
                 "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1536, "responseMimeType": "application/json"},
             }
 
-            result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
+            result = await self._make_api_request("models/gemini-3-pro-preview:generateContent", payload)
 
             content = result.get("candidates", [{}])[0].get("content", {})
             text_response = content.get("parts", [{}])[0].get("text", "{}")
@@ -392,7 +392,7 @@ Return results as JSON array:
                 "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1024, "responseMimeType": "application/json"},
             }
 
-            result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
+            result = await self._make_api_request("models/gemini-3-pro-preview:generateContent", payload)
 
             content = result.get("candidates", [{}])[0].get("content", {})
             text_response = content.get("parts", [{}])[0].get("text", "[]")
@@ -472,7 +472,7 @@ CRITICAL: Distinguish between center_table (in front of seating) and side_table 
                 "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1024, "responseMimeType": "application/json"},
             }
 
-            result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
+            result = await self._make_api_request("models/gemini-3-pro-preview:generateContent", payload)
 
             content = result.get("candidates", [{}])[0].get("content", {})
             text_response = content.get("parts", [{}])[0].get("text", "[]")
@@ -547,7 +547,7 @@ CRITICAL: Keep sofas, chairs, tables, and lamps SEPARATE:
                 "generationConfig": {"temperature": 0.2, "maxOutputTokens": 512, "responseMimeType": "application/json"},
             }
 
-            result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
+            result = await self._make_api_request("models/gemini-3-pro-preview:generateContent", payload)
 
             content = result.get("candidates", [{}])[0].get("content", {})
             text_response = content.get("parts", [{}])[0].get("text", "{}")
@@ -682,7 +682,7 @@ RESPOND WITH JSON ONLY - NO OTHER TEXT."""
 
             response_text = ""
             for chunk in self.genai_client.models.generate_content_stream(
-                model="gemini-2.0-flash",  # Use faster model for analysis
+                model="gemini-3-pro-preview",  # Use Gemini 3 for analysis
                 contents=contents,
                 config=generate_content_config,
             ):
@@ -2249,7 +2249,7 @@ QUALITY REQUIREMENTS:
             }
 
             start_time = time.time()
-            await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", test_payload)
+            await self._make_api_request("models/gemini-3-pro-preview:generateContent", test_payload)
             response_time = time.time() - start_time
 
             return {
