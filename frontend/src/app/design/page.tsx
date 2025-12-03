@@ -20,6 +20,9 @@ export default function DesignPage() {
 
   // Shared state for cross-panel communication
   const [roomImage, setRoomImage] = useState<string | null>(null);
+  // Clean room image without any products - used for reset visualization
+  // This is critical when using curated looks where roomImage might have products baked in
+  const [cleanRoomImage, setCleanRoomImage] = useState<string | null>(null);
   const [canvasProducts, setCanvasProducts] = useState<any[]>([]);
   const [productRecommendations, setProductRecommendations] = useState<any[]>([]);
   const [initialVisualizationImage, setInitialVisualizationImage] = useState<string | null>(null);
@@ -55,6 +58,7 @@ export default function DesignPage() {
     // - Otherwise, use curated room image as the base room for visualization
     if (userUploadedImage) {
       setRoomImage(userUploadedImage);
+      setCleanRoomImage(userUploadedImage); // User-uploaded image is always clean
       console.log('[DesignPage] Using user-uploaded room image');
       // Clear curated data since we're using user's room
       sessionStorage.removeItem('curatedVisualizationImage');
@@ -67,15 +71,18 @@ export default function DesignPage() {
           ? curatedRoomImage
           : `data:image/png;base64,${curatedRoomImage}`;
         setRoomImage(formattedRoomImage);
+        setCleanRoomImage(formattedRoomImage); // Clean room image available from curated look
         console.log('[DesignPage] Using curated room image as base for visualization');
       } else if (curatedVisualizationImage) {
-        // FALLBACK: If no clean room image, use visualization as base
-        // The backend's exclusive_products mode will handle removing unwanted products
+        // FALLBACK: If no clean room image, use visualization as base for display
+        // NOTE: cleanRoomImage remains null - backend will need to extract clean room when force_reset is needed
         const formattedVizAsRoom = curatedVisualizationImage.startsWith('data:')
           ? curatedVisualizationImage
           : `data:image/png;base64,${curatedVisualizationImage}`;
         setRoomImage(formattedVizAsRoom);
-        console.log('[DesignPage] Using curated visualization as base (no clean room available)');
+        // DO NOT set cleanRoomImage here - it has products baked in!
+        // When force_reset is needed, we'll need to extract clean room from visualization
+        console.log('[DesignPage] Using curated visualization as base (no clean room available - will extract on reset)');
       }
 
       // Also load the curated visualization image if it exists (shows pre-rendered result)
@@ -196,6 +203,7 @@ export default function DesignPage() {
           console.log('[DesignPage] Furniture removal completed successfully');
           if (status.image) {
             setRoomImage(status.image);
+            setCleanRoomImage(status.image); // Furniture removal produces a clean room
             sessionStorage.setItem('roomImage', status.image);
           }
           sessionStorage.removeItem('furnitureRemovalJobId');
@@ -546,6 +554,7 @@ export default function DesignPage() {
             <CanvasPanel
               products={canvasProducts}
               roomImage={roomImage}
+              cleanRoomImage={cleanRoomImage}
               onRemoveProduct={handleRemoveFromCanvas}
               onClearCanvas={handleClearCanvas}
               onRoomImageUpload={handleRoomImageUpload}
@@ -575,6 +584,7 @@ export default function DesignPage() {
             <CanvasPanel
               products={canvasProducts}
               roomImage={roomImage}
+              cleanRoomImage={cleanRoomImage}
               onRemoveProduct={handleRemoveFromCanvas}
               onClearCanvas={handleClearCanvas}
               onRoomImageUpload={handleRoomImageUpload}

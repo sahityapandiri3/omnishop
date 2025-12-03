@@ -38,6 +38,7 @@ interface VisualizationHistoryEntry {
 interface CanvasPanelProps {
   products: Product[];
   roomImage: string | null;
+  cleanRoomImage?: string | null;  // Clean room without products - used for reset visualization
   onRemoveProduct: (productId: string) => void;
   onClearCanvas: () => void;
   onRoomImageUpload: (imageData: string) => void;
@@ -52,6 +53,7 @@ interface CanvasPanelProps {
 export default function CanvasPanel({
   products,
   roomImage,
+  cleanRoomImage,
   onRemoveProduct,
   onClearCanvas,
   onRoomImageUpload,
@@ -243,7 +245,8 @@ export default function CanvasPanel({
 
   // V1 Visualization: Smart re-visualization with incremental support
   const handleVisualize = async () => {
-    if (!roomImage || products.length === 0) return;
+    // Need at least one base image (prefer cleanRoomImage) and products
+    if ((!roomImage && !cleanRoomImage) || products.length === 0) return;
 
     setIsVisualizing(true);
 
@@ -291,16 +294,25 @@ export default function CanvasPanel({
         isIncremental = true;
         console.log(`[CanvasPanel] Incremental visualization: adding ${productsToVisualize.length} new products`);
       } else if (changeInfo.type === 'reset') {
-        // Reset: use room image, visualize all current products
-        baseImage = roomImage;
+        // Reset: use CLEAN room image to ensure removed products don't appear
+        // This is critical when using curated looks where roomImage might have products baked in
+        if (cleanRoomImage) {
+          baseImage = cleanRoomImage;
+          console.log('[CanvasPanel] Reset visualization: using clean room image (no products baked in)');
+        } else {
+          // No clean room available - this may happen with curated looks that don't have room_image
+          // The backend will need to handle this with furniture removal or exclusive_products mode
+          baseImage = roomImage;
+          console.log('[CanvasPanel] Reset visualization: WARNING - no clean room available, using roomImage (may have baked-in products)');
+        }
         productsToVisualize = products;
         forceReset = true;
         console.log('[CanvasPanel] Reset visualization: re-visualizing all products from scratch');
       } else {
-        // Initial: use room image, visualize all products
-        baseImage = roomImage;
+        // Initial: prefer clean room image if available, otherwise use room image
+        baseImage = cleanRoomImage || roomImage;
         productsToVisualize = products;
-        console.log('[CanvasPanel] Initial visualization: visualizing all products');
+        console.log(`[CanvasPanel] Initial visualization: visualizing all products (using ${cleanRoomImage ? 'clean room' : 'room image'})`);
       }
 
       // Prepare products for V1 API with complete context
@@ -675,7 +687,8 @@ export default function CanvasPanel({
   };
 
   // Determine button state
-  const canVisualize = roomImage !== null && products.length > 0;
+  // Can visualize if we have any base image (prefer cleanRoomImage) and products
+  const canVisualize = (roomImage !== null || cleanRoomImage !== null) && products.length > 0;
   const isUpToDate = canVisualize && !needsRevisualization && visualizationResult !== null;
   const isReady = canVisualize && (needsRevisualization || visualizationResult === null);
 
