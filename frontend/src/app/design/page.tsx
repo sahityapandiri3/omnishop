@@ -227,7 +227,7 @@ export default function DesignPage() {
   // UNLIMITED: Multiple instances allowed (always adds new)
   const FURNITURE_QUANTITY_RULES = {
     SINGLE_INSTANCE: ['sofa', 'bed', 'coffee_table', 'floor_rug', 'ceiling_lamp'],
-    UNLIMITED: ['planter', 'floor_lamp', 'standing_lamp', 'side_table', 'ottoman', 'table_lamp'],
+    UNLIMITED: ['planter', 'floor_lamp', 'standing_lamp', 'side_table', 'ottoman', 'table_lamp', 'vase', 'flower', 'decor', 'sculpture', 'figurine', 'candle', 'picture_frame', 'accent_chair', 'dining_chair', 'cushion', 'throw'],
   };
 
   // Extract product type from product name
@@ -247,6 +247,14 @@ export default function DesignPage() {
     if (name.includes('floor lamp') || name.includes('standing lamp')) return 'floor_lamp';
     if (name.includes('ceiling lamp') || name.includes('pendant') || name.includes('chandelier')) return 'ceiling_lamp';
     if (name.includes('planter') || name.includes('plant pot') || name.includes('flower pot')) return 'planter';
+    // Decor items - these go ON tables/surfaces (UNLIMITED - multiple allowed)
+    if (name.includes('vase') || name.includes('flower bunch') || name.includes('flower arrangement') || name.includes('artificial flower')) return 'vase';
+    if (name.includes('sculpture') || name.includes('statue') || name.includes('figurine')) return 'sculpture';
+    if (name.includes('candle') || name.includes('candle holder') || name.includes('candlestick')) return 'candle';
+    if (name.includes('picture frame') || name.includes('photo frame')) return 'picture_frame';
+    if (name.includes('decor') || name.includes('decorative') || name.includes('ornament') || name.includes('accent piece')) return 'decor';
+    if (name.includes('cushion') || name.includes('pillow') || name.includes('throw pillow')) return 'cushion';
+    if (name.includes('throw') || name.includes('blanket')) return 'throw';
     if (name.includes('table')) return 'table';
     if (name.includes('chair')) return 'chair';
     if (name.includes('lamp')) return 'lamp';
@@ -299,18 +307,10 @@ export default function DesignPage() {
       console.log('[DesignPage] Adding new unlimited-instance product (multiples allowed)');
       setCanvasProducts([...canvasProducts, productWithType]);
     } else {
-      // DEFAULT: For unclassified items, use the old replacement behavior
-      const existingIndex = canvasProducts.findIndex((p) => p.productType === productType);
-
-      if (existingIndex >= 0) {
-        console.log('[DesignPage] Replacing existing product at index', existingIndex);
-        const updated = [...canvasProducts];
-        updated[existingIndex] = productWithType;
-        setCanvasProducts(updated);
-      } else {
-        console.log('[DesignPage] Adding new product');
-        setCanvasProducts([...canvasProducts, productWithType]);
-      }
+      // DEFAULT: For unclassified items, ALWAYS ADD (never replace) to prevent unexpected behavior
+      // This ensures new products from Product Discovery are added to the canvas, not replacing existing ones
+      console.log('[DesignPage] Adding unclassified product (type:', productType, ') - not replacing any existing products');
+      setCanvasProducts([...canvasProducts, productWithType]);
     }
 
     // Auto-switch to canvas tab on mobile
