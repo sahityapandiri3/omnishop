@@ -1022,6 +1022,8 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         else:
             # Standard visualization (all products at once)
             # Create visualization request
+            # When force_reset is True, use exclusive_products mode to ONLY show specified products
+            # and remove any existing furniture from the base image
             viz_request = VisualizationRequest(
                 base_image=base_image,
                 products_to_place=products,
@@ -1030,6 +1032,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 render_quality="high",
                 style_consistency=True,
                 user_style_description=user_style_description,
+                exclusive_products=force_reset,  # When True, ONLY show specified products
             )
 
             # Log if using custom positions

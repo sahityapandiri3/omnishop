@@ -59,6 +59,7 @@ class VisualizationRequest:
     render_quality: str
     style_consistency: bool
     user_style_description: str = ""  # User's actual text request
+    exclusive_products: bool = False  # When True, ONLY show specified products, remove any existing furniture from base image
 
 
 @dataclass
@@ -1353,6 +1354,26 @@ Product {idx + 1}:
                 else:
                     product_count_instruction = f"⚠️ PLACE EXACTLY {product_count} DIFFERENT PRODUCTS - One of each product provided, not multiple copies of any single product."
 
+                # Create existing furniture instruction - conditional on exclusive_products mode
+                # When exclusive_products=True, we ONLY want the specified products, remove any others
+                if visualization_request.exclusive_products:
+                    existing_furniture_instruction = f"""11. 🛋️ EXCLUSIVE PRODUCTS MODE (CRITICAL) - The output should contain ONLY the {product_count} specified product(s) listed below:
+   - IGNORE any furniture visible in the input image that is NOT in the specified product list
+   - REMOVE/DO NOT RENDER any existing furniture, decor, or products from the input image
+   - The ONLY furniture in the output should be the {product_count} product(s) specified below
+   - Think of the input image as a base room - extract ONLY the room structure (walls, floor, windows, etc.)
+   - This is a FRESH START - show the empty room with ONLY the specified products
+   - Example: If input has a vase but the vase is NOT in the specified products, DO NOT show the vase in output"""
+                else:
+                    existing_furniture_instruction = """11. 🛋️ EXISTING FURNITURE (CRITICAL FOR CONSISTENCY) - If the input image already contains furniture (sofa, table, chair, decor, etc.), you MUST preserve the EXACT appearance of that furniture:
+   - DO NOT change the COLOR of existing furniture (e.g., if sofa is blue, keep it blue)
+   - DO NOT change the MATERIAL or TEXTURE of existing furniture
+   - DO NOT change the STYLE or DESIGN of existing furniture
+   - DO NOT change the SIZE or PROPORTIONS of existing furniture
+   - Keep existing furniture looking IDENTICAL to the input image
+   - You are ONLY adding NEW products, NOT modifying existing ones
+   - Example: If input has a blue velvet sofa, the output MUST show the same blue velvet sofa + your new products"""
+
                 visualization_prompt = f"""🔒🔒🔒 CRITICAL INSTRUCTION - READ CAREFULLY 🔒🔒🔒
 
 THIS IS A PRODUCT PLACEMENT TASK. YOUR GOAL: Take the EXACT room image provided and ADD {product_count} furniture product(s) to it.
@@ -1400,14 +1421,7 @@ TREAT THE INPUT IMAGE AS SACRED - IT CANNOT BE MODIFIED.
 8. ROOM DIMENSIONS - Same size, proportions, layout - room size is fixed
 9. ARCHITECTURAL FEATURES - Same moldings, trim, baseboards - decorative elements stay
 10. BACKGROUND ELEMENTS - Same wall decorations, fixtures, outlets - all fixed elements remain
-11. 🛋️ EXISTING FURNITURE (CRITICAL FOR CONSISTENCY) - If the input image already contains furniture (sofa, table, chair, decor, etc.), you MUST preserve the EXACT appearance of that furniture:
-   - DO NOT change the COLOR of existing furniture (e.g., if sofa is blue, keep it blue)
-   - DO NOT change the MATERIAL or TEXTURE of existing furniture
-   - DO NOT change the STYLE or DESIGN of existing furniture
-   - DO NOT change the SIZE or PROPORTIONS of existing furniture
-   - Keep existing furniture looking IDENTICAL to the input image
-   - You are ONLY adding NEW products, NOT modifying existing ones
-   - Example: If input has a blue velvet sofa, the output MUST show the same blue velvet sofa + your new products
+{existing_furniture_instruction}
 
 IF THE ROOM HAS:
 - White walls → Keep white walls
@@ -1415,9 +1429,6 @@ IF THE ROOM HAS:
 - A window on the left → Keep window on the left
 - 10ft ceiling → Keep 10ft ceiling
 - Modern style → Keep modern style base
-- A blue sofa → Keep the EXACT same blue sofa (same color, same style, same size)
-- A gray coffee table → Keep the EXACT same gray coffee table
-- Any existing furniture → Keep it IDENTICAL to the input image
 
 ═══════════════════════════════════════════════════════════════
 ✅ YOUR ONLY TASK - PRODUCT PLACEMENT ONLY

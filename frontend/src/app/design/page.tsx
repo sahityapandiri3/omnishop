@@ -68,6 +68,14 @@ export default function DesignPage() {
           : `data:image/png;base64,${curatedRoomImage}`;
         setRoomImage(formattedRoomImage);
         console.log('[DesignPage] Using curated room image as base for visualization');
+      } else if (curatedVisualizationImage) {
+        // FALLBACK: If no clean room image, use visualization as base
+        // The backend's exclusive_products mode will handle removing unwanted products
+        const formattedVizAsRoom = curatedVisualizationImage.startsWith('data:')
+          ? curatedVisualizationImage
+          : `data:image/png;base64,${curatedVisualizationImage}`;
+        setRoomImage(formattedVizAsRoom);
+        console.log('[DesignPage] Using curated visualization as base (no clean room available)');
       }
 
       // Also load the curated visualization image if it exists (shows pre-rendered result)
