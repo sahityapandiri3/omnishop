@@ -1,6 +1,7 @@
 """
 FastAPI main application for Omnishop
 """
+import asyncio
 import logging
 import os
 import sys
@@ -35,6 +36,7 @@ import_error_traceback = None
 
 try:
     from routers import admin_curated, categories, chat, curated, furniture, products, stores, visualization
+    from services.furniture_removal_service import furniture_removal_service
 
     from core.config import settings
 
@@ -45,6 +47,9 @@ try:
     setup_logging()
     logger = logging.getLogger(__name__)
     logger.info("✅ All routers imported successfully")
+
+    # Flag to track if furniture cleanup service was imported
+    furniture_cleanup_available = True
 except ImportError as e:
     # Log the full error and traceback
     import traceback
@@ -66,9 +71,24 @@ except ImportError as e:
         debug = False
 
     settings = FallbackSettings()
+    furniture_cleanup_available = False
 
     def setup_logging():
         logging.basicConfig(level=logging.INFO)
+
+
+# Background task for periodic furniture job cleanup
+async def periodic_furniture_cleanup():
+    """Background task that cleans up stale furniture removal jobs every 30 minutes"""
+    while True:
+        await asyncio.sleep(30 * 60)  # Wait 30 minutes between cleanups
+        try:
+            if furniture_cleanup_available:
+                removed = furniture_removal_service.cleanup_stale_jobs()
+                stats = furniture_removal_service.get_job_stats()
+                logger.info(f"Periodic furniture cleanup: removed {removed} jobs, {stats['total']} remaining")
+        except Exception as e:
+            logger.error(f"Error in periodic furniture cleanup: {e}")
 
 
 @asynccontextmanager
@@ -109,6 +129,12 @@ async def lifespan(app: FastAPI):
 
     logger.info("=" * 60)
 
+    # Start background cleanup task for furniture removal jobs
+    cleanup_task = None
+    if furniture_cleanup_available:
+        cleanup_task = asyncio.create_task(periodic_furniture_cleanup())
+        logger.info("✅ Started periodic furniture job cleanup task (every 30 min)")
+
     # Database connection is managed by SQLAlchemy async session
     # No explicit connect/disconnect needed
     logger.info("Application started")
@@ -117,6 +143,15 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down Omnishop API...")
+
+    # Cancel the background cleanup task
+    if cleanup_task:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            logger.info("Furniture cleanup task cancelled")
+
     logger.info("Application stopped")
 
 
