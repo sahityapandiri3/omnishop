@@ -299,18 +299,27 @@ export default function CanvasPanel({
         if (cleanRoomImage) {
           baseImage = cleanRoomImage;
           console.log('[CanvasPanel] Reset visualization: using clean room image (no products baked in)');
-        } else {
+        } else if (roomImage) {
           // No clean room available - this may happen with curated looks that don't have room_image
           // The backend will need to handle this with furniture removal or exclusive_products mode
           baseImage = roomImage;
           console.log('[CanvasPanel] Reset visualization: WARNING - no clean room available, using roomImage (may have baked-in products)');
+        } else {
+          // No image available at all - cannot proceed
+          console.error('[CanvasPanel] Reset visualization: No room image available');
+          return;
         }
         productsToVisualize = products;
         forceReset = true;
         console.log('[CanvasPanel] Reset visualization: re-visualizing all products from scratch');
       } else {
         // Initial: prefer clean room image if available, otherwise use room image
-        baseImage = cleanRoomImage || roomImage;
+        const imageToUse = cleanRoomImage || roomImage;
+        if (!imageToUse) {
+          console.error('[CanvasPanel] Initial visualization: No room image available');
+          return;
+        }
+        baseImage = imageToUse;
         productsToVisualize = products;
         console.log(`[CanvasPanel] Initial visualization: visualizing all products (using ${cleanRoomImage ? 'clean room' : 'room image'})`);
       }
