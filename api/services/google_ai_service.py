@@ -897,7 +897,20 @@ DO NOT leave ANY furniture behind. The room must be 100% empty."""
                                             f"Furniture removal successful on attempt {attempt + 1} ({len(image_bytes)} bytes)"
                                         )
                     except Exception as stream_error:
-                        logger.error(f"Furniture removal streaming error on attempt {attempt + 1}: {stream_error}")
+                        error_str = str(stream_error)
+                        # Check if it's a 503 (overloaded) error - retry with longer backoff
+                        if "503" in error_str or "overloaded" in error_str.lower() or "UNAVAILABLE" in error_str:
+                            if attempt < max_retries - 1:
+                                wait_time = 4 * (2**attempt)  # Longer backoff for 503: 4, 8, 16, 32...
+                                logger.warning(
+                                    f"Model overloaded (503) in furniture removal, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})"
+                                )
+                                await asyncio.sleep(wait_time)
+                                continue
+                            else:
+                                logger.error(f"Furniture removal still failing after {max_retries} retries due to 503")
+                        else:
+                            logger.error(f"Furniture removal streaming error on attempt {attempt + 1}: {stream_error}")
 
                     if generated_image:
                         return generated_image
@@ -905,12 +918,27 @@ DO NOT leave ANY furniture behind. The room must be 100% empty."""
                     logger.warning(f"Furniture removal attempt {attempt + 1} produced no image")
 
                 except Exception as e:
-                    logger.error(f"Furniture removal attempt {attempt + 1} failed: {e}")
-                    if attempt < max_retries - 1:
-                        # Exponential backoff: 2, 4, 8 seconds
-                        sleep_time = 2 ** (attempt + 1)
-                        logger.info(f"Waiting {sleep_time}s before retry...")
-                        await asyncio.sleep(sleep_time)
+                    error_str = str(e)
+                    # Check if it's a 503 (overloaded) error - retry with longer backoff
+                    if "503" in error_str or "overloaded" in error_str.lower() or "UNAVAILABLE" in error_str:
+                        if attempt < max_retries - 1:
+                            wait_time = 4 * (2**attempt)  # Longer backoff for 503: 4, 8, 16, 32...
+                            logger.warning(
+                                f"Model overloaded (503) in furniture removal, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})"
+                            )
+                            await asyncio.sleep(wait_time)
+                            continue
+                        else:
+                            logger.error(
+                                f"Furniture removal still failing after {max_retries} retries due to 503: {error_str}"
+                            )
+                    else:
+                        logger.error(f"Furniture removal attempt {attempt + 1} failed: {e}")
+                        if attempt < max_retries - 1:
+                            # Exponential backoff: 2, 4, 8 seconds for non-503 errors
+                            sleep_time = 2 ** (attempt + 1)
+                            logger.info(f"Waiting {sleep_time}s before retry...")
+                            await asyncio.sleep(sleep_time)
                     continue
 
             # All retries failed
@@ -1177,9 +1205,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
             logger.error(f"Error generating ADD visualization: {e}")
             raise ValueError(f"Visualization generation failed: {e}")
 
-    async def generate_add_multiple_visualization(
-        self, room_image: str, products: list[dict]
-    ) -> str:
+    async def generate_add_multiple_visualization(self, room_image: str, products: list[dict]) -> str:
         """
         Generate visualization with MULTIPLE products added to room in a SINGLE API call.
         This is more efficient than calling generate_add_visualization multiple times.
@@ -1198,7 +1224,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
             return await self.generate_add_visualization(
                 room_image=room_image,
                 product_name=products[0].get("full_name") or products[0].get("name"),
-                product_image=products[0].get("image_url")
+                product_image=products[0].get("image_url"),
             )
 
         try:
@@ -1278,9 +1304,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
             for i, (name, image_data) in enumerate(zip(product_names, product_images_data)):
                 if image_data:
                     parts.append(types.Part.from_text(text=f"\nProduct {i+1} reference image ({name}):"))
-                    parts.append(
-                        types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(image_data)))
-                    )
+                    parts.append(types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(image_data))))
 
             contents = [types.Content(role="user", parts=parts)]
 
@@ -1300,7 +1324,9 @@ The room structure, walls, and camera angle MUST be identical to the input image
                             mime_type = part.inline_data.mime_type or "image/png"
                             image_base64 = base64.b64encode(image_bytes).decode("utf-8")
                             generated_image = f"data:{mime_type};base64,{image_base64}"
-                            logger.info(f"Generated ADD MULTIPLE visualization for {len(products)} products ({len(image_bytes)} bytes)")
+                            logger.info(
+                                f"Generated ADD MULTIPLE visualization for {len(products)} products ({len(image_bytes)} bytes)"
+                            )
 
             if not generated_image:
                 logger.error("AI failed to generate visualization - no image returned")

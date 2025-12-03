@@ -37,14 +37,14 @@ class FurnitureStatusResponse(BaseModel):
 async def process_furniture_removal(job_id: str, image: str) -> None:
     """
     Background task for furniture removal processing
-    Retries 3 times with exponential backoff
+    Retries 5 times with exponential backoff for production reliability
     """
     try:
         logger.info(f"Starting furniture removal processing for job {job_id}")
         furniture_removal_service.update_job(job_id, "processing")
 
-        # Call Google AI service with retry logic (max 3 attempts)
-        processed_image = await google_ai_service.remove_furniture(image, max_retries=3)
+        # Call Google AI service with retry logic (max 5 attempts for production reliability)
+        processed_image = await google_ai_service.remove_furniture(image, max_retries=5)
 
         if processed_image:
             # Success - cache and update job
