@@ -36,9 +36,11 @@ import_error_traceback = None
 
 try:
     from routers import admin_curated, categories, chat, curated, furniture, products, stores, visualization
+    from routers.curated import warm_curated_looks_cache
     from services.furniture_removal_service import furniture_removal_service
 
     from core.config import settings
+    from core.database import AsyncSessionLocal
 
     # from core.database import database
     from core.logging import setup_logging
@@ -72,6 +74,8 @@ except ImportError as e:
 
     settings = FallbackSettings()
     furniture_cleanup_available = False
+    warm_curated_looks_cache = None
+    AsyncSessionLocal = None
 
     def setup_logging():
         logging.basicConfig(level=logging.INFO)
@@ -134,6 +138,13 @@ async def lifespan(app: FastAPI):
     if furniture_cleanup_available:
         cleanup_task = asyncio.create_task(periodic_furniture_cleanup())
         logger.info("✅ Started periodic furniture job cleanup task (every 30 min)")
+
+    # Warm up curated looks cache for faster first request
+    if warm_curated_looks_cache and AsyncSessionLocal:
+        try:
+            await warm_curated_looks_cache(AsyncSessionLocal)
+        except Exception as e:
+            logger.error(f"Failed to warm curated looks cache: {e}")
 
     # Database connection is managed by SQLAlchemy async session
     # No explicit connect/disconnect needed

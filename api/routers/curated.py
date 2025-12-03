@@ -4,6 +4,7 @@ Curated Styling API routes for AI-generated room looks
 import base64
 import io
 import logging
+import time
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -18,6 +19,134 @@ from sqlalchemy.orm import selectinload
 from core.database import get_db
 from database.models import CuratedLook as CuratedLookModel
 from database.models import CuratedLookProduct, Product
+
+
+# =============================================================================
+# IN-MEMORY CACHE for curated looks (avoids re-processing thumbnails every request)
+# =============================================================================
+class CuratedLooksCache:
+    """Simple in-memory cache with TTL for curated looks responses."""
+
+    def __init__(self, ttl_seconds: int = 300):  # 5 minute default TTL
+        self.ttl_seconds = ttl_seconds
+        self._cache: Dict[str, Any] = {}
+        self._timestamps: Dict[str, float] = {}
+
+    def get(self, key: str) -> Optional[Any]:
+        """Get cached value if not expired."""
+        if key not in self._cache:
+            return None
+        if time.time() - self._timestamps.get(key, 0) > self.ttl_seconds:
+            # Expired - remove from cache
+            self._cache.pop(key, None)
+            self._timestamps.pop(key, None)
+            return None
+        return self._cache[key]
+
+    def set(self, key: str, value: Any) -> None:
+        """Set cache value with current timestamp."""
+        self._cache[key] = value
+        self._timestamps[key] = time.time()
+
+    def invalidate(self, key: Optional[str] = None) -> None:
+        """Invalidate specific key or all keys if key is None."""
+        if key is None:
+            self._cache.clear()
+            self._timestamps.clear()
+        else:
+            self._cache.pop(key, None)
+            self._timestamps.pop(key, None)
+
+
+# Global cache instance (5 minute TTL - balances freshness with performance)
+_curated_looks_cache = CuratedLooksCache(ttl_seconds=300)
+
+
+async def warm_curated_looks_cache(db_session_factory) -> None:
+    """
+    Warm up the curated looks cache at server startup.
+    This pre-fetches and processes thumbnails so the first user request is instant.
+    """
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    logger = logging.getLogger(__name__)
+    logger.info("🔥 Warming up curated looks cache...")
+
+    try:
+        async with db_session_factory() as db:
+            # Build query for published looks (same as get_curated_looks endpoint)
+            query = (
+                select(CuratedLookModel)
+                .where(CuratedLookModel.is_published.is_(True))
+                .options(
+                    selectinload(CuratedLookModel.products)
+                    .selectinload(CuratedLookProduct.product)
+                    .selectinload(Product.images)
+                )
+                .order_by(CuratedLookModel.display_order.asc(), CuratedLookModel.created_at.desc())
+            )
+
+            result = await db.execute(query)
+            looks_from_db = result.scalars().unique().all()
+
+            logger.info(f"Found {len(looks_from_db)} published curated looks to cache")
+
+            # Convert to response format and cache (same logic as endpoint)
+            looks = []
+            for look in looks_from_db:
+                products = []
+                for lp in sorted(look.products, key=lambda x: x.display_order or 0):
+                    product = lp.product
+                    if product:
+                        products.append(
+                            {
+                                "id": product.id,
+                                "name": product.name,
+                                "price": product.price or 0,
+                                "image_url": get_primary_image_url(product),
+                                "source_website": product.source_website,
+                                "source_url": product.source_url,
+                                "product_type": lp.product_type or "",
+                                "description": product.description,
+                            }
+                        )
+
+                thumbnail = None
+                if look.visualization_image:
+                    thumbnail = create_thumbnail(look.visualization_image, max_width=400, quality=60)
+
+                looks.append(
+                    CuratedLook(
+                        look_id=str(look.id),
+                        style_theme=look.style_theme,
+                        style_description=look.style_description or "",
+                        room_image=None,  # Don't cache large images
+                        visualization_image=thumbnail,
+                        products=products,
+                        total_price=look.total_price or 0,
+                        generation_status="completed",
+                        error_message=None,
+                    )
+                )
+
+            # Determine room type for response
+            response_room_type = looks_from_db[0].room_type if looks_from_db else "living_room"
+
+            # Build and cache the default response (no room_type filter, include_images=False)
+            response_data = {
+                "session_id": "",
+                "room_type": response_room_type,
+                "looks": [look.model_dump() for look in looks],
+                "generation_complete": True,
+            }
+
+            cache_key = "looks:all:False"
+            _curated_looks_cache.set(cache_key, response_data)
+            logger.info(f"✅ Curated looks cache warmed successfully (key: {cache_key}, {len(looks)} looks)")
+
+    except Exception as e:
+        logger.error(f"❌ Failed to warm curated looks cache: {e}", exc_info=True)
 
 
 def create_thumbnail(base64_image: str, max_width: int = 400, quality: int = 60) -> str:
@@ -194,9 +323,23 @@ async def get_curated_looks(
     - Style theme name and description
     - Selected products with prices
     - Visualization image showing products in room
+
+    NOTE: Response is cached for 5 minutes to avoid re-processing thumbnails.
     """
     try:
-        logger.info(f"Fetching curated looks - room_type filter: {room_type}")
+        # Build cache key based on query parameters
+        cache_key = f"looks:{room_type or 'all'}:{include_images}"
+
+        # Check cache first
+        cached_response = _curated_looks_cache.get(cache_key)
+        if cached_response:
+            logger.info(f"Cache HIT for curated looks (key: {cache_key})")
+            # Return cached response with new session ID
+            cached_response["session_id"] = str(uuid.uuid4())
+            return CuratedLooksResponse(**cached_response)
+
+        logger.info(f"Cache MISS - Fetching curated looks from DB (room_type: {room_type})")
+        start_time = time.time()
 
         # Build query for published looks
         query = (
@@ -215,10 +358,12 @@ async def get_curated_looks(
         result = await db.execute(query)
         looks_from_db = result.scalars().unique().all()
 
-        logger.info(f"Found {len(looks_from_db)} published curated looks")
+        db_time = time.time() - start_time
+        logger.info(f"Found {len(looks_from_db)} published curated looks (DB query: {db_time:.3f}s)")
 
         # Convert to response format
         looks = []
+        thumbnail_start = time.time()
         for look in looks_from_db:
             # Build product list
             products = []
@@ -257,13 +402,28 @@ async def get_curated_looks(
                 )
             )
 
-        # Generate a session ID for this request
-        session_id = str(uuid.uuid4())
+        thumbnail_time = time.time() - thumbnail_start
+        logger.info(f"Thumbnail generation took {thumbnail_time:.3f}s for {len(looks)} looks")
 
         # Determine room type for response (use first look's room type or default)
         response_room_type = room_type or (looks_from_db[0].room_type if looks_from_db else "living_room")
 
-        return CuratedLooksResponse(session_id=session_id, room_type=response_room_type, looks=looks, generation_complete=True)
+        # Build response data for caching (without session_id)
+        response_data = {
+            "session_id": "",  # Placeholder, will be replaced on each request
+            "room_type": response_room_type,
+            "looks": [look.model_dump() for look in looks],
+            "generation_complete": True,
+        }
+
+        # Cache the response
+        _curated_looks_cache.set(cache_key, response_data)
+        total_time = time.time() - start_time
+        logger.info(f"Cached curated looks response (total: {total_time:.3f}s, key: {cache_key})")
+
+        # Return with fresh session ID
+        response_data["session_id"] = str(uuid.uuid4())
+        return CuratedLooksResponse(**response_data)
 
     except Exception as e:
         logger.error(f"Error fetching curated looks: {e}", exc_info=True)
