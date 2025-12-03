@@ -1080,7 +1080,7 @@ PLACEMENT GUIDELINES:
 🛏️ BEDS:
 - Place against a wall
 
-🪴 PLANTERS / PLANTS / VASES (DECORATIVE ITEMS):
+🪴 FLOOR PLANTERS / TALL PLANTS (floor-standing decorative items):
 🚨🚨🚨 CRITICAL FOR PLANTERS - DO NOT ZOOM 🚨🚨🚨
 - ⚠️ ABSOLUTE RULE: The output image MUST show THE ENTIRE ROOM - NOT a close-up of the planter
 - ⚠️ The planter is a TINY ACCENT piece - it should be BARELY NOTICEABLE in the image
@@ -1095,6 +1095,18 @@ PLACEMENT GUIDELINES:
 - 🚫 WRONG: Planter appearing large or prominent in the image
 - ✅ CORRECT: Full room view with tiny planter visible in corner/edge
 - The ENTIRE input room must be visible in the output - planter is just a small addition
+
+💐 TABLETOP DECOR (vases, flower bunches, flower arrangements, sculptures, decorative objects):
+🚨🚨🚨 CRITICAL - PLACE ON TABLE SURFACES, NOT ON FLOOR 🚨🚨🚨
+- ⚠️ These are SMALL tabletop items - they belong ON coffee tables, center tables, side tables, console tables, dining tables
+- ⚠️ NEVER replace furniture (sofas, chairs) with decor items - ADD decor ON existing table surfaces
+- ⚠️ Look for table surfaces in the room and place the decor item ON TOP of them
+- Preferred surfaces: 1) Coffee/center table 2) Side table 3) Console table 4) Dining table 5) Shelf/mantel
+- If no table exists: place on visible shelves, windowsills, or mantels
+- Keep proportions realistic - these items are typically 10-30cm tall
+- 🚫 WRONG: Replacing a sofa with a vase - this is COMPLETELY INCORRECT
+- 🚫 WRONG: Placing a flower bunch on the floor
+- ✅ CORRECT: A small vase sitting on the center coffee table
 
 🖼️ WALL ART / MIRRORS / DECORATIVE ITEMS:
 - Mount on walls at appropriate eye level
@@ -1540,14 +1552,20 @@ SPECIFIC BLOCKING PREVENTION RULES:
 - Place against longest wall
 - Leave walkway space on at least one side
 
-🌿 PLANTERS / DECOR ITEMS (vases, sculptures, decorative objects):
-- Place on floor next to sofa, chair, or table
-- Can be placed on existing side tables or shelves
+🌿 PLANTERS (tall floor-standing plants):
+- Place on floor next to sofa, chair, or in corners
 - ⚖️ BALANCE: If placing next to sofa, position on one side; if side table is needed, place it on the OPPOSITE side
 - 🚫 BLOCKING CHECK: Ensure planters do not block existing side tables or other furniture
-- Avoid blocking pathways or clustering all decor on one side
-- Create visual balance by distributing decor items across the room
-- ✅ CORRECT: Planter on left side of sofa, side table on right side (both fully visible)
+
+💐 TABLETOP DECOR (vases, flower bunches, sculptures, decorative objects, small decor pieces):
+- ⚠️ CRITICAL: These are SMALL items that go ON TABLE SURFACES, not on the floor!
+- Place ON center tables, coffee tables, side tables, console tables, or dining tables
+- NEVER replace furniture like sofas/chairs - these items SIT ON existing surfaces
+- If no table exists in the room, place on shelves, windowsills, or mantels
+- Preferred placement priority: 1) Center/coffee table 2) Side table 3) Console table 4) Dining table 5) Shelf
+- Scale appropriately - these are typically 10-30cm items, not floor-standing pieces
+- ❌ WRONG: Replacing a sofa with a flower vase
+- ✅ CORRECT: Placing a flower vase on the center table in front of the sofa
 
 IMPORTANT FOR MULTIPLE PRODUCTS ({product_count} products):
 - When placing {product_count} products, the room STILL stays the same
