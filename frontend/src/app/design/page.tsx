@@ -163,11 +163,11 @@ export default function DesignPage() {
     };
     fetchStores();
 
-    // Clear session ID and stale furniture removal job on page load to start fresh
+    // Clear session ID on page load to start fresh visualization session
     // This prevents old visualization history from bleeding into new sessions
+    // NOTE: Do NOT clear furnitureRemovalJobId here - the polling useEffect needs it!
     sessionStorage.removeItem('design_session_id');
-    sessionStorage.removeItem('furnitureRemovalJobId');
-    console.log('[DesignPage] Cleared session ID and furniture job ID on page load - starting fresh session');
+    console.log('[DesignPage] Cleared session ID on page load - starting fresh session');
   }, []);
 
   // Poll for furniture removal job completion
