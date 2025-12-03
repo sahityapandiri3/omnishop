@@ -163,10 +163,11 @@ export default function DesignPage() {
     };
     fetchStores();
 
-    // Clear session ID on page load to start fresh
+    // Clear session ID and stale furniture removal job on page load to start fresh
     // This prevents old visualization history from bleeding into new sessions
     sessionStorage.removeItem('design_session_id');
-    console.log('[DesignPage] Cleared session ID on page load - starting fresh session');
+    sessionStorage.removeItem('furnitureRemovalJobId');
+    console.log('[DesignPage] Cleared session ID and furniture job ID on page load - starting fresh session');
   }, []);
 
   // Poll for furniture removal job completion
@@ -219,9 +220,19 @@ export default function DesignPage() {
         } else if (status.status === 'processing') {
           setProcessingStatus('Processing your room image (this may take a moment)...');
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('[DesignPage] Error checking furniture removal status:', error);
-        // Stop polling after 3 consecutive errors
+        // Check if it's a 404 error (job not found - server may have restarted)
+        const is404 = error?.response?.status === 404 || error?.message?.includes('404');
+        if (is404) {
+          console.log('[DesignPage] Job not found (404) - server may have restarted, clearing stale job ID');
+          sessionStorage.removeItem('furnitureRemovalJobId');
+          setIsProcessingFurniture(false);
+          setProcessingStatus('');
+          clearInterval(pollInterval);
+          return;
+        }
+        // Stop polling after 3 consecutive errors for other errors
         if (pollAttempts > 3) {
           console.error('[DesignPage] Too many errors, stopping furniture removal polling');
           sessionStorage.removeItem('furnitureRemovalJobId');
