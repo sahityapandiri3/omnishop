@@ -1584,6 +1584,18 @@ Generate ONE image that shows:
 - Products appropriately spaced and arranged
 - Everything else IDENTICAL to input image
 
+🚨🚨🚨 CRITICAL: FULL ROOM VIEW - NO ZOOM 🚨🚨🚨
+═══════════════════════════════════════════════════════════════
+⚠️ DO NOT zoom in on the new product(s)
+⚠️ DO NOT crop or focus on the area where products are placed
+⚠️ DO NOT highlight or emphasize the new product(s)
+⚠️ SHOW THE ENTIRE ROOM exactly as it appears in the input image
+⚠️ The new product should be visible BUT the image should show the FULL ROOM context
+⚠️ Camera position, angle, and field of view MUST be IDENTICAL to input
+⚠️ If input shows a wide room view, output MUST show the same wide room view
+⚠️ The product is just ONE element in the scene - NOT the focal point
+═══════════════════════════════════════════════════════════════
+
 QUALITY CHECKS:
 ✓ Can you overlay the input and output and see the same walls? YES
 ✓ Are windows in the same position? YES
@@ -1591,6 +1603,7 @@ QUALITY CHECKS:
 ✓ Is the camera angle identical? YES
 ✓ Did you only add products? YES
 ✓ Is the room structure unchanged? YES
+✓ Does the output show the FULL ROOM (not zoomed in on product)? YES
 
 If ANY answer is NO, you've failed the task.
 
@@ -2174,13 +2187,13 @@ QUALITY REQUIREMENTS:
                         last_error = f"HTTP {response.status}"
             except asyncio.TimeoutError as e:
                 logger.warning(f"Timeout downloading image (attempt {attempt + 1}/{max_retries}): {image_url}")
-                last_error = e
+                last_error = str(e) if str(e) else "Timeout"
             except (aiohttp.ClientError, OSError) as e:
                 logger.warning(f"Network error downloading image (attempt {attempt + 1}/{max_retries}): {e}")
-                last_error = e
+                last_error = str(e)
             except Exception as e:
                 logger.error(f"Error downloading image from {image_url}: {e}")
-                last_error = e
+                last_error = str(e)
 
             # Exponential backoff before retry
             if attempt < max_retries - 1:
