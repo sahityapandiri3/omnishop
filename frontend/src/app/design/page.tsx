@@ -52,26 +52,36 @@ export default function DesignPage() {
 
     // Room image logic:
     // - If user uploaded image exists, use it and clear curated data
-    // - Otherwise, load curated visualization if it exists
+    // - Otherwise, use curated room image as the base room for visualization
     if (userUploadedImage) {
       setRoomImage(userUploadedImage);
       console.log('[DesignPage] Using user-uploaded room image');
       // Clear curated data since we're using user's room
       sessionStorage.removeItem('curatedVisualizationImage');
       sessionStorage.removeItem('curatedRoomImage');
-    } else if (curatedVisualizationImage) {
-      // Load curated visualization image (shows in visualization result section at bottom)
-      // Don't load curatedRoomImage into roomImage - user should upload their own room
-      // Ensure proper data URI prefix
-      const formattedVizImage = curatedVisualizationImage.startsWith('data:')
-        ? curatedVisualizationImage
-        : `data:image/png;base64,${curatedVisualizationImage}`;
-      setInitialVisualizationImage(formattedVizImage);
-      console.log('[DesignPage] Loaded curated visualization image:', {
-        originalLength: curatedVisualizationImage.length,
-        formattedLength: formattedVizImage.length,
-        startsWithData: formattedVizImage.startsWith('data:'),
-      });
+    } else if (curatedRoomImage || curatedVisualizationImage) {
+      // No user room image - use curated look's room image as the base
+      // This allows visualization to happen on the curated room
+      if (curatedRoomImage) {
+        const formattedRoomImage = curatedRoomImage.startsWith('data:')
+          ? curatedRoomImage
+          : `data:image/png;base64,${curatedRoomImage}`;
+        setRoomImage(formattedRoomImage);
+        console.log('[DesignPage] Using curated room image as base for visualization');
+      }
+
+      // Also load the curated visualization image if it exists (shows pre-rendered result)
+      if (curatedVisualizationImage) {
+        const formattedVizImage = curatedVisualizationImage.startsWith('data:')
+          ? curatedVisualizationImage
+          : `data:image/png;base64,${curatedVisualizationImage}`;
+        setInitialVisualizationImage(formattedVizImage);
+        console.log('[DesignPage] Loaded curated visualization image:', {
+          originalLength: curatedVisualizationImage.length,
+          formattedLength: formattedVizImage.length,
+          startsWithData: formattedVizImage.startsWith('data:'),
+        });
+      }
       sessionStorage.removeItem('curatedVisualizationImage');
     }
 
