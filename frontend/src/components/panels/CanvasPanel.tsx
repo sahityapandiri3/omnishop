@@ -324,9 +324,8 @@ export default function CanvasPanel({
         console.log(`[CanvasPanel] Initial visualization: visualizing all products (using ${cleanRoomImage ? 'clean room' : 'room image'})`);
       }
 
-      // Prepare products for V1 API with complete context
-      // Including image_url and description is crucial for AI to render exact product appearance
-      const productDetails = productsToVisualize.map(p => ({
+      // Helper function to format product for API
+      const formatProductForApi = (p: Product) => ({
         id: p.id,
         name: p.name,
         full_name: p.name,
@@ -335,7 +334,16 @@ export default function CanvasPanel({
         product_type: p.productType || 'furniture',
         style: 0.8,
         category: p.productType || 'furniture'
-      }));
+      });
+
+      // Prepare products for V1 API with complete context
+      // Including image_url and description is crucial for AI to render exact product appearance
+      const productDetails = productsToVisualize.map(formatProductForApi);
+
+      // Also send ALL products currently in the scene (for backend history accuracy)
+      // This is important because the frontend manages undo/redo locally and the backend
+      // needs to know the complete state of all products in the scene.
+      const allProductDetails = products.map(formatProductForApi);
 
       // V1 Visualization API call
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`, {
@@ -343,7 +351,8 @@ export default function CanvasPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           image: baseImage,
-          products: productDetails,
+          products: productDetails,  // Products to visualize in this request (may be subset for incremental)
+          all_products: allProductDetails,  // All products currently in the scene (for backend history)
           analysis: {
             design_style: 'modern',
             color_palette: [],
