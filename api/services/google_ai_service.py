@@ -1177,6 +1177,143 @@ The room structure, walls, and camera angle MUST be identical to the input image
             logger.error(f"Error generating ADD visualization: {e}")
             raise ValueError(f"Visualization generation failed: {e}")
 
+    async def generate_add_multiple_visualization(
+        self, room_image: str, products: list[dict]
+    ) -> str:
+        """
+        Generate visualization with MULTIPLE products added to room in a SINGLE API call.
+        This is more efficient than calling generate_add_visualization multiple times.
+
+        Args:
+            room_image: Base64 encoded room image
+            products: List of dicts with 'name' and optional 'image_url' keys
+
+        Returns: base64 image data
+        """
+        if not products:
+            return room_image
+
+        # If only one product, use the single product method
+        if len(products) == 1:
+            return await self.generate_add_visualization(
+                room_image=room_image,
+                product_name=products[0].get("full_name") or products[0].get("name"),
+                product_image=products[0].get("image_url")
+            )
+
+        try:
+            processed_room = self._preprocess_image(room_image)
+
+            # Download all product images
+            product_images_data = []
+            product_names = []
+            for product in products:
+                name = product.get("full_name") or product.get("name")
+                product_names.append(name)
+                image_url = product.get("image_url")
+                image_data = None
+                if image_url:
+                    try:
+                        image_data = await self._download_image(image_url)
+                    except Exception as e:
+                        logger.warning(f"Failed to download product image for {name}: {e}")
+                product_images_data.append(image_data)
+
+            # Build product list for prompt
+            product_list = "\n".join([f"  {i+1}. {name}" for i, name in enumerate(product_names)])
+
+            # Build prompt for ADD MULTIPLE action
+            prompt = f"""ADD the following {len(products)} products to this room in appropriate locations WITHOUT removing any existing furniture:
+
+PRODUCTS TO ADD:
+{product_list}
+
+🚨🚨🚨 ABSOLUTE REQUIREMENT - ROOM DIMENSIONS 🚨🚨🚨
+═══════════════════════════════════════════════════════════════
+THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
+- If input is 1024x768 pixels → output MUST be 1024x768 pixels
+- NEVER change the aspect ratio
+- NEVER crop, resize, or alter the image dimensions in ANY way
+- The room's physical proportions MUST appear IDENTICAL
+- The camera angle, perspective, and field of view MUST remain UNCHANGED
+- DO NOT zoom in or out
+- The walls must be in the EXACT same positions
+
+🔒 CRITICAL PRESERVATION RULES:
+1. KEEP ALL EXISTING FURNITURE: Do NOT remove or replace any furniture currently in the room
+2. ⚠️ ESPECIALLY PRESERVE SOFAS: If there is a sofa/couch, it MUST remain
+3. FIND APPROPRIATE SPACE: Identify suitable empty spaces for each new item
+4. PRESERVE THE ROOM: Keep the same walls, windows, floors, ceiling, lighting
+5. NATURAL PLACEMENT: Place products naturally where they would logically fit
+6. ROOM SIZE UNCHANGED: The room must look the EXACT same size
+
+🔴 EXACT PRODUCT REPLICATION:
+For each product with a reference image provided:
+- EXACT COLOR matching
+- EXACT MATERIAL & TEXTURE
+- EXACT SHAPE & DESIGN
+- The products in output MUST look like the SAME EXACT products from reference images
+
+PLACEMENT GUIDELINES:
+- Space products appropriately - don't cluster them all in one spot
+- Follow standard interior design placement rules
+- Coffee tables go in front of sofas
+- Side tables go next to sofas/chairs
+- Accent chairs angle towards the main seating
+- Lamps go on tables or as floor lamps
+- Decor items go on table surfaces
+
+🔦 LIGHTING:
+- All products must match the room's lighting direction and color temperature
+- Products must look naturally integrated, not "pasted on"
+
+OUTPUT: One photorealistic image showing THE ENTIRE ROOM with ALL {len(products)} products added naturally.
+The room structure, walls, and camera angle MUST be identical to the input image."""
+
+            # Build parts list
+            parts = [types.Part.from_text(text=prompt)]
+            parts.append(types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_room))))
+
+            # Add all product reference images
+            for i, (name, image_data) in enumerate(zip(product_names, product_images_data)):
+                if image_data:
+                    parts.append(types.Part.from_text(text=f"\nProduct {i+1} reference image ({name}):"))
+                    parts.append(
+                        types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(image_data)))
+                    )
+
+            contents = [types.Content(role="user", parts=parts)]
+
+            # Generate visualization with Gemini 3 Pro Image
+            generate_content_config = types.GenerateContentConfig(response_modalities=["IMAGE"], temperature=0.3)
+
+            generated_image = None
+            for chunk in self.genai_client.models.generate_content_stream(
+                model="gemini-3-pro-image-preview",
+                contents=contents,
+                config=generate_content_config,
+            ):
+                if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+                    for part in chunk.candidates[0].content.parts:
+                        if part.inline_data and part.inline_data.data:
+                            image_bytes = part.inline_data.data
+                            mime_type = part.inline_data.mime_type or "image/png"
+                            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+                            generated_image = f"data:{mime_type};base64,{image_base64}"
+                            logger.info(f"Generated ADD MULTIPLE visualization for {len(products)} products ({len(image_bytes)} bytes)")
+
+            if not generated_image:
+                logger.error("AI failed to generate visualization - no image returned")
+                raise ValueError("AI failed to generate visualization image")
+
+            return generated_image
+
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Error generating ADD MULTIPLE visualization: {e}")
+            raise ValueError(f"Visualization generation failed: {e}")
+
     async def generate_replace_visualization(
         self, room_image: str, product_name: str, furniture_type: str, product_image: Optional[str] = None
     ) -> str:
@@ -2123,12 +2260,25 @@ QUALITY REQUIREMENTS:
             )
 
     def _build_custom_position_instructions(self, positions: list, products: list) -> str:
-        """Build custom position instructions for Gemini prompt"""
+        """Build custom position instructions for Gemini prompt using grid-based positioning"""
         if not positions or len(positions) == 0:
             return "No custom positions provided. Use default placement strategy above."
 
         instructions = []
-        instructions.append("⚠️ CRITICAL: USER HAS SPECIFIED CUSTOM POSITIONS - YOU MUST FOLLOW THESE EXACTLY:")
+        instructions.append("=" * 60)
+        instructions.append("🎯 USER-SPECIFIED CUSTOM POSITIONS - OVERRIDE DEFAULT PLACEMENT")
+        instructions.append("=" * 60)
+        instructions.append("")
+        instructions.append("Think of the room as a 3x3 grid (like tic-tac-toe):")
+        instructions.append("┌─────────┬─────────┬─────────┐")
+        instructions.append("│ TOP-LEFT│TOP-CENTER│TOP-RIGHT│  (back of room)")
+        instructions.append("├─────────┼─────────┼─────────┤")
+        instructions.append("│MID-LEFT │ CENTER  │MID-RIGHT│  (middle)")
+        instructions.append("├─────────┼─────────┼─────────┤")
+        instructions.append("│BOT-LEFT │BOT-CENTER│BOT-RIGHT│  (front/foreground)")
+        instructions.append("└─────────┴─────────┴─────────┘")
+        instructions.append("")
+        instructions.append("PLACE EACH PRODUCT IN THE SPECIFIED GRID CELL:")
         instructions.append("")
 
         for pos in positions:
@@ -2145,25 +2295,44 @@ QUALITY REQUIREMENTS:
                 x = pos.get("x", 0.5)
                 y = pos.get("y", 0.5)
 
-                # Convert x,y percentages (0-1) to room position instructions
-                horizontal = "center"
+                # Convert to 3x3 grid cell using clearer boundaries
+                # X: 0-0.33=left, 0.33-0.67=center, 0.67-1=right
+                # Y: 0-0.33=top/back, 0.33-0.67=middle, 0.67-1=bottom/front
+
                 if x < 0.33:
-                    horizontal = "left side"
-                elif x > 0.67:
-                    horizontal = "right side"
+                    h_cell = "LEFT"
+                    h_desc = "left third of the image"
+                elif x < 0.67:
+                    h_cell = "CENTER"
+                    h_desc = "center third of the image"
+                else:
+                    h_cell = "RIGHT"
+                    h_desc = "right third of the image"
 
-                vertical = "middle"
                 if y < 0.33:
-                    vertical = "back/far"
-                elif y > 0.67:
-                    vertical = "front/near"
+                    v_cell = "TOP"
+                    v_desc = "back of room (upper third)"
+                elif y < 0.67:
+                    v_cell = "MID"
+                    v_desc = "middle depth (center third)"
+                else:
+                    v_cell = "BOT"
+                    v_desc = "foreground (lower third)"
 
-                instructions.append(f"Product {product_num} ({product_name}): Place at {horizontal} of room, {vertical} depth")
-                instructions.append(f"  - Horizontal position: {int(x * 100)}% from left edge")
-                instructions.append(f"  - Depth position: {int(y * 100)}% from back wall")
+                grid_cell = f"{v_cell}-{h_cell}"
 
-        instructions.append("")
-        instructions.append("🔒 THESE POSITIONS ARE MANDATORY - Place products at these exact locations!")
+                instructions.append(f"📍 Product {product_num}: {product_name}")
+                instructions.append(f"   → GRID CELL: {grid_cell}")
+                instructions.append(f"   → Horizontal: {h_desc} (X={int(x * 100)}%)")
+                instructions.append(f"   → Depth: {v_desc} (Y={int(y * 100)}%)")
+                instructions.append("")
+
+        instructions.append("=" * 60)
+        instructions.append("⚠️ IMPORTANT: These positions are USER-SPECIFIED overrides!")
+        instructions.append("   - Place products in the EXACT grid cells shown above")
+        instructions.append("   - DO NOT reposition based on aesthetics")
+        instructions.append("   - The user has intentionally chosen these positions")
+        instructions.append("=" * 60)
 
         return "\n".join(instructions)
 

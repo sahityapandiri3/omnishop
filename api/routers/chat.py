@@ -982,33 +982,22 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 f"Incremental visualization: Adding {len(new_products_to_visualize)} NEW products (out of {len(products)} total)"
             )
 
-            # Use sequential add visualization for each NEW product only
-            current_image = base_image  # Start with previous visualization (already has old products)
+            # Use BATCH add visualization for all new products in a SINGLE API call
+            # This is much faster than calling generate_add_visualization one product at a time
+            try:
+                product_names = [p.get("full_name") or p.get("name") for p in new_products_to_visualize]
+                logger.info(f"  Batch adding products: {', '.join(product_names)}")
 
-            for product in new_products_to_visualize:
-                product_name = product.get("full_name") or product.get("name")
-                product_image_url = product.get("image_url")
-
-                logger.info(f"  Adding NEW product: {product_name}")
-
-                # Call add visualization for this product
-                try:
-                    add_result = await google_ai_service.generate_add_visualization(
-                        room_image=current_image, product_name=product_name, product_image=product_image_url
-                    )
-
-                    # Use the result as base for next product
-                    # add_result is already a base64 string, not an object
-                    if add_result:
-                        current_image = add_result
-                    else:
-                        logger.warning(f"Failed to add product {product_name}, skipping")
-                except ValueError as e:
-                    logger.error(f"Visualization error for {product_name}: {e}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Failed to add {product_name} to visualization. Please try again.",
-                    )
+                current_image = await google_ai_service.generate_add_multiple_visualization(
+                    room_image=base_image,  # Start with previous visualization (already has old products)
+                    products=new_products_to_visualize
+                )
+            except ValueError as e:
+                logger.error(f"Batch visualization error: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to add products to visualization. Please try again.",
+                )
 
             # Final result
             viz_result = VisualizationResult(
