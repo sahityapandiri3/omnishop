@@ -650,24 +650,32 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         if not products:
             raise HTTPException(status_code=400, detail="At least one product must be selected")
 
+        # Handle force reset FIRST - this takes priority over incremental mode
+        # force_reset means products were removed, so we must use the clean base image
+        if force_reset:
+            logger.info(f"Force reset requested - clearing visualization history for session {session_id}")
+            context = conversation_context_manager.get_or_create_context(session_id)
+            context.visualization_history = []
+            context.visualization_redo_stack = []
+            # CRITICAL: Do NOT use incremental mode when force_reset is True
+            # We need to use the provided clean base image and visualize ALL products fresh
+            is_incremental = False
+            logger.info("Force reset: Disabled incremental mode to ensure clean visualization")
+
         # Check product count and enforce incremental visualization for larger sets
         # The Gemini API has input size limitations and fails with 500 errors when
         # processing 5+ products simultaneously. Use incremental mode as workaround.
+        # IMPORTANT: Only force incremental if NOT doing a force_reset
         MAX_PRODUCTS_BATCH = 4
         forced_incremental = False
-        if len(products) > MAX_PRODUCTS_BATCH and not is_incremental:
+        if len(products) > MAX_PRODUCTS_BATCH and not is_incremental and not force_reset:
             logger.info(
                 f"Product count ({len(products)}) exceeds batch limit ({MAX_PRODUCTS_BATCH}). Forcing incremental visualization."
             )
             is_incremental = True
             forced_incremental = True
 
-        # Handle force reset - clear visualization history and start fresh
-        if force_reset:
-            logger.info(f"Force reset requested - clearing visualization history for session {session_id}")
-            context = conversation_context_manager.get_or_create_context(session_id)
-            context.visualization_history = []
-            context.visualization_redo_stack = []
+        # Note: force_reset handling was moved above to take priority over incremental mode
 
         # CRITICAL FIX: For incremental visualization, use the last visualization as base image
         # and only visualize NEW products (not already in the last visualization)
@@ -990,7 +998,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
 
                 current_image = await google_ai_service.generate_add_multiple_visualization(
                     room_image=base_image,  # Start with previous visualization (already has old products)
-                    products=new_products_to_visualize
+                    products=new_products_to_visualize,
                 )
             except ValueError as e:
                 logger.error(f"Batch visualization error: {e}")
