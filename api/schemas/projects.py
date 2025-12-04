@@ -15,13 +15,14 @@ class ProjectCreate(BaseModel):
 
 
 class ProjectUpdate(BaseModel):
-    """Schema for updating a project (auto-save)"""
+    """Schema for updating a project (manual save)"""
 
     name: Optional[str] = Field(None, max_length=200)
     room_image: Optional[str] = None  # Base64
     clean_room_image: Optional[str] = None  # Base64
     visualization_image: Optional[str] = None  # Base64
     canvas_products: Optional[str] = None  # JSON string
+    visualization_history: Optional[str] = None  # JSON string of visualization history for undo/redo
 
 
 # Response schemas
@@ -48,6 +49,7 @@ class ProjectResponse(BaseModel):
     clean_room_image: Optional[str] = None
     visualization_image: Optional[str] = None
     canvas_products: Optional[str] = None
+    visualization_history: Optional[str] = None  # JSON string of visualization history for undo/redo
     created_at: datetime
     updated_at: datetime
 

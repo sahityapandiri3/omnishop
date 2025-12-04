@@ -253,6 +253,7 @@ class Project(Base):
 
     # Canvas state
     canvas_products = Column(Text, nullable=True)  # JSON array of products on canvas
+    visualization_history = Column(Text, nullable=True)  # JSON array of visualization history for undo/redo
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

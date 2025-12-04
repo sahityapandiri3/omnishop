@@ -739,6 +739,7 @@ export interface Project {
   clean_room_image: string | null;
   visualization_image: string | null;
   canvas_products: string | null; // JSON string
+  visualization_history: string | null; // JSON string of visualization history for undo/redo
   created_at: string;
   updated_at: string;
 }
@@ -767,6 +768,7 @@ export interface UpdateProjectData {
   clean_room_image?: string;
   visualization_image?: string;
   canvas_products?: string;
+  visualization_history?: string;  // JSON string of visualization history for undo/redo
 }
 
 export const projectsAPI = {

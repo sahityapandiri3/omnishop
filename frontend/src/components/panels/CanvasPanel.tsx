@@ -44,6 +44,9 @@ interface CanvasPanelProps {
   onRoomImageUpload: (imageData: string) => void;
   onSetProducts: (products: Product[]) => void;
   initialVisualizationImage?: string | null;  // Pre-loaded visualization from curated looks
+  initialVisualizationHistory?: any[];  // Pre-loaded history from saved project
+  onVisualizationHistoryChange?: (history: any[]) => void;  // Callback when history changes
+  onVisualizationImageChange?: (image: string | null) => void;  // Callback when visualization image changes
 }
 
 /**
@@ -59,6 +62,9 @@ export default function CanvasPanel({
   onRoomImageUpload,
   onSetProducts,
   initialVisualizationImage,
+  initialVisualizationHistory,
+  onVisualizationHistoryChange,
+  onVisualizationImageChange,
 }: CanvasPanelProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isVisualizing, setIsVisualizing] = useState(false);
@@ -76,8 +82,11 @@ export default function CanvasPanel({
   const [canRedo, setCanRedo] = useState(false);
 
   // Local visualization history for reliable undo/redo (fixes server restart issue)
-  const [visualizationHistory, setVisualizationHistory] = useState<VisualizationHistoryEntry[]>([]);
+  const [visualizationHistory, setVisualizationHistory] = useState<VisualizationHistoryEntry[]>(
+    initialVisualizationHistory || []
+  );
   const [redoStack, setRedoStack] = useState<VisualizationHistoryEntry[]>([]);
+  const [historyInitialized, setHistoryInitialized] = useState(false);
 
   // Furniture position editing state
   const [isEditingPositions, setIsEditingPositions] = useState(false);
@@ -149,6 +158,38 @@ export default function CanvasPanel({
       currentVisualizationResult: !!visualizationResult,
     });
   }, [initialVisualizationImage, roomImage, products.length, visualizationResult]);
+
+  // Initialize history from props (only once when loaded from saved project)
+  useEffect(() => {
+    if (initialVisualizationHistory && initialVisualizationHistory.length > 0 && !historyInitialized) {
+      console.log('[CanvasPanel] Initializing history from saved project:', initialVisualizationHistory.length, 'entries');
+      setVisualizationHistory(initialVisualizationHistory);
+      setCanUndo(initialVisualizationHistory.length > 1);
+      setHistoryInitialized(true);
+
+      // Also set the visualization result from the last history entry
+      const lastEntry = initialVisualizationHistory[initialVisualizationHistory.length - 1];
+      if (lastEntry?.image) {
+        setVisualizationResult(lastEntry.image);
+        setVisualizedProductIds(lastEntry.productIds || new Set());
+        setVisualizedProducts(lastEntry.products || []);
+      }
+    }
+  }, [initialVisualizationHistory, historyInitialized]);
+
+  // Notify parent when visualization history changes
+  useEffect(() => {
+    if (onVisualizationHistoryChange && historyInitialized) {
+      onVisualizationHistoryChange(visualizationHistory);
+    }
+  }, [visualizationHistory, onVisualizationHistoryChange, historyInitialized]);
+
+  // Notify parent when visualization image changes
+  useEffect(() => {
+    if (onVisualizationImageChange) {
+      onVisualizationImageChange(visualizationResult);
+    }
+  }, [visualizationResult, onVisualizationImageChange]);
 
   // Initialize visualization from curated look (pre-loaded image)
   // This runs when initialVisualizationImage is provided (e.g., from curated looks)

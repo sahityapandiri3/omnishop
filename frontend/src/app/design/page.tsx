@@ -44,10 +44,13 @@ export default function DesignPage() {
   const { isAuthenticated, user } = useAuth();
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>('');
+  const [isEditingName, setIsEditingName] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const lastSaveDataRef = useRef<string>('');
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Visualization history state (for undo/redo persistence)
+  const [visualizationHistory, setVisualizationHistory] = useState<any[]>([]);
 
   // Track if we have unsaved changes
   const hasUnsavedChanges = saveStatus === 'unsaved' || saveStatus === 'saving';
@@ -65,6 +68,8 @@ export default function DesignPage() {
   useEffect(() => {
     // Check if user has uploaded their own room image
     const userUploadedImage = sessionStorage.getItem('roomImage');
+    // Check for persisted clean room image (from furniture removal)
+    const persistedCleanRoomImage = sessionStorage.getItem('cleanRoomImage');
 
     // Check for curated look data
     const curatedRoomImage = sessionStorage.getItem('curatedRoomImage');
@@ -73,6 +78,7 @@ export default function DesignPage() {
 
     console.log('[DesignPage] Session storage check:', {
       hasUserUploadedImage: !!userUploadedImage,
+      hasCleanRoomImage: !!persistedCleanRoomImage,
       hasCuratedVisualization: !!curatedVisualizationImage,
       curatedVizLength: curatedVisualizationImage?.length || 0,
       hasPreselectedProducts: !!preselectedProducts,
@@ -83,8 +89,14 @@ export default function DesignPage() {
     // - Otherwise, use curated room image as the base room for visualization
     if (userUploadedImage) {
       setRoomImage(userUploadedImage);
-      setCleanRoomImage(userUploadedImage); // User-uploaded image is always clean
-      console.log('[DesignPage] Using user-uploaded room image');
+      // If furniture removal already completed, use the clean room image; otherwise, uploaded image is clean
+      if (persistedCleanRoomImage) {
+        setCleanRoomImage(persistedCleanRoomImage);
+        console.log('[DesignPage] Using user-uploaded room image with furniture-removed clean room');
+      } else {
+        setCleanRoomImage(userUploadedImage); // User-uploaded image is clean (before furniture removal)
+        console.log('[DesignPage] Using user-uploaded room image (furniture removal pending or not needed)');
+      }
       // Clear curated data since we're using user's room
       sessionStorage.removeItem('curatedVisualizationImage');
       sessionStorage.removeItem('curatedRoomImage');
@@ -211,15 +223,18 @@ export default function DesignPage() {
         const isNewProject = !project.room_image && !project.visualization_image && !project.canvas_products;
 
         if (isNewProject) {
-          // For new projects, don't overwrite sessionStorage data
-          // The curated look data was already loaded in the first useEffect
-          // Just set empty initial state for change detection so auto-save kicks in
+          // For new projects, use sessionStorage data (from curated looks or user upload)
+          // The first useEffect already loaded curated look data
+          // For user-uploaded room images, sessionStorage.roomImage should be set
           console.log('[DesignPage] New project detected, preserving sessionStorage data');
+
+          // Set initial state for change detection (starts as "unsaved" so first save works)
           lastSaveDataRef.current = JSON.stringify({
             room_image: null,
             clean_room_image: null,
             visualization_image: null,
             canvas_products: null,
+            visualization_history: null,
           });
         } else {
           // Load existing project data
@@ -242,6 +257,16 @@ export default function DesignPage() {
               console.error('[DesignPage] Failed to parse project canvas_products:', e);
             }
           }
+          // Load visualization history for undo/redo
+          if (project.visualization_history) {
+            try {
+              const history = JSON.parse(project.visualization_history);
+              setVisualizationHistory(history);
+              console.log('[DesignPage] Loaded', history.length, 'visualization history entries');
+            } catch (e) {
+              console.error('[DesignPage] Failed to parse visualization history:', e);
+            }
+          }
 
           // Store the initial state for change detection
           lastSaveDataRef.current = JSON.stringify({
@@ -249,6 +274,7 @@ export default function DesignPage() {
             clean_room_image: project.clean_room_image,
             visualization_image: project.visualization_image,
             canvas_products: project.canvas_products,
+            visualization_history: project.visualization_history,
           });
         }
 
@@ -261,61 +287,73 @@ export default function DesignPage() {
     loadProject();
   }, [searchParams, isAuthenticated]);
 
-  // Auto-save project every 5 seconds when changes are detected
-  useEffect(() => {
+  // Manual save function
+  const saveProject = useCallback(async () => {
     if (!isAuthenticated || !projectId) return;
 
-    const saveProject = async () => {
-      // Get current state
-      const currentData = {
-        room_image: roomImage,
-        clean_room_image: cleanRoomImage,
-        visualization_image: initialVisualizationImage,
-        canvas_products: canvasProducts.length > 0 ? JSON.stringify(canvasProducts) : null,
-      };
-      const currentDataString = JSON.stringify(currentData);
-
-      // Check if data has changed
-      if (currentDataString === lastSaveDataRef.current) {
-        return; // No changes
-      }
-
-      // Data has changed, save it
-      setSaveStatus('saving');
-      try {
-        await projectsAPI.update(projectId, {
-          room_image: currentData.room_image || undefined,
-          clean_room_image: currentData.clean_room_image || undefined,
-          visualization_image: currentData.visualization_image || undefined,
-          canvas_products: currentData.canvas_products || undefined,
-        });
-
-        lastSaveDataRef.current = currentDataString;
-        setSaveStatus('saved');
-        setLastSavedAt(new Date());
-        console.log('[DesignPage] Project auto-saved');
-      } catch (error) {
-        console.error('[DesignPage] Auto-save failed:', error);
-        setSaveStatus('unsaved');
-      }
+    // Get current state
+    const currentData = {
+      room_image: roomImage,
+      clean_room_image: cleanRoomImage,
+      visualization_image: initialVisualizationImage,
+      canvas_products: canvasProducts.length > 0 ? JSON.stringify(canvasProducts) : null,
+      visualization_history: visualizationHistory.length > 0 ? JSON.stringify(visualizationHistory) : null,
     };
 
-    // Set up auto-save interval
-    const intervalId = setInterval(saveProject, 5000);
+    setSaveStatus('saving');
+    try {
+      await projectsAPI.update(projectId, {
+        name: projectName || undefined,
+        room_image: currentData.room_image || undefined,
+        clean_room_image: currentData.clean_room_image || undefined,
+        visualization_image: currentData.visualization_image || undefined,
+        canvas_products: currentData.canvas_products || undefined,
+        visualization_history: currentData.visualization_history || undefined,
+      });
 
-    // Also mark as unsaved when data changes (for immediate UI feedback)
+      lastSaveDataRef.current = JSON.stringify(currentData);
+      setSaveStatus('saved');
+      setLastSavedAt(new Date());
+      console.log('[DesignPage] Project saved');
+    } catch (error) {
+      console.error('[DesignPage] Save failed:', error);
+      setSaveStatus('unsaved');
+    }
+  }, [isAuthenticated, projectId, projectName, roomImage, cleanRoomImage, initialVisualizationImage, canvasProducts, visualizationHistory]);
+
+  // Track unsaved changes
+  useEffect(() => {
+    if (!isAuthenticated || !projectId || lastSaveDataRef.current === '') return;
+
     const currentData = JSON.stringify({
       room_image: roomImage,
       clean_room_image: cleanRoomImage,
       visualization_image: initialVisualizationImage,
       canvas_products: canvasProducts.length > 0 ? JSON.stringify(canvasProducts) : null,
+      visualization_history: visualizationHistory.length > 0 ? JSON.stringify(visualizationHistory) : null,
     });
-    if (currentData !== lastSaveDataRef.current && lastSaveDataRef.current !== '') {
+
+    if (currentData !== lastSaveDataRef.current) {
       setSaveStatus('unsaved');
     }
+  }, [isAuthenticated, projectId, roomImage, cleanRoomImage, initialVisualizationImage, canvasProducts, visualizationHistory]);
 
-    return () => clearInterval(intervalId);
-  }, [isAuthenticated, projectId, roomImage, cleanRoomImage, initialVisualizationImage, canvasProducts]);
+  // Save on page unload/navigation
+  useEffect(() => {
+    if (!isAuthenticated || !projectId) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (saveStatus === 'unsaved') {
+        // Attempt to save before leaving
+        saveProject();
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isAuthenticated, projectId, saveStatus, saveProject]);
 
   // Poll for furniture removal job completion
   useEffect(() => {
@@ -350,9 +388,16 @@ export default function DesignPage() {
         if (status.status === 'completed') {
           console.log('[DesignPage] Furniture removal completed successfully');
           if (status.image) {
-            setRoomImage(status.image);
-            setCleanRoomImage(status.image); // Furniture removal produces a clean room
-            sessionStorage.setItem('roomImage', status.image);
+            // Use the ORIGINAL uploaded image as the base image for display
+            // The furniture-removed image goes to cleanRoomImage for visualization reset
+            const originalImage = sessionStorage.getItem('originalRoomImage');
+            if (originalImage) {
+              setRoomImage(originalImage); // Show user's original image
+              console.log('[DesignPage] Restored original room image as base');
+            }
+            setCleanRoomImage(status.image); // Furniture-removed for visualization
+            // Also save cleanRoomImage to sessionStorage for persistence
+            sessionStorage.setItem('cleanRoomImage', status.image);
           }
           sessionStorage.removeItem('furnitureRemovalJobId');
           setIsProcessingFurniture(false);
@@ -531,7 +576,10 @@ export default function DesignPage() {
       // Start async furniture removal
       const response = await startFurnitureRemoval(imageData);
       sessionStorage.setItem('furnitureRemovalJobId', response.job_id);
+      // Store ORIGINAL uploaded image for display (base image)
       sessionStorage.setItem('roomImage', imageData);
+      // Also store as original so it's not lost after furniture removal
+      sessionStorage.setItem('originalRoomImage', imageData);
 
       // Persist canvas products before page reload so they survive the reload
       if (canvasProducts.length > 0) {
@@ -567,9 +615,38 @@ export default function DesignPage() {
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-secondary-500 rounded-lg"></div>
           <div>
-            <h1 className="text-xl font-bold text-neutral-900 dark:text-white">
-              {projectName || 'Omnishop Design Studio'}
-            </h1>
+            {/* Editable Project Name */}
+            {isAuthenticated && projectId ? (
+              isEditingName ? (
+                <input
+                  type="text"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  onBlur={() => setIsEditingName(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') setIsEditingName(false);
+                    if (e.key === 'Escape') setIsEditingName(false);
+                  }}
+                  autoFocus
+                  className="text-xl font-bold text-neutral-900 dark:text-white bg-transparent border-b-2 border-primary-500 outline-none px-1"
+                />
+              ) : (
+                <h1
+                  onClick={() => setIsEditingName(true)}
+                  className="text-xl font-bold text-neutral-900 dark:text-white cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 flex items-center gap-2"
+                  title="Click to edit project name"
+                >
+                  {projectName || 'Untitled Project'}
+                  <svg className="w-4 h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </h1>
+              )
+            ) : (
+              <h1 className="text-xl font-bold text-neutral-900 dark:text-white">
+                Omnishop Design Studio
+              </h1>
+            )}
             {/* Save Status Indicator */}
             {isAuthenticated && projectId && (
               <div className="flex items-center gap-1.5 text-xs">
@@ -598,6 +675,44 @@ export default function DesignPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {/* Save Button */}
+          {isAuthenticated && projectId && (
+            <button
+              onClick={saveProject}
+              disabled={saveStatus === 'saving' || saveStatus === 'saved'}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+                saveStatus === 'unsaved'
+                  ? 'bg-primary-600 hover:bg-primary-700 text-white shadow-md'
+                  : saveStatus === 'saving'
+                  ? 'bg-neutral-200 dark:bg-neutral-700 text-neutral-500 dark:text-neutral-400 cursor-not-allowed'
+                  : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-500 dark:text-neutral-400'
+              }`}
+            >
+              {saveStatus === 'saving' ? (
+                <>
+                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Saving...
+                </>
+              ) : saveStatus === 'saved' ? (
+                <>
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                  Saved
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  Save
+                </>
+              )}
+            </button>
+          )}
           {/* Store Selection Button */}
           <button
             onClick={() => setShowStoreModal(true)}
@@ -745,6 +860,9 @@ export default function DesignPage() {
               onRoomImageUpload={handleRoomImageUpload}
               onSetProducts={setCanvasProducts}
               initialVisualizationImage={initialVisualizationImage}
+              initialVisualizationHistory={visualizationHistory}
+              onVisualizationHistoryChange={setVisualizationHistory}
+              onVisualizationImageChange={setInitialVisualizationImage}
             />
           </div>
         </div>
@@ -775,6 +893,9 @@ export default function DesignPage() {
               onRoomImageUpload={handleRoomImageUpload}
               onSetProducts={setCanvasProducts}
               initialVisualizationImage={initialVisualizationImage}
+              initialVisualizationHistory={visualizationHistory}
+              onVisualizationHistoryChange={setVisualizationHistory}
+              onVisualizationImageChange={setInitialVisualizationImage}
             />
           </div>
         </div>

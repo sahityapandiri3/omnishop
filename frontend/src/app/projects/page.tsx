@@ -103,7 +103,7 @@ export default function ProjectsPage() {
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-600" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
       </div>
     );
   }
@@ -128,7 +128,7 @@ export default function ProjectsPage() {
           <button
             onClick={handleCreateProject}
             disabled={creating}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-sky-600 text-white font-medium rounded-lg hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
           >
             {creating ? (
               <>
@@ -176,8 +176,8 @@ export default function ProjectsPage() {
         ) : projects.length === 0 ? (
           /* Empty State */
           <div className="text-center py-16">
-            <div className="mx-auto w-24 h-24 bg-sky-100 rounded-full flex items-center justify-center mb-6">
-              <FolderIcon className="w-12 h-12 text-sky-600" />
+            <div className="mx-auto w-24 h-24 bg-primary-100 rounded-full flex items-center justify-center mb-6">
+              <FolderIcon className="w-12 h-12 text-primary-600" />
             </div>
             <h2 className="text-xl font-semibold text-gray-900 mb-2">
               No projects yet
@@ -188,7 +188,7 @@ export default function ProjectsPage() {
             <button
               onClick={handleCreateProject}
               disabled={creating}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-sky-600 text-white font-medium rounded-lg hover:bg-sky-700 disabled:opacity-50 transition-colors shadow-lg shadow-sky-500/25"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors shadow-lg shadow-primary-500/25"
             >
               {creating ? (
                 <>
@@ -210,17 +210,17 @@ export default function ProjectsPage() {
             <button
               onClick={handleCreateProject}
               disabled={creating}
-              className="group bg-white rounded-xl border-2 border-dashed border-gray-300 hover:border-sky-500 overflow-hidden transition-all disabled:opacity-50"
+              className="group bg-white rounded-xl border-2 border-dashed border-gray-300 hover:border-primary-500 overflow-hidden transition-all disabled:opacity-50"
             >
-              <div className="aspect-video flex items-center justify-center bg-gray-50 group-hover:bg-sky-50 transition-colors">
+              <div className="aspect-video flex items-center justify-center bg-gray-50 group-hover:bg-primary-50 transition-colors">
                 {creating ? (
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-600" />
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
                 ) : (
-                  <PlusIcon className="w-12 h-12 text-gray-400 group-hover:text-sky-600 transition-colors" />
+                  <PlusIcon className="w-12 h-12 text-gray-400 group-hover:text-primary-600 transition-colors" />
                 )}
               </div>
               <div className="p-4 text-center">
-                <h3 className="font-medium text-gray-900 group-hover:text-sky-600 transition-colors">
+                <h3 className="font-medium text-gray-900 group-hover:text-primary-600 transition-colors">
                   New Project
                 </h3>
                 <p className="text-sm text-gray-500">Start a new design</p>
@@ -232,7 +232,7 @@ export default function ProjectsPage() {
               <Link
                 key={project.id}
                 href={`/design?projectId=${project.id}`}
-                className="group bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg hover:border-sky-300 transition-all"
+                className="group bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg hover:border-primary-300 transition-all"
               >
                 {/* Thumbnail */}
                 <div className="aspect-video relative bg-gray-100">
@@ -279,7 +279,7 @@ export default function ProjectsPage() {
 
                 {/* Project Info */}
                 <div className="p-4">
-                  <h3 className="font-medium text-gray-900 truncate group-hover:text-sky-600 transition-colors">
+                  <h3 className="font-medium text-gray-900 truncate group-hover:text-primary-600 transition-colors">
                     {project.name}
                   </h3>
                   <p className="text-sm text-gray-500">
