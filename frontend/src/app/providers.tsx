@@ -3,7 +3,11 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider } from '@/contexts/AuthContext';
+
+// Google OAuth Client ID - must be set in environment variables
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -38,7 +42,8 @@ interface ProvidersProps {
 }
 
 export function Providers({ children }: ProvidersProps) {
-  return (
+  // Conditionally wrap with GoogleOAuthProvider only if client ID is configured
+  const content = (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         {children}
@@ -49,4 +54,15 @@ export function Providers({ children }: ProvidersProps) {
       </AuthProvider>
     </QueryClientProvider>
   );
+
+  // Only wrap with GoogleOAuthProvider if client ID is available
+  if (GOOGLE_CLIENT_ID) {
+    return (
+      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+        {content}
+      </GoogleOAuthProvider>
+    );
+  }
+
+  return content;
 }
