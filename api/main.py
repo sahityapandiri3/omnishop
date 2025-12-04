@@ -17,10 +17,10 @@ env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path)
 print(f"✅ Loaded .env file from: {env_path}")
 
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, Request  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.middleware.gzip import GZipMiddleware  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 # Add api directory to path for imports (works both locally and on Railway)
 api_dir = os.path.dirname(os.path.abspath(__file__))
@@ -35,7 +35,7 @@ import_error_message = None
 import_error_traceback = None
 
 try:
-    from routers import admin_curated, categories, chat, curated, furniture, products, stores, visualization
+    from routers import admin_curated, auth, categories, chat, curated, furniture, products, projects, stores, visualization
     from routers.curated import warm_curated_looks_cache
     from services.furniture_removal_service import furniture_removal_service
 
@@ -335,6 +335,12 @@ if "curated" in dir():
 
 if "admin_curated" in dir():
     app.include_router(admin_curated.router, prefix="/api", tags=["admin-curated"])
+
+if "auth" in dir():
+    app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+
+if "projects" in dir():
+    app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 
 # Additional routers can be added here as needed
 

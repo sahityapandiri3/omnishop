@@ -1,7 +1,6 @@
 """
 Configuration settings for the FastAPI application
 """
-import os
 from typing import List, Union
 
 from pydantic import field_validator
@@ -82,7 +81,11 @@ class Settings(BaseSettings):
     # Security
     secret_key: str = "your-secret-key-change-in-production"
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
+    access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
+
+    # Google OAuth
+    google_client_id: str = ""
+    google_client_secret: str = ""
 
     # Logging
     log_level: str = "INFO"

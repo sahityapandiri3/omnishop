@@ -727,3 +727,93 @@ export const getCuratedLookById = async (lookId: string | number): Promise<Curat
     throw error;
   }
 };
+
+// ==========================================
+// Projects API
+// ==========================================
+
+export interface Project {
+  id: string;
+  name: string;
+  room_image: string | null;
+  clean_room_image: string | null;
+  visualization_image: string | null;
+  canvas_products: string | null; // JSON string
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectListItem {
+  id: string;
+  name: string;
+  has_room_image: boolean;
+  has_visualization: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectsListResponse {
+  projects: ProjectListItem[];
+  total: number;
+}
+
+export interface CreateProjectData {
+  name: string;
+}
+
+export interface UpdateProjectData {
+  name?: string;
+  room_image?: string;
+  clean_room_image?: string;
+  visualization_image?: string;
+  canvas_products?: string;
+}
+
+export const projectsAPI = {
+  /**
+   * List all projects for the current user
+   */
+  list: async (): Promise<ProjectsListResponse> => {
+    const response = await api.get('/api/projects');
+    return response.data;
+  },
+
+  /**
+   * Get a single project by ID
+   */
+  get: async (projectId: string): Promise<Project> => {
+    const response = await api.get(`/api/projects/${projectId}`);
+    return response.data;
+  },
+
+  /**
+   * Create a new project
+   */
+  create: async (data: CreateProjectData): Promise<Project> => {
+    const response = await api.post('/api/projects', data);
+    return response.data;
+  },
+
+  /**
+   * Update a project (used for auto-save)
+   */
+  update: async (projectId: string, data: UpdateProjectData): Promise<Project> => {
+    const response = await api.put(`/api/projects/${projectId}`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete a project
+   */
+  delete: async (projectId: string): Promise<void> => {
+    await api.delete(`/api/projects/${projectId}`);
+  },
+
+  /**
+   * Get project thumbnail (just the visualization image)
+   */
+  getThumbnail: async (projectId: string): Promise<{ visualization_image: string | null }> => {
+    const response = await api.get(`/api/projects/${projectId}/thumbnail`);
+    return response.data;
+  },
+};

@@ -214,6 +214,60 @@ class ProductSearchView(Base):
         return f"<ProductSearchView(product_id={self.product_id}, name='{self.name[:50]}...')>"
 
 
+class User(Base):
+    """User accounts for authentication and project management"""
+
+    __tablename__ = "users"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(255), nullable=True)  # Null for OAuth users
+    auth_provider = Column(String(50), default="email")  # "email" or "google"
+    google_id = Column(String(255), unique=True, nullable=True)
+    name = Column(String(200), nullable=True)
+    profile_image_url = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    projects = relationship("Project", back_populates="user", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<User(id={self.id}, email='{self.email}', auth_provider='{self.auth_provider}')>"
+
+
+class Project(Base):
+    """User design projects for saving and resuming work"""
+
+    __tablename__ = "projects"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(200), nullable=False)
+
+    # Room data
+    room_image = Column(Text, nullable=True)  # Base64 of original room
+    clean_room_image = Column(Text, nullable=True)  # Base64 of furniture-removed room
+    visualization_image = Column(Text, nullable=True)  # Base64 of last rendered visualization
+
+    # Canvas state
+    canvas_products = Column(Text, nullable=True)  # JSON array of products on canvas
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    user = relationship("User", back_populates="projects")
+
+    # Indexes
+    __table_args__ = (Index("idx_project_user_updated", "user_id", "updated_at"),)
+
+    def __repr__(self):
+        return f"<Project(id={self.id}, user_id={self.user_id}, name='{self.name}')>"
+
+
 class ChatSession(Base):
     """Chat session for interior design conversations"""
 

@@ -1,10 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import ChatPanel from '@/components/panels/ChatPanel';
 import ProductDiscoveryPanel from '@/components/panels/ProductDiscoveryPanel';
 import CanvasPanel from '@/components/panels/CanvasPanel';
-import { checkFurnitureRemovalStatus, startFurnitureRemoval, getAvailableStores } from '@/utils/api';
+import { checkFurnitureRemovalStatus, startFurnitureRemoval, getAvailableStores, projectsAPI } from '@/utils/api';
+import { useAuth } from '@/contexts/AuthContext';
+import { useNavigationGuard } from '@/hooks/useNavigationGuard';
 
 /**
  * New UI V2: Three-Panel Design Interface
@@ -35,6 +38,28 @@ export default function DesignPage() {
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
   const [showStoreModal, setShowStoreModal] = useState(false);
   const [availableStores, setAvailableStores] = useState<string[]>([]);
+
+  // Project state (for logged-in users)
+  const searchParams = useSearchParams();
+  const { isAuthenticated, user } = useAuth();
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState<string>('');
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const lastSaveDataRef = useRef<string>('');
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Track if we have unsaved changes
+  const hasUnsavedChanges = saveStatus === 'unsaved' || saveStatus === 'saving';
+
+  // Enable navigation guard when there are unsaved changes
+  useNavigationGuard({
+    enabled: hasUnsavedChanges,
+    message: 'You have unsaved changes. Are you sure you want to leave?',
+    onNavigationAttempt: () => {
+      console.log('[DesignPage] Navigation blocked due to unsaved changes');
+    },
+  });
 
   // Load room image, products, and stores from sessionStorage on mount
   useEffect(() => {
@@ -169,6 +194,112 @@ export default function DesignPage() {
     sessionStorage.removeItem('design_session_id');
     console.log('[DesignPage] Cleared session ID on page load - starting fresh session');
   }, []);
+
+  // Load project data if projectId is in URL params
+  useEffect(() => {
+    const loadProject = async () => {
+      const urlProjectId = searchParams?.get('projectId');
+      if (!urlProjectId || !isAuthenticated) return;
+
+      try {
+        console.log('[DesignPage] Loading project:', urlProjectId);
+        const project = await projectsAPI.get(urlProjectId);
+        setProjectId(project.id);
+        setProjectName(project.name);
+
+        // Load project data
+        if (project.room_image) {
+          setRoomImage(project.room_image);
+          sessionStorage.setItem('roomImage', project.room_image);
+        }
+        if (project.clean_room_image) {
+          setCleanRoomImage(project.clean_room_image);
+        }
+        if (project.visualization_image) {
+          setInitialVisualizationImage(project.visualization_image);
+        }
+        if (project.canvas_products) {
+          try {
+            const products = JSON.parse(project.canvas_products);
+            setCanvasProducts(products);
+            console.log('[DesignPage] Loaded', products.length, 'products from project');
+          } catch (e) {
+            console.error('[DesignPage] Failed to parse project canvas_products:', e);
+          }
+        }
+
+        // Store the initial state for change detection
+        lastSaveDataRef.current = JSON.stringify({
+          room_image: project.room_image,
+          clean_room_image: project.clean_room_image,
+          visualization_image: project.visualization_image,
+          canvas_products: project.canvas_products,
+        });
+
+        console.log('[DesignPage] Project loaded successfully:', project.name);
+      } catch (error) {
+        console.error('[DesignPage] Failed to load project:', error);
+      }
+    };
+
+    loadProject();
+  }, [searchParams, isAuthenticated]);
+
+  // Auto-save project every 5 seconds when changes are detected
+  useEffect(() => {
+    if (!isAuthenticated || !projectId) return;
+
+    const saveProject = async () => {
+      // Get current state
+      const currentData = {
+        room_image: roomImage,
+        clean_room_image: cleanRoomImage,
+        visualization_image: initialVisualizationImage,
+        canvas_products: canvasProducts.length > 0 ? JSON.stringify(canvasProducts) : null,
+      };
+      const currentDataString = JSON.stringify(currentData);
+
+      // Check if data has changed
+      if (currentDataString === lastSaveDataRef.current) {
+        return; // No changes
+      }
+
+      // Data has changed, save it
+      setSaveStatus('saving');
+      try {
+        await projectsAPI.update(projectId, {
+          room_image: currentData.room_image || undefined,
+          clean_room_image: currentData.clean_room_image || undefined,
+          visualization_image: currentData.visualization_image || undefined,
+          canvas_products: currentData.canvas_products || undefined,
+        });
+
+        lastSaveDataRef.current = currentDataString;
+        setSaveStatus('saved');
+        setLastSavedAt(new Date());
+        console.log('[DesignPage] Project auto-saved');
+      } catch (error) {
+        console.error('[DesignPage] Auto-save failed:', error);
+        setSaveStatus('unsaved');
+      }
+    };
+
+    // Set up auto-save interval
+    const intervalId = setInterval(saveProject, 5000);
+
+    // Also mark as unsaved when data changes (for immediate UI feedback)
+    const currentData = JSON.stringify({
+      room_image: roomImage,
+      clean_room_image: cleanRoomImage,
+      visualization_image: initialVisualizationImage,
+      canvas_products: canvasProducts.length > 0 ? JSON.stringify(canvasProducts) : null,
+    });
+    if (currentData !== lastSaveDataRef.current && lastSaveDataRef.current !== '') {
+      setSaveStatus('unsaved');
+    }
+
+    return () => clearInterval(intervalId);
+  }, [isAuthenticated, projectId, roomImage, cleanRoomImage, initialVisualizationImage, canvasProducts]);
 
   // Poll for furniture removal job completion
   useEffect(() => {
@@ -419,9 +550,36 @@ export default function DesignPage() {
       <header className="bg-white dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-secondary-500 rounded-lg"></div>
-          <h1 className="text-xl font-bold text-neutral-900 dark:text-white">
-            Omnishop Design Studio
-          </h1>
+          <div>
+            <h1 className="text-xl font-bold text-neutral-900 dark:text-white">
+              {projectName || 'Omnishop Design Studio'}
+            </h1>
+            {/* Save Status Indicator */}
+            {isAuthenticated && projectId && (
+              <div className="flex items-center gap-1.5 text-xs">
+                {saveStatus === 'saved' && (
+                  <>
+                    <div className="w-2 h-2 rounded-full bg-green-500" />
+                    <span className="text-green-600 dark:text-green-400">
+                      Saved {lastSavedAt && `at ${lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                    </span>
+                  </>
+                )}
+                {saveStatus === 'saving' && (
+                  <>
+                    <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
+                    <span className="text-yellow-600 dark:text-yellow-400">Saving...</span>
+                  </>
+                )}
+                {saveStatus === 'unsaved' && (
+                  <>
+                    <div className="w-2 h-2 rounded-full bg-orange-500" />
+                    <span className="text-orange-600 dark:text-orange-400">Unsaved changes</span>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-3">
           {/* Store Selection Button */}
