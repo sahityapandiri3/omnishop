@@ -36,8 +36,8 @@ export default function HomePage() {
     fetchLooks();
   }, []);
 
-  // Get hero image from first look or use placeholder
-  const heroImage = formatImageSrc(looks[0]?.visualization_image || looks[0]?.room_image);
+  // Get hero image - use Coastal Chic Living & Kitchen Space (index 1)
+  const heroImage = formatImageSrc(looks[1]?.visualization_image || looks[1]?.room_image);
 
   return (
     <div className="min-h-screen bg-white">
@@ -111,9 +111,9 @@ export default function HomePage() {
                 </div>
               )}
 
-              {/* Smaller Looks - Scandinavian and Contemporary */}
-              {looks.slice(1, 3).map((look) => (
-                (look.visualization_image || look.room_image) && (
+              {/* Smaller Looks - Palace-Inspired (index 0) and Scandinavian (index 2) */}
+              {[looks[0], looks[2]].filter(Boolean).map((look) => (
+                look && (look.visualization_image || look.room_image) && (
                   <div key={look.look_id} className="relative aspect-[4/3] overflow-hidden group rounded-lg">
                     <img
                       src={formatImageSrc(look.visualization_image || look.room_image)}
