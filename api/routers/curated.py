@@ -383,10 +383,15 @@ async def get_curated_looks(
                         }
                     )
 
-            # Create thumbnail for listing (compressed version)
-            thumbnail = None
+            # Create thumbnail for listing (compressed version) or use full image
+            visualization = None
             if look.visualization_image:
-                thumbnail = create_thumbnail(look.visualization_image, max_width=400, quality=60)
+                if include_images:
+                    # Return full-quality image for landing page / detail views
+                    visualization = look.visualization_image
+                else:
+                    # Return compressed thumbnail for listing/grid views
+                    visualization = create_thumbnail(look.visualization_image, max_width=400, quality=60)
 
             looks.append(
                 CuratedLook(
@@ -394,7 +399,7 @@ async def get_curated_looks(
                     style_theme=look.style_theme,
                     style_description=look.style_description or "",
                     room_image=look.room_image if include_images else None,
-                    visualization_image=thumbnail,  # Use compressed thumbnail for listing
+                    visualization_image=visualization,  # Full image or thumbnail based on include_images
                     products=products,
                     total_price=look.total_price or 0,
                     generation_status="completed",

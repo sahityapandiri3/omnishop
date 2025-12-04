@@ -704,12 +704,15 @@ export const adminCuratedAPI = {
   }
 };
 
-// Get pre-curated looks from database (public endpoint) - without large images for fast listing
-export const getCuratedLooks = async (roomType?: string): Promise<CuratedLooksResponse> => {
+// Get pre-curated looks from database (public endpoint)
+// includeImages: true = full quality images for landing page, false = compressed thumbnails for listing
+export const getCuratedLooks = async (roomType?: string, includeImages: boolean = false): Promise<CuratedLooksResponse> => {
   try {
-    const response = await api.get('/api/curated/looks', {
-      params: roomType ? { room_type: roomType } : {}
-    });
+    const params: Record<string, any> = { include_images: includeImages };
+    if (roomType) {
+      params.room_type = roomType;
+    }
+    const response = await api.get('/api/curated/looks', { params });
     return response.data;
   } catch (error) {
     console.error('Error fetching curated looks:', error);

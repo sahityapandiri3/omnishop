@@ -23,8 +23,8 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Get redirect URL from query params
-  const redirectUrl = searchParams?.get('redirect') || '/';
+  // Get redirect URL from query params - default to /curated for new signups
+  const redirectUrl = searchParams?.get('redirect') || '/curated';
 
   // Redirect if already authenticated
   useEffect(() => {
