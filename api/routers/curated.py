@@ -311,6 +311,7 @@ def get_primary_image_url(product: Product) -> Optional[str]:
 async def get_curated_looks(
     room_type: Optional[str] = Query(None, description="Filter by room type (living_room, bedroom)"),
     include_images: bool = Query(False, description="Include large base64 images (room_image, visualization_image)"),
+    image_quality: str = Query("thumbnail", description="Image quality: thumbnail (400px), medium (1200px), full"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -328,7 +329,7 @@ async def get_curated_looks(
     """
     try:
         # Build cache key based on query parameters
-        cache_key = f"looks:{room_type or 'all'}:{include_images}"
+        cache_key = f"looks:{room_type or 'all'}:{image_quality}"
 
         # Check cache first
         cached_response = _curated_looks_cache.get(cache_key)
@@ -383,23 +384,33 @@ async def get_curated_looks(
                         }
                     )
 
-            # Create thumbnail for listing (compressed version) or use full image
+            # Create optimized image based on quality parameter
             visualization = None
+            room_img = None
             if look.visualization_image:
-                if include_images:
-                    # Return full-quality image for landing page / detail views
+                if image_quality == "full":
+                    # Return full-quality image (original)
                     visualization = look.visualization_image
+                elif image_quality == "medium":
+                    # Return medium-quality image for landing page (1200px, 80% quality)
+                    visualization = create_thumbnail(look.visualization_image, max_width=1200, quality=80)
                 else:
-                    # Return compressed thumbnail for listing/grid views
+                    # Return compressed thumbnail for listing/grid views (400px, 60% quality)
                     visualization = create_thumbnail(look.visualization_image, max_width=400, quality=60)
+
+            if look.room_image and image_quality in ("full", "medium"):
+                if image_quality == "full":
+                    room_img = look.room_image
+                else:
+                    room_img = create_thumbnail(look.room_image, max_width=1200, quality=80)
 
             looks.append(
                 CuratedLook(
                     look_id=str(look.id),
                     style_theme=look.style_theme,
                     style_description=look.style_description or "",
-                    room_image=look.room_image if include_images else None,
-                    visualization_image=visualization,  # Full image or thumbnail based on include_images
+                    room_image=room_img,
+                    visualization_image=visualization,
                     products=products,
                     total_price=look.total_price or 0,
                     generation_status="completed",

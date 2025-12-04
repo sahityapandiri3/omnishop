@@ -705,10 +705,10 @@ export const adminCuratedAPI = {
 };
 
 // Get pre-curated looks from database (public endpoint)
-// includeImages: true = full quality images for landing page, false = compressed thumbnails for listing
-export const getCuratedLooks = async (roomType?: string, includeImages: boolean = false): Promise<CuratedLooksResponse> => {
+// imageQuality: 'thumbnail' (400px), 'medium' (1200px - for landing page), 'full' (original)
+export const getCuratedLooks = async (roomType?: string, imageQuality: 'thumbnail' | 'medium' | 'full' = 'thumbnail'): Promise<CuratedLooksResponse> => {
   try {
-    const params: Record<string, any> = { include_images: includeImages };
+    const params: Record<string, any> = { image_quality: imageQuality };
     if (roomType) {
       params.room_type = roomType;
     }

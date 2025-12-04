@@ -24,9 +24,9 @@ export default function HomePage() {
   useEffect(() => {
     const fetchLooks = async () => {
       try {
-        // Request full-quality images for landing page (not thumbnails)
-        const response = await getCuratedLooks(undefined, true);
-        setLooks(response.looks.slice(0, 5)); // Get first 5 looks
+        // Request medium-quality images for landing page (1200px, 80% quality - faster loading)
+        const response = await getCuratedLooks(undefined, 'medium');
+        setLooks(response.looks.slice(0, 6)); // Get first 6 looks
       } catch (error) {
         console.error('Failed to fetch curated looks:', error);
       } finally {
