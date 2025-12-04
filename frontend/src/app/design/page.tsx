@@ -207,34 +207,50 @@ export default function DesignPage() {
         setProjectId(project.id);
         setProjectName(project.name);
 
-        // Load project data
-        if (project.room_image) {
-          setRoomImage(project.room_image);
-          sessionStorage.setItem('roomImage', project.room_image);
-        }
-        if (project.clean_room_image) {
-          setCleanRoomImage(project.clean_room_image);
-        }
-        if (project.visualization_image) {
-          setInitialVisualizationImage(project.visualization_image);
-        }
-        if (project.canvas_products) {
-          try {
-            const products = JSON.parse(project.canvas_products);
-            setCanvasProducts(products);
-            console.log('[DesignPage] Loaded', products.length, 'products from project');
-          } catch (e) {
-            console.error('[DesignPage] Failed to parse project canvas_products:', e);
-          }
-        }
+        // Check if this is a new project (no saved data yet)
+        const isNewProject = !project.room_image && !project.visualization_image && !project.canvas_products;
 
-        // Store the initial state for change detection
-        lastSaveDataRef.current = JSON.stringify({
-          room_image: project.room_image,
-          clean_room_image: project.clean_room_image,
-          visualization_image: project.visualization_image,
-          canvas_products: project.canvas_products,
-        });
+        if (isNewProject) {
+          // For new projects, don't overwrite sessionStorage data
+          // The curated look data was already loaded in the first useEffect
+          // Just set empty initial state for change detection so auto-save kicks in
+          console.log('[DesignPage] New project detected, preserving sessionStorage data');
+          lastSaveDataRef.current = JSON.stringify({
+            room_image: null,
+            clean_room_image: null,
+            visualization_image: null,
+            canvas_products: null,
+          });
+        } else {
+          // Load existing project data
+          if (project.room_image) {
+            setRoomImage(project.room_image);
+            sessionStorage.setItem('roomImage', project.room_image);
+          }
+          if (project.clean_room_image) {
+            setCleanRoomImage(project.clean_room_image);
+          }
+          if (project.visualization_image) {
+            setInitialVisualizationImage(project.visualization_image);
+          }
+          if (project.canvas_products) {
+            try {
+              const products = JSON.parse(project.canvas_products);
+              setCanvasProducts(products);
+              console.log('[DesignPage] Loaded', products.length, 'products from project');
+            } catch (e) {
+              console.error('[DesignPage] Failed to parse project canvas_products:', e);
+            }
+          }
+
+          // Store the initial state for change detection
+          lastSaveDataRef.current = JSON.stringify({
+            room_image: project.room_image,
+            clean_room_image: project.clean_room_image,
+            visualization_image: project.visualization_image,
+            canvas_products: project.canvas_products,
+          });
+        }
 
         console.log('[DesignPage] Project loaded successfully:', project.name);
       } catch (error) {

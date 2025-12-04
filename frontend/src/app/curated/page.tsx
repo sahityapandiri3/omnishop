@@ -3,20 +3,23 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { getCuratedLooks, getCuratedLookById, CuratedLook, CuratedLooksResponse } from '@/utils/api';
+import { getCuratedLooks, getCuratedLookById, CuratedLook, CuratedLooksResponse, projectsAPI } from '@/utils/api';
 import { CuratedLookCard } from '@/components/curated/CuratedLookCard';
 import { LookDetailModal } from '@/components/curated/LookDetailModal';
+import { useAuth } from '@/contexts/AuthContext';
 
 type RoomType = 'all' | 'living_room' | 'bedroom';
 
 export default function CuratedPage() {
   const router = useRouter();
+  const { isAuthenticated } = useAuth();
   const [looksData, setLooksData] = useState<CuratedLooksResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedLook, setSelectedLook] = useState<CuratedLook | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [roomTypeFilter, setRoomTypeFilter] = useState<RoomType>('all');
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
 
   // Fetch curated looks when filter changes
   useEffect(() => {
@@ -45,6 +48,8 @@ export default function CuratedPage() {
 
   const handleStyleThisLook = useCallback(async (look: CuratedLook) => {
     try {
+      setIsCreatingProject(true);
+
       // Check if user has uploaded their own room image
       const userRoomImage = sessionStorage.getItem('roomImage');
       const hasUserRoom = !!userRoomImage;
@@ -78,7 +83,22 @@ export default function CuratedPage() {
         }
       }
 
-      router.push('/design');
+      // If user is authenticated, create a new project
+      if (isAuthenticated) {
+        try {
+          const projectName = `${look.style_theme} Design`;
+          console.log('[CuratedPage] Creating new project:', projectName);
+          const project = await projectsAPI.create({ name: projectName });
+          console.log('[CuratedPage] Project created:', project.id);
+          // Navigate to design page with project ID
+          router.push(`/design?projectId=${project.id}`);
+        } catch (projectError) {
+          console.error('[CuratedPage] Failed to create project, continuing without:', projectError);
+          router.push('/design');
+        }
+      } else {
+        router.push('/design');
+      }
     } catch (error) {
       console.error('[CuratedPage] Error in handleStyleThisLook:', error);
       // Fallback: just use the products
@@ -86,8 +106,10 @@ export default function CuratedPage() {
       sessionStorage.setItem('preselectedProducts', JSON.stringify(look.products));
       sessionStorage.setItem('preselectedLookTheme', look.style_theme);
       router.push('/design');
+    } finally {
+      setIsCreatingProject(false);
     }
-  }, [router]);
+  }, [router, isAuthenticated]);
 
   const handleStyleFromScratch = useCallback(() => {
     // Clear any preselected products and curated images, go to design studio
