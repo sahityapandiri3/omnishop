@@ -621,7 +621,10 @@ export default function DesignPage() {
                 <input
                   type="text"
                   value={projectName}
-                  onChange={(e) => setProjectName(e.target.value)}
+                  onChange={(e) => {
+                    setProjectName(e.target.value);
+                    setSaveStatus('unsaved'); // Mark as unsaved when name changes
+                  }}
                   onBlur={() => setIsEditingName(false)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') setIsEditingName(false);

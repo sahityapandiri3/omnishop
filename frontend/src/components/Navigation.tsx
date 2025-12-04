@@ -96,7 +96,7 @@ export function Navigation() {
                     )}
                     {item.name}
                     {item.badge && (
-                      <span className="px-2 py-0.5 bg-gradient-to-r from-primary-500 to-secondary-500 text-white text-xs font-bold rounded-full">
+                      <span className="px-1.5 py-0.5 bg-gradient-to-r from-primary-500 to-secondary-500 text-white text-[10px] font-bold rounded-full">
                         {item.badge}
                       </span>
                     )}
@@ -237,7 +237,7 @@ export function Navigation() {
                     <div className="flex items-center justify-between">
                       <span>{item.name}</span>
                       {item.badge && (
-                        <span className="px-2 py-0.5 bg-gradient-to-r from-primary-500 to-secondary-500 text-white text-xs font-bold rounded-full">
+                        <span className="px-1.5 py-0.5 bg-gradient-to-r from-primary-500 to-secondary-500 text-white text-[10px] font-bold rounded-full">
                           {item.badge}
                         </span>
                       )}
