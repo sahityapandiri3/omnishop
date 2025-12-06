@@ -46,9 +46,12 @@ class Settings(BaseSettings):
 
     # OpenAI
     openai_api_key: str = ""
-    openai_model: str = "gpt-4o"
+    openai_model: str = "gpt-4o"  # Full model for image analysis
+    openai_model_fast: str = "gpt-4o-mini"  # Fast model for text-only follow-ups (3-5x faster)
     openai_max_tokens: int = 4000
+    openai_max_tokens_fast: int = 2000  # Reduced tokens for fast mode
     openai_temperature: float = 0.7
+    openai_timeout_fast: float = 30.0  # 30 second timeout for fast mode (vs 120s for full)
 
     # Google AI Studio
     google_ai_api_key: str = ""

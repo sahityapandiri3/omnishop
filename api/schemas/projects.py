@@ -23,6 +23,7 @@ class ProjectUpdate(BaseModel):
     visualization_image: Optional[str] = None  # Base64
     canvas_products: Optional[str] = None  # JSON string
     visualization_history: Optional[str] = None  # JSON string of visualization history for undo/redo
+    chat_session_id: Optional[str] = None  # Link to chat session for restoring conversation
 
 
 # Response schemas
@@ -50,6 +51,7 @@ class ProjectResponse(BaseModel):
     visualization_image: Optional[str] = None
     canvas_products: Optional[str] = None
     visualization_history: Optional[str] = None  # JSON string of visualization history for undo/redo
+    chat_session_id: Optional[str] = None  # Link to chat session for restoring conversation
     created_at: datetime
     updated_at: datetime
 

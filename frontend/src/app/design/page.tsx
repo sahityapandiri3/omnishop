@@ -30,6 +30,11 @@ export default function DesignPage() {
   const [productRecommendations, setProductRecommendations] = useState<any[]>([]);
   const [initialVisualizationImage, setInitialVisualizationImage] = useState<string | null>(null);
 
+  // Category-based product discovery state
+  const [selectedCategories, setSelectedCategories] = useState<any[] | null>(null);
+  const [productsByCategory, setProductsByCategory] = useState<Record<string, any[]> | null>(null);
+  const [totalBudget, setTotalBudget] = useState<number | null>(null);
+
   // Furniture removal state
   const [isProcessingFurniture, setIsProcessingFurniture] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<string>('');
@@ -48,9 +53,13 @@ export default function DesignPage() {
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const lastSaveDataRef = useRef<string>('');
+  const [projectLoaded, setProjectLoaded] = useState(false); // Track when project data is loaded
 
   // Visualization history state (for undo/redo persistence)
   const [visualizationHistory, setVisualizationHistory] = useState<any[]>([]);
+
+  // Chat session state (for restoring conversation history)
+  const [chatSessionId, setChatSessionId] = useState<string | null>(null);
 
   // Track if we have unsaved changes
   const hasUnsavedChanges = saveStatus === 'unsaved' || saveStatus === 'saving';
@@ -66,6 +75,22 @@ export default function DesignPage() {
 
   // Load room image, products, and stores from sessionStorage on mount
   useEffect(() => {
+    // Check for "fresh" param indicating a brand new project - clear all stale data
+    const isFreshProject = searchParams?.get('fresh') === '1';
+    if (isFreshProject) {
+      console.log('[DesignPage] Fresh project detected - clearing sessionStorage');
+      sessionStorage.removeItem('roomImage');
+      sessionStorage.removeItem('cleanRoomImage');
+      sessionStorage.removeItem('curatedRoomImage');
+      sessionStorage.removeItem('curatedVisualizationImage');
+      sessionStorage.removeItem('preselectedProducts');
+      sessionStorage.removeItem('persistedCanvasProducts');
+      sessionStorage.removeItem('design_session_id');
+      sessionStorage.removeItem('furnitureRemovalJobId');
+      // Don't load any stored images - let the user start fresh
+      return;
+    }
+
     // Check if user has uploaded their own room image
     const userUploadedImage = sessionStorage.getItem('roomImage');
     // Check for persisted clean room image (from furniture removal)
@@ -211,11 +236,28 @@ export default function DesignPage() {
   useEffect(() => {
     const loadProject = async () => {
       const urlProjectId = searchParams?.get('projectId');
-      if (!urlProjectId || !isAuthenticated) return;
+
+      // If no project ID or not authenticated, mark as loaded immediately (guest mode)
+      if (!urlProjectId || !isAuthenticated) {
+        console.log('[DesignPage] No project to load (guest mode or no projectId)');
+        setProjectLoaded(true);
+        return;
+      }
 
       try {
         console.log('[DesignPage] Loading project:', urlProjectId);
         const project = await projectsAPI.get(urlProjectId);
+        console.log('[DesignPage] Project API response:', {
+          id: project.id,
+          name: project.name,
+          hasRoomImage: !!project.room_image,
+          roomImageLength: project.room_image?.length || 0,
+          hasVisualizationImage: !!project.visualization_image,
+          vizImageLength: project.visualization_image?.length || 0,
+          hasCanvasProducts: !!project.canvas_products,
+          canvasProductsLength: project.canvas_products?.length || 0,
+          chatSessionId: project.chat_session_id,
+        });
         setProjectId(project.id);
         setProjectName(project.name);
 
@@ -235,12 +277,28 @@ export default function DesignPage() {
             visualization_image: null,
             canvas_products: null,
             visualization_history: null,
+            chat_session_id: null,
           });
         } else {
           // Load existing project data
+          // First, clear sessionStorage to free up space for large images
+          try {
+            sessionStorage.removeItem('roomImage');
+            sessionStorage.removeItem('cleanRoomImage');
+            sessionStorage.removeItem('curatedRoomImage');
+            sessionStorage.removeItem('curatedVisualizationImage');
+          } catch (e) {
+            // Ignore errors when clearing
+          }
+
           if (project.room_image) {
             setRoomImage(project.room_image);
-            sessionStorage.setItem('roomImage', project.room_image);
+            // Try to cache in sessionStorage but don't fail if quota exceeded
+            try {
+              sessionStorage.setItem('roomImage', project.room_image);
+            } catch (storageError) {
+              console.warn('[DesignPage] Could not cache room image in sessionStorage (quota exceeded)');
+            }
           }
           if (project.clean_room_image) {
             setCleanRoomImage(project.clean_room_image);
@@ -267,20 +325,38 @@ export default function DesignPage() {
               console.error('[DesignPage] Failed to parse visualization history:', e);
             }
           }
+          // Load chat session ID for restoring conversation
+          if (project.chat_session_id) {
+            setChatSessionId(project.chat_session_id);
+            console.log('[DesignPage] Loaded chat session ID:', project.chat_session_id);
+          }
 
           // Store the initial state for change detection
-          lastSaveDataRef.current = JSON.stringify({
+          // IMPORTANT: Re-stringify canvas_products and visualization_history to ensure consistent format
+          // This is needed because JSON from database might have different formatting than JSON.stringify produces
+          const savedState = {
             room_image: project.room_image,
             clean_room_image: project.clean_room_image,
             visualization_image: project.visualization_image,
-            canvas_products: project.canvas_products,
-            visualization_history: project.visualization_history,
+            canvas_products: project.canvas_products ? JSON.stringify(JSON.parse(project.canvas_products)) : null,
+            visualization_history: project.visualization_history ? JSON.stringify(JSON.parse(project.visualization_history)) : null,
+            chat_session_id: project.chat_session_id,
+          };
+          lastSaveDataRef.current = JSON.stringify(savedState);
+          console.log('[DesignPage] Set lastSaveDataRef for existing project:', {
+            roomImageLength: savedState.room_image?.length || 0,
+            vizImageLength: savedState.visualization_image?.length || 0,
+            canvasProductsLength: savedState.canvas_products?.length || 0,
+            chatSessionId: savedState.chat_session_id,
           });
         }
 
         console.log('[DesignPage] Project loaded successfully:', project.name);
       } catch (error) {
         console.error('[DesignPage] Failed to load project:', error);
+      } finally {
+        // Mark project as loaded regardless of success/failure
+        setProjectLoaded(true);
       }
     };
 
@@ -298,7 +374,15 @@ export default function DesignPage() {
       visualization_image: initialVisualizationImage,
       canvas_products: canvasProducts.length > 0 ? JSON.stringify(canvasProducts) : null,
       visualization_history: visualizationHistory.length > 0 ? JSON.stringify(visualizationHistory) : null,
+      chat_session_id: chatSessionId,
     };
+
+    console.log('[DesignPage] Saving project with data:', {
+      room_image: currentData.room_image ? `${currentData.room_image.length} chars` : null,
+      visualization_image: currentData.visualization_image ? `${currentData.visualization_image.length} chars` : null,
+      canvas_products: currentData.canvas_products ? `${currentData.canvas_products.length} chars` : null,
+      chat_session_id: currentData.chat_session_id,
+    });
 
     setSaveStatus('saving');
     try {
@@ -309,9 +393,20 @@ export default function DesignPage() {
         visualization_image: currentData.visualization_image || undefined,
         canvas_products: currentData.canvas_products || undefined,
         visualization_history: currentData.visualization_history || undefined,
+        chat_session_id: currentData.chat_session_id || undefined,
       });
 
       lastSaveDataRef.current = JSON.stringify(currentData);
+
+      // CRITICAL: Update "last saved" refs SYNCHRONOUSLY before setting status to 'saved'
+      // This prevents the change tracking effect from immediately re-detecting changes
+      // Note: Use JSON.stringify(canvasProducts) to match the format used in change detection
+      lastSavedCanvasRef.current = JSON.stringify(canvasProducts);
+      lastSavedRoomImageRef.current = roomImage;
+      lastSavedVizImageRef.current = initialVisualizationImage;
+      lastSavedChatSessionRef.current = chatSessionId;
+      console.log('[DesignPage] Updated saved refs synchronously in saveProject');
+
       setSaveStatus('saved');
       setLastSavedAt(new Date());
       console.log('[DesignPage] Project saved');
@@ -319,24 +414,74 @@ export default function DesignPage() {
       console.error('[DesignPage] Save failed:', error);
       setSaveStatus('unsaved');
     }
-  }, [isAuthenticated, projectId, projectName, roomImage, cleanRoomImage, initialVisualizationImage, canvasProducts, visualizationHistory]);
+  }, [isAuthenticated, projectId, projectName, roomImage, cleanRoomImage, initialVisualizationImage, canvasProducts, visualizationHistory, chatSessionId]);
 
-  // Track unsaved changes
+  // Track unsaved changes - SIMPLE APPROACH
+  // Use a ref to track when the project was last saved, and compare against current state
+  const isInitialLoadRef = useRef<boolean>(true);
+  const lastSavedCanvasRef = useRef<string>('[]');
+  const lastSavedRoomImageRef = useRef<string | null>(null);
+  const lastSavedVizImageRef = useRef<string | null>(null);
+  const lastSavedChatSessionRef = useRef<string | null>(null);
+
+  // This effect tracks changes and marks as unsaved
   useEffect(() => {
-    if (!isAuthenticated || !projectId || lastSaveDataRef.current === '') return;
+    // Skip if not authenticated or no project
+    if (!isAuthenticated || !projectId) {
+      return;
+    }
 
-    const currentData = JSON.stringify({
-      room_image: roomImage,
-      clean_room_image: cleanRoomImage,
-      visualization_image: initialVisualizationImage,
-      canvas_products: canvasProducts.length > 0 ? JSON.stringify(canvasProducts) : null,
-      visualization_history: visualizationHistory.length > 0 ? JSON.stringify(visualizationHistory) : null,
+    // Skip during initial load
+    if (isInitialLoadRef.current) {
+      return;
+    }
+
+    // Compare current state against last saved state
+    const currentCanvasJSON = JSON.stringify(canvasProducts);
+    const canvasChanged = currentCanvasJSON !== lastSavedCanvasRef.current;
+    const roomImageChanged = roomImage !== lastSavedRoomImageRef.current;
+    const vizImageChanged = initialVisualizationImage !== lastSavedVizImageRef.current;
+    const chatSessionChanged = chatSessionId !== lastSavedChatSessionRef.current;
+
+    const hasChanges = canvasChanged || roomImageChanged || vizImageChanged || chatSessionChanged;
+
+    console.log('[DesignPage] Change tracking:', {
+      canvasChanged,
+      roomImageChanged: roomImageChanged ? 'YES' : 'no',
+      vizImageChanged: vizImageChanged ? 'YES' : 'no',
+      chatSessionChanged,
+      hasChanges,
+      canvasProductsCount: canvasProducts.length,
     });
 
-    if (currentData !== lastSaveDataRef.current) {
+    if (hasChanges && saveStatus !== 'unsaved') {
+      console.log('[DesignPage] >>> CHANGES DETECTED - Setting status to UNSAVED <<<');
       setSaveStatus('unsaved');
     }
-  }, [isAuthenticated, projectId, roomImage, cleanRoomImage, initialVisualizationImage, canvasProducts, visualizationHistory]);
+  }, [isAuthenticated, projectId, roomImage, initialVisualizationImage, canvasProducts, chatSessionId, saveStatus]);
+
+  // Update "last saved" refs when project loads or saves successfully
+  useEffect(() => {
+    if (projectLoaded && isInitialLoadRef.current) {
+      // Project just loaded - set the "last saved" state to current state
+      console.log('[DesignPage] Setting initial saved state refs');
+      lastSavedCanvasRef.current = JSON.stringify(canvasProducts);
+      lastSavedRoomImageRef.current = roomImage;
+      lastSavedVizImageRef.current = initialVisualizationImage;
+      lastSavedChatSessionRef.current = chatSessionId;
+
+      // Enable change tracking after a short delay to let React settle
+      const timer = setTimeout(() => {
+        console.log('[DesignPage] Initial load complete - enabling change tracking');
+        isInitialLoadRef.current = false;
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [projectLoaded, canvasProducts, roomImage, initialVisualizationImage, chatSessionId]);
+
+  // NOTE: "last saved" refs are now updated SYNCHRONOUSLY in saveProject() to prevent race conditions
+  // The old effect-based approach caused a bug where the first save wouldn't work because the
+  // change tracking effect could run before the "update refs" effect
 
   // Save on page unload/navigation
   useEffect(() => {
@@ -388,16 +533,23 @@ export default function DesignPage() {
         if (status.status === 'completed') {
           console.log('[DesignPage] Furniture removal completed successfully');
           if (status.image) {
-            // Use the ORIGINAL uploaded image as the base image for display
-            // The furniture-removed image goes to cleanRoomImage for visualization reset
-            const originalImage = sessionStorage.getItem('originalRoomImage');
-            if (originalImage) {
-              setRoomImage(originalImage); // Show user's original image
-              console.log('[DesignPage] Restored original room image as base');
+            // Show the furniture-removed image to the user
+            // This lets users see the empty room that will be used for visualization
+            setRoomImage(status.image); // Show cleaned room image
+            setCleanRoomImage(status.image); // Also use for visualization base
+            console.log('[DesignPage] Set cleaned room image (furniture removed) as display and base');
+            // Save to sessionStorage for persistence (with quota handling)
+            try {
+              // Clear old images first to free up space
+              sessionStorage.removeItem('cleanRoomImage');
+              sessionStorage.removeItem('curatedRoomImage');
+              sessionStorage.removeItem('curatedVisualizationImage');
+              sessionStorage.setItem('cleanRoomImage', status.image);
+              sessionStorage.setItem('roomImage', status.image);
+            } catch (storageError) {
+              console.warn('[DesignPage] SessionStorage quota exceeded, image stored in memory only:', storageError);
+              // Image is still in React state, just won't persist across reloads
             }
-            setCleanRoomImage(status.image); // Furniture-removed for visualization
-            // Also save cleanRoomImage to sessionStorage for persistence
-            sessionStorage.setItem('cleanRoomImage', status.image);
           }
           sessionStorage.removeItem('furnitureRemovalJobId');
           setIsProcessingFurniture(false);
@@ -415,7 +567,12 @@ export default function DesignPage() {
       } catch (error: any) {
         console.error('[DesignPage] Error checking furniture removal status:', error);
         // Check if it's a 404 error (job not found - server may have restarted)
-        const is404 = error?.response?.status === 404 || error?.message?.includes('404');
+        // Also check for axios error structure
+        const is404 = error?.response?.status === 404 ||
+                      error?.status === 404 ||
+                      error?.message?.includes('404') ||
+                      error?.message?.includes('not found') ||
+                      error?.response?.data?.detail?.includes('not found');
         if (is404) {
           console.log('[DesignPage] Job not found (404) - server may have restarted, clearing stale job ID');
           sessionStorage.removeItem('furnitureRemovalJobId');
@@ -425,6 +582,7 @@ export default function DesignPage() {
           return;
         }
         // Stop polling after 3 consecutive errors for other errors
+        // This includes network errors or any other failures
         if (pollAttempts > 3) {
           console.error('[DesignPage] Too many errors, stopping furniture removal polling');
           sessionStorage.removeItem('furnitureRemovalJobId');
@@ -439,12 +597,42 @@ export default function DesignPage() {
     return () => clearInterval(pollInterval);
   }, []);
 
-  // Handle product recommendation from chat
-  const handleProductRecommendations = (products: any[]) => {
-    console.log('[DesignPage] handleProductRecommendations called with', products.length, 'products');
-    console.log('[DesignPage] First product:', products[0]);
-    setProductRecommendations(products);
-    console.log('[DesignPage] productRecommendations state updated to:', products);
+  // Handle product recommendation from chat (supports both legacy and category-based formats)
+  const handleProductRecommendations = (response: {
+    products?: any[];
+    recommended_products?: any[];
+    selected_categories?: any[];
+    products_by_category?: Record<string, any[]>;
+    total_budget?: number | null;
+    conversation_state?: string;
+    follow_up_question?: string | null;
+  }) => {
+    console.log('[DesignPage] handleProductRecommendations called with response:', response);
+
+    // Check if we have category-based data (new format)
+    if (response.selected_categories && response.products_by_category) {
+      console.log('[DesignPage] Using category-based format');
+      console.log('[DesignPage] Categories:', response.selected_categories);
+      console.log('[DesignPage] Products by category:', Object.keys(response.products_by_category));
+
+      setSelectedCategories(response.selected_categories);
+      setProductsByCategory(response.products_by_category);
+      setTotalBudget(response.total_budget || null);
+
+      // Also set legacy productRecommendations for backward compatibility (flatten all products)
+      const allProducts = Object.values(response.products_by_category).flat();
+      setProductRecommendations(allProducts);
+      console.log('[DesignPage] Total products across all categories:', allProducts.length);
+    } else if (response.products && response.products.length > 0) {
+      // Legacy format - flat list of products
+      console.log('[DesignPage] Using legacy format with', response.products.length, 'products');
+      setProductRecommendations(response.products);
+      // Clear category-based state
+      setSelectedCategories(null);
+      setProductsByCategory(null);
+      setTotalBudget(null);
+    }
+
     // Auto-switch to products tab on mobile
     if (window.innerWidth < 768) {
       setActiveTab('products');
@@ -575,26 +763,112 @@ export default function DesignPage() {
 
       // Start async furniture removal
       const response = await startFurnitureRemoval(imageData);
-      sessionStorage.setItem('furnitureRemovalJobId', response.job_id);
-      // Store ORIGINAL uploaded image for display (base image)
-      sessionStorage.setItem('roomImage', imageData);
-      // Also store as original so it's not lost after furniture removal
-      sessionStorage.setItem('originalRoomImage', imageData);
+
+      // Store job ID and image in sessionStorage with quota handling
+      try {
+        // Clear old images first to free up space
+        sessionStorage.removeItem('cleanRoomImage');
+        sessionStorage.removeItem('curatedRoomImage');
+        sessionStorage.removeItem('curatedVisualizationImage');
+
+        sessionStorage.setItem('furnitureRemovalJobId', response.job_id);
+        // Store uploaded image for display during furniture removal process
+        sessionStorage.setItem('roomImage', imageData);
+      } catch (storageError) {
+        // If quota exceeded, clear everything and try again
+        console.warn('[DesignPage] SessionStorage quota exceeded, clearing and retrying...');
+        sessionStorage.clear();
+        sessionStorage.setItem('furnitureRemovalJobId', response.job_id);
+        // Don't store the image if it's too large - the API already has it
+        console.log('[DesignPage] Image too large for sessionStorage, will fetch from API after reload');
+      }
 
       // Persist canvas products before page reload so they survive the reload
-      if (canvasProducts.length > 0) {
-        sessionStorage.setItem('persistedCanvasProducts', JSON.stringify(canvasProducts));
-        console.log('[DesignPage] Persisted', canvasProducts.length, 'canvas products before reload');
+      try {
+        if (canvasProducts.length > 0) {
+          sessionStorage.setItem('persistedCanvasProducts', JSON.stringify(canvasProducts));
+          console.log('[DesignPage] Persisted', canvasProducts.length, 'canvas products before reload');
+        }
+      } catch (e) {
+        console.warn('[DesignPage] Could not persist canvas products due to storage quota');
       }
 
       console.log('[DesignPage] Furniture removal started:', response);
-      // Trigger page reload to restart the polling useEffect with new job ID
-      window.location.reload();
+
+      // Set the uploaded image immediately so user sees it while furniture removal processes
+      setRoomImage(imageData);
+      setCleanRoomImage(imageData); // Use uploaded image as clean room initially
+
+      // Start polling for furniture removal completion without page reload
+      const pollForCompletion = async () => {
+        let pollAttempts = 0;
+        const MAX_POLL_ATTEMPTS = 30;
+
+        const poll = async () => {
+          pollAttempts++;
+
+          if (pollAttempts > MAX_POLL_ATTEMPTS) {
+            console.error('[DesignPage] Furniture removal timed out');
+            setIsProcessingFurniture(false);
+            setProcessingStatus('');
+            sessionStorage.removeItem('furnitureRemovalJobId');
+            return;
+          }
+
+          try {
+            const status = await checkFurnitureRemovalStatus(response.job_id);
+            console.log('[DesignPage] Furniture removal status:', status);
+
+            if (status.status === 'completed' && status.image) {
+              console.log('[DesignPage] Furniture removal completed');
+              setRoomImage(status.image);
+              setCleanRoomImage(status.image);
+              // Save to sessionStorage with quota handling
+              try {
+                // Clear old images first to free up space
+                sessionStorage.removeItem('cleanRoomImage');
+                sessionStorage.removeItem('curatedRoomImage');
+                sessionStorage.removeItem('curatedVisualizationImage');
+                sessionStorage.setItem('cleanRoomImage', status.image);
+                sessionStorage.setItem('roomImage', status.image);
+              } catch (storageError) {
+                console.warn('[DesignPage] SessionStorage quota exceeded, image stored in memory only:', storageError);
+              }
+              setIsProcessingFurniture(false);
+              setProcessingStatus('');
+              sessionStorage.removeItem('furnitureRemovalJobId');
+            } else if (status.status === 'failed') {
+              console.log('[DesignPage] Furniture removal failed, using original image');
+              setIsProcessingFurniture(false);
+              setProcessingStatus('');
+              sessionStorage.removeItem('furnitureRemovalJobId');
+            } else {
+              // Still processing, poll again
+              setProcessingStatus('Processing your room image...');
+              setTimeout(poll, 2000);
+            }
+          } catch (error) {
+            console.error('[DesignPage] Error checking status:', error);
+            setIsProcessingFurniture(false);
+            setProcessingStatus('');
+            sessionStorage.removeItem('furnitureRemovalJobId');
+          }
+        };
+
+        poll();
+      };
+
+      pollForCompletion();
     } catch (error) {
       console.error('[DesignPage] Error starting furniture removal:', error);
       // On error, use original image
       setRoomImage(imageData);
-      sessionStorage.setItem('roomImage', imageData);
+      setCleanRoomImage(imageData);
+      try {
+        sessionStorage.setItem('roomImage', imageData);
+      } catch (storageError) {
+        console.warn('[DesignPage] Could not store image in sessionStorage:', storageError);
+      }
       setIsProcessingFurniture(false);
       setProcessingStatus('');
     }
@@ -836,11 +1110,19 @@ export default function DesignPage() {
         <div className="hidden lg:flex h-full gap-0">
           {/* Panel 1: Chat (25%) */}
           <div className="w-[25%] border-r border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 overflow-hidden">
-            <ChatPanel
-              onProductRecommendations={handleProductRecommendations}
-              roomImage={roomImage}
-              selectedStores={selectedStores}
-            />
+            {projectLoaded ? (
+              <ChatPanel
+                onProductRecommendations={handleProductRecommendations}
+                roomImage={roomImage}
+                selectedStores={selectedStores}
+                initialSessionId={chatSessionId}
+                onSessionIdChange={setChatSessionId}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+              </div>
+            )}
           </div>
 
           {/* Panel 2: Products (35%) */}
@@ -849,6 +1131,9 @@ export default function DesignPage() {
               products={productRecommendations}
               onAddToCanvas={handleAddToCanvas}
               canvasProducts={canvasProducts}
+              selectedCategories={selectedCategories}
+              productsByCategory={productsByCategory}
+              totalBudget={totalBudget}
             />
           </div>
 
@@ -873,17 +1158,28 @@ export default function DesignPage() {
         {/* Mobile & Tablet: Single panel with tabs */}
         <div className="lg:hidden h-full">
           <div className={`h-full ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
-            <ChatPanel
-              onProductRecommendations={handleProductRecommendations}
-              roomImage={roomImage}
-              selectedStores={selectedStores}
-            />
+            {projectLoaded ? (
+              <ChatPanel
+                onProductRecommendations={handleProductRecommendations}
+                roomImage={roomImage}
+                selectedStores={selectedStores}
+                initialSessionId={chatSessionId}
+                onSessionIdChange={setChatSessionId}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+              </div>
+            )}
           </div>
           <div className={`h-full ${activeTab === 'products' ? 'block' : 'hidden'}`}>
             <ProductDiscoveryPanel
               products={productRecommendations}
               onAddToCanvas={handleAddToCanvas}
               canvasProducts={canvasProducts}
+              selectedCategories={selectedCategories}
+              productsByCategory={productsByCategory}
+              totalBudget={totalBudget}
             />
           </div>
           <div className={`h-full ${activeTab === 'canvas' ? 'block' : 'hidden'}`}>

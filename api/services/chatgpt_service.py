@@ -1,25 +1,26 @@
 """
 ChatGPT service for interior design analysis using the prompt.md specification
 """
-import openai
+import asyncio
+import base64
+import io
 import json
 import logging
-import uuid
-import asyncio
 import time
-from typing import Optional, Dict, Any, List, Tuple
-from pathlib import Path
-import base64
-from PIL import Image
-import io
-from functools import wraps
-import aiohttp
+import uuid
 from datetime import datetime, timedelta
+from functools import wraps
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
-from core.config import settings
-from schemas.chat import DesignAnalysisSchema, ChatMessageSchema, MessageType
+import aiohttp
+import openai
+from PIL import Image
+from schemas.chat import ChatMessageSchema, DesignAnalysisSchema, MessageType
 from services.conversation_context import conversation_context_manager
 from services.nlp_processor import design_nlp_processor
+
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +37,7 @@ class RateLimiter:
         """Acquire rate limit permission"""
         now = datetime.now()
         # Remove old requests outside time window
-        self.requests = [req_time for req_time in self.requests
-                        if (now - req_time).total_seconds() < self.time_window]
+        self.requests = [req_time for req_time in self.requests if (now - req_time).total_seconds() < self.time_window]
 
         if len(self.requests) >= self.max_requests:
             sleep_time = self.time_window - (now - self.requests[0]).total_seconds()
@@ -51,6 +51,7 @@ class RateLimiter:
 
 def retry_on_failure(max_retries: int = 3, delay: float = 1.0):
     """Decorator for retrying API calls on failure"""
+
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -61,13 +62,15 @@ def retry_on_failure(max_retries: int = 3, delay: float = 1.0):
                 except Exception as e:
                     last_exception = e
                     if attempt < max_retries - 1:
-                        wait_time = delay * (2 ** attempt)  # Exponential backoff
+                        wait_time = delay * (2**attempt)  # Exponential backoff
                         logger.warning(f"API call failed (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}")
                         await asyncio.sleep(wait_time)
                     else:
                         logger.error(f"API call failed after {max_retries} attempts: {e}")
             raise last_exception
+
         return wrapper
+
     return decorator
 
 
@@ -77,12 +80,20 @@ class ChatGPTService:
     def __init__(self):
         """Initialize the ChatGPT service"""
         # Enhanced authentication and configuration
+        # Main client for image analysis (longer timeout)
         self.client = openai.AsyncOpenAI(
             api_key=settings.openai_api_key,
-            timeout=120.0,  # 120 second timeout (increased from 60s to reduce false timeouts, especially for image analysis)
-            max_retries=2  # Retry up to 2 times before showing fallback (was 0)
+            timeout=120.0,  # 120 second timeout for image analysis
+            max_retries=2,  # Retry up to 2 times before showing fallback
+        )
+        # Fast client for text-only follow-ups (shorter timeout)
+        self.client_fast = openai.AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            timeout=settings.openai_timeout_fast,  # 30 second timeout
+            max_retries=1,  # Single retry for speed
         )
         self.system_prompt = self._load_system_prompt()
+        self.system_prompt_fast = self._load_fast_system_prompt()  # Condensed prompt for follow-ups
         self.conversation_memory = {}  # Legacy - kept for compatibility
         self.context_manager = conversation_context_manager
 
@@ -93,13 +104,13 @@ class ChatGPTService:
             "successful_requests": 0,
             "failed_requests": 0,
             "total_tokens": 0,
-            "last_reset": datetime.now()
+            "last_reset": datetime.now(),
         }
 
         # Authentication validation
         self._validate_api_key()
 
-        logger.info("ChatGPT service initialized with enhanced authentication and monitoring")
+        logger.info("ChatGPT service initialized with fast mode support (gpt-4o-mini for follow-ups)")
 
     def _validate_api_key(self):
         """Validate OpenAI API key"""
@@ -114,7 +125,7 @@ class ChatGPTService:
             self.demo_mode = True
             return
 
-        if not settings.openai_api_key.startswith('sk-'):
+        if not settings.openai_api_key.startswith("sk-"):
             logger.error("Invalid OpenAI API key format")
             raise ValueError("Invalid OpenAI API key format")
 
@@ -126,26 +137,55 @@ class ChatGPTService:
         try:
             # Path to prompt.md from current location
             prompt_path = Path(__file__).parent.parent.parent / "prompt.md"
-            with open(prompt_path, 'r', encoding='utf-8') as f:
+            with open(prompt_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
             # Extract the main analysis prompt and instructions
             # This combines the system role and analysis framework
-            system_prompt = """You are an expert AI interior stylist and spatial designer trained to analyze images of rooms and give professional, personalized, and visually coherent design recommendations. You blend aesthetic judgment with practical knowledge of furniture, lighting, materials, and spatial flow.
+            system_prompt = """You are an expert AI interior stylist helping users find and visualize furniture for their spaces.
 
-## Your Professional Approach
+## ⛔⛔⛔ CRITICAL: READ THIS FIRST - CONVERSATION FLOW RULES ⛔⛔⛔
+
+### THE #1 MOST IMPORTANT RULE:
+
+**During GATHERING phases (GATHERING_USAGE, GATHERING_STYLE, GATHERING_BUDGET), your ENTIRE response must be:**
+- A brief 3-5 word acknowledgment (e.g., "Perfect!", "Great choice!", "Got it!")
+- Followed by ONE short question
+
+**That's it. Nothing else. No recommendations. No furniture mentions. No design advice.**
+
+### WHAT YOU MUST NEVER DO DURING GATHERING:
+
+❌ NEVER say "consider a sofa" or mention ANY furniture
+❌ NEVER say "light gray" or suggest ANY colors
+❌ NEVER say "would complement" or give ANY design advice
+❌ NEVER describe what would look good in the space
+❌ NEVER give recommendations disguised as observations
+
+### EXAMPLE - THIS IS WRONG (DO NOT DO THIS):
+"For your relaxing home, consider a modern sofa in light gray to complement the neutral tones. A subtle patterned area rug and sleek coffee table would enhance the modern vibe. What style are you going for?"
+
+### EXAMPLE - THIS IS CORRECT:
+"Perfect! What style are you going for - modern, cozy, or eclectic?"
+
+### WHY THIS MATTERS:
+The user sees your response VERBATIM. If you mention furniture during gathering, it confuses them because they haven't told you their preferences yet. ONLY give design advice in READY_TO_RECOMMEND state.
+
+---
+
+## Your Professional Approach (ONLY apply in READY_TO_RECOMMEND state)
 
 You maintain a warm, confident, expert designer tone. You avoid generic statements — instead, you justify recommendations with design principles: balance, contrast, proportion, light, texture, and harmony. You keep visual coherence as the highest design priority.
 
-When analyzing spaces:
+When analyzing spaces (ONLY in READY_TO_RECOMMEND):
 - Accurately identify layout, style, colors, textures, lighting conditions, and existing furniture
 - Detect architectural features (windows, flooring, walls, ceiling height, door placement)
 - Infer spatial composition — available spaces, focal points, functional areas
 
-You adapt recommendations to the user's:
+You adapt recommendations to the user's (ONLY in READY_TO_RECOMMEND):
 - Preferred design styles (Scandinavian, Minimalist, Japandi, Bohemian, Industrial, Modern, Eclectic, etc.)
 - Budget, lifestyle, and functional needs (toddler-friendly, pet-safe, low-maintenance, luxury)
-- When preferences are unclear, ask targeted questions
+- When preferences are unclear, ask targeted questions via the guided flow above
 
 ## Input You'll Receive
 
@@ -155,9 +195,10 @@ You adapt recommendations to the user's:
 
 ## CRITICAL: You MUST respond with a valid JSON object
 
-Always return your response as a JSON object following this exact structure:
+Always return your response as a JSON object:
 
 {
+  "user_friendly_response": "Your warm, conversational response to the user",
   "design_analysis": {
     "style_preferences": {
       "primary_style": "string",
@@ -276,7 +317,7 @@ Always return your response as a JSON object following this exact structure:
   "user_friendly_response": "A warm, professional explanation of your design recommendations with clear reasoning"
 }
 
-🔴 CRITICAL NEW FIELDS 🔴
+## KEY OUTPUT FIELDS
 - **design_summary**: Professional 2-3 sentence overview explaining the design direction and why it works
 - **layout_guidance**: DETAILED furniture placement instructions (will be passed to visualizer) - specify positions, spatial relationships, focal points
 - **color_palette**: 4-6 hex codes or color names (will boost products matching these colors in recommendations)
@@ -387,7 +428,116 @@ User: "yes"
 - Be warm but confident
 - Avoid generic or overly verbose language
 - Focus on visual coherence and harmony
-- Re-evaluate holistically when preferences change (don't stack recommendations)"""
+- Re-evaluate holistically when preferences change (don't stack recommendations)
+
+## Conversation State Machine Details
+
+Track and return the `conversation_state` in your JSON response.
+
+REMINDER: See the CRITICAL rules at the top of this prompt. During GATHERING states, respond with ONLY acknowledgment + question. NO furniture, colors, or design advice.
+
+### Conversation States:
+1. **INITIAL** → User just started or uploaded room image
+2. **GATHERING_USAGE** → Ask about room usage/function
+3. **GATHERING_STYLE** → Ask about style preferences
+4. **GATHERING_BUDGET** → Ask about budget
+5. **READY_TO_RECOMMEND** → All info gathered, NOW you can give design recommendations
+6. **BROWSING** → User is browsing products (follow-up questions)
+
+### State Transitions:
+
+**INITIAL → GATHERING_USAGE:**
+- Set conversation_state = "GATHERING_USAGE"
+- user_friendly_response: ONLY "That's a lovely space! How do you primarily use this room - relaxing, entertaining, or work?"
+- NO furniture suggestions, NO design advice
+
+**GATHERING_USAGE → GATHERING_STYLE:**
+- Set conversation_state = "GATHERING_STYLE"
+- user_friendly_response: ONLY "Great! What style vibe are you going for - modern, cozy, or eclectic?"
+- NO furniture suggestions, NO design advice
+
+**GATHERING_STYLE → GATHERING_BUDGET:**
+- Set conversation_state = "GATHERING_BUDGET"
+- user_friendly_response: ONLY "Love it! What's your overall budget for furnishing this space?"
+- NO furniture suggestions, NO design advice
+
+**GATHERING_BUDGET → READY_TO_RECOMMEND:**
+- Set conversation_state = "READY_TO_RECOMMEND"
+- NOW you can give full design recommendations with furniture, colors, and styling tips
+- Set total_budget, selected_categories, products_by_category
+
+### IMPORTANT Rules:
+1. **ALWAYS check if you already have info before asking** - If user already mentioned style, skip to budget
+2. **Parse embedded info** - "I want a modern sofa under 50k" contains style AND budget → go directly to READY_TO_RECOMMEND
+3. **Keep GATHERING responses to 1-2 SHORT sentences MAX** - Just acknowledgment + question
+4. **Only ask ONE question at a time**
+5. **Design advice ONLY in READY_TO_RECOMMEND state**
+
+### JSON Fields for Conversation Flow:
+```json
+{
+  "conversation_state": "GATHERING_USAGE|GATHERING_STYLE|GATHERING_BUDGET|READY_TO_RECOMMEND|BROWSING",
+  "follow_up_question": "Your next question (null when READY_TO_RECOMMEND)",
+  "total_budget": 50000,
+  "selected_categories": [...],
+  "user_friendly_response": "ONLY brief acknowledgment + question during GATHERING. Full design advice ONLY in READY_TO_RECOMMEND."
+}
+```
+
+### Example Conversation (CORRECT):
+Turn 1: User: "I have a living room that needs furniture"
+→ user_friendly_response: "Beautiful space! How do you typically use this room - for relaxing, entertaining, or working from home?"
+→ (NO mention of sofas, colors, rugs, or any design elements)
+
+Turn 2: User: "mainly for watching TV and relaxing"
+→ user_friendly_response: "Perfect! What style are you drawn to - modern, traditional, cozy, or eclectic?"
+→ (NO mention of sofas, colors, rugs, or any design elements)
+
+Turn 3: User: "modern but warm"
+→ user_friendly_response: "Great choice! What's your overall budget for furnishing this space?"
+→ (NO mention of sofas, colors, rugs, or any design elements)
+
+Turn 4: User: "around 75000"
+→ conversation_state: "READY_TO_RECOMMEND"
+→ NOW give full design recommendations with sofas, tables, rugs, colors, etc.
+
+## Category Selection (for READY_TO_RECOMMEND state)
+Based on room type and conversation, select 6-10 relevant categories:
+
+**Room-Specific Categories (pick 4-6 based on room type):**
+- Living Room: sofas, coffee_tables, side_tables, floor_lamps, accent_chairs, table_lamps
+- Bedroom: beds, nightstands, table_lamps, floor_lamps, dressers, wardrobes
+- Dining Room: dining_tables, dining_chairs, pendant_lamps, sideboards, buffets
+- Office: desks, office_chairs, bookshelves, table_lamps, storage_cabinets
+
+**⛔ MANDATORY Generic Categories (MUST ALWAYS INCLUDE ALL 4 for EVERY room type):**
+- planters (plants add life to any room)
+- wall_art (artwork completes a space)
+- decor (decorative objects add personality)
+- rugs (define areas and add warmth)
+
+These 4 generic categories MUST be included in EVERY selected_categories response, regardless of room type!
+
+### Budget Allocation
+Distribute the total budget across categories based on priority:
+- Primary furniture (sofa, bed, dining table): 40-50% of budget
+- Secondary furniture (tables, chairs): 20-30%
+- Lighting: 10-15%
+- Decor & accessories (planters, wall_art, decor, rugs): 10-15%
+
+### selected_categories Example (for READY_TO_RECOMMEND):
+```json
+"selected_categories": [
+  {"category_id": "sofas", "display_name": "Sofas", "budget_allocation": {"min": 25000, "max": 35000}, "priority": 1},
+  {"category_id": "coffee_tables", "display_name": "Coffee Tables", "budget_allocation": {"min": 5000, "max": 10000}, "priority": 2},
+  {"category_id": "floor_lamps", "display_name": "Floor Lamps", "budget_allocation": {"min": 3000, "max": 8000}, "priority": 3},
+  {"category_id": "accent_chairs", "display_name": "Accent Chairs", "budget_allocation": {"min": 8000, "max": 20000}, "priority": 4},
+  {"category_id": "planters", "display_name": "Planters", "budget_allocation": {"min": 500, "max": 3000}, "priority": 5},
+  {"category_id": "wall_art", "display_name": "Wall Art", "budget_allocation": {"min": 1000, "max": 5000}, "priority": 6},
+  {"category_id": "decor", "display_name": "Decor", "budget_allocation": {"min": 500, "max": 3000}, "priority": 7},
+  {"category_id": "rugs", "display_name": "Rugs", "budget_allocation": {"min": 3000, "max": 15000}, "priority": 8}
+]
+```"""
 
             return system_prompt
 
@@ -395,12 +545,50 @@ User: "yes"
             logger.error("prompt.md file not found, using fallback prompt")
             return "You are an expert interior designer. Help users with their interior design needs."
 
+    def _load_fast_system_prompt(self) -> str:
+        """Load a condensed system prompt for fast text-only follow-ups (no image analysis)"""
+        return """You are a friendly, warm AI interior stylist. Respond in JSON format.
+
+## YOUR PERSONALITY
+- Warm, enthusiastic, and encouraging
+- Use friendly acknowledgments like "Perfect!", "Love that!", "Great choice!", "Sounds amazing!"
+- Keep energy positive and supportive
+
+## CONVERSATION FLOW (CRITICAL)
+Each response during gathering should be:
+1. A brief 3-5 word friendly acknowledgment (e.g., "Perfect!", "Great choice!", "Love it!")
+2. Followed by ONE short, friendly question
+
+Examples:
+- GATHERING_USAGE: "Love it! How do you usually use this space - relaxing, working, or entertaining?"
+- GATHERING_STYLE: "Perfect! What vibe are you going for - modern and sleek, cozy and warm, or eclectic?"
+- GATHERING_BUDGET: "Great choice! What's your budget for this transformation?"
+- READY_TO_RECOMMEND: NOW give full design recommendations with enthusiasm
+
+## RESPONSE FORMAT (JSON)
+{
+  "user_friendly_response": "Friendly acknowledgment + question",
+  "conversation_state": "GATHERING_USAGE|GATHERING_STYLE|GATHERING_BUDGET|READY_TO_RECOMMEND",
+  "follow_up_question": "Friendly question (null if READY_TO_RECOMMEND)",
+  "total_budget": null,
+  "design_analysis": {"style_preferences": {"primary_style": "modern"}},
+  "product_matching_criteria": {"product_types": [], "categories": [], "search_terms": []},
+  "selected_categories": [],
+  "confidence_scores": {"overall_analysis": 85}
+}
+
+## RULES
+1. During GATHERING states: Friendly acknowledgment + ONE question. NO furniture/color suggestions yet.
+2. Parse embedded info: "modern sofa under 50k" → skip to READY_TO_RECOMMEND
+3. Keep responses SHORT but WARM (1-2 sentences during gathering)
+4. Always sound excited to help!"""
+
     async def analyze_user_input(
         self,
         user_message: str,
         session_id: Optional[str] = None,
         image_data: Optional[str] = None,
-        user_id: Optional[str] = None
+        user_id: Optional[str] = None,
     ) -> Tuple[str, Optional[DesignAnalysisSchema]]:
         """
         Analyze user input and return both a conversational response and structured analysis
@@ -414,22 +602,28 @@ User: "yes"
         Returns:
             Tuple of (conversational_response, design_analysis)
         """
-        print(f"[DEBUG] analyze_user_input called - message: {user_message[:50]}, has_image: {image_data is not None}, session_id: {session_id}")
+        # Determine if we should use fast mode (no image = text-only follow-up)
+        use_fast_mode = image_data is None
+        mode_str = "FAST" if use_fast_mode else "FULL"
+        print(f"[DEBUG] analyze_user_input [{mode_str}] - message: {user_message[:50]}, session_id: {session_id}")
+
         try:
             # Get or create conversation context
             if session_id:
                 context = self.context_manager.get_or_create_context(session_id, user_id)
                 # Add user message to context (text only, not image - to reduce context size)
-                self.context_manager.add_message(
-                    session_id, "user", user_message,
-                    {"has_image": image_data is not None}
-                )
+                self.context_manager.add_message(session_id, "user", user_message, {"has_image": image_data is not None})
 
                 # Get enhanced context for AI (text-only history)
                 messages = self.context_manager.get_context_for_ai(session_id)
+
+                # For fast mode, use condensed system prompt
+                if use_fast_mode and messages and messages[0]["role"] == "system":
+                    messages[0]["content"] = self.system_prompt_fast
             else:
                 # Fallback to basic system prompt
-                messages = [{"role": "system", "content": self.system_prompt}]
+                system_prompt = self.system_prompt_fast if use_fast_mode else self.system_prompt
+                messages = [{"role": "system", "content": system_prompt}]
 
             # Prepare CURRENT user message content with image
             # IMPORTANT: Only include image in the CURRENT message, not in conversation history
@@ -440,13 +634,12 @@ User: "yes"
             if image_data:
                 processed_image = self._process_image(image_data)
                 if processed_image:
-                    user_content.append({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{processed_image}",
-                            "detail": "high"
+                    user_content.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{processed_image}", "detail": "high"},
                         }
-                    })
+                    )
 
             # Replace the last message with the current message including image
             # Remove the text-only version added by context manager and add the version with image
@@ -455,9 +648,9 @@ User: "yes"
             else:
                 messages.append({"role": "user", "content": user_content})
 
-            # Call ChatGPT
-            print(f"[DEBUG] About to call _call_chatgpt with {len(messages)} messages")
-            response = await self._call_chatgpt(messages)
+            # Call ChatGPT (use fast mode for text-only)
+            print(f"[DEBUG] About to call _call_chatgpt [{mode_str}] with {len(messages)} messages")
+            response = await self._call_chatgpt(messages, use_fast_mode=use_fast_mode)
             print(f"[DEBUG] _call_chatgpt returned, response length: {len(response) if response else 0}")
 
             # Parse response
@@ -469,24 +662,22 @@ User: "yes"
             if session_id:
                 # Add assistant response to context
                 self.context_manager.add_message(
-                    session_id, "assistant", conversational_response,
-                    {"has_analysis": analysis is not None}
+                    session_id, "assistant", conversational_response, {"has_analysis": analysis is not None}
                 )
 
                 # Store design analysis in context
                 if analysis:
                     self.context_manager.add_design_analysis(
-                        session_id, analysis.dict() if hasattr(analysis, 'dict') else analysis
+                        session_id, analysis.dict() if hasattr(analysis, "dict") else analysis
                     )
 
                 # Legacy context storage for backward compatibility
                 if session_id not in self.conversation_memory:
                     self.conversation_memory[session_id] = []
 
-                self.conversation_memory[session_id].extend([
-                    {"role": "user", "content": user_message},
-                    {"role": "assistant", "content": conversational_response}
-                ])
+                self.conversation_memory[session_id].extend(
+                    [{"role": "user", "content": user_message}, {"role": "assistant", "content": conversational_response}]
+                )
 
                 if len(self.conversation_memory[session_id]) > 10:
                     self.conversation_memory[session_id] = self.conversation_memory[session_id][-10:]
@@ -496,6 +687,7 @@ User: "yes"
         except Exception as e:
             print(f"[DEBUG] EXCEPTION in analyze_user_input: {type(e).__name__}: {str(e)}")
             import traceback
+
             traceback.print_exc()
             logger.error(f"Error in ChatGPT analysis: {e}", exc_info=True)
 
@@ -514,9 +706,15 @@ User: "yes"
 
             return fallback_response, None
 
-    async def _call_chatgpt(self, messages: List[Dict[str, Any]]) -> str:
-        """Call ChatGPT API with the prepared messages with retry logic for empty responses"""
-        print(f"[DEBUG] _call_chatgpt started")
+    async def _call_chatgpt(self, messages: List[Dict[str, Any]], use_fast_mode: bool = False) -> str:
+        """Call ChatGPT API with the prepared messages with retry logic for empty responses
+
+        Args:
+            messages: List of message dictionaries
+            use_fast_mode: If True, use gpt-4o-mini with shorter timeout for text-only queries
+        """
+        mode_str = "FAST" if use_fast_mode else "FULL"
+        print(f"[DEBUG] _call_chatgpt started [{mode_str}]")
         # Apply rate limiting
         await self.rate_limiter.acquire()
         print(f"[DEBUG] Rate limit acquired")
@@ -525,30 +723,37 @@ User: "yes"
         self.api_usage_stats["total_requests"] += 1
 
         # Demo mode simulation
-        if hasattr(self, 'demo_mode') and self.demo_mode:
+        if hasattr(self, "demo_mode") and self.demo_mode:
             return await self._simulate_chatgpt_response(messages)
 
-        # Retry logic for empty responses (separate from connection errors)
-        max_retries = 3
-        retry_delay = 2.0  # seconds
+        # Select client and model based on mode
+        client = self.client_fast if use_fast_mode else self.client
+        model = settings.openai_model_fast if use_fast_mode else settings.openai_model
+        max_tokens = settings.openai_max_tokens_fast if use_fast_mode else settings.openai_max_tokens
+
+        # Retry logic - fewer retries in fast mode for speed
+        max_retries = 2 if use_fast_mode else 3
+        retry_delay = 1.0 if use_fast_mode else 2.0  # seconds
 
         try:
             for attempt in range(max_retries):
                 try:
                     start_time = time.time()
-                    print(f"[DEBUG] OpenAI API call attempt {attempt + 1}/{max_retries}")
-                    print(f"[DEBUG] About to call OpenAI API with model: {settings.openai_model}")
+                    print(f"[DEBUG] OpenAI API call [{mode_str}] attempt {attempt + 1}/{max_retries}")
+                    print(f"[DEBUG] Using model: {model}, max_tokens: {max_tokens}")
                     if attempt == 0:
-                        print(f"[DEBUG] API Key (first 10 chars): {settings.openai_api_key[:10] if settings.openai_api_key else 'None'}")
+                        print(
+                            f"[DEBUG] API Key (first 10 chars): {settings.openai_api_key[:10] if settings.openai_api_key else 'None'}"
+                        )
 
-                    response = await self.client.chat.completions.create(
-                        model=settings.openai_model,
+                    response = await client.chat.completions.create(
+                        model=model,
                         messages=messages,
-                        max_tokens=settings.openai_max_tokens,
+                        max_tokens=max_tokens,
                         temperature=settings.openai_temperature,
-                        response_format={"type": "json_object"}
+                        response_format={"type": "json_object"},
                     )
-                    print(f"[DEBUG] OpenAI API call succeeded!")
+                    print(f"[DEBUG] OpenAI API call [{mode_str}] succeeded!")
 
                     # Extract response content
                     response_content = response.choices[0].message.content if response.choices else None
@@ -569,16 +774,20 @@ User: "yes"
                             print(f"[DEBUG] All {max_retries} attempts returned empty response - returning fallback")
                             logger.error(f"OpenAI API returned empty response after {max_retries} attempts")
                             self.api_usage_stats["failed_requests"] += 1
-                            return self._get_structured_fallback(messages, error_type="timeout", error_message="API returned empty response after retries")
+                            return self._get_structured_fallback(
+                                messages, error_type="timeout", error_message="API returned empty response after retries"
+                            )
 
                     # If we got valid content, update successful request stats and return
                     self.api_usage_stats["successful_requests"] += 1
-                    if hasattr(response, 'usage') and response.usage:
+                    if hasattr(response, "usage") and response.usage:
                         self.api_usage_stats["total_tokens"] += response.usage.total_tokens
 
                     response_time = time.time() - start_time
-                    logger.info(f"ChatGPT API call successful - Response time: {response_time:.2f}s, "
-                               f"Tokens: {response.usage.total_tokens if hasattr(response, 'usage') and response.usage else 'N/A'}")
+                    logger.info(
+                        f"ChatGPT API call [{mode_str}] successful - Model: {model}, Response time: {response_time:.2f}s, "
+                        f"Tokens: {response.usage.total_tokens if hasattr(response, 'usage') and response.usage else 'N/A'}"
+                    )
 
                     return response_content
 
@@ -587,14 +796,18 @@ User: "yes"
                     # On API errors, break out of retry loop and handle in outer exception handlers
                     raise
                 except Exception as inner_e:
-                    print(f"[DEBUG] Exception on attempt {attempt + 1}/{max_retries}: {type(inner_e).__name__}: {str(inner_e)}")
+                    print(
+                        f"[DEBUG] Exception on attempt {attempt + 1}/{max_retries}: {type(inner_e).__name__}: {str(inner_e)}"
+                    )
                     # On other exceptions, break out of retry loop and handle in outer exception handlers
                     raise
 
             # If all retries exhausted without success (shouldn't reach here due to returns above)
             logger.error("Retry loop completed without returning - this shouldn't happen")
             self.api_usage_stats["failed_requests"] += 1
-            return self._get_structured_fallback(messages, error_type="unknown", error_message="Retry logic failed unexpectedly")
+            return self._get_structured_fallback(
+                messages, error_type="unknown", error_message="Retry logic failed unexpectedly"
+            )
 
         except openai.APIError as e:
             print(f"[DEBUG] OpenAI APIError: {type(e).__name__}: {str(e)}")
@@ -623,6 +836,7 @@ User: "yes"
         except Exception as e:
             print(f"[DEBUG] Generic exception in _call_chatgpt: {type(e).__name__}: {str(e)}")
             import traceback
+
             traceback.print_exc()
             self.api_usage_stats["failed_requests"] += 1
             logger.error(f"ChatGPT API call failed: {e}", exc_info=True)
@@ -656,7 +870,7 @@ User: "yes"
             await self.rate_limiter.acquire()
 
             # Demo mode simulation
-            if hasattr(self, 'demo_mode') and self.demo_mode:
+            if hasattr(self, "demo_mode") and self.demo_mode:
                 logger.info("Demo mode: Simulating Vision analysis")
                 return "A modern furniture piece with clean lines and neutral tones"
 
@@ -666,17 +880,14 @@ User: "yes"
                     "role": "user",
                     "content": [
                         {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": image_url, "detail": "high"}}
-                    ]
+                        {"type": "image_url", "image_url": {"url": image_url, "detail": "high"}},
+                    ],
                 }
             ]
 
             # Call OpenAI Vision API (use gpt-4o for vision - gpt-4-vision-preview was deprecated)
             response = await self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages,
-                max_tokens=500,
-                temperature=0.3
+                model="gpt-4o", messages=messages, max_tokens=500, temperature=0.3
             )
 
             # Extract response content
@@ -685,7 +896,7 @@ User: "yes"
             if response_content:
                 logger.info(f"ChatGPT Vision analysis successful: {response_content[:100]}...")
                 self.api_usage_stats["successful_requests"] += 1
-                if hasattr(response, 'usage') and response.usage:
+                if hasattr(response, "usage") and response.usage:
                     self.api_usage_stats["total_tokens"] += response.usage.total_tokens
                 return response_content
 
@@ -698,7 +909,9 @@ User: "yes"
             self.api_usage_stats["failed_requests"] += 1
             return None
 
-    def _get_structured_fallback(self, messages: List[Dict[str, Any]], error_type: str = "unknown", error_message: str = "") -> str:
+    def _get_structured_fallback(
+        self, messages: List[Dict[str, Any]], error_type: str = "unknown", error_message: str = ""
+    ) -> str:
         """Get structured fallback response when API fails"""
         print(f"[DEBUG] _get_structured_fallback called with error_type: {error_type}")
         # Extract user message for contextual response
@@ -716,86 +929,95 @@ User: "yes"
                     user_message = msg.get("content", "")
 
         fallback = {
-                "design_analysis": {
-                    "style_preferences": {
-                        "primary_style": "modern",
-                        "secondary_styles": [],
-                        "style_keywords": ["clean", "simple"],
-                        "inspiration_sources": []
-                    },
-                    "color_scheme": {
-                        "preferred_colors": ["neutral"],
-                        "accent_colors": [],
-                        "color_temperature": "neutral",
-                        "color_intensity": "balanced"
-                    },
-                    "space_analysis": {
-                        "room_type": "unknown",
-                        "dimensions": "unknown",
-                        "layout_type": "unknown",
-                        "lighting_conditions": "mixed",
-                        "existing_elements": [],
-                        "traffic_patterns": "unknown"
-                    },
-                    "functional_requirements": {
-                        "primary_functions": ["living"],
-                        "storage_needs": "moderate",
-                        "seating_capacity": "2-4",
-                        "special_considerations": []
-                    },
-                    "budget_indicators": {
-                        "price_range": "mid-range",
-                        "investment_priorities": []
-                    }
+            "design_analysis": {
+                "style_preferences": {
+                    "primary_style": "modern",
+                    "secondary_styles": [],
+                    "style_keywords": ["clean", "simple"],
+                    "inspiration_sources": [],
                 },
-                "product_matching_criteria": {
-                    "furniture_categories": {
-                        "seating": {"types": ["sofa"], "materials": ["fabric"], "colors": ["neutral"], "size_requirements": "medium"},
-                        "tables": {"types": ["coffee"], "materials": ["wood"], "shapes": ["rectangular"], "size_requirements": "medium"},
-                        "storage": {"types": ["bookshelf"], "materials": ["wood"], "configurations": ["vertical"]},
-                        "lighting": {"types": ["table"], "styles": ["modern"], "placement": ["side"]},
-                        "decor": {"categories": ["art"], "materials": ["canvas"], "themes": ["abstract"]}
+                "color_scheme": {
+                    "preferred_colors": ["neutral"],
+                    "accent_colors": [],
+                    "color_temperature": "neutral",
+                    "color_intensity": "balanced",
+                },
+                "space_analysis": {
+                    "room_type": "unknown",
+                    "dimensions": "unknown",
+                    "layout_type": "unknown",
+                    "lighting_conditions": "mixed",
+                    "existing_elements": [],
+                    "traffic_patterns": "unknown",
+                },
+                "functional_requirements": {
+                    "primary_functions": ["living"],
+                    "storage_needs": "moderate",
+                    "seating_capacity": "2-4",
+                    "special_considerations": [],
+                },
+                "budget_indicators": {"price_range": "mid-range", "investment_priorities": []},
+            },
+            "product_matching_criteria": {
+                "furniture_categories": {
+                    "seating": {
+                        "types": ["sofa"],
+                        "materials": ["fabric"],
+                        "colors": ["neutral"],
+                        "size_requirements": "medium",
                     },
-                    "filtering_keywords": {
-                        "include_terms": ["modern", "contemporary"],
-                        "exclude_terms": ["ornate", "traditional"],
-                        "material_preferences": ["wood", "metal"],
-                        "style_tags": ["modern", "minimalist"]
-                    }
-                },
-                "visualization_guidance": {
-                    "layout_recommendations": {
-                        "furniture_placement": "Create conversational groupings",
-                        "focal_points": ["main seating area"],
-                        "traffic_flow": "Maintain clear pathways"
+                    "tables": {
+                        "types": ["coffee"],
+                        "materials": ["wood"],
+                        "shapes": ["rectangular"],
+                        "size_requirements": "medium",
                     },
-                    "spatial_considerations": {
-                        "scale_proportions": "Choose appropriately sized furniture",
-                        "height_variations": "Mix heights for visual interest",
-                        "negative_space": "Leave breathing room between pieces"
-                    },
-                    "styling_suggestions": {
-                        "layering_approach": "Layer textures and materials",
-                        "texture_mixing": "Combine smooth and textured surfaces",
-                        "pattern_coordination": "Use patterns sparingly"
-                    }
+                    "storage": {"types": ["bookshelf"], "materials": ["wood"], "configurations": ["vertical"]},
+                    "lighting": {"types": ["table"], "styles": ["modern"], "placement": ["side"]},
+                    "decor": {"categories": ["art"], "materials": ["canvas"], "themes": ["abstract"]},
                 },
-                "confidence_scores": {
-                    "style_identification": 50,
-                    "space_understanding": 30,
-                    "product_matching": 40,
-                    "overall_analysis": 40
+                "filtering_keywords": {
+                    "include_terms": ["modern", "contemporary"],
+                    "exclude_terms": ["ornate", "traditional"],
+                    "material_preferences": ["wood", "metal"],
+                    "style_tags": ["modern", "minimalist"],
                 },
-                "recommendations": {
-                    "priority_items": ["seating", "lighting"],
-                    "alternative_options": ["different styles available"],
-                    "phased_approach": ["start with essentials"]
+            },
+            "visualization_guidance": {
+                "layout_recommendations": {
+                    "furniture_placement": "Create conversational groupings",
+                    "focal_points": ["main seating area"],
+                    "traffic_flow": "Maintain clear pathways",
                 },
-                "user_friendly_response": self._build_fallback_message(user_message, has_image, error_type, error_message)
+                "spatial_considerations": {
+                    "scale_proportions": "Choose appropriately sized furniture",
+                    "height_variations": "Mix heights for visual interest",
+                    "negative_space": "Leave breathing room between pieces",
+                },
+                "styling_suggestions": {
+                    "layering_approach": "Layer textures and materials",
+                    "texture_mixing": "Combine smooth and textured surfaces",
+                    "pattern_coordination": "Use patterns sparingly",
+                },
+            },
+            "confidence_scores": {
+                "style_identification": 50,
+                "space_understanding": 30,
+                "product_matching": 40,
+                "overall_analysis": 40,
+            },
+            "recommendations": {
+                "priority_items": ["seating", "lighting"],
+                "alternative_options": ["different styles available"],
+                "phased_approach": ["start with essentials"],
+            },
+            "user_friendly_response": self._build_fallback_message(user_message, has_image, error_type, error_message),
         }
         return json.dumps(fallback)
 
-    def _build_fallback_message(self, user_message: str, has_image: bool, error_type: str = "unknown", error_message: str = "") -> str:
+    def _build_fallback_message(
+        self, user_message: str, has_image: bool, error_type: str = "unknown", error_message: str = ""
+    ) -> str:
         """Build fallback message for API failures"""
         # Provide specific error messages based on error type
         if error_type == "connection":
@@ -813,7 +1035,7 @@ User: "yes"
         else:
             # Generic fallback with more helpful context
             action = "transform your space" if has_image else "find the perfect pieces"
-            user_request_part = f'Based on your request for "{user_message[:100]}", ' if user_message else ''
+            user_request_part = f'Based on your request for "{user_message[:100]}", ' if user_message else ""
             return f"Thank you for your request! {user_request_part}I'll show you some beautiful design options and product recommendations that match your style. Let's create something amazing together!"
 
     def _parse_response(self, response: str) -> Tuple[str, Optional[DesignAnalysisSchema]]:
@@ -827,11 +1049,11 @@ User: "yes"
 
             # Extract user-friendly response - check all possible key names
             conversational_response = (
-                response_data.get("user_friendly_response") or
-                response_data.get("user_friendly_message") or  # OpenAI might return this key
-                response_data.get("message") or
-                response_data.get("user_message") or  # ChatGPT sometimes returns this key
-                "I've analyzed your request and found some great recommendations for you!"
+                response_data.get("user_friendly_response")
+                or response_data.get("user_friendly_message")
+                or response_data.get("message")  # OpenAI might return this key
+                or response_data.get("user_message")
+                or "I've analyzed your request and found some great recommendations for you!"  # ChatGPT sometimes returns this key
             )
             print(f"[DEBUG] Extracted conversational_response: {conversational_response[:100]}")
 
@@ -900,6 +1122,7 @@ User: "yes"
         except Exception as e:
             print(f"[DEBUG] Exception in _parse_response: {type(e).__name__}: {str(e)}")
             import traceback
+
             traceback.print_exc()
             logger.error(f"Error parsing ChatGPT response: {e}", exc_info=True)
             return "I've analyzed your request and can help you find the perfect pieces for your space.", None
@@ -908,8 +1131,8 @@ User: "yes"
         """Process and validate uploaded image"""
         try:
             # Remove data URL prefix if present
-            if image_data.startswith('data:image'):
-                image_data = image_data.split(',')[1]
+            if image_data.startswith("data:image"):
+                image_data = image_data.split(",")[1]
 
             # Decode base64
             image_bytes = base64.b64decode(image_data)
@@ -918,8 +1141,8 @@ User: "yes"
             image = Image.open(io.BytesIO(image_bytes))
 
             # Convert to RGB if necessary
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
+            if image.mode != "RGB":
+                image = image.convert("RGB")
 
             # Resize if too large (max 800x800 to reduce token usage)
             # Smaller images = faster processing and lower risk of context limits
@@ -930,7 +1153,7 @@ User: "yes"
             # Convert back to base64
             # Use lower quality to reduce token usage (70 is still good quality)
             buffer = io.BytesIO()
-            image.save(buffer, format='JPEG', quality=70)
+            image.save(buffer, format="JPEG", quality=70)
             return base64.b64encode(buffer.getvalue()).decode()
 
         except Exception as e:
@@ -1020,13 +1243,13 @@ User: "yes"
                     "primary_style": "modern",
                     "secondary_styles": ["scandinavian", "minimalist"],
                     "style_keywords": ["clean", "simple", "functional", "light"],
-                    "inspiration_sources": ["Nordic design", "Japanese minimalism"]
+                    "inspiration_sources": ["Nordic design", "Japanese minimalism"],
                 },
                 "color_scheme": {
                     "preferred_colors": ["white", "light gray", "natural wood"],
                     "accent_colors": ["soft blue", "sage green"],
                     "color_temperature": "cool",
-                    "color_intensity": "muted"
+                    "color_intensity": "muted",
                 },
                 "space_analysis": {
                     "room_type": "living_room",
@@ -1034,18 +1257,18 @@ User: "yes"
                     "layout_type": "open",
                     "lighting_conditions": "natural",
                     "existing_elements": ["large windows", "hardwood floors"],
-                    "traffic_patterns": "main entrance to seating area"
+                    "traffic_patterns": "main entrance to seating area",
                 },
                 "functional_requirements": {
                     "primary_functions": ["relaxation", "entertainment", "socializing"],
                     "storage_needs": "moderate",
                     "seating_capacity": "4-6 people",
-                    "special_considerations": ["pet-friendly materials"]
+                    "special_considerations": ["pet-friendly materials"],
                 },
                 "budget_indicators": {
                     "price_range": "mid-range",
-                    "investment_priorities": ["quality seating", "good lighting"]
-                }
+                    "investment_priorities": ["quality seating", "good lighting"],
+                },
             },
             "product_matching_criteria": {
                 "furniture_categories": {
@@ -1053,56 +1276,56 @@ User: "yes"
                         "types": ["sectional sofa", "accent chairs"],
                         "materials": ["linen", "wool", "leather"],
                         "colors": ["light gray", "cream", "natural"],
-                        "size_requirements": "medium to large"
+                        "size_requirements": "medium to large",
                     },
                     "tables": {
                         "types": ["coffee table", "side tables"],
                         "materials": ["wood", "glass", "metal"],
                         "shapes": ["rectangular", "round"],
-                        "size_requirements": "proportional to seating"
+                        "size_requirements": "proportional to seating",
                     },
                     "lighting": {
                         "types": ["floor lamps", "table lamps", "pendant lights"],
                         "styles": ["modern", "scandinavian"],
-                        "placement": ["reading areas", "ambient lighting"]
-                    }
+                        "placement": ["reading areas", "ambient lighting"],
+                    },
                 },
                 "filtering_keywords": {
                     "include_terms": ["modern", "scandinavian", "minimalist", "functional"],
                     "exclude_terms": ["ornate", "traditional", "heavy"],
                     "material_preferences": ["natural wood", "linen", "cotton"],
-                    "style_tags": ["clean lines", "simple", "light"]
-                }
+                    "style_tags": ["clean lines", "simple", "light"],
+                },
             },
             "visualization_guidance": {
                 "layout_recommendations": {
                     "furniture_placement": "create conversation area facing natural light",
                     "focal_points": ["large windows", "main seating area"],
-                    "traffic_flow": "maintain clear pathways around furniture"
+                    "traffic_flow": "maintain clear pathways around furniture",
                 },
                 "spatial_considerations": {
                     "scale_proportions": "choose furniture proportional to room size",
                     "height_variations": "mix heights with floor and table lamps",
-                    "negative_space": "leave breathing room between pieces"
+                    "negative_space": "leave breathing room between pieces",
                 },
                 "styling_suggestions": {
                     "layering_approach": "layer textures with throws and pillows",
                     "texture_mixing": "combine smooth and natural textures",
-                    "pattern_coordination": "use subtle patterns sparingly"
-                }
+                    "pattern_coordination": "use subtle patterns sparingly",
+                },
             },
             "confidence_scores": {
                 "style_identification": 88,
                 "space_understanding": 85,
                 "product_matching": 90,
-                "overall_analysis": 87
+                "overall_analysis": 87,
             },
             "recommendations": {
                 "priority_items": ["comfortable sectional sofa", "good task lighting", "coffee table"],
                 "alternative_options": ["modular seating", "ottoman for extra seating"],
-                "phased_approach": ["start with seating", "add lighting", "finish with accessories"]
+                "phased_approach": ["start with seating", "add lighting", "finish with accessories"],
             },
-            "user_friendly_response": self._generate_contextual_response(user_message, conversation_history, has_image)
+            "user_friendly_response": self._generate_contextual_response(user_message, conversation_history, has_image),
         }
 
         return json.dumps(demo_response)
@@ -1145,7 +1368,7 @@ User: "yes"
                     "secondary_styles": style_extraction.secondary_styles,
                     "confidence": style_extraction.confidence_score,
                     "keywords": style_extraction.style_keywords,
-                    "reasoning": style_extraction.reasoning
+                    "reasoning": style_extraction.reasoning,
                 },
                 "preferences": {
                     "colors": preference_analysis.colors,
@@ -1154,14 +1377,14 @@ User: "yes"
                     "textures": preference_analysis.textures,
                     "budget": preference_analysis.budget_indicators,
                     "functional_needs": preference_analysis.functional_requirements,
-                    "confidence": preference_analysis.confidence_score
+                    "confidence": preference_analysis.confidence_score,
                 },
                 "intent": {
                     "primary_intent": intent_classification.primary_intent,
                     "confidence": intent_classification.confidence_score,
                     "entities": intent_classification.entities,
-                    "suggested_action": intent_classification.action_required
-                }
+                    "suggested_action": intent_classification.action_required,
+                },
             }
 
         except Exception as e:
@@ -1169,7 +1392,7 @@ User: "yes"
             return {
                 "style_analysis": {"primary_style": "modern", "confidence": 0.1},
                 "preferences": {"colors": [], "materials": [], "confidence": 0.1},
-                "intent": {"primary_intent": "general_inquiry", "confidence": 0.5}
+                "intent": {"primary_intent": "general_inquiry", "confidence": 0.5},
             }
 
     async def analyze_conversation_insights(self, session_id: str) -> Dict[str, Any]:
@@ -1190,7 +1413,7 @@ User: "yes"
                 "total_interactions": context.total_interactions,
                 "has_room_context": context.current_room_context is not None,
                 "analysis_history_count": len(context.design_analysis_history),
-                "user_preferences_evolution": self._analyze_preference_evolution(context)
+                "user_preferences_evolution": self._analyze_preference_evolution(context),
             }
 
             return insights
@@ -1211,7 +1434,7 @@ User: "yes"
             evolution = {
                 "style_consistency": self._compare_style_preferences(first_analysis, latest_analysis),
                 "preference_refinement": self._measure_preference_refinement(context.design_analysis_history),
-                "confidence_trend": self._calculate_confidence_trend(context.design_analysis_history)
+                "confidence_trend": self._calculate_confidence_trend(context.design_analysis_history),
             }
 
             return evolution
@@ -1223,8 +1446,18 @@ User: "yes"
     def _compare_style_preferences(self, first_analysis: Dict, latest_analysis: Dict) -> str:
         """Compare style preferences between first and latest analysis"""
         try:
-            first_style = first_analysis.get("analysis", {}).get("design_analysis", {}).get("style_preferences", {}).get("primary_style", "")
-            latest_style = latest_analysis.get("analysis", {}).get("design_analysis", {}).get("style_preferences", {}).get("primary_style", "")
+            first_style = (
+                first_analysis.get("analysis", {})
+                .get("design_analysis", {})
+                .get("style_preferences", {})
+                .get("primary_style", "")
+            )
+            latest_style = (
+                latest_analysis.get("analysis", {})
+                .get("design_analysis", {})
+                .get("style_preferences", {})
+                .get("primary_style", "")
+            )
 
             if first_style == latest_style:
                 return "consistent"
@@ -1313,31 +1546,25 @@ User: "yes"
                 "material_preferences": preference_analysis.materials,
                 "budget_level": preference_analysis.budget_indicators,
                 "has_image": image_data is not None,
-                "extraction_confidence": (preference_analysis.confidence_score + intent_classification.confidence_score) / 2
+                "extraction_confidence": (preference_analysis.confidence_score + intent_classification.confidence_score) / 2,
             }
 
             return room_requirements
 
         except Exception as e:
             logger.error(f"Error extracting room requirements: {e}")
-            return {
-                "room_type": "unknown",
-                "extraction_confidence": 0.1,
-                "error": str(e)
-            }
+            return {"room_type": "unknown", "extraction_confidence": 0.1, "error": str(e)}
 
     def get_usage_stats(self) -> Dict[str, Any]:
         """Get API usage statistics"""
         return {
             **self.api_usage_stats,
             "success_rate": (
-                self.api_usage_stats["successful_requests"] /
-                max(self.api_usage_stats["total_requests"], 1) * 100
+                self.api_usage_stats["successful_requests"] / max(self.api_usage_stats["total_requests"], 1) * 100
             ),
             "average_tokens_per_request": (
-                self.api_usage_stats["total_tokens"] /
-                max(self.api_usage_stats["successful_requests"], 1)
-            )
+                self.api_usage_stats["total_tokens"] / max(self.api_usage_stats["successful_requests"], 1)
+            ),
         }
 
     def reset_usage_stats(self):
@@ -1347,7 +1574,7 @@ User: "yes"
             "successful_requests": 0,
             "failed_requests": 0,
             "total_tokens": 0,
-            "last_reset": datetime.now()
+            "last_reset": datetime.now(),
         }
         logger.info("API usage statistics reset")
 
@@ -1357,7 +1584,7 @@ User: "yes"
             # Test with a simple message
             test_messages = [
                 {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": "Say 'OK' in JSON format: {\"status\": \"OK\"}"}
+                {"role": "user", "content": 'Say \'OK\' in JSON format: {"status": "OK"}'},
             ]
 
             start_time = time.time()
@@ -1369,7 +1596,7 @@ User: "yes"
                 "response_time": response_time,
                 "api_key_valid": True,
                 "rate_limiter_active": len(self.rate_limiter.requests) > 0,
-                "usage_stats": self.get_usage_stats()
+                "usage_stats": self.get_usage_stats(),
             }
 
         except Exception as e:
@@ -1378,8 +1605,9 @@ User: "yes"
                 "status": "unhealthy",
                 "error": str(e),
                 "api_key_valid": bool(settings.openai_api_key),
-                "usage_stats": self.get_usage_stats()
+                "usage_stats": self.get_usage_stats(),
             }
+
     async def detect_furniture_with_bounding_boxes(self, image_data: str) -> List[Dict[str, Any]]:
         """
         Use ChatGPT-4 Vision to detect furniture and return bounding box coordinates
@@ -1449,18 +1677,12 @@ GOOD (tight fit): {"x1": 0.05, "y1": 0.55, "x2": 0.48, "y2": 0.92}  ← Just the
                 {
                     "role": "user",
                     "content": [
-                        {
-                            "type": "text",
-                            "text": detection_prompt
-                        },
+                        {"type": "text", "text": detection_prompt},
                         {
                             "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{processed_image}",
-                                "detail": "high"
-                            }
-                        }
-                    ]
+                            "image_url": {"url": f"data:image/jpeg;base64,{processed_image}", "detail": "high"},
+                        },
+                    ],
                 }
             ]
 
@@ -1474,7 +1696,7 @@ GOOD (tight fit): {"x1": 0.05, "y1": 0.55, "x2": 0.48, "y2": 0.92}  ← Just the
                 messages=messages,
                 max_tokens=2000,
                 temperature=0.2,  # Low temperature for factual detection
-                response_format={"type": "json_object"}
+                response_format={"type": "json_object"},
             )
 
             response_time = time.time() - start_time
@@ -1492,10 +1714,10 @@ GOOD (tight fit): {"x1": 0.05, "y1": 0.55, "x2": 0.48, "y2": 0.92}  ← Just the
             # Validate and log results
             valid_objects = []
             for obj in detected_objects:
-                bbox = obj.get('bounding_box')
-                if bbox and all(key in bbox for key in ['x1', 'y1', 'x2', 'y2']):
+                bbox = obj.get("bounding_box")
+                if bbox and all(key in bbox for key in ["x1", "y1", "x2", "y2"]):
                     # Validate coordinates
-                    x1, y1, x2, y2 = bbox['x1'], bbox['y1'], bbox['x2'], bbox['y2']
+                    x1, y1, x2, y2 = bbox["x1"], bbox["y1"], bbox["x2"], bbox["y2"]
                     if 0 <= x1 < x2 <= 1 and 0 <= y1 < y2 <= 1:
                         valid_objects.append(obj)
                         logger.info(f"Detected {obj.get('object_type')}: bbox={bbox}")
@@ -1505,10 +1727,12 @@ GOOD (tight fit): {"x1": 0.05, "y1": 0.55, "x2": 0.48, "y2": 0.92}  ← Just the
                     logger.warning(f"Missing bbox for {obj.get('object_type')}")
 
             self.api_usage_stats["successful_requests"] += 1
-            if hasattr(response, 'usage') and response.usage:
+            if hasattr(response, "usage") and response.usage:
                 self.api_usage_stats["total_tokens"] += response.usage.total_tokens
 
-            logger.info(f"ChatGPT furniture detection completed in {response_time:.2f}s - Found {len(valid_objects)} valid objects")
+            logger.info(
+                f"ChatGPT furniture detection completed in {response_time:.2f}s - Found {len(valid_objects)} valid objects"
+            )
             return valid_objects
 
         except Exception as e:

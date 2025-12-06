@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { sendChatMessage, startChatSession } from '@/utils/api';
+import { sendChatMessage, startChatSession, getChatHistory } from '@/utils/api';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -9,10 +9,25 @@ interface Message {
   timestamp: Date;
 }
 
+// Response type for product recommendations (supports both legacy and category-based)
+interface ProductRecommendationResponse {
+  // Legacy format
+  products?: any[];
+  recommended_products?: any[];
+  // New category-based format
+  selected_categories?: any[];
+  products_by_category?: Record<string, any[]>;
+  total_budget?: number | null;
+  conversation_state?: string;
+  follow_up_question?: string | null;
+}
+
 interface ChatPanelProps {
-  onProductRecommendations: (products: any[]) => void;
+  onProductRecommendations: (response: ProductRecommendationResponse) => void;
   roomImage: string | null;
   selectedStores?: string[];
+  initialSessionId?: string | null;  // For restoring existing chat session from saved project
+  onSessionIdChange?: (sessionId: string) => void;  // Callback when session ID changes (for saving)
 }
 
 /**
@@ -23,6 +38,8 @@ export default function ChatPanel({
   onProductRecommendations,
   roomImage,
   selectedStores = [],
+  initialSessionId = null,
+  onSessionIdChange,
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -36,27 +53,75 @@ export default function ChatPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [pendingMessages, setPendingMessages] = useState<string[]>([]);
+  const [imageSentToBackend, setImageSentToBackend] = useState(false); // Track if image was already sent
+  const [conversationState, setConversationState] = useState<string>('INITIAL'); // Track conversation state for two-phase flow
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Initialize chat session
+  // Initialize chat session (use existing or create new)
   useEffect(() => {
     const initSession = async () => {
       try {
-        const response = await startChatSession();
-        setSessionId(response.session_id);
+        // If we have an initial session ID (from saved project), use it and load history
+        if (initialSessionId) {
+          console.log('[ChatPanel] Restoring existing session:', initialSessionId);
+          setSessionId(initialSessionId);
+
+          // Load chat history from the existing session
+          try {
+            const history = await getChatHistory(initialSessionId);
+            if (history.messages && history.messages.length > 0) {
+              // Convert backend messages to frontend format
+              const restoredMessages: Message[] = history.messages.map((msg: any) => ({
+                role: msg.type as 'user' | 'assistant',
+                content: msg.content,
+                timestamp: new Date(msg.timestamp),
+              }));
+              setMessages(restoredMessages);
+              console.log('[ChatPanel] Restored', restoredMessages.length, 'messages from history');
+            }
+          } catch (historyError) {
+            console.error('[ChatPanel] Failed to load chat history:', historyError);
+            // Session might be invalid/expired, create a new one
+            const response = await startChatSession();
+            setSessionId(response.session_id);
+            if (onSessionIdChange) {
+              onSessionIdChange(response.session_id);
+            }
+          }
+        } else {
+          // No initial session, create a new one
+          const response = await startChatSession();
+          console.log('[ChatPanel] Created new session:', response.session_id);
+          setSessionId(response.session_id);
+          if (onSessionIdChange) {
+            console.log('[ChatPanel] Calling onSessionIdChange with:', response.session_id);
+            onSessionIdChange(response.session_id);
+          } else {
+            console.log('[ChatPanel] WARNING: onSessionIdChange callback is not provided!');
+          }
+        }
       } catch (error) {
         console.error('Failed to start chat session:', error);
       }
     };
     initSession();
-  }, []);
+  }, [initialSessionId, onSessionIdChange]);
 
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Reset state when roomImage changes (new image uploaded)
+  useEffect(() => {
+    if (roomImage) {
+      setImageSentToBackend(false);
+      // Don't reset conversationState here - let the guided flow continue naturally
+      // The user may upload a new image during the conversation
+    }
+  }, [roomImage]);
 
   // Process pending messages (ChatGPT-style: cancels previous, processes all pending)
   const processPendingMessages = useCallback(async () => {
@@ -88,32 +153,97 @@ export default function ChatPanel({
       // Combine all pending messages into one message for the backend
       const combinedMessage = messagesToProcess.join('\n\n');
 
+      // TWO-PHASE FLOW: Only send image when transitioning to READY_TO_RECOMMEND
+      // Phase 1 (GATHERING_*): Fast mode, no image - just gather user preferences
+      // Phase 2 (READY_TO_RECOMMEND): Full mode WITH image - analyze room and recommend products
+      // Image should be sent when:
+      // 1. We're in GATHERING_BUDGET state (next response will be READY_TO_RECOMMEND)
+      // 2. OR we're already in READY_TO_RECOMMEND and haven't sent image yet (edge case)
+      // 3. AND we have an image to send
+      const isReadyForAnalysis = conversationState === 'GATHERING_BUDGET' || conversationState === 'READY_TO_RECOMMEND';
+      const shouldSendImage = roomImage && !imageSentToBackend && isReadyForAnalysis;
+
+      console.log('[ChatPanel] Sending message:', {
+        conversationState,
+        isReadyForAnalysis,
+        hasRoomImage: !!roomImage,
+        imageSentToBackend,
+        shouldSendImage,
+      });
+
       const response = await sendChatMessage(sessionId, {
         message: combinedMessage,
-        image: roomImage || undefined,
+        image: shouldSendImage ? roomImage : undefined,
         selected_stores: selectedStores.length > 0 ? selectedStores : undefined,
       });
+
+      // Mark image as sent so subsequent messages don't resend it
+      if (shouldSendImage) {
+        setImageSentToBackend(true);
+      }
+
+      // Update conversation state from response
+      if (response.conversation_state) {
+        setConversationState(response.conversation_state);
+      }
 
       // Check if request was aborted
       if (abortControllerRef.current?.signal.aborted) {
         return;
       }
 
-      // V1 APPROACH: Get products directly from chat response
+      // Extract message content and products from response
       const messageData = response.message || response;
       const products = response.recommended_products || messageData.products || [];
 
+      // Build the assistant message content
+      // Include the follow-up question if present (this is the guided conversation flow)
+      let messageContent = messageData.content || response.response || '';
+      const followUpQuestion = response.follow_up_question;
+
+      // Debug logging for conversation flow
+      console.log('[ChatPanel] Response received:', {
+        conversation_state: response.conversation_state,
+        follow_up_question: followUpQuestion,
+        hasCategories: !!response.selected_categories,
+        hasProductsByCategory: !!response.products_by_category,
+      });
+
+      // If there's a follow-up question, append it to the message
+      // This creates the conversational flow where AI asks questions
+      if (followUpQuestion) {
+        if (messageContent) {
+          messageContent = `${messageContent}\n\n${followUpQuestion}`;
+        } else {
+          messageContent = followUpQuestion;
+        }
+      }
+
       const assistantMessage: Message = {
         role: 'assistant',
-        content: messageData.content || response.response || '',
+        content: messageContent,
         timestamp: new Date(),
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
 
-      // Emit products to parent
-      if (products && products.length > 0) {
-        onProductRecommendations(products);
+      // Emit full response to parent (supports both legacy and category-based formats)
+      // Check if we have category-based data OR legacy products
+      const hasProducts = products && products.length > 0;
+      const hasCategoryData = response.selected_categories && response.products_by_category;
+
+      if (hasProducts || hasCategoryData) {
+        onProductRecommendations({
+          // Legacy format
+          products: products,
+          recommended_products: response.recommended_products,
+          // New category-based format
+          selected_categories: response.selected_categories,
+          products_by_category: response.products_by_category,
+          total_budget: response.total_budget,
+          conversation_state: response.conversation_state,
+          follow_up_question: response.follow_up_question,
+        });
       }
     } catch (error: any) {
       // Don't show error if request was aborted (user sent new message)
@@ -132,7 +262,7 @@ export default function ChatPanel({
       setIsLoading(false);
       abortControllerRef.current = null;
     }
-  }, [sessionId, pendingMessages, roomImage, onProductRecommendations]);
+  }, [sessionId, pendingMessages, roomImage, onProductRecommendations, conversationState, imageSentToBackend, selectedStores]);
 
   // Auto-process when new messages are added
   useEffect(() => {

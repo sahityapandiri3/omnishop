@@ -5,11 +5,17 @@ import Image from 'next/image';
 import { ProductDetailModal } from '../ProductDetailModal';
 import { Product } from '@/types';
 import { formatCurrency } from '@/utils/format';
+import CategorySection, { CategoryRecommendation } from './CategorySection';
+import CategoryCarousel from './CategoryCarousel';
 
 interface ProductDiscoveryPanelProps {
-  products: any[];  // Raw products from API
+  products: any[];  // Raw products from API (legacy flat list)
   onAddToCanvas: (product: any) => void;
   canvasProducts: any[];
+  // NEW: Category-based recommendations
+  selectedCategories?: CategoryRecommendation[] | null;
+  productsByCategory?: Record<string, any[]> | null;
+  totalBudget?: number | null;
 }
 
 /**
@@ -20,9 +26,15 @@ export default function ProductDiscoveryPanel({
   products,
   onAddToCanvas,
   canvasProducts,
+  selectedCategories,
+  productsByCategory,
+  totalBudget,
 }: ProductDiscoveryPanelProps) {
   console.log('[ProductDiscoveryPanel] Received products:', products.length, 'products');
-  console.log('[ProductDiscoveryPanel] First product:', products[0]);
+  console.log('[ProductDiscoveryPanel] Category mode:', selectedCategories ? 'YES' : 'NO');
+  if (selectedCategories) {
+    console.log('[ProductDiscoveryPanel] Categories:', selectedCategories.map(c => c.category_id));
+  }
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [sortBy, setSortBy] = useState<'relevance' | 'price-low' | 'price-high'>(
@@ -35,6 +47,9 @@ export default function ProductDiscoveryPanel({
 
   // Ref for the scrollable products container
   const productsContainerRef = useRef<HTMLDivElement>(null);
+
+  // NEW: State for "View All" mode - which category to show in full grid (null = carousel view)
+  const [viewAllCategory, setViewAllCategory] = useState<string | null>(null);
 
   // Scroll to top when new products arrive
   useEffect(() => {
@@ -160,8 +175,18 @@ export default function ProductDiscoveryPanel({
     setPriceRange({ min: 0, max: Infinity });
   };
 
-  // Empty state
-  if (products.length === 0) {
+  // Check if we have category-based products
+  const hasCategoryProducts = selectedCategories && productsByCategory &&
+    selectedCategories.length > 0 &&
+    Object.values(productsByCategory).some(prods => prods && prods.length > 0);
+
+  // Calculate total products across all categories
+  const totalCategoryProducts = hasCategoryProducts
+    ? Object.values(productsByCategory!).reduce((sum, prods) => sum + (prods?.length || 0), 0)
+    : 0;
+
+  // Empty state - show if no products in either mode
+  if (products.length === 0 && !hasCategoryProducts) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center">
         <div className="w-24 h-24 bg-neutral-100 dark:bg-neutral-700 rounded-full flex items-center justify-center mb-4">
@@ -189,6 +214,108 @@ export default function ProductDiscoveryPanel({
       </div>
     );
   }
+
+  // ====================
+  // CATEGORY-BASED VIEW
+  // ====================
+  if (hasCategoryProducts && selectedCategories) {
+    // Get the expanded category if in "View All" mode
+    const expandedCategoryData = viewAllCategory
+      ? selectedCategories.find(c => c.category_id === viewAllCategory)
+      : null;
+
+    // VIEW ALL MODE - Show single category with full grid and filters
+    if (viewAllCategory && expandedCategoryData) {
+      return (
+        <div className="flex flex-col h-full">
+          {/* Header with Back Button */}
+          <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
+            <button
+              onClick={() => setViewAllCategory(null)}
+              className="flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 mb-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Back to all categories
+            </button>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-semibold text-neutral-900 dark:text-white">
+                  {expandedCategoryData.display_name}
+                </h2>
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                  {productsByCategory![viewAllCategory]?.length || 0} items
+                  {expandedCategoryData.budget_allocation && (
+                    <span className="ml-2 text-primary-600 dark:text-primary-400">
+                      • Budget: ₹{Math.round(expandedCategoryData.budget_allocation.min / 1000)}K - ₹{Math.round(expandedCategoryData.budget_allocation.max / 1000)}K
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Full Category Section with filters */}
+          <div ref={productsContainerRef} className="flex-1 overflow-y-auto">
+            <CategorySection
+              category={expandedCategoryData}
+              products={productsByCategory![viewAllCategory] || []}
+              onAddToCanvas={onAddToCanvas}
+              canvasProducts={canvasProducts}
+              isExpanded={true}
+              onToggleExpand={() => {}}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    // CAROUSEL MODE - Default view with horizontal scrolling carousels
+    return (
+      <div className="flex flex-col h-full">
+        {/* Header */}
+        <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold text-neutral-900 dark:text-white">
+                Curated for You
+              </h2>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                {selectedCategories.length} categories • {totalCategoryProducts} items
+              </p>
+            </div>
+            {totalBudget && (
+              <div className="text-right">
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">Budget</p>
+                <p className="font-semibold text-primary-600 dark:text-primary-400">
+                  ₹{(totalBudget / 1000).toFixed(0)}K
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Category Carousels */}
+        <div ref={productsContainerRef} className="flex-1 overflow-y-auto">
+          {selectedCategories.sort((a, b) => a.priority - b.priority).map((category) => (
+            <CategoryCarousel
+              key={category.category_id}
+              category={category}
+              products={productsByCategory![category.category_id] || []}
+              onAddToCanvas={onAddToCanvas}
+              canvasProducts={canvasProducts}
+              onViewAll={() => setViewAllCategory(category.category_id)}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ====================
+  // LEGACY FLAT GRID VIEW (original behavior)
+  // ====================
 
   return (
     <>

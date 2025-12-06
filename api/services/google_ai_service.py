@@ -742,160 +742,139 @@ RESPOND WITH JSON ONLY - NO OTHER TEXT."""
 
     async def remove_furniture(self, image_base64: str, max_retries: int = 5) -> Optional[str]:
         """
-        Remove all furniture from room image
+        Remove all furniture from room image using Gemini 2.5 Flash Image model.
+        Uses the simplified API pattern from Google docs with PIL Image.
         Returns: base64 encoded image with furniture removed, or None on failure
         """
         try:
-            processed_image = self._preprocess_image(image_base64)
+            # Convert base64 to PIL Image for the new API style
+            # Remove data URL prefix if present
+            if image_base64.startswith("data:image"):
+                image_base64 = image_base64.split(",")[1]
 
-            prompt = """🚨 CRITICAL FURNITURE REMOVAL TASK 🚨
+            image_bytes = base64.b64decode(image_base64)
+            pil_image = Image.open(io.BytesIO(image_bytes))
 
-YOUR TASK: Generate an image of this EXACT SAME ROOM but with ZERO furniture or moveable items. Show ONLY the empty architectural shell.
+            # Convert to RGB if needed (e.g., RGBA images)
+            if pil_image.mode != "RGB":
+                pil_image = pil_image.convert("RGB")
 
-🔴 THINK OF THIS AS: "Show me what this room looked like BEFORE any furniture was moved in" - completely empty, ready to be furnished.
+            logger.info(f"Loaded image for furniture removal: {pil_image.width}x{pil_image.height} pixels")
 
-═══════════════════════════════════════════════════════════════
-STEP 1: IDENTIFY THE ROOM STRUCTURE (preserve exactly)
-═══════════════════════════════════════════════════════════════
-Look at the input image and note:
-- Wall color, texture, material (keep EXACTLY the same)
-- Floor color, texture, material (keep EXACTLY the same)
-- Window positions, size, style (keep EXACTLY the same)
-- Door positions, style (keep EXACTLY the same)
-- Room dimensions and perspective (keep EXACTLY the same)
-- Natural lighting direction and intensity (keep EXACTLY the same)
-- Built-in ceiling lights or wall sconces (keep these ONLY)
+            prompt = """EDIT THIS IMAGE: Remove ABSOLUTELY EVERYTHING moveable from this room. Make it COMPLETELY EMPTY.
 
-═══════════════════════════════════════════════════════════════
-STEP 2: DELETE EVERYTHING MOVEABLE (remove completely)
-═══════════════════════════════════════════════════════════════
-Remove EVERY SINGLE item that can be moved:
+OUTPUT: Generate a new image showing the SAME room but TOTALLY VACANT - like an empty apartment ready for a new tenant. NOTHING should be left except walls, floor, ceiling, windows, and doors.
 
-❌ FURNITURE - DELETE ALL:
-• Sofas, couches, sectionals, loveseats
-• ALL chairs (dining, office, accent, armchair, stool, bench)
-• ALL tables (coffee, side, end, console, dining, desk)
-• Beds, bed frames, mattresses, headboards
-• Dressers, cabinets, shelving, bookcases, TV stands, consoles
-• Ottomans, poufs, storage cubes
+⛔ MUST REMOVE - DELETE ALL OF THESE (NO EXCEPTIONS):
 
-❌ ELECTRONICS - DELETE ALL:
-• TVs (wall-mounted or on furniture)
-• Computers, monitors, laptops, tablets
-• Speakers, sound systems, gaming consoles
+FURNITURE (remove ALL):
+- Sofas, couches, sectionals, loveseats, armchairs, accent chairs, recliners, ottomans, benches, poufs
+- ALL tables: coffee tables, side tables, end tables, console tables, dining tables, kitchen tables, desks, work tables
+- ALL beds, headboards, bed frames, nightstands, dressers, wardrobes, armoires, chests
+- ALL storage: bookshelves, shelving units, cabinets, cupboards, shoe racks, coat racks, TV stands, media consoles
 
-❌ LAMPS - DELETE ALL PORTABLE LIGHTS:
-• Table lamps (bedside, desk, decorative) - REMOVE
-• Floor lamps (arc, standing, torchiere) - REMOVE
-• Portable task lights - REMOVE
-✅ KEEP ONLY: Ceiling lights, recessed lights, hardwired wall sconces
+LIGHTING (remove ALL - this is critical):
+- Floor lamps, standing lamps, tripod lamps, arc lamps, torchiere lamps
+- Table lamps, desk lamps, bedside lamps, accent lamps
+- Pendant lights, hanging lights, chandeliers, ceiling fans with lights
+- Wall sconces, wall-mounted lights, picture lights
+- String lights, fairy lights, LED strips, decorative lighting
+- ANY lamp or light fixture that is not built into the ceiling/wall
 
-❌ RUGS & TEXTILES - DELETE ALL:
-• Rugs, carpets, area rugs, runners (the FLOOR underneath must be visible)
-• Curtains, drapes, blinds, window treatments
-• Cushions, pillows, throws, blankets, bedding
+PLANTS & GREENERY (remove ALL):
+- ALL plants - real or artificial, large or small
+- ALL planters, pots, plant stands, jardinieres
+- ALL vases with flowers or branches
+- ALL terrariums, hanging plants, wall-mounted plants
 
-❌ DECORATIONS - DELETE ALL:
-• Wall art, picture frames, paintings, posters
-• Vases, sculptures, figurines, bowls, trays
-• Candles, candle holders, clocks
-• Plants, planters, flowers, greenery
+FLOOR COVERINGS (remove ALL - floor must be BARE):
+- ALL rugs, carpets, area rugs, runners, mats, dhurries, kilims
+- ALL floor cushions, floor pillows
 
-❌ MISCELLANEOUS - DELETE ALL:
-• Books, magazines, baskets, bins, containers
-• Toys, games, personal items
+DECOR & ACCESSORIES (remove ALL):
+- Wall art, paintings, prints, posters, canvases, photographs, picture frames
+- Mirrors (decorative/freestanding), wall hangings, tapestries
+- Sculptures, figurines, statues, decorative objects, vases, bowls
+- Pillows, throws, blankets, cushions
+- Candles, candle holders, trays, baskets, boxes
+- Books, magazines, decorative books
 
-═══════════════════════════════════════════════════════════════
-STEP 3: GENERATE THE EMPTY ROOM
-═══════════════════════════════════════════════════════════════
-Create an image showing:
-✅ SAME room structure (walls, floor, windows, doors)
-✅ SAME colors and materials
-✅ SAME lighting conditions and perspective
-✅ COMPLETELY BARE FLOOR - not a single item on it
-✅ COMPLETELY BARE WALLS (except architectural elements like baseboards)
-✅ Clean, empty space ready for new furniture
+ELECTRONICS (remove ALL):
+- TVs, monitors, computers, speakers, sound bars
+- Gaming consoles, entertainment systems
 
-The floor should be COMPLETELY VISIBLE with NO objects on it.
-The walls should be CLEAN with NO decorations.
-The room should look like a professional real estate photo of an EMPTY, unfurnished space.
+WINDOW TREATMENTS (remove ALL):
+- Curtains, drapes, blinds, shades, shutters, valances
 
-═══════════════════════════════════════════════════════════════
-⚠️ MANDATORY VERIFICATION CHECKLIST ⚠️
-═══════════════════════════════════════════════════════════════
-Before returning the image, verify EVERY item:
+✅ KEEP ONLY (do not remove):
+- Walls (preserve exact color/texture)
+- Bare floor (same material, fully visible)
+- Windows (glass and frame only, NO treatments)
+- Doors and door frames
+- Built-in architectural elements ONLY (recessed ceiling lights, air vents)
+- Natural lighting and room perspective
 
-[ ] NO sofa or couch visible
-[ ] NO chairs of any kind visible
-[ ] NO tables of any kind visible
-[ ] NO bed or mattress visible
-[ ] NO lamps (table or floor) visible
-[ ] NO TV or electronics visible
-[ ] NO rugs or carpets on floor (floor material is visible)
-[ ] NO curtains or drapes on windows
-[ ] NO plants or planters visible
-[ ] NO wall art or decorations visible
-[ ] NO books or personal items visible
-[ ] Floor is COMPLETELY EMPTY and BARE
-[ ] Walls are CLEAN (only architectural elements)
+FINAL CHECK - The output image MUST have:
+✗ ZERO furniture of any kind
+✗ ZERO lamps or light fixtures (except built-in ceiling)
+✗ ZERO plants, planters, or greenery
+✗ ZERO rugs, carpets, or floor coverings
+✗ ZERO decorative items or accessories
+✗ ZERO curtains or window treatments
 
-🚨 IF YOU SEE ANY FURNITURE OR MOVEABLE ITEMS IN YOUR GENERATED IMAGE, YOU HAVE FAILED.
-
-The final image must show a completely empty room - think "vacant apartment ready for new tenants" or "unfurnished model home before staging".
-
-DO NOT leave ANY furniture behind. The room must be 100% empty."""
+The result should look like a completely EMPTY, UNFURNISHED room ready for move-in. If you can see ANY furniture, ANY lamp, ANY plant, ANY rug, or ANY decor item - you have FAILED. Start over and remove it."""
 
             # Retry loop with exponential backoff
             for attempt in range(max_retries):
                 try:
                     logger.info(f"Furniture removal attempt {attempt + 1} of {max_retries}")
                     logger.info(
-                        f"Sending detailed furniture removal prompt (length: {len(prompt)} chars) to Gemini 3 Pro Image (Nano Banana Pro)"
+                        f"Sending furniture removal prompt to gemini-2.5-flash-image with IMAGE output (PIL Image: {pil_image.width}x{pil_image.height})"
                     )
 
-                    parts = [
-                        types.Part.from_text(text=prompt),
-                        types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_image))),
-                    ]
-
-                    contents = [types.Content(role="user", parts=parts)]
-                    generate_content_config = types.GenerateContentConfig(
-                        response_modalities=["IMAGE"],
-                        temperature=0.7,  # Higher temperature for more aggressive furniture removal
-                    )
-
-                    logger.info(
-                        "Gemini config: model=gemini-3-pro-image-preview, temperature=0.7, response_modalities=['IMAGE']"
-                    )
-
-                    # Generate furniture removal with timeout (90 seconds max per attempt)
-                    import time
-
-                    start_time = time.time()
+                    # Generate furniture removal with proper asyncio timeout (90 seconds max per attempt)
                     timeout_seconds = 90
                     generated_image = None
 
-                    try:
-                        for chunk in self.genai_client.models.generate_content_stream(
-                            model="gemini-3-pro-image-preview", contents=contents, config=generate_content_config
-                        ):
-                            # Check for timeout
-                            if time.time() - start_time > timeout_seconds:
-                                logger.error(
-                                    f"Furniture removal attempt {attempt + 1} timed out after {timeout_seconds} seconds"
-                                )
-                                break
+                    def _run_generate():
+                        """Run the blocking generate_content call in a separate thread"""
+                        # Use Gemini 2.5 Flash Image - the ONLY model that supports image editing
+                        # response_modalities=["IMAGE"] tells the model to output an edited image
+                        # Without response_modalities, the model may just describe the image instead of editing it
+                        response = self.genai_client.models.generate_content(
+                            model="gemini-2.5-flash-image",
+                            contents=[prompt, pil_image],
+                            config=types.GenerateContentConfig(
+                                response_modalities=["IMAGE"],
+                            ),
+                        )
 
-                            if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
-                                for part in chunk.candidates[0].content.parts:
-                                    if part.inline_data and part.inline_data.data:
-                                        image_bytes = part.inline_data.data
-                                        mime_type = part.inline_data.mime_type or "image/png"
-                                        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-                                        generated_image = f"data:{mime_type};base64,{image_base64}"
-                                        logger.info(
-                                            f"Furniture removal successful on attempt {attempt + 1} ({len(image_bytes)} bytes)"
-                                        )
+                        result_image = None
+                        if response.parts:
+                            for part in response.parts:
+                                if part.text is not None:
+                                    logger.info(f"Gemini text response: {part.text[:200]}...")
+                                elif part.inline_data is not None:
+                                    image_bytes = part.inline_data.data
+                                    mime_type = part.inline_data.mime_type or "image/png"
+                                    image_base64_result = base64.b64encode(image_bytes).decode("utf-8")
+                                    result_image = f"data:{mime_type};base64,{image_base64_result}"
+                                    logger.info(
+                                        f"Furniture removal successful on attempt {attempt + 1} ({len(image_bytes)} bytes)"
+                                    )
+                        return result_image
+
+                    try:
+                        # Run the blocking call in a thread with asyncio timeout
+                        loop = asyncio.get_event_loop()
+                        generated_image = await asyncio.wait_for(
+                            loop.run_in_executor(None, _run_generate), timeout=timeout_seconds
+                        )
+                    except asyncio.TimeoutError:
+                        logger.error(
+                            f"Furniture removal attempt {attempt + 1} timed out after {timeout_seconds} seconds (asyncio timeout)"
+                        )
+                        # Continue to next retry attempt
                     except Exception as stream_error:
                         error_str = str(stream_error)
                         # Check if it's a 503 (overloaded) error - retry with longer backoff
@@ -2441,6 +2420,41 @@ QUALITY REQUIREMENTS:
 
         except Exception as e:
             logger.error(f"Error preprocessing image: {e}")
+            return image_data
+
+    def _preprocess_image_for_editing(self, image_data: str) -> str:
+        """
+        Minimal preprocessing for image editing tasks (furniture removal).
+        Preserves original quality - only strips data URL prefix and ensures valid format.
+        Does NOT resize or apply enhancements that could degrade editing quality.
+        """
+        try:
+            # Remove data URL prefix if present
+            if image_data.startswith("data:image"):
+                image_data = image_data.split(",")[1]
+
+            # Decode and validate image
+            image_bytes = base64.b64decode(image_data)
+            image = Image.open(io.BytesIO(image_bytes))
+
+            # Convert to RGB if needed (some formats like PNG with transparency need this)
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+
+            # Only resize if image is extremely large (> 4096px) to avoid API limits
+            # but preserve as much quality as possible
+            max_size = 4096
+            if image.width > max_size or image.height > max_size:
+                image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+                logger.info(f"Resized large image from {image.width}x{image.height} to fit within {max_size}px")
+
+            # Convert back to base64 with high quality (95%)
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=95)
+            return base64.b64encode(buffer.getvalue()).decode()
+
+        except Exception as e:
+            logger.error(f"Error preprocessing image for editing: {e}")
             return image_data
 
     def _create_fallback_room_analysis(self) -> RoomAnalysis:

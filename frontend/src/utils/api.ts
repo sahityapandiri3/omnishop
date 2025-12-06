@@ -743,6 +743,7 @@ export interface Project {
   visualization_image: string | null;
   canvas_products: string | null; // JSON string
   visualization_history: string | null; // JSON string of visualization history for undo/redo
+  chat_session_id: string | null; // Link to chat session for restoring conversation
   created_at: string;
   updated_at: string;
 }
@@ -772,6 +773,7 @@ export interface UpdateProjectData {
   visualization_image?: string;
   canvas_products?: string;
   visualization_history?: string;  // JSON string of visualization history for undo/redo
+  chat_session_id?: string;  // Link to chat session for restoring conversation
 }
 
 export const projectsAPI = {

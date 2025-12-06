@@ -48,11 +48,23 @@ export default function ProjectsPage() {
   const handleCreateProject = async () => {
     try {
       setCreating(true);
+
+      // Clear sessionStorage to start fresh - don't carry over images from previous projects
+      sessionStorage.removeItem('roomImage');
+      sessionStorage.removeItem('cleanRoomImage');
+      sessionStorage.removeItem('curatedRoomImage');
+      sessionStorage.removeItem('curatedVisualizationImage');
+      sessionStorage.removeItem('preselectedProducts');
+      sessionStorage.removeItem('persistedCanvasProducts');
+      sessionStorage.removeItem('design_session_id');
+      console.log('[ProjectsPage] Cleared sessionStorage for new project');
+
       const project = await projectsAPI.create({
         name: `Design ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
       });
       // Navigate to design page with the new project
-      router.push(`/design?projectId=${project.id}`);
+      // Add fresh=1 param to indicate this is a brand new project (not a refresh)
+      router.push(`/design?projectId=${project.id}&fresh=1`);
     } catch (err: any) {
       console.error('Failed to create project:', err);
       setError('Failed to create project. Please try again.');

@@ -4,15 +4,18 @@ Chat API routes for interior design assistance
 import logging
 import uuid
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
 from schemas.chat import (
+    BudgetAllocation,
+    CategoryRecommendation,
     ChatHistoryResponse,
     ChatMessageRequest,
     ChatMessageResponse,
     ChatMessageSchema,
     ChatSessionSchema,
+    ConversationState,
     DesignAnalysisSchema,
     MessageType,
     StartSessionRequest,
@@ -24,7 +27,7 @@ from services.google_ai_service import VisualizationRequest, VisualizationResult
 from services.ml_recommendation_model import ml_recommendation_model
 from services.nlp_processor import design_nlp_processor
 from services.recommendation_engine import RecommendationRequest, recommendation_engine
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -154,6 +157,171 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
         visualization_image = None
 
         # =================================================================
+        # EARLY: Determine conversation state based on user message count
+        # This controls whether we fetch products or continue gathering info
+        # =================================================================
+        message_count_query = select(func.count(ChatMessage.id)).where(
+            ChatMessage.session_id == session_id, ChatMessage.type == MessageType.user
+        )
+        message_count_result = await db.execute(message_count_query)
+        user_message_count = message_count_result.scalar() or 1
+
+        # =================================================================
+        # DIRECT SEARCH DETECTION: Check if user is making a direct product search
+        # Example: "show me brown sofas" or "large rugs under 20000"
+        # If detected, bypass guided flow and search immediately
+        # =================================================================
+        direct_search_result = _detect_direct_search_query(request.message)
+        is_direct_search = direct_search_result["is_direct_search"]
+
+        # =================================================================
+        # DIRECT SEARCH FOLLOW-UP: Check if previous message was DIRECT_SEARCH_GATHERING
+        # If user provided a follow-up (e.g., "abstract art" after "give me wall art"),
+        # combine their response with the original category
+        # =================================================================
+        previous_direct_search_category = None
+        if not is_direct_search:
+            # Check if previous assistant message was in DIRECT_SEARCH_GATHERING state
+            # CRITICAL: Exclude the current request's assistant message (we just created it above)
+            # Without this exclusion, we'd get the message we're currently creating, not the PREVIOUS one
+            prev_msg_query = (
+                select(ChatMessage)
+                .where(
+                    ChatMessage.session_id == session_id,
+                    ChatMessage.type == MessageType.assistant,
+                    ChatMessage.id != assistant_message_id,  # Exclude current message
+                )
+                .order_by(ChatMessage.timestamp.desc())
+                .limit(1)
+            )
+            prev_msg_result = await db.execute(prev_msg_query)
+            prev_msg = prev_msg_result.scalar_one_or_none()
+
+            logger.info(
+                f"[DIRECT SEARCH FOLLOW-UP] Querying for previous message (excluding current {assistant_message_id[:8]}...)"
+            )
+
+            if prev_msg:
+                logger.info(f"[DIRECT SEARCH FOLLOW-UP] Found previous message: {prev_msg.id[:8]}...")
+            else:
+                logger.info(f"[DIRECT SEARCH FOLLOW-UP] No previous assistant message found (this is the first message)")
+
+            if prev_msg and prev_msg.analysis_data:
+                try:
+                    import json
+
+                    prev_analysis = (
+                        prev_msg.analysis_data
+                        if isinstance(prev_msg.analysis_data, dict)
+                        else json.loads(prev_msg.analysis_data)
+                    )
+                    prev_state = prev_analysis.get("conversation_state")
+                    logger.info(f"[DIRECT SEARCH FOLLOW-UP] Previous message state: {prev_state}")
+
+                    if prev_state == "DIRECT_SEARCH_GATHERING":
+                        # DIRECT RETRIEVAL: Use the stored detected_categories object directly
+                        # This avoids the need to re-detect from keywords (which can fail for category_ids like "wall_art")
+                        stored_categories = prev_analysis.get("detected_categories", [])
+                        if stored_categories and len(stored_categories) > 0:
+                            previous_direct_search_category = stored_categories[0]
+                            logger.info(
+                                f"[DIRECT SEARCH FOLLOW-UP] Retrieved stored category: {previous_direct_search_category}"
+                            )
+
+                        if previous_direct_search_category:
+                            # User is providing follow-up info - treat current message as qualifiers
+                            # Re-run detection but force it to be a direct search with the previous category
+                            is_direct_search = True
+                            direct_search_result["is_direct_search"] = True
+                            direct_search_result["detected_categories"] = [previous_direct_search_category]
+                            # Mark as having sufficient info since user provided follow-up
+                            direct_search_result["has_sufficient_info"] = True
+                            # Extract qualifiers from current message
+                            # For follow-up messages, we need to extract colors even from short messages like "red"
+                            # Use direct keyword matching instead of _detect_direct_search_query which requires 5+ char messages
+                            message_lower = request.message.lower().strip()
+
+                            # Direct color extraction for follow-up (no minimum length requirement)
+                            extracted_colors = []
+                            for color in COLOR_KEYWORDS:
+                                if color in message_lower:
+                                    extracted_colors.append(color)
+
+                            # Direct material extraction for follow-up
+                            extracted_materials = []
+                            for material in MATERIAL_KEYWORDS:
+                                if material in message_lower:
+                                    extracted_materials.append(material)
+
+                            # Direct style extraction for follow-up
+                            extracted_styles = []
+                            for style in STYLE_KEYWORDS_DIRECT:
+                                if style in message_lower:
+                                    extracted_styles.append(style)
+
+                            # Direct size extraction for follow-up
+                            extracted_sizes = []
+                            for size in SIZE_KEYWORDS:
+                                if size in message_lower:
+                                    extracted_sizes.append(size)
+
+                            # Budget extraction
+                            import re
+
+                            budget_match = re.search(
+                                r"(?:under|below|max|budget|upto|up to|less than)\s*(?:rs\.?|₹|inr)?\s*(\d{1,3}(?:[,\s]?\d{3})*)",
+                                message_lower,
+                            )
+                            extracted_budget = (
+                                int(budget_match.group(1).replace(",", "").replace(" ", "")) if budget_match else None
+                            )
+
+                            direct_search_result["extracted_colors"] = extracted_colors
+                            direct_search_result["extracted_materials"] = extracted_materials
+                            direct_search_result["extracted_styles"] = extracted_styles
+                            direct_search_result["extracted_sizes"] = extracted_sizes
+                            direct_search_result["extracted_budget_max"] = extracted_budget
+
+                            logger.info(
+                                f"[DIRECT SEARCH FOLLOW-UP] Extracted from message: colors={extracted_colors}, styles={extracted_styles}"
+                            )
+
+                            # If no explicit style was detected, use the message as style hint
+                            # BUT exclude color keywords - those should be handled as colors, not styles
+                            if not direct_search_result["extracted_styles"]:
+                                # Add the user's message as a style keyword (e.g., "abstract art" -> "abstract")
+                                words = request.message.lower().split()
+                                # Exclude stop words AND color keywords (colors should be filtered, not used as styles)
+                                exclude_words = ["art", "the", "a", "an", "some", "please"] + [
+                                    c.lower() for c in COLOR_KEYWORDS
+                                ]
+                                direct_search_result["extracted_styles"] = [w for w in words if w not in exclude_words]
+
+                            logger.info(
+                                f"[DIRECT SEARCH FOLLOW-UP] Converted to direct search with category={previous_direct_search_category['category_id']}, colors={direct_search_result['extracted_colors']}, styles={direct_search_result['extracted_styles']}"
+                            )
+                except Exception as e:
+                    logger.error(f"[DIRECT SEARCH FOLLOW-UP] Error parsing previous message: {e}")
+
+        # Determine early conversation state
+        # States: GATHERING_USAGE (msg 1), GATHERING_STYLE (msg 2), GATHERING_BUDGET (msg 3), READY_TO_RECOMMEND (msg 4+)
+        early_conversation_state = "INITIAL"
+        if is_direct_search:
+            # BYPASS: Direct search query detected - skip guided flow entirely
+            early_conversation_state = "DIRECT_SEARCH"
+            logger.info(f"[DIRECT SEARCH] Bypassing guided flow for direct search query: {request.message[:50]}...")
+        elif user_message_count == 1:
+            early_conversation_state = "GATHERING_USAGE"
+        elif user_message_count == 2:
+            early_conversation_state = "GATHERING_STYLE"
+        elif user_message_count == 3:
+            early_conversation_state = "GATHERING_BUDGET"
+        else:
+            early_conversation_state = "READY_TO_RECOMMEND"
+
+        logger.info(f"[GUIDED FLOW EARLY] User message count: {user_message_count}, state: {early_conversation_state}")
+
+        # =================================================================
         # STEP 1: Initial Request (image + message, no product selected)
         # =================================================================
         if request.image and request.message and not request.selected_product_id and not request.user_action:
@@ -167,38 +335,13 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 logger.error(f"Error detecting furniture: {e}")
                 detected_furniture = []
 
-            # Get product recommendations
-            if analysis:
-                recommended_products = await _get_product_recommendations(
-                    analysis,
-                    db,
-                    user_message=request.message,
-                    limit=50,
-                    user_id=session.user_id,
-                    session_id=session_id,
-                    selected_stores=request.selected_stores,
-                )
-            else:
-                logger.warning(f"Analysis is None for session {session_id}, attempting keyword-based search")
-                # Even without AI analysis, try to extract keywords from user message
-                # This ensures "show me sofas" returns sofas, not random products
-                from schemas.chat import DesignAnalysisSchema
-
-                fallback_analysis = DesignAnalysisSchema(
-                    design_analysis={},
-                    product_matching_criteria={},
-                    visualization_guidance={},
-                    confidence_scores={},
-                    recommendations={},
-                )
-
-                # Extract keywords from user message for targeted search
-                extracted_keywords = _extract_product_keywords(request.message)
-                if extracted_keywords:
-                    logger.info(f"Extracted keywords from user message: {extracted_keywords}")
-                    # Use keyword-based search instead of random products
+            # Get product recommendations ONLY if in READY_TO_RECOMMEND state
+            # This prevents showing products during the guided conversation gathering phase
+            if early_conversation_state == "READY_TO_RECOMMEND":
+                logger.info("[GUIDED FLOW] In READY_TO_RECOMMEND state - fetching products")
+                if analysis:
                     recommended_products = await _get_product_recommendations(
-                        fallback_analysis,
+                        analysis,
                         db,
                         user_message=request.message,
                         limit=50,
@@ -207,38 +350,75 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                         selected_stores=request.selected_stores,
                     )
                 else:
-                    # No keywords found, fall back to random products
-                    logger.warning("No keywords extracted, using basic random recommendations")
-                    recommended_products = await _get_basic_product_recommendations(fallback_analysis, db, limit=50)
+                    logger.warning(f"Analysis is None for session {session_id}, attempting keyword-based search")
+                    # Even without AI analysis, try to extract keywords from user message
+                    # This ensures "show me sofas" returns sofas, not random products
+                    from schemas.chat import DesignAnalysisSchema
+
+                    fallback_analysis = DesignAnalysisSchema(
+                        design_analysis={},
+                        product_matching_criteria={},
+                        visualization_guidance={},
+                        confidence_scores={},
+                        recommendations={},
+                    )
+
+                    # Extract keywords from user message for targeted search
+                    extracted_keywords = _extract_product_keywords(request.message)
+                    if extracted_keywords:
+                        logger.info(f"Extracted keywords from user message: {extracted_keywords}")
+                        # Use keyword-based search instead of random products
+                        recommended_products = await _get_product_recommendations(
+                            fallback_analysis,
+                            db,
+                            user_message=request.message,
+                            limit=50,
+                            user_id=session.user_id,
+                            session_id=session_id,
+                            selected_stores=request.selected_stores,
+                        )
+                    else:
+                        # No keywords found, fall back to random products
+                        logger.warning("No keywords extracted, using basic random recommendations")
+                        recommended_products = await _get_basic_product_recommendations(fallback_analysis, db, limit=50)
+            else:
+                logger.info(f"[GUIDED FLOW] In {early_conversation_state} state - skipping product fetch (gathering info)")
 
             # Enhance conversational response based on whether products were found
-            if recommended_products and len(recommended_products) > 0:
-                # Products found - mention they're being shown
-                if " products" not in conversational_response.lower() and " showing" not in conversational_response.lower():
-                    conversational_response += f" I've found {len(recommended_products)} product{'s' if len(recommended_products) > 1 else ''} that match your request - check them out in the Products panel!"
-            else:
-                # No products found - update response to mention this
-                # Extract what they were searching for from the message
-                search_terms = []
-                materials_mentioned = []
-
-                # Check if specific materials or product types were mentioned
-                import re
-
-                message_lower = request.message.lower()
-
-                # Extract materials (wicker, leather, etc.)
-                material_patterns = ["wicker", "leather", "velvet", "wood", "metal", "glass", "rattan", "bamboo"]
-                for mat in material_patterns:
-                    if mat in message_lower:
-                        materials_mentioned.append(mat)
-
-                # Build a more specific message
-                if materials_mentioned:
-                    material_str = " and ".join(materials_mentioned)
-                    conversational_response = f"Unfortunately, I couldn't find any {material_str} products matching your request in our current inventory. However, you might want to try searching for similar items without the material specification, or check back later as we regularly add new products!"
+            # ONLY do this during READY_TO_RECOMMEND state - during gathering phases, let the follow-up questions handle the response
+            if early_conversation_state == "READY_TO_RECOMMEND":
+                if recommended_products and len(recommended_products) > 0:
+                    # Products found - mention they're being shown
+                    if (
+                        " products" not in conversational_response.lower()
+                        and " showing" not in conversational_response.lower()
+                    ):
+                        conversational_response += f" I've found {len(recommended_products)} product{'s' if len(recommended_products) > 1 else ''} that match your request - check them out in the Products panel!"
                 else:
-                    conversational_response = f"Unfortunately, I couldn't find any products that exactly match your request in our current inventory. You might want to try a broader search or check back later as we regularly add new products!"
+                    # No products found - update response to mention this
+                    # Extract what they were searching for from the message
+                    search_terms = []
+                    materials_mentioned = []
+
+                    # Check if specific materials or product types were mentioned
+                    import re
+
+                    message_lower = request.message.lower()
+
+                    # Extract materials (wicker, leather, etc.)
+                    material_patterns = ["wicker", "leather", "velvet", "wood", "metal", "glass", "rattan", "bamboo"]
+                    for mat in material_patterns:
+                        if mat in message_lower:
+                            materials_mentioned.append(mat)
+
+                    # Build a more specific message
+                    if materials_mentioned:
+                        material_str = " and ".join(materials_mentioned)
+                        conversational_response = f"Unfortunately, I couldn't find any {material_str} products matching your request in our current inventory. However, you might want to try searching for similar items without the material specification, or check back later as we regularly add new products!"
+                    else:
+                        conversational_response = f"Unfortunately, I couldn't find any products that exactly match your request in our current inventory. You might want to try a broader search or check back later as we regularly add new products!"
+            else:
+                logger.info(f"[GUIDED FLOW] Skipping product response enhancement during {early_conversation_state} state")
 
         # =================================================================
         # STEP 2: Visualize Request (product selected, no action yet)
@@ -456,7 +636,13 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
         # =================================================================
         else:
             # Get product recommendations for default responses
-            if analysis:
+            # SKIP if: direct search (handled later) or in gathering state (no products during gathering)
+            should_skip_default_products = is_direct_search or early_conversation_state in [
+                "GATHERING_USAGE",
+                "GATHERING_STYLE",
+                "GATHERING_BUDGET",
+            ]
+            if analysis and not should_skip_default_products:
                 recommended_products = await _get_product_recommendations(
                     analysis,
                     db,
@@ -478,6 +664,402 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             image_url=visualization_image,
         )
 
+        # =================================================================
+        # NEW: Extract guided conversation fields from analysis
+        # =================================================================
+        conversation_state = "INITIAL"
+        selected_categories_response: Optional[List[CategoryRecommendation]] = None
+        products_by_category: Optional[Dict[str, List[dict]]] = None
+        follow_up_question: Optional[str] = None
+        total_budget: Optional[int] = None
+
+        if analysis:
+            # Extract conversation state and related fields
+            conversation_state = getattr(analysis, "conversation_state", None) or "INITIAL"
+            follow_up_question = getattr(analysis, "follow_up_question", None)
+            total_budget = getattr(analysis, "total_budget", None)
+            raw_categories = getattr(analysis, "selected_categories", None)
+
+            logger.info(
+                f"[GUIDED FLOW] ChatGPT returned conversation_state={conversation_state}, has_categories={raw_categories is not None}"
+            )
+
+            # =================================================================
+            # BACKEND STATE OVERRIDE: Force guided flow if ChatGPT fails
+            # =================================================================
+            # Count existing messages in this session (excluding the one we just added)
+            message_count_query = select(func.count(ChatMessage.id)).where(
+                ChatMessage.session_id == session_id, ChatMessage.type == MessageType.user
+            )
+            message_count_result = await db.execute(message_count_query)
+            user_message_count = message_count_result.scalar() or 1  # Current message makes it at least 1
+
+            logger.info(f"[GUIDED FLOW] Session has {user_message_count} user messages")
+
+            # =================================================================
+            # DIRECT SEARCH BYPASS: Skip guided flow for direct product searches
+            # =================================================================
+            if is_direct_search:
+                has_sufficient_info = direct_search_result.get("has_sufficient_info", False)
+
+                if has_sufficient_info:
+                    # User provided enough info (category + qualifier) - search directly
+                    conversation_state = "DIRECT_SEARCH"
+                    follow_up_question = None
+                    logger.info(f"[DIRECT SEARCH] Sufficient info - bypassing guided flow for direct search")
+
+                    # Build categories from detected categories
+                    raw_categories = []
+                    for idx, cat_data in enumerate(direct_search_result["detected_categories"]):
+                        budget_max = direct_search_result["extracted_budget_max"] or 999999
+                        raw_categories.append(
+                            {
+                                "category_id": cat_data["category_id"],
+                                "display_name": cat_data["display_name"],
+                                "priority": idx + 1,
+                                "budget_allocation": {"min": 0, "max": budget_max},
+                            }
+                        )
+
+                    logger.info(f"[DIRECT SEARCH] Built {len(raw_categories)} categories from user query")
+                else:
+                    # User mentioned a category but no qualifiers - ask follow-up
+                    conversation_state = "DIRECT_SEARCH_GATHERING"
+                    follow_up_question = _build_direct_search_followup_question(direct_search_result["detected_categories"])
+                    logger.info(f"[DIRECT SEARCH] Set conversation_state=DIRECT_SEARCH_GATHERING (insufficient info)")
+                    logger.info(f"[DIRECT SEARCH] Follow-up question: {follow_up_question[:50]}...")
+
+            # ALWAYS enforce guided flow based on message count for consistent friendly tone
+            # Use our friendly fallback questions instead of AI-generated ones for better UX
+            elif user_message_count == 1:
+                conversation_state = "GATHERING_USAGE"
+                # Always use our friendly question for consistent tone
+                follow_up_question = "Love it! How do you usually use this space - relaxing, working, or entertaining?"
+                logger.info(f"[GUIDED FLOW] Set to GATHERING_USAGE (message 1)")
+            elif user_message_count == 2:
+                conversation_state = "GATHERING_STYLE"
+                follow_up_question = "Perfect! What vibe are you going for - modern and sleek, cozy and warm, or eclectic?"
+                logger.info(f"[GUIDED FLOW] Set to GATHERING_STYLE (message 2)")
+            elif user_message_count == 3:
+                conversation_state = "GATHERING_BUDGET"
+                follow_up_question = "Great choice! What's your budget for this transformation?"
+                logger.info(f"[GUIDED FLOW] Set to GATHERING_BUDGET (message 3)")
+            else:
+                conversation_state = "READY_TO_RECOMMEND"
+                follow_up_question = None
+                logger.info(f"[GUIDED FLOW] Set to READY_TO_RECOMMEND (message {user_message_count})")
+
+                # Generate default categories if ChatGPT didn't provide them
+                if not raw_categories or len(raw_categories) == 0:
+                    # Determine room type from conversation context (simplified)
+                    room_context = request.message.lower()
+                    if "living" in room_context or "sofa" in room_context:
+                        raw_categories = [
+                            {
+                                "category_id": "sofas",
+                                "display_name": "Sofas",
+                                "priority": 1,
+                                "budget_allocation": {"min": 20000, "max": 50000},
+                            },
+                            {
+                                "category_id": "coffee_tables",
+                                "display_name": "Coffee Tables",
+                                "priority": 2,
+                                "budget_allocation": {"min": 5000, "max": 15000},
+                            },
+                            {
+                                "category_id": "side_tables",
+                                "display_name": "Side Tables",
+                                "priority": 3,
+                                "budget_allocation": {"min": 3000, "max": 10000},
+                            },
+                            {
+                                "category_id": "floor_lamps",
+                                "display_name": "Floor Lamps",
+                                "priority": 4,
+                                "budget_allocation": {"min": 2000, "max": 8000},
+                            },
+                            {
+                                "category_id": "rugs",
+                                "display_name": "Rugs & Carpets",
+                                "priority": 5,
+                                "budget_allocation": {"min": 5000, "max": 20000},
+                            },
+                        ]
+                    elif "bed" in room_context or "sleep" in room_context:
+                        raw_categories = [
+                            {
+                                "category_id": "beds",
+                                "display_name": "Beds",
+                                "priority": 1,
+                                "budget_allocation": {"min": 25000, "max": 60000},
+                            },
+                            {
+                                "category_id": "nightstands",
+                                "display_name": "Nightstands",
+                                "priority": 2,
+                                "budget_allocation": {"min": 5000, "max": 15000},
+                            },
+                            {
+                                "category_id": "table_lamps",
+                                "display_name": "Table Lamps",
+                                "priority": 3,
+                                "budget_allocation": {"min": 2000, "max": 8000},
+                            },
+                            {
+                                "category_id": "wardrobes",
+                                "display_name": "Wardrobes",
+                                "priority": 4,
+                                "budget_allocation": {"min": 20000, "max": 50000},
+                            },
+                        ]
+                    elif "dining" in room_context or "eat" in room_context:
+                        raw_categories = [
+                            {
+                                "category_id": "dining_tables",
+                                "display_name": "Dining Tables",
+                                "priority": 1,
+                                "budget_allocation": {"min": 20000, "max": 50000},
+                            },
+                            {
+                                "category_id": "dining_chairs",
+                                "display_name": "Dining Chairs",
+                                "priority": 2,
+                                "budget_allocation": {"min": 10000, "max": 30000},
+                            },
+                            {
+                                "category_id": "sideboards",
+                                "display_name": "Sideboards",
+                                "priority": 3,
+                                "budget_allocation": {"min": 15000, "max": 40000},
+                            },
+                        ]
+                    else:
+                        # Default to living room categories
+                        raw_categories = [
+                            {
+                                "category_id": "sofas",
+                                "display_name": "Sofas",
+                                "priority": 1,
+                                "budget_allocation": {"min": 20000, "max": 50000},
+                            },
+                            {
+                                "category_id": "coffee_tables",
+                                "display_name": "Coffee Tables",
+                                "priority": 2,
+                                "budget_allocation": {"min": 5000, "max": 15000},
+                            },
+                            {
+                                "category_id": "accent_chairs",
+                                "display_name": "Accent Chairs",
+                                "priority": 3,
+                                "budget_allocation": {"min": 8000, "max": 25000},
+                            },
+                            {
+                                "category_id": "floor_lamps",
+                                "display_name": "Floor Lamps",
+                                "priority": 4,
+                                "budget_allocation": {"min": 2000, "max": 8000},
+                            },
+                            {
+                                "category_id": "decor",
+                                "display_name": "Decor",
+                                "priority": 5,
+                                "budget_allocation": {"min": 2000, "max": 10000},
+                            },
+                        ]
+                    logger.info(f"[GUIDED FLOW] Generated {len(raw_categories)} default categories")
+
+            # If we have selected categories, convert to CategoryRecommendation objects
+            if raw_categories and isinstance(raw_categories, list) and len(raw_categories) > 0:
+                try:
+                    selected_categories_response = []
+                    for idx, cat_data in enumerate(raw_categories):
+                        if isinstance(cat_data, dict):
+                            # Parse budget_allocation if present
+                            budget_alloc = None
+                            if "budget_allocation" in cat_data and cat_data["budget_allocation"]:
+                                budget_data = cat_data["budget_allocation"]
+                                budget_alloc = BudgetAllocation(
+                                    min=budget_data.get("min", 0), max=budget_data.get("max", 999999)
+                                )
+
+                            cat_rec = CategoryRecommendation(
+                                category_id=cat_data.get("category_id", f"category_{idx}"),
+                                display_name=cat_data.get(
+                                    "display_name", cat_data.get("category_id", "").replace("_", " ").title()
+                                ),
+                                budget_allocation=budget_alloc,
+                                priority=cat_data.get("priority", idx + 1),
+                            )
+                            selected_categories_response.append(cat_rec)
+
+                    logger.info(f"[GUIDED FLOW] Parsed {len(selected_categories_response)} categories")
+
+                    # MANDATORY: Ensure generic categories (planters, wall_art, decor, rugs) are ALWAYS included
+                    # BUT ONLY for READY_TO_RECOMMEND - NOT for DIRECT_SEARCH
+                    # Direct search should ONLY show what the user asked for (e.g., "sofas" -> only sofas)
+                    if conversation_state != "DIRECT_SEARCH":
+                        existing_cat_ids = {cat.category_id for cat in selected_categories_response}
+                        mandatory_generic = [
+                            ("planters", "Planters", 100),
+                            ("wall_art", "Wall Art", 101),
+                            ("decor", "Decor", 102),
+                            ("rugs", "Rugs", 103),
+                        ]
+                        for cat_id, display_name, priority in mandatory_generic:
+                            if cat_id not in existing_cat_ids:
+                                selected_categories_response.append(
+                                    CategoryRecommendation(
+                                        category_id=cat_id,
+                                        display_name=display_name,
+                                        budget_allocation=BudgetAllocation(min=500, max=15000),
+                                        priority=priority,
+                                    )
+                                )
+                                logger.info(f"[GUIDED FLOW] Added missing mandatory category: {cat_id}")
+                    else:
+                        logger.info(f"[DIRECT SEARCH] Skipping mandatory categories - showing only user-requested categories")
+
+                    # If we're in READY_TO_RECOMMEND or DIRECT_SEARCH state, fetch products by category
+                    if conversation_state in ["READY_TO_RECOMMEND", "DIRECT_SEARCH"] and selected_categories_response:
+                        if conversation_state == "DIRECT_SEARCH":
+                            logger.info("[DIRECT SEARCH] Fetching products for direct search query...")
+
+                            # Build style attributes from user's direct input instead of ChatGPT analysis
+                            style_attributes = {
+                                "style_keywords": direct_search_result["extracted_styles"][:],  # Copy to avoid mutation
+                                "colors": direct_search_result["extracted_colors"],
+                                "materials": direct_search_result["extracted_materials"],
+                            }
+                            # Also add size keywords to style_keywords for matching
+                            if direct_search_result["extracted_sizes"]:
+                                style_attributes["style_keywords"].extend(direct_search_result["extracted_sizes"])
+
+                            logger.info(f"[DIRECT SEARCH] Style attributes from user query: {style_attributes}")
+                        else:
+                            logger.info("[GUIDED FLOW] Fetching category-based recommendations...")
+
+                            # Extract style attributes from ChatGPT analysis to pass to product search
+                            # This enables style-aware product prioritization
+                            style_attributes = _extract_style_attributes_from_analysis(analysis)
+                            logger.info(f"[GUIDED FLOW] Extracted style attributes: {style_attributes}")
+
+                        products_by_category = await _get_category_based_recommendations(
+                            selected_categories_response,
+                            db,
+                            selected_stores=request.selected_stores,
+                            limit_per_category=50,  # Increased from 20 to provide more variety
+                            style_attributes=style_attributes,
+                        )
+
+                        # Update product counts in category recommendations
+                        for cat in selected_categories_response:
+                            if cat.category_id in products_by_category:
+                                cat.product_count = len(products_by_category[cat.category_id])
+
+                        logger.info(
+                            f"[{'DIRECT SEARCH' if conversation_state == 'DIRECT_SEARCH' else 'GUIDED FLOW'}] Fetched products for {len(products_by_category)} categories"
+                        )
+
+                        # For direct search, override the conversational response with a friendly message
+                        if conversation_state == "DIRECT_SEARCH" and products_by_category:
+                            total_products = sum(len(prods) for prods in products_by_category.values())
+                            conversational_response = _build_direct_search_response_message(
+                                detected_categories=direct_search_result["detected_categories"],
+                                colors=direct_search_result["extracted_colors"],
+                                materials=direct_search_result["extracted_materials"],
+                                styles=direct_search_result["extracted_styles"],
+                                product_count=total_products,
+                            )
+                            logger.info(f"[DIRECT SEARCH] Response: {conversational_response[:80]}...")
+
+                            # CRITICAL: Rebuild message_schema with the direct search response
+                            # (the original was built with ChatGPT's response before we could override)
+                            message_schema = ChatMessageSchema(
+                                id=assistant_message_id,
+                                type=MessageType.assistant,
+                                content=conversational_response,
+                                timestamp=assistant_message.timestamp,
+                                session_id=session_id,
+                                products=recommended_products,
+                                image_url=visualization_image,
+                            )
+
+                except Exception as e:
+                    logger.error(f"[GUIDED FLOW] Error parsing categories: {e}")
+                    import traceback
+
+                    traceback.print_exc()
+
+        # =================================================================
+        # CRITICAL FIX: During GATHERING states:
+        # 1. Clear products - don't show any product recommendations
+        # 2. Replace AI response with ONLY the follow-up question
+        #    (ChatGPT often ignores the prompt and gives recommendations anyway)
+        # 3. Clear follow_up_question so frontend doesn't append it again
+        # =================================================================
+        if conversation_state in ["GATHERING_USAGE", "GATHERING_STYLE", "GATHERING_BUDGET", "DIRECT_SEARCH_GATHERING"]:
+            logger.info(f"[GUIDED FLOW] State is {conversation_state} - enforcing clean guided flow")
+            recommended_products = None
+            # CRITICAL: Also clear category-based products - no products during gathering!
+            products_by_category = None
+            selected_categories_response = None
+
+            # CRITICAL: Replace the full AI response with JUST the follow-up question
+            # This ensures NO design recommendations slip through during gathering
+            if follow_up_question:
+                conversational_response = follow_up_question
+                # Clear follow_up_question so frontend doesn't append it again
+                # (frontend appends follow_up_question to message.content)
+                follow_up_question = None
+                logger.info(f"[GUIDED FLOW] Replaced AI response with follow-up question only")
+
+            # Rebuild message schema with clean response and no products
+            message_schema = ChatMessageSchema(
+                id=assistant_message_id,
+                type=MessageType.assistant,
+                content=conversational_response,
+                timestamp=assistant_message.timestamp,
+                session_id=session_id,
+                products=None,  # Clear products during gathering
+                image_url=visualization_image,
+            )
+
+        # =================================================================
+        # CRITICAL: Update assistant_message.analysis_data with our overridden
+        # conversation_state so that follow-up detection works correctly
+        # The original analysis_data contains ChatGPT's state, but we override it
+        # =================================================================
+        if analysis:
+            import json
+
+            updated_analysis_data = analysis.dict() if hasattr(analysis, "dict") else dict(analysis)
+            updated_analysis_data["conversation_state"] = conversation_state
+            # Store the FULL detected_categories objects for follow-up detection
+            # This allows us to directly retrieve the category without re-detecting from keywords
+            logger.info(
+                f"[ANALYSIS DATA] About to update - conversation_state={conversation_state}, has_detected_categories={bool(direct_search_result.get('detected_categories'))}"
+            )
+            if direct_search_result.get("detected_categories"):
+                updated_analysis_data["detected_categories"] = direct_search_result["detected_categories"]
+                updated_analysis_data["product_matching_criteria"] = {
+                    "product_types": [
+                        cat.get("category_id", cat.get("name", "")) for cat in direct_search_result["detected_categories"]
+                    ],
+                    "search_terms": [
+                        cat.get("category_id", cat.get("name", "")) for cat in direct_search_result["detected_categories"]
+                    ],
+                    "colors": direct_search_result.get("extracted_colors", []),
+                    "styles": direct_search_result.get("extracted_styles", []),
+                }
+                logger.info(f"[ANALYSIS DATA] Saved detected_categories: {updated_analysis_data['detected_categories']}")
+            assistant_message.analysis_data = updated_analysis_data
+            await db.commit()
+            logger.info(
+                f"[ANALYSIS DATA] Updated assistant_message.analysis_data with conversation_state={conversation_state}"
+            )
+
         return ChatMessageResponse(
             message=message_schema,
             analysis=analysis,
@@ -486,7 +1068,12 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             similar_furniture_items=similar_furniture_items,
             requires_action_choice=requires_action_choice,
             action_options=action_options,
-            background_task_id=background_task_id,
+            # NEW: Guided conversation fields
+            conversation_state=conversation_state,
+            selected_categories=selected_categories_response,
+            products_by_category=products_by_category,
+            follow_up_question=follow_up_question,
+            total_budget=total_budget,
         )
 
     except HTTPException:
@@ -1219,6 +1806,431 @@ async def delete_chat_session(session_id: str, db: AsyncSession = Depends(get_db
         logger.error(f"Error deleting chat session: {e}\n{traceback.format_exc()}")
         error_type = type(e).__name__
         raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
+
+
+def _extract_style_attributes_from_analysis(analysis: Any) -> Dict[str, List[str]]:
+    """
+    Extract style attributes from ChatGPT design analysis for product search.
+
+    This extracts:
+    - style_keywords: Primary and secondary style terms (e.g., "modern", "minimalist")
+    - colors: User's color preferences from the room analysis
+    - materials: User's material preferences (e.g., "wood", "leather")
+
+    Args:
+        analysis: DesignAnalysisSchema from ChatGPT
+
+    Returns:
+        Dict with 'style_keywords', 'colors', and 'materials' lists
+    """
+    style_keywords: List[str] = []
+    colors: List[str] = []
+    materials: List[str] = []
+
+    if not analysis:
+        return {"style_keywords": [], "colors": [], "materials": []}
+
+    try:
+        # Extract design_analysis dict
+        design_analysis = None
+        if hasattr(analysis, "design_analysis"):
+            design_analysis = analysis.design_analysis
+        elif isinstance(analysis, dict):
+            design_analysis = analysis.get("design_analysis", {})
+
+        if design_analysis and isinstance(design_analysis, dict):
+            # Extract style preferences
+            style_prefs = design_analysis.get("style_preferences", {})
+            if isinstance(style_prefs, dict):
+                primary_style = style_prefs.get("primary_style", "")
+                if primary_style:
+                    style_keywords.append(primary_style.lower())
+
+                secondary_styles = style_prefs.get("secondary_styles", [])
+                if isinstance(secondary_styles, list):
+                    style_keywords.extend([s.lower() for s in secondary_styles if s])
+
+                kw_list = style_prefs.get("style_keywords", [])
+                if isinstance(kw_list, list):
+                    style_keywords.extend([k.lower() for k in kw_list if k])
+
+            # Extract color scheme preferences
+            color_scheme = design_analysis.get("color_scheme", {})
+            if isinstance(color_scheme, dict):
+                preferred_colors = color_scheme.get("preferred_colors", [])
+                if isinstance(preferred_colors, list):
+                    colors.extend([c.lower() for c in preferred_colors if c])
+
+                accent_colors = color_scheme.get("accent_colors", [])
+                if isinstance(accent_colors, list):
+                    colors.extend([c.lower() for c in accent_colors if c])
+
+        # Extract product_matching_criteria for materials
+        product_criteria = None
+        if hasattr(analysis, "product_matching_criteria"):
+            product_criteria = analysis.product_matching_criteria
+        elif isinstance(analysis, dict):
+            product_criteria = analysis.get("product_matching_criteria", {})
+
+        if product_criteria and isinstance(product_criteria, dict):
+            filtering = product_criteria.get("filtering_keywords", {})
+            if isinstance(filtering, dict):
+                material_prefs = filtering.get("material_preferences", [])
+                if isinstance(material_prefs, list):
+                    materials.extend([m.lower() for m in material_prefs if m])
+
+        # Also check color_palette if present (hex codes won't help, but sometimes it has color names)
+        color_palette = None
+        if hasattr(analysis, "color_palette"):
+            color_palette = analysis.color_palette
+        elif isinstance(analysis, dict):
+            color_palette = analysis.get("color_palette", [])
+
+        # Note: color_palette often has hex codes, but sometimes color names slip through
+
+        # Deduplicate while preserving order
+        style_keywords = list(dict.fromkeys(style_keywords))
+        colors = list(dict.fromkeys(colors))
+        materials = list(dict.fromkeys(materials))
+
+        logger.info(f"[STYLE EXTRACTION] Extracted - styles: {style_keywords}, colors: {colors}, materials: {materials}")
+
+    except Exception as e:
+        logger.warning(f"[STYLE EXTRACTION] Error extracting style attributes: {e}")
+
+    return {
+        "style_keywords": style_keywords,
+        "colors": colors,
+        "materials": materials,
+    }
+
+
+# =================================================================
+# DIRECT SEARCH DETECTION
+# =================================================================
+# Keywords and patterns for detecting direct search queries
+# that should bypass the guided conversation flow
+
+# Color keywords to detect in user messages
+COLOR_KEYWORDS = [
+    "white",
+    "black",
+    "brown",
+    "beige",
+    "grey",
+    "gray",
+    "blue",
+    "green",
+    "red",
+    "yellow",
+    "orange",
+    "pink",
+    "purple",
+    "cream",
+    "ivory",
+    "tan",
+    "navy",
+    "teal",
+    "gold",
+    "silver",
+    "bronze",
+    "copper",
+    "walnut",
+    "oak",
+    "mahogany",
+    "natural",
+    "dark",
+    "light",
+    "neutral",
+]
+
+# Material keywords to detect in user messages
+MATERIAL_KEYWORDS = [
+    "wood",
+    "wooden",
+    "leather",
+    "velvet",
+    "fabric",
+    "metal",
+    "glass",
+    "marble",
+    "stone",
+    "ceramic",
+    "rattan",
+    "wicker",
+    "bamboo",
+    "cotton",
+    "linen",
+    "silk",
+    "wool",
+    "jute",
+    "cane",
+    "plastic",
+    "acrylic",
+    "brass",
+    "iron",
+    "steel",
+    "chrome",
+    "upholstered",
+    "teak",
+    "sheesham",
+]
+
+# Size/quantity keywords
+SIZE_KEYWORDS = [
+    "large",
+    "small",
+    "big",
+    "compact",
+    "mini",
+    "xl",
+    "king",
+    "queen",
+    "single",
+    "double",
+    "twin",
+    "3 seater",
+    "three seater",
+    "2 seater",
+    "two seater",
+    "4 seater",
+    "four seater",
+    "6 seater",
+    "six seater",
+]
+
+# Style keywords to detect in user messages
+STYLE_KEYWORDS_DIRECT = [
+    "modern",
+    "contemporary",
+    "minimalist",
+    "traditional",
+    "classic",
+    "rustic",
+    "industrial",
+    "scandinavian",
+    "bohemian",
+    "boho",
+    "vintage",
+    "retro",
+    "mid-century",
+    "luxurious",
+    "luxury",
+    "elegant",
+    "simple",
+    "ornate",
+    "cozy",
+    "warm",
+    "sleek",
+    "coastal",
+    "farmhouse",
+]
+
+
+def _detect_direct_search_query(message: str) -> Dict[str, Any]:
+    """
+    Detect if a user message is a direct search query that should bypass
+    the guided conversation flow.
+
+    Examples of direct search queries:
+    - "show me brown sofas"
+    - "large rugs"
+    - "modern coffee tables under 20000"
+    - "leather armchairs"
+
+    Returns:
+        {
+            "is_direct_search": bool,
+            "detected_categories": [{"category_id": str, "display_name": str}, ...],
+            "extracted_colors": ["brown", "beige", ...],
+            "extracted_materials": ["leather", "wood", ...],
+            "extracted_sizes": ["large", "3 seater", ...],
+            "extracted_styles": ["modern", "minimalist", ...],
+            "extracted_budget_max": int or None,
+        }
+    """
+    message_lower = message.lower().strip()
+
+    # Result structure
+    result = {
+        "is_direct_search": False,
+        "detected_categories": [],
+        "extracted_colors": [],
+        "extracted_materials": [],
+        "extracted_sizes": [],
+        "extracted_styles": [],
+        "extracted_budget_max": None,
+    }
+
+    # Skip very short messages or greetings
+    greeting_patterns = ["hi", "hello", "hey", "help", "thank", "thanks", "okay", "ok", "yes", "no"]
+    if len(message_lower) < 5 or message_lower in greeting_patterns:
+        return result
+
+    # Detect product categories
+    # Using a local copy to avoid circular imports with CATEGORY_KEYWORDS defined later
+    category_keywords_map = {
+        "sofas": ["sofa", "couch", "sectional", "loveseat", "settee", "futon", "daybed"],
+        "ottomans": ["ottoman", "pouf", "footstool"],
+        "coffee_tables": ["coffee table", "center table", "cocktail table"],
+        "side_tables": ["side table", "end table", "accent table", "occasional table"],
+        "floor_lamps": ["floor lamp", "standing lamp", "arc lamp", "tripod lamp"],
+        "table_lamps": ["table lamp", "desk lamp", "bedside lamp"],
+        "accent_chairs": ["accent chair", "armchair", "club chair", "lounge chair", "wing chair"],
+        "beds": ["bed", "bedframe", "headboard"],
+        "nightstands": ["nightstand", "bedside table", "night table"],
+        "dressers": ["dresser", "chest of drawers"],
+        "wardrobes": ["wardrobe", "armoire", "closet"],
+        "dining_tables": ["dining table", "dinner table", "kitchen table"],
+        "dining_chairs": ["dining chair", "kitchen chair"],
+        "pendant_lamps": ["pendant", "chandelier", "hanging lamp", "ceiling lamp"],
+        "sideboards": ["sideboard", "buffet", "credenza", "console"],
+        "desks": ["desk", "writing desk", "computer desk", "work table"],
+        "office_chairs": ["office chair", "task chair", "ergonomic chair"],
+        "bookshelves": ["bookshelf", "bookcase", "shelving unit"],
+        "storage_cabinets": ["storage cabinet", "cabinet", "cupboard"],
+        "planters": ["planter", "plant pot", "flower pot", "plant stand"],
+        "wall_art": ["wall art", "painting", "print", "poster", "canvas", "artwork", "frame"],
+        "decor": ["decor", "sculpture", "figurine", "vase", "decorative", "ornament"],
+        "rugs": ["rug", "carpet", "area rug", "dhurrie", "kilim", "floor rug"],
+        "mats": ["mat", "floor mat", "door mat", "bath mat", "runner", "table runner"],
+        "mirrors": ["mirror", "wall mirror", "floor mirror", "vanity mirror"],
+        "cushions": ["cushion", "pillow", "throw pillow", "decorative pillow"],
+        "throws": ["throw", "blanket", "throw blanket"],
+    }
+
+    # Check for category matches
+    detected_cats = []
+    for category_id, keywords in category_keywords_map.items():
+        for keyword in keywords:
+            if keyword in message_lower:
+                display_name = category_id.replace("_", " ").title()
+                detected_cats.append({"category_id": category_id, "display_name": display_name, "matched_keyword": keyword})
+                break  # Only match once per category
+
+    result["detected_categories"] = detected_cats
+
+    # Extract colors
+    for color in COLOR_KEYWORDS:
+        if color in message_lower:
+            result["extracted_colors"].append(color)
+
+    # Extract materials
+    for material in MATERIAL_KEYWORDS:
+        if material in message_lower:
+            result["extracted_materials"].append(material)
+
+    # Extract sizes
+    for size in SIZE_KEYWORDS:
+        if size in message_lower:
+            result["extracted_sizes"].append(size)
+
+    # Extract styles
+    for style in STYLE_KEYWORDS_DIRECT:
+        if style in message_lower:
+            result["extracted_styles"].append(style)
+
+    # Extract budget (look for patterns like "under 20000", "below 50k", "budget 10000")
+    import re
+
+    budget_patterns = [
+        r"under\s*(?:rs\.?|₹|inr)?\s*(\d+(?:,\d{3})*(?:k)?)",
+        r"below\s*(?:rs\.?|₹|inr)?\s*(\d+(?:,\d{3})*(?:k)?)",
+        r"budget\s*(?:of\s*)?(?:rs\.?|₹|inr)?\s*(\d+(?:,\d{3})*(?:k)?)",
+        r"(?:rs\.?|₹|inr)\s*(\d+(?:,\d{3})*(?:k)?)\s*(?:max|maximum|or\s*less)",
+        r"(\d+(?:,\d{3})*(?:k)?)\s*(?:rupees?|rs\.?|₹)\s*(?:max|maximum|or\s*less|budget)",
+    ]
+
+    for pattern in budget_patterns:
+        match = re.search(pattern, message_lower)
+        if match:
+            budget_str = match.group(1).replace(",", "")
+            # Handle 'k' suffix (e.g., "20k" = 20000)
+            if budget_str.endswith("k"):
+                result["extracted_budget_max"] = int(budget_str[:-1]) * 1000
+            else:
+                result["extracted_budget_max"] = int(budget_str)
+            break
+
+    # Determine if this is a direct search query
+    # A message is considered a direct search if it contains at least one product category
+    if len(detected_cats) > 0:
+        result["is_direct_search"] = True
+
+        # Check if we have SUFFICIENT info to search directly
+        # We need: category + at least one qualifier (color, material, style, size, or budget)
+        has_qualifiers = (
+            len(result["extracted_colors"]) > 0
+            or len(result["extracted_materials"]) > 0
+            or len(result["extracted_styles"]) > 0
+            or len(result["extracted_sizes"]) > 0
+            or result["extracted_budget_max"] is not None
+        )
+
+        result["has_sufficient_info"] = has_qualifiers
+
+        logger.info(
+            f"[DIRECT SEARCH] Detected direct search: categories={[c['category_id'] for c in detected_cats]}, "
+            f"colors={result['extracted_colors']}, materials={result['extracted_materials']}, "
+            f"styles={result['extracted_styles']}, sizes={result['extracted_sizes']}, "
+            f"budget_max={result['extracted_budget_max']}, has_sufficient_info={has_qualifiers}"
+        )
+    else:
+        result["has_sufficient_info"] = False
+
+    return result
+
+
+def _build_direct_search_response_message(
+    detected_categories: List[Dict], colors: List[str], materials: List[str], styles: List[str], product_count: int
+) -> str:
+    """
+    Build a friendly response message for direct search results.
+    """
+    # Build a description of what was searched
+    descriptors = []
+    if colors:
+        descriptors.append(colors[0])
+    if materials:
+        descriptors.append(materials[0])
+    if styles:
+        descriptors.append(styles[0])
+
+    category_names = [c["display_name"].lower() for c in detected_categories[:2]]  # Max 2 categories
+
+    if descriptors:
+        descriptor_str = " ".join(descriptors)
+        category_str = " and ".join(category_names)
+        if product_count > 0:
+            return f"Here are {product_count} {descriptor_str} {category_str} for you! Take a look at the products panel to browse."
+        else:
+            return f"I couldn't find any {descriptor_str} {category_str} in our current inventory. Try adjusting your search or check back later!"
+    else:
+        category_str = " and ".join(category_names)
+        if product_count > 0:
+            return f"Found {product_count} {category_str} for you! Check out the products panel to explore your options."
+        else:
+            return f"I couldn't find any {category_str} matching your request. Try a different search or check back later!"
+
+
+def _build_direct_search_followup_question(detected_categories: List[Dict]) -> str:
+    """
+    Build a follow-up question when user asks for a category without enough qualifiers.
+    Example: User says "show me sofas" - we ask about style/color preferences.
+    """
+    category_names = [c["display_name"].lower() for c in detected_categories[:2]]
+    category_str = " or ".join(category_names) if len(category_names) > 1 else category_names[0]
+
+    # Friendly follow-up questions based on the category type
+    questions = [
+        f"Great choice! What style of {category_str} are you looking for - modern, traditional, or something else?",
+        f"I can help you find the perfect {category_str}! Any preference on color or material?",
+        f"Looking for {category_str}! Do you have a specific style, color, or budget in mind?",
+    ]
+
+    # Pick based on first category character (deterministic but varied)
+    idx = ord(category_names[0][0]) % len(questions)
+    return questions[idx]
 
 
 def _extract_furniture_type(product_name: str) -> str:
@@ -2085,6 +3097,386 @@ async def _get_basic_product_recommendations(analysis: DesignAnalysisSchema, db:
     except Exception as e:
         logger.error(f"Error in basic product recommendations: {e}")
         return []
+
+
+# Category keyword mappings for product search
+CATEGORY_KEYWORDS = {
+    # Room-specific furniture
+    "sofas": [
+        "sofa",
+        "couch",
+        "sectional",
+        "loveseat",
+        "settee",
+        "futon",
+        "daybed",
+        "3 seater",
+        "three seater",
+        "2 seater",
+        "two seater",
+    ],
+    "ottomans": ["ottoman", "pouf", "footstool", "foot stool"],  # Separate category for ottomans
+    "coffee_tables": ["coffee table", "center table", "cocktail table"],
+    "side_tables": ["side table", "end table", "accent table", "occasional table", "lamp table"],
+    "floor_lamps": ["floor lamp", "standing lamp", "arc lamp", "tripod lamp", "torchiere"],
+    "table_lamps": ["table lamp", "desk lamp", "bedside lamp", "accent lamp"],
+    "accent_chairs": ["accent chair", "armchair", "club chair", "lounge chair", "wing chair"],
+    "beds": ["bed", "bedframe", "headboard", "king bed", "queen bed", "double bed"],
+    "nightstands": ["nightstand", "bedside table", "night table"],
+    "dressers": ["dresser", "chest of drawers", "bureau"],
+    "wardrobes": ["wardrobe", "armoire", "closet"],
+    "dining_tables": ["dining table", "dinner table", "kitchen table"],
+    "dining_chairs": ["dining chair", "kitchen chair", "side chair"],
+    "pendant_lamps": ["pendant", "chandelier", "hanging lamp", "ceiling lamp", "suspended lamp"],
+    "sideboards": ["sideboard", "buffet", "credenza", "console"],
+    "desks": ["desk", "writing desk", "computer desk", "work table"],
+    "office_chairs": ["office chair", "task chair", "ergonomic chair", "executive chair"],
+    "bookshelves": ["bookshelf", "bookcase", "shelving unit", "display shelf"],
+    "storage_cabinets": ["storage cabinet", "cabinet", "cupboard", "hutch"],
+    # Generic categories for ALL room types
+    "planters": [
+        "planter",
+        "plant pot",
+        "flower pot",
+        "plant stand",
+        "jardiniere",
+        "indoor plant",
+        "artificial plant",
+        "faux plant",
+    ],
+    "wall_art": ["wall art", "painting", "print", "poster", "canvas", "artwork", "wall decor", "frame"],
+    "decor": ["decor", "sculpture", "figurine", "vase", "decorative", "ornament", "statue", "object"],
+    "rugs": ["rug", "carpet", "area rug", "dhurrie", "kilim", "floor rug"],
+    "mats": [
+        "mat",
+        "floor mat",
+        "door mat",
+        "bath mat",
+        "runner",
+        "table runner",
+        "runner cloth",
+        "dining runner",
+        "hallway runner",
+    ],  # Mats and runners category
+    "table_runners": [
+        "table runner",
+        "runner cloth",
+        "dining runner",
+    ],  # Separate category for table runners (kept for backwards compatibility)
+    # Additional generic
+    "mirrors": ["mirror", "wall mirror", "floor mirror", "vanity mirror"],
+    "cushions": ["cushion", "pillow", "throw pillow", "decorative pillow"],
+    "throws": ["throw", "blanket", "throw blanket"],
+}
+
+# Exclusion keywords - products containing these terms will be excluded from the category
+CATEGORY_EXCLUSIONS = {
+    "sofas": ["ottoman", "pouf", "footstool", "bench", "stool", "cover", "protector", "slipcover"],
+    "planters": ["potpourri", "scented", "fragrance", "aroma", "diffuser", "candle", "incense"],
+    "rugs": [
+        "table runner",
+        "runner cloth",
+        "dining runner",
+        "flower",
+        "faux flower",
+        "artificial flower",
+        "stem",
+        "bouquet",
+        "potpourri",
+    ],
+    "decor": ["potpourri", "scented"],
+}
+
+# Priority keywords - products matching these terms will be sorted first
+CATEGORY_PRIORITY_KEYWORDS = {
+    "sofas": ["3 seater", "three seater", "l shape", "sectional", "corner"],  # Prioritize larger sofas
+}
+
+
+async def _get_category_based_recommendations(
+    selected_categories: List[CategoryRecommendation],
+    db: AsyncSession,
+    selected_stores: Optional[List[str]] = None,
+    limit_per_category: int = 50,
+    style_attributes: Optional[Dict[str, Any]] = None,
+) -> Dict[str, List[dict]]:
+    """
+    Get product recommendations grouped by AI-selected categories.
+
+    This function queries products for each category using keyword matching,
+    applies optional budget and store filters, and returns products grouped by category.
+
+    NEW: Also uses ChatGPT style attributes (colors, materials, style keywords) to
+    prioritize products that match the user's design preferences.
+
+    Args:
+        selected_categories: List of CategoryRecommendation from ChatGPT analysis
+        db: Database session
+        selected_stores: Optional list of store names to filter by
+        limit_per_category: Max products per category (default 50)
+        style_attributes: Optional dict with style preferences from ChatGPT analysis
+            - style_keywords: List of style terms (e.g., ["modern", "minimalist"])
+            - colors: List of color preferences (e.g., ["beige", "gray", "neutral"])
+            - materials: List of material preferences (e.g., ["wood", "leather", "velvet"])
+
+    Returns:
+        Dict mapping category_id to list of product dicts
+    """
+    import asyncio
+    from typing import Dict
+
+    from sqlalchemy import func, or_
+    from sqlalchemy.orm import selectinload
+
+    # Extract style attributes for product prioritization
+    style_keywords = style_attributes.get("style_keywords", []) if style_attributes else []
+    preferred_colors = style_attributes.get("colors", []) if style_attributes else []
+    preferred_materials = style_attributes.get("materials", []) if style_attributes else []
+
+    logger.info(f"[CATEGORY RECS] Getting recommendations for {len(selected_categories)} categories")
+    logger.info(
+        f"[CATEGORY RECS] Style attributes - keywords: {style_keywords}, colors: {preferred_colors}, materials: {preferred_materials}"
+    )
+
+    products_by_category: Dict[str, List[dict]] = {}
+
+    async def fetch_category_products(category: CategoryRecommendation) -> Tuple[str, List[dict]]:
+        """Fetch products for a single category"""
+        try:
+            category_id = category.category_id
+            keywords = CATEGORY_KEYWORDS.get(category_id, [category_id.replace("_", " ")])
+            exclusions = CATEGORY_EXCLUSIONS.get(category_id, [])
+            priority_keywords = CATEGORY_PRIORITY_KEYWORDS.get(category_id, [])
+
+            logger.info(f"[CATEGORY RECS] Fetching {category_id} with keywords: {keywords}, exclusions: {exclusions}")
+
+            # Build keyword filter - match any keyword in product name
+            keyword_conditions = []
+            for keyword in keywords:
+                keyword_conditions.append(Product.name.ilike(f"%{keyword}%"))
+
+            # Build exclusion filter - exclude products with these terms
+            exclusion_conditions = []
+            for exclusion in exclusions:
+                exclusion_conditions.append(~Product.name.ilike(f"%{exclusion}%"))
+
+            # Base query with eager loading (including attributes for style matching)
+            query = (
+                select(Product)
+                .options(selectinload(Product.images), selectinload(Product.attributes))
+                .where(Product.is_available.is_(True), or_(*keyword_conditions) if keyword_conditions else True)
+            )
+
+            # Apply exclusion filters
+            for excl_condition in exclusion_conditions:
+                query = query.where(excl_condition)
+
+            # Apply store filter if provided
+            if selected_stores:
+                query = query.where(Product.source_website.in_(selected_stores))
+
+            # Apply budget filter if provided
+            if category.budget_allocation:
+                if category.budget_allocation.min > 0:
+                    query = query.where(Product.price >= category.budget_allocation.min)
+                if category.budget_allocation.max < 999999:
+                    query = query.where(Product.price <= category.budget_allocation.max)
+
+            # Don't limit in SQL - fetch ALL products in this category so we can score them all
+            # This ensures we don't miss products with great style matches that happen to be pricier
+            # The limit is applied AFTER scoring to get the best style-matched products
+            result = await db.execute(query)
+            products = result.scalars().all()
+
+            logger.info(f"[CATEGORY RECS] {category_id}: Fetched {len(products)} candidate products for scoring")
+
+            # =================================================================
+            # STYLE MATCHING: Score products based on style attributes
+            # Matches against: name, description, and ProductAttributes
+            # =================================================================
+            def calculate_style_score(product) -> float:
+                """
+                Calculate a style match score for a product (lower = better match).
+                Checks name, description, and product attributes.
+                """
+                score = 100.0  # Base score (high = no match)
+
+                # Build searchable text from product
+                name_lower = (product.name or "").lower()
+                desc_lower = (product.description or "").lower()
+
+                # Extract attribute values for matching
+                attr_style = ""
+                attr_colors = ""
+                attr_materials = ""
+                attr_texture = ""
+
+                if product.attributes:
+                    for attr in product.attributes:
+                        attr_name = (attr.attribute_name or "").lower()
+                        attr_value = (attr.attribute_value or "").lower()
+
+                        if attr_name == "style":
+                            attr_style = attr_value
+                        elif attr_name in ["color_primary", "color_secondary", "color"]:
+                            attr_colors += f" {attr_value}"
+                        elif attr_name in ["material_primary", "material_secondary", "material", "materials"]:
+                            attr_materials += f" {attr_value}"
+                        elif attr_name == "texture":
+                            attr_texture = attr_value
+
+                # Check category priority keywords first (highest priority)
+                for idx, pk in enumerate(priority_keywords):
+                    pk_lower = pk.lower()
+                    if pk_lower in name_lower:
+                        score = min(score, idx * 0.5)  # Very strong match
+                        break
+
+                # Check style keywords (e.g., "modern", "minimalist")
+                for idx, sk in enumerate(style_keywords):
+                    sk_lower = sk.lower()
+                    # Check attribute style first (most accurate)
+                    if sk_lower in attr_style:
+                        score = min(score, 5 + idx * 0.5)
+                    # Check name
+                    elif sk_lower in name_lower:
+                        score = min(score, 10 + idx * 0.5)
+                    # Check description
+                    elif sk_lower in desc_lower:
+                        score = min(score, 15 + idx * 0.5)
+
+                # Check color preferences
+                for idx, color in enumerate(preferred_colors):
+                    color_lower = color.lower()
+                    # Check color attributes first (most accurate)
+                    if color_lower in attr_colors:
+                        score = min(score, 20 + idx * 0.5)
+                    # Check name
+                    elif color_lower in name_lower:
+                        score = min(score, 25 + idx * 0.5)
+                    # Check description
+                    elif color_lower in desc_lower:
+                        score = min(score, 30 + idx * 0.5)
+
+                # Check material preferences
+                for idx, material in enumerate(preferred_materials):
+                    material_lower = material.lower()
+                    # Check material attributes first (most accurate)
+                    if material_lower in attr_materials or material_lower in attr_texture:
+                        score = min(score, 35 + idx * 0.5)
+                    # Check name
+                    elif material_lower in name_lower:
+                        score = min(score, 40 + idx * 0.5)
+                    # Check description
+                    elif material_lower in desc_lower:
+                        score = min(score, 45 + idx * 0.5)
+
+                return score
+
+            # Score and sort products
+            scored_products = []
+            for product in products:
+                style_score = calculate_style_score(product)
+                scored_products.append((product, style_score))
+
+            # Sort by style score (lower is better), then by price
+            scored_products.sort(key=lambda x: (x[1], x[0].price or 0))
+
+            # =================================================================
+            # STRICT COLOR FILTER: If colors are specified, filter to only products
+            # that actually contain the color in their name, description, or attributes
+            # This ensures "red sofas" shows ONLY red sofas, not just red first
+            # =================================================================
+            if preferred_colors:
+
+                def product_matches_color(product) -> bool:
+                    """Check if product matches any of the preferred colors"""
+                    name_lower = (product.name or "").lower()
+                    desc_lower = (product.description or "").lower()
+
+                    # Check product attributes for color
+                    attr_colors = ""
+                    if product.attributes:
+                        for attr in product.attributes:
+                            attr_name = (attr.attribute_name or "").lower()
+                            if attr_name in ["color_primary", "color_secondary", "color", "color_accent"]:
+                                attr_colors += f" {(attr.attribute_value or '').lower()}"
+
+                    for color in preferred_colors:
+                        color_lower = color.lower()
+                        if color_lower in name_lower or color_lower in desc_lower or color_lower in attr_colors:
+                            return True
+                    return False
+
+                color_matched = [(p, s) for p, s in scored_products if product_matches_color(p)]
+                if color_matched:
+                    logger.info(
+                        f"[CATEGORY RECS] {category_id}: Strict color filter - {len(color_matched)} products match colors {preferred_colors}"
+                    )
+                    scored_products = color_matched
+                else:
+                    logger.info(
+                        f"[CATEGORY RECS] {category_id}: No products match colors {preferred_colors}, showing all products"
+                    )
+
+            # Take only the limit we need
+            top_products = scored_products[:limit_per_category]
+
+            # Log style matching results
+            if style_keywords or preferred_colors or preferred_materials:
+                matched_count = sum(1 for _, score in top_products if score < 50)
+                logger.info(
+                    f"[CATEGORY RECS] {category_id}: {matched_count}/{len(top_products)} products matched style criteria"
+                )
+
+            # Convert to product dicts
+            product_list = []
+            for product, style_score in top_products:
+                primary_image = None
+                if product.images:
+                    primary_image = next(
+                        (img for img in product.images if img.is_primary), product.images[0] if product.images else None
+                    )
+
+                product_dict = {
+                    "id": product.id,
+                    "name": product.name,
+                    "price": product.price,
+                    "currency": product.currency,
+                    "brand": product.brand,
+                    "source_website": product.source_website,
+                    "source_url": product.source_url,
+                    "is_on_sale": product.is_on_sale,
+                    "style_score": style_score,  # Include score for debugging
+                    "primary_image": {
+                        "url": primary_image.original_url if primary_image else None,
+                        "alt_text": primary_image.alt_text if primary_image else product.name,
+                    }
+                    if primary_image
+                    else None,
+                }
+                product_list.append(product_dict)
+
+            logger.info(f"[CATEGORY RECS] Found {len(product_list)} products for {category_id}")
+            return category_id, product_list
+
+        except Exception as e:
+            logger.error(f"[CATEGORY RECS] Error fetching {category.category_id}: {e}")
+            return category.category_id, []
+
+    # Fetch all categories in parallel for better performance
+    tasks = [fetch_category_products(cat) for cat in selected_categories]
+    results = await asyncio.gather(*tasks)
+
+    # Build result dict
+    for category_id, products in results:
+        products_by_category[category_id] = products
+
+    # Log summary
+    total_products = sum(len(prods) for prods in products_by_category.values())
+    logger.info(f"[CATEGORY RECS] Total: {total_products} products across {len(products_by_category)} categories")
+
+    return products_by_category
 
 
 @router.get("/sessions/{session_id}/context")

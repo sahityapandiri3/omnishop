@@ -255,6 +255,9 @@ class Project(Base):
     canvas_products = Column(Text, nullable=True)  # JSON array of products on canvas
     visualization_history = Column(Text, nullable=True)  # JSON array of visualization history for undo/redo
 
+    # Chat session link - for restoring chat history when project is reloaded
+    chat_session_id = Column(String(36), ForeignKey("chat_sessions.id"), nullable=True, index=True)
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

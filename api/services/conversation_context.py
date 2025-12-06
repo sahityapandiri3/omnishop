@@ -480,10 +480,13 @@ class ConversationContextManager:
         # Add user preferences context
         if context.user_preferences:
             prefs_summary = self.get_user_preferences_summary(context.session_id)
-            if prefs_summary["style_preferences"]:
-                base_prompt += f"\n\nUser's preferred styles: {', '.join(prefs_summary['style_preferences'])}"
-            if prefs_summary["color_preferences"]:
-                base_prompt += f"\nUser's color preferences: {', '.join(prefs_summary['color_preferences'])}"
+            # Filter out None values from preference lists before joining
+            style_prefs = [s for s in prefs_summary["style_preferences"] if s is not None]
+            if style_prefs:
+                base_prompt += f"\n\nUser's preferred styles: {', '.join(style_prefs)}"
+            color_prefs = [c for c in prefs_summary["color_preferences"] if c is not None]
+            if color_prefs:
+                base_prompt += f"\nUser's color preferences: {', '.join(color_prefs)}"
             if prefs_summary["budget_range"] != "unknown":
                 base_prompt += f"\nUser's budget range: {prefs_summary['budget_range']}"
 
