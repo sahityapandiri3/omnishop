@@ -8,6 +8,7 @@ import CanvasPanel from '@/components/panels/CanvasPanel';
 import { checkFurnitureRemovalStatus, startFurnitureRemoval, getAvailableStores, projectsAPI } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigationGuard } from '@/hooks/useNavigationGuard';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
 
 /**
  * New UI V2: Three-Panel Design Interface
@@ -17,7 +18,7 @@ import { useNavigationGuard } from '@/hooks/useNavigationGuard';
  * - Center Panel (50%): Product Discovery & Selection
  * - Right Panel (25%): Canvas & Visualization
  */
-export default function DesignPage() {
+function DesignPageContent() {
   // Mobile tab state
   const [activeTab, setActiveTab] = useState<'chat' | 'products' | 'canvas'>('chat');
 
@@ -1322,5 +1323,13 @@ export default function DesignPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function DesignPage() {
+  return (
+    <ProtectedRoute>
+      <DesignPageContent />
+    </ProtectedRoute>
   );
 }

@@ -8,8 +8,9 @@ import ProductGrid from '@/components/ProductGrid'
 import SearchBar from '@/components/SearchBar'
 import FilterSidebar from '@/components/FilterSidebar'
 import { AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline'
+import { ProtectedRoute } from '@/components/ProtectedRoute'
 
-export default function ProductsPage() {
+function ProductsPageContent() {
   const [filters, setFilters] = useState<ProductFilters>({})
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(1)
@@ -266,4 +267,12 @@ function Pagination({ currentPage, totalPages, onPageChange, hasNext, hasPrev }:
       </button>
     </nav>
   )
+}
+
+export default function ProductsPage() {
+  return (
+    <ProtectedRoute>
+      <ProductsPageContent />
+    </ProtectedRoute>
+  );
 }

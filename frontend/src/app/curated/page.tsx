@@ -7,10 +7,11 @@ import { getCuratedLooks, getCuratedLookById, CuratedLook, CuratedLooksResponse,
 import { CuratedLookCard } from '@/components/curated/CuratedLookCard';
 import { LookDetailModal } from '@/components/curated/LookDetailModal';
 import { useAuth } from '@/contexts/AuthContext';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
 
 type RoomType = 'all' | 'living_room' | 'bedroom';
 
-export default function CuratedPage() {
+function CuratedPageContent() {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
   const [looksData, setLooksData] = useState<CuratedLooksResponse | null>(null);
@@ -298,5 +299,13 @@ export default function CuratedPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function CuratedPage() {
+  return (
+    <ProtectedRoute>
+      <CuratedPageContent />
+    </ProtectedRoute>
   );
 }

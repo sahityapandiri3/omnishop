@@ -23,8 +23,26 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Get redirect URL from query params - default to /curated for new signups
-  const redirectUrl = searchParams?.get('redirect') || '/curated';
+  // Get redirect URL from query params, sessionStorage, or default to /curated
+  const getRedirectUrl = () => {
+    // First check query params
+    const queryRedirect = searchParams?.get('redirect');
+    if (queryRedirect) return queryRedirect;
+
+    // Then check sessionStorage (set by ProtectedRoute)
+    if (typeof window !== 'undefined') {
+      const storedRedirect = sessionStorage.getItem('redirectAfterLogin');
+      if (storedRedirect) {
+        sessionStorage.removeItem('redirectAfterLogin');
+        return storedRedirect;
+      }
+    }
+
+    // Default to curated looks
+    return '/curated';
+  };
+
+  const redirectUrl = getRedirectUrl();
 
   // Redirect if already authenticated
   useEffect(() => {

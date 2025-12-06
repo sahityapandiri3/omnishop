@@ -17,6 +17,13 @@ const formatImageSrc = (src: string | null | undefined): string => {
   return src;
 };
 
+// Helper to find a look by style theme name (case-insensitive partial match)
+const findLookByTheme = (looks: CuratedLook[], themeName: string): CuratedLook | undefined => {
+  return looks.find(look =>
+    look.style_theme?.toLowerCase().includes(themeName.toLowerCase())
+  );
+};
+
 export default function HomePage() {
   const [looks, setLooks] = useState<CuratedLook[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,7 +33,7 @@ export default function HomePage() {
       try {
         // Request medium-quality images for landing page (1200px, 80% quality - faster loading)
         const response = await getCuratedLooks(undefined, 'medium');
-        setLooks(response.looks.slice(0, 6)); // Get first 6 looks
+        setLooks(response.looks.slice(0, 7)); // Get first 7 looks
       } catch (error) {
         console.error('Failed to fetch curated looks:', error);
       } finally {
@@ -36,8 +43,15 @@ export default function HomePage() {
     fetchLooks();
   }, []);
 
-  // Get hero image - use Coastal Chic Living & Kitchen Space (index 1)
-  const heroImage = formatImageSrc(looks[1]?.visualization_image || looks[1]?.room_image);
+  // Find specific looks by name for consistent display
+  const heroLook = findLookByTheme(looks, 'Coastal Chic');
+  const featuredLook = findLookByTheme(looks, 'Modern Luxe');
+  const bottomLook = findLookByTheme(looks, 'Organic Modern Foyer');
+  const smallLook1 = findLookByTheme(looks, 'Palace-Inspired');
+  const smallLook2 = findLookByTheme(looks, 'Scandinavian');
+
+  // Get hero image - use Coastal Chic Living & Kitchen Space
+  const heroImage = formatImageSrc(heroLook?.visualization_image || heroLook?.room_image);
 
   return (
     <div className="min-h-screen bg-white">
@@ -96,23 +110,23 @@ export default function HomePage() {
             </div>
           ) : looks.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Large Featured Look - Modern Luxe Living Room (index 4) */}
-              {looks[4] && (looks[4].visualization_image || looks[4].room_image) && (
+              {/* Large Featured Look - Modern Luxe Living Room */}
+              {featuredLook && (featuredLook.visualization_image || featuredLook.room_image) && (
                 <div className="md:col-span-2 md:row-span-2 relative aspect-[4/3] md:aspect-auto md:min-h-[500px] overflow-hidden group rounded-lg">
                   <img
-                    src={formatImageSrc(looks[4].visualization_image || looks[4].room_image)}
-                    alt={looks[4].style_theme}
+                    src={formatImageSrc(featuredLook.visualization_image || featuredLook.room_image)}
+                    alt={featuredLook.style_theme}
                     className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                   <div className="absolute bottom-0 left-0 right-0 p-6 translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-500">
-                    <p className="text-white text-xl font-light">{looks[4].style_theme}</p>
+                    <p className="text-white text-xl font-light">{featuredLook.style_theme}</p>
                   </div>
                 </div>
               )}
 
-              {/* Smaller Looks - Palace-Inspired (index 0) and Scandinavian (index 2) */}
-              {[looks[0], looks[2]].filter(Boolean).map((look) => (
+              {/* Smaller Looks - Palace-Inspired and Scandinavian */}
+              {[smallLook1, smallLook2].filter(Boolean).map((look) => (
                 look && (look.visualization_image || look.room_image) && (
                   <div key={look.look_id} className="relative aspect-[4/3] overflow-hidden group rounded-lg">
                     <img
@@ -168,19 +182,19 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Visual Break with CTA */}
+      {/* Visual Break with CTA - Organic Modern Foyer */}
       <section className="relative h-[70vh] overflow-hidden">
-        {/* Background - use a different look or gradient */}
+        {/* Background - Organic Modern Foyer with Statement Decor */}
         <div className="absolute inset-0 bg-neutral-900">
-          {looks[3]?.visualization_image || looks[3]?.room_image ? (
+          {bottomLook?.visualization_image || bottomLook?.room_image ? (
             <img
-              src={formatImageSrc(looks[3].visualization_image || looks[3].room_image)}
+              src={formatImageSrc(bottomLook.visualization_image || bottomLook.room_image)}
               alt="Transform your space"
               className="absolute inset-0 w-full h-full object-cover opacity-70"
             />
-          ) : looks[1]?.visualization_image || looks[1]?.room_image ? (
+          ) : heroLook?.visualization_image || heroLook?.room_image ? (
             <img
-              src={formatImageSrc(looks[1].visualization_image || looks[1].room_image)}
+              src={formatImageSrc(heroLook.visualization_image || heroLook.room_image)}
               alt="Transform your space"
               className="absolute inset-0 w-full h-full object-cover opacity-70"
             />
