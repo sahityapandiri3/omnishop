@@ -984,18 +984,31 @@ OUTPUT: A photorealistic image of the EXACT SAME ROOM but COMPLETELY EMPTY - rea
                         )
 
                         result_image = None
-                        if response.parts:
-                            for part in response.parts:
-                                if part.text is not None:
+                        # Handle different response structures from Google AI SDK
+                        # The SDK may return parts directly on response or nested in candidates
+                        parts = None
+                        if hasattr(response, 'parts') and response.parts:
+                            parts = response.parts
+                        elif hasattr(response, 'candidates') and response.candidates:
+                            # New SDK structure: response.candidates[0].content.parts
+                            candidate = response.candidates[0]
+                            if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                                parts = candidate.content.parts
+
+                        if parts:
+                            for part in parts:
+                                if hasattr(part, 'text') and part.text is not None:
                                     logger.info(f"Gemini text response: {part.text[:200]}...")
-                                elif part.inline_data is not None:
+                                elif hasattr(part, 'inline_data') and part.inline_data is not None:
                                     image_bytes = part.inline_data.data
-                                    mime_type = part.inline_data.mime_type or "image/png"
+                                    mime_type = getattr(part.inline_data, 'mime_type', None) or "image/png"
                                     image_base64_result = base64.b64encode(image_bytes).decode("utf-8")
                                     result_image = f"data:{mime_type};base64,{image_base64_result}"
                                     logger.info(
                                         f"Furniture removal successful on attempt {attempt + 1} ({len(image_bytes)} bytes)"
                                     )
+                        else:
+                            logger.warning(f"Furniture removal response has no parts: {type(response)}")
                         return result_image
 
                     try:
