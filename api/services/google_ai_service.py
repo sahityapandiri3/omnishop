@@ -850,25 +850,10 @@ Return only the processed image."""
                                     image_data = part.inline_data.data
                                     mime_type = getattr(part.inline_data, "mime_type", None) or "image/png"
 
-                                    # New SDK (google-genai>=1.0.0) returns raw image bytes
+                                    # google-genai 1.41.0 returns raw image bytes
                                     if isinstance(image_data, bytes):
+                                        image_base64_result = base64.b64encode(image_data).decode("utf-8")
                                         data_size = len(image_data)
-                                        first_bytes = image_data[:8]
-                                        first_hex = first_bytes.hex()
-                                        logger.info(f"Image data: {data_size} bytes, first 8 hex: {first_hex}")
-
-                                        # Check if bytes are already base64 encoded
-                                        # Base64 starts with ASCII chars like 'iVBORw0K' (PNG) or '/9j/' (JPEG)
-                                        # Raw PNG starts with 89504e47, raw JPEG with ffd8ff
-                                        if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
-                                            # Raw image bytes - encode to base64
-                                            logger.info("Detected raw image bytes, encoding to base64")
-                                            image_base64_result = base64.b64encode(image_data).decode("utf-8")
-                                        else:
-                                            # Bytes are likely base64 string encoded as bytes
-                                            # Decode bytes to string and use directly
-                                            logger.info("Detected base64 string as bytes, using directly")
-                                            image_base64_result = image_data.decode("utf-8")
                                     else:
                                         logger.error(f"Unexpected image data type: {type(image_data)}")
                                         continue
