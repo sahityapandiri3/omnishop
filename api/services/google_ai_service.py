@@ -761,202 +761,26 @@ RESPOND WITH JSON ONLY - NO OTHER TEXT."""
 
             logger.info(f"Loaded image for furniture removal: {pil_image.width}x{pil_image.height} pixels")
 
-            prompt = """CRITICAL TASK: COMPLETELY EMPTY THIS ROOM. Remove 100% of all moveable objects.
+            prompt = """Clean the room in this image for interior styling.
+Remove all movable objects and keep all fixed architecture.
 
-You are a professional room staging assistant. Your job is to create a COMPLETELY EMPTY, VACANT room image - as if the room has been cleared for renovation or a new tenant is moving in.
+REMOVE (completely):
+Sofas, chairs, tables, beds, mattresses
+Rugs, curtains, loose shelves, lamps
+Décor items (plants, art, frames, pillows, vases)
+Toys, clutter, electronics, bags, personal items
 
-🚨 MANDATORY: REMOVE EVERY SINGLE ITEM THAT IS NOT PART OF THE BUILDING STRUCTURE 🚨
+KEEP (unchanged):
+Walls, windows, doors, built-in wardrobes
+Fixed lights, ceiling, flooring, wall trims
+Electrical outlets, switches, AC vents
 
-THE GOLDEN RULE: If an object can be picked up, pushed, carried, or moved by a person - REMOVE IT.
-This includes ALL furniture, ALL lighting fixtures (except recessed), ALL decor, ALL plants, ALL rugs.
-
-═══════════════════════════════════════════════════════════════════════════
-SEATING & BENCHES (DELETE ALL - ZERO TOLERANCE):
-═══════════════════════════════════════════════════════════════════════════
-• Sofas, couches, sectionals, loveseats, daybeds
-• Armchairs, accent chairs, recliners, club chairs, wingback chairs
-• Dining chairs, kitchen chairs, bar stools, counter stools
-• Office chairs, desk chairs, swivel chairs
-• Ottomans, poufs, footstools, footrests
-• ALL BENCHES: entryway benches, storage benches, window benches, planter benches, garden benches, mudroom benches, shoe benches
-• Banquettes, settees, chaise lounges
-• Floor cushions, bean bags, meditation cushions
-• Outdoor chairs, patio furniture, balcony seating
-• Rocking chairs, gliders, papasan chairs
-• ANY object designed for sitting OR that looks like a bench - REMOVE IT
-
-═══════════════════════════════════════════════════════════════════════════
-TABLES (DELETE ALL - EVERY SINGLE ONE):
-═══════════════════════════════════════════════════════════════════════════
-• Coffee tables, cocktail tables, conversation tables
-• Side tables, end tables, accent tables, C-tables
-• Console tables, sofa tables, entry tables, hall tables
-• DINING TABLES - ALL sizes, round, rectangular, oval - REMOVE ALL
-• Kitchen tables, breakfast tables, breakfast nooks, eat-in tables
-• Desks, writing desks, work tables, computer desks, standing desks
-• Nightstands, bedside tables, bedside cabinets
-• Vanity tables, dressing tables, makeup tables
-• Bar carts, serving carts, trolleys, bar tables
-• Nesting tables, stacking tables, folding tables
-• Outdoor tables, patio tables, garden tables, picnic tables
-• ANY flat surface for placing items - REMOVE IT
-
-═══════════════════════════════════════════════════════════════════════════
-BEDS & BEDROOM FURNITURE (DELETE ALL):
-═══════════════════════════════════════════════════════════════════════════
-• Beds (all sizes: king, queen, full, twin, California king)
-• Bed frames, platform beds, canopy beds, four-poster beds
-• Headboards, footboards (even if mounted on wall)
-• Mattresses, box springs, bed bases
-• Dressers, chest of drawers, tallboys, lowboys
-• Wardrobes, armoires, closet systems (freestanding)
-• Vanities, mirrors with stands
-
-═══════════════════════════════════════════════════════════════════════════
-STORAGE, TV CONSOLES & SHELVING (DELETE ALL):
-═══════════════════════════════════════════════════════════════════════════
-• Bookshelves, bookcases, wall shelves (not built-in)
-• Display cabinets, curio cabinets, china cabinets
-• TV CONSOLES - REMOVE ALL TV stands, media consoles, entertainment centers, TV units
-• TV CABINETS - any furniture designed to hold or display a TV - REMOVE
-• Sideboards, buffets, credenzas, console tables
-• Filing cabinets, storage cabinets, storage units
-• Shoe racks, coat racks, umbrella stands, hooks, hat stands
-• Baskets, storage boxes, bins, containers, crates
-• Wine racks, magazine racks, towel racks
-
-═══════════════════════════════════════════════════════════════════════════
-⚠️ LIGHTING (DELETE ALL - MOST COMMONLY MISSED ITEMS!) ⚠️
-═══════════════════════════════════════════════════════════════════════════
-• Floor lamps, standing lamps, torchiere lamps, arc lamps, tripod lamps
-• Table lamps, desk lamps, bedside lamps, buffet lamps, accent lamps
-• WALL SCONCES - REMOVE ALL wall-mounted lights (even if they look built-in)
-• CEILING LIGHTS - REMOVE chandeliers, pendant lights, hanging lamps, track lighting
-• WALL LIGHTS - REMOVE picture lights, vanity lights, bathroom sconces
-• String lights, fairy lights, LED strips, rope lights
-• Lanterns, candle holders, hurricane lamps, candelabras
-• Task lights, reading lights, clip-on lights, swing arm lamps
-• Spotlights, uplights, accent lighting, decorative lighting
-• ANY light fixture that protrudes from wall or hangs from ceiling - REMOVE IT
-• ONLY keep flat recessed ceiling lights (can lights) that are flush with ceiling
-
-═══════════════════════════════════════════════════════════════════════════
-RUGS & FLOOR COVERINGS (DELETE ALL - FLOOR MUST BE COMPLETELY BARE):
-═══════════════════════════════════════════════════════════════════════════
-• Area rugs, room rugs, living room rugs
-• Runners, hallway rugs, stair runners
-• Kitchen mats, bath mats, door mats
-• Carpets (unless wall-to-wall installed)
-• Dhurries, kilims, Persian rugs, Oriental rugs
-• Jute rugs, sisal rugs, sheepskin rugs
-• Outdoor rugs, patio rugs
-• ANY textile on the floor - REMOVE IT
-
-═══════════════════════════════════════════════════════════════════════════
-PLANTS, PLANTERS & GREENERY (DELETE ALL):
-═══════════════════════════════════════════════════════════════════════════
-• Indoor plants, houseplants, potted plants (all sizes - small to large)
-• Artificial plants, fake plants, faux greenery, silk flowers
-• Flowers, flower arrangements, bouquets, dried flowers
-• ALL PLANTERS: plant pots, plant stands, jardinieres, planter boxes
-• PLANTER BENCHES - benches with built-in planters - REMOVE ENTIRELY
-• Terrariums, vivariums, aquariums, fish tanks
-• Hanging plants, trailing plants, wall-mounted plants, vertical gardens
-• Trees (indoor), palm plants, fiddle leaf figs, monstera, pothos
-• Succulents, cacti, herb gardens, window box plants
-• Vases with flowers, branches, or any greenery
-• ANY container with plants or that looks like it holds plants - REMOVE IT
-
-═══════════════════════════════════════════════════════════════════════════
-WALL DECOR & ART (DELETE ALL):
-═══════════════════════════════════════════════════════════════════════════
-• Paintings, prints, posters, canvases
-• Photographs, picture frames, gallery walls
-• Mirrors (decorative, leaning, or hung)
-• Wall hangings, tapestries, macrame
-• Clocks (wall-mounted or standing)
-• Shelves with decor items
-• Wall sculptures, 3D art, metal art
-• Bulletin boards, chalkboards, whiteboards
-
-═══════════════════════════════════════════════════════════════════════════
-SOFT FURNISHINGS & TEXTILES (DELETE ALL):
-═══════════════════════════════════════════════════════════════════════════
-• Throw pillows, decorative pillows, cushions
-• Blankets, throws, quilts, afghans
-• Curtains, drapes, blinds, shades, shutters, valances
-• Table linens, tablecloths, runners, placemats
-• Bed linens (if bed is shown - remove everything)
-
-═══════════════════════════════════════════════════════════════════════════
-DECORATIVE OBJECTS & ACCESSORIES (DELETE ALL):
-═══════════════════════════════════════════════════════════════════════════
-• Vases, bowls, decorative trays
-• Candles, candle holders, diffusers
-• Sculptures, figurines, statues, busts
-• Books, magazines, decorative stacks
-• Clocks, bookends, globes
-• Decorative boxes, jewelry boxes
-• Collectibles, souvenirs, memorabilia
-
-═══════════════════════════════════════════════════════════════════════════
-ELECTRONICS & APPLIANCES (DELETE ALL VISIBLE):
-═══════════════════════════════════════════════════════════════════════════
-• TVs, monitors, screens
-• Speakers, sound systems, soundbars
-• Computers, laptops, tablets
-• Gaming consoles
-• Small appliances on counters
-• Fans (floor fans, desk fans)
-
-═══════════════════════════════════════════════════════════════════════════
-KEEP ONLY THESE (PERMANENT BUILDING ELEMENTS):
-═══════════════════════════════════════════════════════════════════════════
-✓ Walls (keep exact color, texture, moldings, crown molding)
-✓ Floor (show COMPLETELY BARE - same material visible)
-✓ Ceiling (flat ceiling surface only)
-✓ ONLY recessed/can lights that are FLUSH with ceiling (no protrusion)
-✓ Windows (frame and glass ONLY - no treatments, no blinds)
-✓ Doors and door frames
-✓ Built-in closets (doors only, remove contents if visible)
-✓ Built-in kitchen appliances (stove, oven, refrigerator)
-✓ Fixed bathroom fixtures (toilet, sink, tub/shower)
-✓ Air vents, thermostats, light switches, electrical outlets
-✓ Fireplace (if built-in to wall - remove any accessories)
-✓ Stairs and railings (if architectural/structural)
-
-❌ DO NOT KEEP: Wall sconces, chandeliers, pendant lights, track lighting, or ANY light that sticks out from wall or hangs from ceiling
-
-═══════════════════════════════════════════════════════════════════════════
-QUALITY CHECK - YOUR OUTPUT MUST PASS ALL:
-═══════════════════════════════════════════════════════════════════════════
-□ Can I see ZERO chairs, benches, or seating of any kind?
-□ Can I see ZERO tables of any kind?
-□ Can I see ZERO beds or bedroom furniture?
-□ Can I see ZERO lamps, wall sconces, or ceiling lights (except recessed)?
-□ Can I see ZERO rugs or floor coverings?
-□ Can I see ZERO plants, planters, or greenery?
-□ Can I see ZERO wall art or mirrors?
-□ Can I see ZERO decorative objects?
-□ Can I see ZERO curtains or window treatments?
-□ Can I see the BARE FLOOR completely?
-□ Are ALL walls completely bare (no lights sticking out)?
-□ Is the ceiling clear of hanging lights/chandeliers?
-
-If the answer to ANY of these is NO, you have FAILED. The room must look 100% VACANT.
-
-COMMON MISTAKES TO AVOID:
-- Leaving wall sconces on walls
-- Leaving chandeliers or pendant lights hanging from ceiling
-- Leaving benches (including planter benches, entryway benches)
-- Leaving plants or planters
-- Leaving TV consoles or entertainment centers
-- Leaving dining tables and chairs
-- Leaving ANY moveable object
-
-REMEMBER: If you can pick it up, push it, or carry it out of the room - it should NOT be in the final image!
-
-OUTPUT: A photorealistic image of the EXACT SAME ROOM but COMPLETELY EMPTY - ready for new furniture to be placed. Preserve the room's architecture, natural lighting, and perspective perfectly."""
+OUTPUT REQUIREMENTS:
+Return an empty, realistic version of the same room
+Keep lighting, shadows, perspective, and proportions natural
+No artifacts, smudges, ghost objects, or distortions
+Image must look like a clean, vacant room ready for styling
+Return only the processed image."""
 
             # Retry loop with exponential backoff
             for attempt in range(max_retries):
