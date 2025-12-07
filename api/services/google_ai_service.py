@@ -847,12 +847,26 @@ Return only the processed image."""
                                 if hasattr(part, "text") and part.text is not None:
                                     logger.info(f"Gemini text response: {part.text[:200]}...")
                                 elif hasattr(part, "inline_data") and part.inline_data is not None:
-                                    image_bytes = part.inline_data.data
+                                    image_data = part.inline_data.data
                                     mime_type = getattr(part.inline_data, "mime_type", None) or "image/png"
-                                    image_base64_result = base64.b64encode(image_bytes).decode("utf-8")
+
+                                    # Handle both raw bytes and base64 string from SDK
+                                    # New SDK versions may return base64 string instead of raw bytes
+                                    if isinstance(image_data, bytes):
+                                        image_base64_result = base64.b64encode(image_data).decode("utf-8")
+                                        data_size = len(image_data)
+                                    elif isinstance(image_data, str):
+                                        # Already base64 encoded string from SDK
+                                        image_base64_result = image_data
+                                        data_size = len(image_data)
+                                        logger.info("Image data received as base64 string from SDK")
+                                    else:
+                                        logger.error(f"Unexpected image data type: {type(image_data)}")
+                                        continue
+
                                     result_image = f"data:{mime_type};base64,{image_base64_result}"
                                     logger.info(
-                                        f"Furniture removal successful on attempt {attempt + 1} ({len(image_bytes)} bytes)"
+                                        f"Furniture removal successful on attempt {attempt + 1} ({data_size} bytes/chars)"
                                     )
                         else:
                             logger.warning(f"Furniture removal response has no parts: {type(response)}")
