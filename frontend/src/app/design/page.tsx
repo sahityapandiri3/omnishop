@@ -870,17 +870,28 @@ function DesignPageContent() {
             console.log('[DesignPage] Furniture removal status:', status);
 
             if (status.status === 'completed' && status.image) {
-              console.log('[DesignPage] Furniture removal completed');
-              setRoomImage(status.image);
-              setCleanRoomImage(status.image);
+              console.log('[DesignPage] Furniture removal completed, image length:', status.image.length);
+              console.log('[DesignPage] Image starts with data:', status.image.startsWith('data:'));
+              console.log('[DesignPage] Image preview:', status.image.substring(0, 50));
+
+              // Ensure image has proper data URL format
+              let imageToSet = status.image;
+              if (!status.image.startsWith('data:')) {
+                console.log('[DesignPage] Adding data URL prefix to image');
+                imageToSet = `data:image/png;base64,${status.image}`;
+              }
+
+              setRoomImage(imageToSet);
+              setCleanRoomImage(imageToSet);
               // Save to sessionStorage with quota handling
               try {
                 // Clear old images first to free up space
                 sessionStorage.removeItem('cleanRoomImage');
                 sessionStorage.removeItem('curatedRoomImage');
                 sessionStorage.removeItem('curatedVisualizationImage');
-                sessionStorage.setItem('cleanRoomImage', status.image);
-                sessionStorage.setItem('roomImage', status.image);
+                sessionStorage.setItem('cleanRoomImage', imageToSet);
+                sessionStorage.setItem('roomImage', imageToSet);
+                console.log('[DesignPage] Image saved to sessionStorage, length:', imageToSet.length);
               } catch (storageError) {
                 console.warn('[DesignPage] SessionStorage quota exceeded, image stored in memory only:', storageError);
               }
