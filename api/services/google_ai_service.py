@@ -748,11 +748,34 @@ RESPOND WITH JSON ONLY - NO OTHER TEXT."""
         """
         try:
             # Convert base64 to PIL Image for the new API style
+            # Log input for debugging Railway issues
+            original_length = len(image_base64)
+            logger.info(f"Received image base64 string: {original_length} characters")
+
             # Remove data URL prefix if present
             if image_base64.startswith("data:image"):
                 image_base64 = image_base64.split(",")[1]
+                logger.info(f"After stripping data URL prefix: {len(image_base64)} characters")
+
+            # Log preview to detect truncation
+            if len(image_base64) > 100:
+                logger.info(f"Base64 preview: {image_base64[:50]}...{image_base64[-50:]}")
 
             image_bytes = base64.b64decode(image_base64)
+            logger.info(f"Decoded to {len(image_bytes)} bytes")
+
+            # Validate minimum size (real images are > 1KB)
+            if len(image_bytes) < 1024:
+                raise ValueError(f"Image data too small ({len(image_bytes)} bytes), likely truncated in transit")
+
+            # Check magic bytes for common image formats
+            magic_bytes = image_bytes[:8].hex()
+            logger.info(f"Image magic bytes: {magic_bytes}")
+
+            # JPEG starts with FFD8FF, PNG starts with 89504E47
+            if not (magic_bytes.startswith("ffd8ff") or magic_bytes.startswith("89504e47")):
+                logger.warning(f"Unexpected magic bytes: {magic_bytes}. Expected JPEG (ffd8ff) or PNG (89504e47).")
+
             pil_image = Image.open(io.BytesIO(image_bytes))
 
             # Convert to RGB if needed (e.g., RGBA images)
