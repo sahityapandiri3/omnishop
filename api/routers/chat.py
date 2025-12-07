@@ -179,7 +179,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
         # If user provided a follow-up (e.g., "abstract art" after "give me wall art"),
         # combine their response with the original category
         # =================================================================
-        previous_direct_search_category = None
+        previous_direct_search_categories = None
         if not is_direct_search:
             # Check if previous assistant message was in DIRECT_SEARCH_GATHERING state
             # CRITICAL: Exclude the current request's assistant message (we just created it above)
@@ -219,21 +219,22 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     logger.info(f"[DIRECT SEARCH FOLLOW-UP] Previous message state: {prev_state}")
 
                     if prev_state == "DIRECT_SEARCH_GATHERING":
-                        # DIRECT RETRIEVAL: Use the stored detected_categories object directly
-                        # This avoids the need to re-detect from keywords (which can fail for category_ids like "wall_art")
+                        # DIRECT RETRIEVAL: Use ALL stored detected_categories (not just the first one)
+                        # This allows multi-category searches like "show me sofas and coffee tables"
                         stored_categories = prev_analysis.get("detected_categories", [])
                         if stored_categories and len(stored_categories) > 0:
-                            previous_direct_search_category = stored_categories[0]
+                            # Use ALL categories, not just the first one
+                            previous_direct_search_categories = stored_categories
                             logger.info(
-                                f"[DIRECT SEARCH FOLLOW-UP] Retrieved stored category: {previous_direct_search_category}"
+                                f"[DIRECT SEARCH FOLLOW-UP] Retrieved {len(stored_categories)} stored categories: {[c.get('display_name') for c in stored_categories]}"
                             )
 
-                        if previous_direct_search_category:
+                        if previous_direct_search_categories:
                             # User is providing follow-up info - treat current message as qualifiers
-                            # Re-run detection but force it to be a direct search with the previous category
+                            # Re-run detection but force it to be a direct search with ALL previous categories
                             is_direct_search = True
                             direct_search_result["is_direct_search"] = True
-                            direct_search_result["detected_categories"] = [previous_direct_search_category]
+                            direct_search_result["detected_categories"] = previous_direct_search_categories
                             # Mark as having sufficient info since user provided follow-up
                             direct_search_result["has_sufficient_info"] = True
                             # Extract qualifiers from current message
@@ -298,7 +299,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                                 direct_search_result["extracted_styles"] = [w for w in words if w not in exclude_words]
 
                             logger.info(
-                                f"[DIRECT SEARCH FOLLOW-UP] Converted to direct search with category={previous_direct_search_category['category_id']}, colors={direct_search_result['extracted_colors']}, styles={direct_search_result['extracted_styles']}"
+                                f"[DIRECT SEARCH FOLLOW-UP] Converted to direct search with {len(previous_direct_search_categories)} categories={[c['category_id'] for c in previous_direct_search_categories]}, colors={direct_search_result['extracted_colors']}, styles={direct_search_result['extracted_styles']}"
                             )
                 except Exception as e:
                     logger.error(f"[DIRECT SEARCH FOLLOW-UP] Error parsing previous message: {e}")
@@ -2076,7 +2077,7 @@ def _detect_direct_search_query(message: str) -> Dict[str, Any]:
         "side_tables": ["side table", "end table", "accent table", "occasional table"],
         "floor_lamps": ["floor lamp", "standing lamp", "arc lamp", "tripod lamp"],
         "table_lamps": ["table lamp", "desk lamp", "bedside lamp"],
-        "accent_chairs": ["accent chair", "armchair", "club chair", "lounge chair", "wing chair"],
+        "accent_chairs": ["accent chair", "armchair", "club chair", "lounge chair", "wing chair", "chair"],
         "beds": ["bed", "bedframe", "headboard"],
         "nightstands": ["nightstand", "bedside table", "night table"],
         "dressers": ["dresser", "chest of drawers"],
@@ -2196,36 +2197,53 @@ def _build_direct_search_response_message(
     if styles:
         descriptors.append(styles[0])
 
-    category_names = [c["display_name"].lower() for c in detected_categories[:2]]  # Max 2 categories
+    # Allow all categories (no limit) for multi-category searches
+    category_names = [c["display_name"].lower() for c in detected_categories]
+
+    # Build category string based on count
+    if len(category_names) == 1:
+        category_str = category_names[0]
+    elif len(category_names) == 2:
+        category_str = f"{category_names[0]} and {category_names[1]}"
+    else:
+        # For 3+ categories, use comma-separated list with "and" for last item
+        category_str = ", ".join(category_names[:-1]) + f", and {category_names[-1]}"
 
     if descriptors:
         descriptor_str = " ".join(descriptors)
-        category_str = " and ".join(category_names)
         if product_count > 0:
-            return f"Here are {product_count} {descriptor_str} {category_str} for you! Take a look at the products panel to browse."
+            return f"Here are my top {product_count} {descriptor_str} {category_str} picks for you! Take a look at the products panel to browse."
         else:
             return f"I couldn't find any {descriptor_str} {category_str} in our current inventory. Try adjusting your search or check back later!"
     else:
-        category_str = " and ".join(category_names)
         if product_count > 0:
-            return f"Found {product_count} {category_str} for you! Check out the products panel to explore your options."
+            return f"Found my top {product_count} {category_str} picks for you! Check out the products panel to explore your options."
         else:
             return f"I couldn't find any {category_str} matching your request. Try a different search or check back later!"
 
 
 def _build_direct_search_followup_question(detected_categories: List[Dict]) -> str:
     """
-    Build a follow-up question when user asks for a category without enough qualifiers.
-    Example: User says "show me sofas" - we ask about style/color preferences.
+    Build a follow-up question when user asks for categories without enough qualifiers.
+    Handles both single and multiple categories with generic questions that apply to all.
+    Example: User says "show me sofas and rugs" - we ask about style/color preferences for both.
     """
-    category_names = [c["display_name"].lower() for c in detected_categories[:2]]
-    category_str = " or ".join(category_names) if len(category_names) > 1 else category_names[0]
+    category_names = [c["display_name"].lower() for c in detected_categories]
 
-    # Friendly follow-up questions based on the category type
+    # Build category string based on count
+    if len(category_names) == 1:
+        category_str = category_names[0]
+    elif len(category_names) == 2:
+        category_str = f"{category_names[0]} and {category_names[1]}"
+    else:
+        # For 3+ categories, use comma-separated list with "and" for last item
+        category_str = ", ".join(category_names[:-1]) + f", and {category_names[-1]}"
+
+    # Generic follow-up questions that work for any category combination
     questions = [
-        f"Great choice! What style of {category_str} are you looking for - modern, traditional, or something else?",
-        f"I can help you find the perfect {category_str}! Any preference on color or material?",
-        f"Looking for {category_str}! Do you have a specific style, color, or budget in mind?",
+        f"Great choices! What style are you looking for - modern, traditional, minimalist, or something else?",
+        f"I can help you find the perfect {category_str}! Any preference on colors or materials?",
+        f"Looking for {category_str}! Do you have a specific style, color palette, or budget in mind?",
     ]
 
     # Pick based on first category character (deterministic but varied)
@@ -3120,7 +3138,7 @@ CATEGORY_KEYWORDS = {
     "side_tables": ["side table", "end table", "accent table", "occasional table", "lamp table"],
     "floor_lamps": ["floor lamp", "standing lamp", "arc lamp", "tripod lamp", "torchiere"],
     "table_lamps": ["table lamp", "desk lamp", "bedside lamp", "accent lamp"],
-    "accent_chairs": ["accent chair", "armchair", "club chair", "lounge chair", "wing chair"],
+    "accent_chairs": ["accent chair", "armchair", "club chair", "lounge chair", "wing chair", "chair"],
     "beds": ["bed", "bedframe", "headboard", "king bed", "queen bed", "double bed"],
     "nightstands": ["nightstand", "bedside table", "night table"],
     "dressers": ["dresser", "chest of drawers", "bureau"],
@@ -3183,6 +3201,12 @@ CATEGORY_EXCLUSIONS = {
         "stem",
         "bouquet",
         "potpourri",
+        # Cushions and pillows should not appear in rug category
+        "cushion",
+        "cushion cover",
+        "pillow",
+        "pillow cover",
+        "throw pillow",
     ],
     "decor": ["potpourri", "scented"],
 }

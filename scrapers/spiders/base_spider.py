@@ -289,6 +289,10 @@ class BaseProductSpider(scrapy.Spider):
         if 'office' in name_lower and 'chair' in name_lower:
             return 'Office Chair'
 
+        # Study chair detection
+        if 'study' in name_lower and 'chair' in name_lower:
+            return 'Study Chair'
+
         # Rocking chair detection
         if 'rocking' in name_lower and 'chair' in name_lower:
             return 'Rocking Chair'
@@ -352,6 +356,10 @@ class BaseProductSpider(scrapy.Spider):
             return 'Cabinet'
         if 'storage' in name_lower:
             return 'Storage'
+
+        # Study table detection (before desk to catch "study table" specifically)
+        if 'study table' in name_lower or 'study desk' in name_lower:
+            return 'Study Table'
 
         # Desk detection
         if 'desk' in name_lower:

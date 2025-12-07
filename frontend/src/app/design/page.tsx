@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import ChatPanel from '@/components/panels/ChatPanel';
 import ProductDiscoveryPanel from '@/components/panels/ProductDiscoveryPanel';
 import CanvasPanel from '@/components/panels/CanvasPanel';
@@ -47,6 +47,7 @@ function DesignPageContent() {
 
   // Project state (for logged-in users)
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { isAuthenticated, user } = useAuth();
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>('');
@@ -233,16 +234,64 @@ function DesignPageContent() {
     console.log('[DesignPage] Cleared session ID on page load - starting fresh session');
   }, []);
 
-  // Load project data if projectId is in URL params
+  // Load project data if projectId is in URL params, or auto-create if authenticated without projectId
   useEffect(() => {
     const loadProject = async () => {
       const urlProjectId = searchParams?.get('projectId');
 
-      // If no project ID or not authenticated, mark as loaded immediately (guest mode)
-      if (!urlProjectId || !isAuthenticated) {
-        console.log('[DesignPage] No project to load (guest mode or no projectId)');
+      // If not authenticated, mark as loaded immediately (guest mode)
+      if (!isAuthenticated) {
+        console.log('[DesignPage] No project to load (guest mode)');
         setProjectLoaded(true);
         return;
+      }
+
+      // If authenticated but no project ID, auto-create a new project
+      if (!urlProjectId) {
+        console.log('[DesignPage] Authenticated user without projectId - auto-creating new project');
+
+        // Clear any stale sessionStorage data from previous projects
+        // This ensures the new project starts fresh, not with old images/products
+        sessionStorage.removeItem('roomImage');
+        sessionStorage.removeItem('cleanRoomImage');
+        sessionStorage.removeItem('curatedRoomImage');
+        sessionStorage.removeItem('curatedVisualizationImage');
+        sessionStorage.removeItem('preselectedProducts');
+        sessionStorage.removeItem('persistedCanvasProducts');
+        sessionStorage.removeItem('design_session_id');
+        sessionStorage.removeItem('furnitureRemovalJobId');
+        console.log('[DesignPage] Cleared sessionStorage for fresh project creation');
+
+        // Also clear React state to ensure fresh start when component doesn't re-mount
+        setRoomImage(null);
+        setCleanRoomImage(null);
+        setCanvasProducts([]);
+        setProductRecommendations([]);
+        setInitialVisualizationImage(null);
+        setSelectedCategories(null);
+        setProductsByCategory(null);
+        setTotalBudget(null);
+        setVisualizationHistory([]);
+        setChatSessionId(null);
+        setProjectId(null);
+        setProjectName('');
+
+        try {
+          const newProject = await projectsAPI.create({
+            name: `New Design ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+          });
+          console.log('[DesignPage] Auto-created new project:', newProject.id, newProject.name);
+
+          // Redirect to the same page with the new projectId and fresh param
+          // Use fresh=1 to signal this is a brand new project
+          router.replace(`/design?projectId=${newProject.id}&fresh=1`);
+          return;
+        } catch (error) {
+          console.error('[DesignPage] Failed to auto-create project:', error);
+          // Fall back to guest mode on error
+          setProjectLoaded(true);
+          return;
+        }
       }
 
       try {
@@ -362,7 +411,7 @@ function DesignPageContent() {
     };
 
     loadProject();
-  }, [searchParams, isAuthenticated]);
+  }, [searchParams, isAuthenticated, router]);
 
   // Manual save function
   const saveProject = useCallback(async () => {
