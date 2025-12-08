@@ -872,9 +872,7 @@ Return only the processed image."""
                                         continue
 
                                     result_image = f"data:{mime_type};base64,{image_base64_result}"
-                                    logger.info(
-                                        f"Furniture removal successful on attempt {attempt + 1} ({data_size} bytes)"
-                                    )
+                                    logger.info(f"Furniture removal successful on attempt {attempt + 1} ({data_size} bytes)")
                         else:
                             logger.warning(f"Furniture removal response has no parts: {type(response)}")
                         return result_image
@@ -1155,18 +1153,24 @@ OUTPUT: One photorealistic image showing THE ENTIRE ROOM (same wide-angle view a
 🚨 SIZE PRESERVATION: All existing furniture MUST remain THE EXACT SAME SIZE - no enlarging, no shrinking. The room MUST NOT expand or change shape.
 The room structure, walls, and camera angle MUST be identical to the input image. DO NOT zoom in or crop - the output MUST show the exact same room view as the input. The product should be visible but NOT dominate the image - show the full room context."""
 
-            # Build parts list
-            parts = [types.Part.from_text(text=prompt)]
-            parts.append(types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_room))))
+            # Build contents list with PIL Images (same approach as furniture removal)
+            contents = [prompt]
+
+            # Add room image as PIL Image
+            room_image_bytes = base64.b64decode(processed_room)
+            room_pil_image = Image.open(io.BytesIO(room_image_bytes))
+            if room_pil_image.mode != "RGB":
+                room_pil_image = room_pil_image.convert("RGB")
+            contents.append(room_pil_image)
 
             # Add product reference image if available
             if product_image_data:
-                parts.append(types.Part.from_text(text=f"\nProduct reference image ({product_name}):"))
-                parts.append(
-                    types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(product_image_data)))
-                )
-
-            contents = [types.Content(role="user", parts=parts)]
+                contents.append(f"\nProduct reference image ({product_name}):")
+                prod_image_bytes = base64.b64decode(product_image_data)
+                prod_pil_image = Image.open(io.BytesIO(prod_image_bytes))
+                if prod_pil_image.mode != "RGB":
+                    prod_pil_image = prod_pil_image.convert("RGB")
+                contents.append(prod_pil_image)
 
             # Generate visualization with Gemini 3 Pro Image (Nano Banana Pro)
             generate_content_config = types.GenerateContentConfig(response_modalities=["IMAGE"], temperature=0.3)
@@ -1180,11 +1184,31 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
                     for part in chunk.candidates[0].content.parts:
                         if part.inline_data and part.inline_data.data:
-                            image_bytes = part.inline_data.data
+                            image_data = part.inline_data.data
                             mime_type = part.inline_data.mime_type or "image/png"
-                            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+                            # Handle both raw bytes and base64 string bytes
+                            # (google-genai SDK may return either format)
+                            if isinstance(image_data, bytes):
+                                first_hex = image_data[:4].hex()
+                                logger.info(f"ADD visualization first 4 bytes hex: {first_hex}")
+
+                                # Check if raw image bytes (PNG starts with 89504e47, JPEG with ffd8ff)
+                                if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                    # Raw image bytes - encode to base64
+                                    image_base64 = base64.b64encode(image_data).decode("utf-8")
+                                    logger.info("ADD: Raw image bytes detected, encoded to base64")
+                                else:
+                                    # Bytes are likely base64 string - decode to string directly
+                                    image_base64 = image_data.decode("utf-8")
+                                    logger.info("ADD: Base64 string bytes detected, decoded directly")
+                            else:
+                                # Already a string
+                                image_base64 = image_data
+                                logger.info("ADD: String data received directly")
+
                             generated_image = f"data:{mime_type};base64,{image_base64}"
-                            logger.info(f"Generated ADD visualization ({len(image_bytes)} bytes)")
+                            logger.info("Generated ADD visualization")
 
             if not generated_image:
                 logger.error("AI failed to generate visualization - no image returned")
@@ -1290,17 +1314,25 @@ PLACEMENT GUIDELINES:
 OUTPUT: One photorealistic image showing THE ENTIRE ROOM with ALL {len(products)} products added naturally.
 The room structure, walls, and camera angle MUST be identical to the input image."""
 
-            # Build parts list
-            parts = [types.Part.from_text(text=prompt)]
-            parts.append(types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_room))))
+            # Build contents list with PIL Images (same approach as furniture removal)
+            contents = [prompt]
 
-            # Add all product reference images
+            # Add room image as PIL Image
+            room_image_bytes = base64.b64decode(processed_room)
+            room_pil_image = Image.open(io.BytesIO(room_image_bytes))
+            if room_pil_image.mode != "RGB":
+                room_pil_image = room_pil_image.convert("RGB")
+            contents.append(room_pil_image)
+
+            # Add all product reference images as PIL Images
             for i, (name, image_data) in enumerate(zip(product_names, product_images_data)):
                 if image_data:
-                    parts.append(types.Part.from_text(text=f"\nProduct {i+1} reference image ({name}):"))
-                    parts.append(types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(image_data))))
-
-            contents = [types.Content(role="user", parts=parts)]
+                    contents.append(f"\nProduct {i+1} reference image ({name}):")
+                    prod_image_bytes = base64.b64decode(image_data)
+                    prod_pil_image = Image.open(io.BytesIO(prod_image_bytes))
+                    if prod_pil_image.mode != "RGB":
+                        prod_pil_image = prod_pil_image.convert("RGB")
+                    contents.append(prod_pil_image)
 
             # Generate visualization with Gemini 3 Pro Image
             generate_content_config = types.GenerateContentConfig(response_modalities=["IMAGE"], temperature=0.3)
@@ -1314,13 +1346,31 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
                     for part in chunk.candidates[0].content.parts:
                         if part.inline_data and part.inline_data.data:
-                            image_bytes = part.inline_data.data
+                            image_data = part.inline_data.data
                             mime_type = part.inline_data.mime_type or "image/png"
-                            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+                            # Handle both raw bytes and base64 string bytes
+                            # (google-genai SDK may return either format)
+                            if isinstance(image_data, bytes):
+                                first_hex = image_data[:4].hex()
+                                logger.info(f"ADD MULTIPLE visualization first 4 bytes hex: {first_hex}")
+
+                                # Check if raw image bytes (PNG starts with 89504e47, JPEG with ffd8ff)
+                                if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                    # Raw image bytes - encode to base64
+                                    image_base64 = base64.b64encode(image_data).decode("utf-8")
+                                    logger.info("ADD MULTIPLE: Raw image bytes detected, encoded to base64")
+                                else:
+                                    # Bytes are likely base64 string - decode to string directly
+                                    image_base64 = image_data.decode("utf-8")
+                                    logger.info("ADD MULTIPLE: Base64 string bytes detected, decoded directly")
+                            else:
+                                # Already a string
+                                image_base64 = image_data
+                                logger.info("ADD MULTIPLE: String data received directly")
+
                             generated_image = f"data:{mime_type};base64,{image_base64}"
-                            logger.info(
-                                f"Generated ADD MULTIPLE visualization for {len(products)} products ({len(image_bytes)} bytes)"
-                            )
+                            logger.info(f"Generated ADD MULTIPLE visualization for {len(products)} products")
 
             if not generated_image:
                 logger.error("AI failed to generate visualization - no image returned")
@@ -1403,19 +1453,23 @@ Keep everything else in the room exactly the same - the walls, floor, windows, c
 
 Generate a photorealistic image of the room with the {product_name} replacing the {furniture_type}, with lighting that perfectly matches the room's existing lighting conditions."""
 
-            # Build parts list
-            parts = [types.Part.from_text(text=prompt)]
-            parts.append(types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_room))))
+            # Build contents list with PIL Images (same approach as furniture removal)
+            contents = [prompt]
+
+            # Add room image as PIL Image
+            room_image_bytes = base64.b64decode(processed_room)
+            room_pil_image = Image.open(io.BytesIO(room_image_bytes))
+            if room_pil_image.mode != "RGB":
+                room_pil_image = room_pil_image.convert("RGB")
+            contents.append(room_pil_image)
 
             # Add product reference image if available
-            # IMPORTANT: Do NOT add text labels between images - this confuses the model
-            # Send images directly back-to-back like Google AI Studio does
             if product_image_data:
-                parts.append(
-                    types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(product_image_data)))
-                )
-
-            contents = [types.Content(role="user", parts=parts)]
+                prod_image_bytes = base64.b64decode(product_image_data)
+                prod_pil_image = Image.open(io.BytesIO(prod_image_bytes))
+                if prod_pil_image.mode != "RGB":
+                    prod_pil_image = prod_pil_image.convert("RGB")
+                contents.append(prod_pil_image)
 
             # Generate visualization with Gemini 3 Pro Image (Nano Banana Pro)
             # Use temperature 0.4 to match Google AI Studio's default
@@ -1430,11 +1484,31 @@ Generate a photorealistic image of the room with the {product_name} replacing th
                 if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
                     for part in chunk.candidates[0].content.parts:
                         if part.inline_data and part.inline_data.data:
-                            image_bytes = part.inline_data.data
+                            image_data = part.inline_data.data
                             mime_type = part.inline_data.mime_type or "image/png"
-                            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+                            # Handle both raw bytes and base64 string bytes
+                            # (google-genai SDK may return either format)
+                            if isinstance(image_data, bytes):
+                                first_hex = image_data[:4].hex()
+                                logger.info(f"REPLACE visualization first 4 bytes hex: {first_hex}")
+
+                                # Check if raw image bytes (PNG starts with 89504e47, JPEG with ffd8ff)
+                                if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                    # Raw image bytes - encode to base64
+                                    image_base64 = base64.b64encode(image_data).decode("utf-8")
+                                    logger.info("REPLACE: Raw image bytes detected, encoded to base64")
+                                else:
+                                    # Bytes are likely base64 string - decode to string directly
+                                    image_base64 = image_data.decode("utf-8")
+                                    logger.info("REPLACE: Base64 string bytes detected, decoded directly")
+                            else:
+                                # Already a string
+                                image_base64 = image_data
+                                logger.info("REPLACE: String data received directly")
+
                             generated_image = f"data:{mime_type};base64,{image_base64}"
-                            logger.info(f"Generated REPLACE visualization ({len(image_bytes)} bytes)")
+                            logger.info("Generated REPLACE visualization")
 
             if not generated_image:
                 logger.error("AI failed to generate REPLACE visualization - no image returned")
