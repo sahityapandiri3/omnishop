@@ -557,26 +557,33 @@ Based on room type and conversation, select 6-10 relevant categories:
 
 These 4 generic categories MUST be included in EVERY selected_categories response, regardless of room type!
 
-### Budget Allocation
-Distribute the total budget across categories based on priority:
+### Budget Allocation (CRITICAL)
+When the user provides a total budget, you MUST include budget_allocation for EACH category.
+
+**RULE: Sum of all "max" values MUST EQUAL exactly 100% of the total budget.**
+
+Distribution guidelines:
 - Primary furniture (sofa, bed, dining table): 40-50% of budget
 - Secondary furniture (tables, chairs): 20-30%
 - Lighting: 10-15%
 - Decor & accessories (planters, wall_art, decor, rugs): 10-15%
 
-### selected_categories Example (for READY_TO_RECOMMEND):
+### selected_categories Example (for READY_TO_RECOMMEND with ₹100,000 total budget):
 ```json
 "selected_categories": [
-  {"category_id": "sofas", "display_name": "Sofas", "budget_allocation": {"min": 25000, "max": 35000}, "priority": 1},
-  {"category_id": "coffee_tables", "display_name": "Coffee Tables", "budget_allocation": {"min": 5000, "max": 10000}, "priority": 2},
+  {"category_id": "sofas", "display_name": "Sofas", "budget_allocation": {"min": 20000, "max": 40000}, "priority": 1},
+  {"category_id": "coffee_tables", "display_name": "Coffee Tables", "budget_allocation": {"min": 5000, "max": 12000}, "priority": 2},
   {"category_id": "floor_lamps", "display_name": "Floor Lamps", "budget_allocation": {"min": 3000, "max": 8000}, "priority": 3},
-  {"category_id": "accent_chairs", "display_name": "Accent Chairs", "budget_allocation": {"min": 8000, "max": 20000}, "priority": 4},
-  {"category_id": "planters", "display_name": "Planters", "budget_allocation": {"min": 500, "max": 3000}, "priority": 5},
-  {"category_id": "wall_art", "display_name": "Wall Art", "budget_allocation": {"min": 1000, "max": 5000}, "priority": 6},
-  {"category_id": "decor", "display_name": "Decor", "budget_allocation": {"min": 500, "max": 3000}, "priority": 7},
-  {"category_id": "rugs", "display_name": "Rugs", "budget_allocation": {"min": 3000, "max": 15000}, "priority": 8}
+  {"category_id": "accent_chairs", "display_name": "Accent Chairs", "budget_allocation": {"min": 7500, "max": 15000}, "priority": 4},
+  {"category_id": "planters", "display_name": "Planters", "budget_allocation": {"min": 1000, "max": 5000}, "priority": 5},
+  {"category_id": "wall_art", "display_name": "Wall Art", "budget_allocation": {"min": 2000, "max": 7000}, "priority": 6},
+  {"category_id": "decor", "display_name": "Decor", "budget_allocation": {"min": 1500, "max": 5000}, "priority": 7},
+  {"category_id": "rugs", "display_name": "Rugs", "budget_allocation": {"min": 4000, "max": 8000}, "priority": 8}
 ]
-```"""
+```
+**Verification: 40000 + 12000 + 8000 + 15000 + 5000 + 7000 + 5000 + 8000 = ₹100,000** ✓
+
+Note: Backend code will validate and adjust allocations to ensure they sum to exactly the user's total budget."""
 
             return system_prompt
 

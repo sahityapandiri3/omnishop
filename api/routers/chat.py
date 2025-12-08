@@ -21,6 +21,7 @@ from schemas.chat import (
     StartSessionRequest,
     StartSessionResponse,
 )
+from services.budget_allocator import validate_and_adjust_budget_allocations
 from services.chatgpt_service import chatgpt_service
 from services.conversation_context import conversation_context_manager
 from services.google_ai_service import VisualizationRequest, VisualizationResult, google_ai_service
@@ -998,6 +999,30 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                                 logger.info(f"[GUIDED FLOW] Added missing mandatory category: {cat_id}")
                     else:
                         logger.info(f"[DIRECT SEARCH] Skipping mandatory categories - showing only user-requested categories")
+
+                    # =================================================================
+                    # BUDGET VALIDATION: Ensure budget allocations sum to total budget
+                    # Get budget from: AI analysis, direct search extraction, or accumulated filters
+                    # =================================================================
+                    user_total_budget = None
+                    if total_budget:
+                        user_total_budget = total_budget
+                    elif direct_search_result.get("extracted_budget_max"):
+                        user_total_budget = direct_search_result["extracted_budget_max"]
+                    elif session_id:
+                        # Try to get from accumulated filters
+                        acc_filters = conversation_context_manager.get_accumulated_filters(session_id)
+                        if acc_filters and acc_filters.get("price_max"):
+                            user_total_budget = acc_filters["price_max"]
+
+                    if user_total_budget and selected_categories_response:
+                        logger.info(f"[BUDGET] Validating allocations for total budget ₹{user_total_budget:,}")
+                        # Convert CategoryRecommendation objects to a format the validator can work with
+                        selected_categories_response = validate_and_adjust_budget_allocations(
+                            total_budget=float(user_total_budget),
+                            categories=selected_categories_response,
+                            category_id_field="category_id",
+                        )
 
                     # If we're in READY_TO_RECOMMEND or DIRECT_SEARCH state, fetch products by category
                     if conversation_state in ["READY_TO_RECOMMEND", "DIRECT_SEARCH"] and selected_categories_response:
