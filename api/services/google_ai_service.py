@@ -1853,24 +1853,25 @@ Create a photorealistic interior design visualization that addresses the user's 
 
                     logger.info(f"Using {model} with product placement approach")
 
-                    # Build parts list with room image and all product images
-                    parts = [types.Part.from_text(text=visualization_prompt)]
+                    # Build contents list with room image and product images as PIL Images
+                    # (same approach as furniture removal which works with google-genai 1.41.0)
+                    contents = [visualization_prompt]
 
-                    # Add room image
-                    parts.append(
-                        types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(processed_image)))
-                    )
+                    # Add room image as PIL Image
+                    room_image_bytes = base64.b64decode(processed_image)
+                    room_pil_image = Image.open(io.BytesIO(room_image_bytes))
+                    if room_pil_image.mode != "RGB":
+                        room_pil_image = room_pil_image.convert("RGB")
+                    contents.append(room_pil_image)
 
-                    # Add product images as references
+                    # Add product images as PIL Images
                     for prod_img in product_images:
-                        parts.append(
-                            types.Part.from_text(text=f"\nProduct {prod_img['index']} reference image ({prod_img['name']}):")
-                        )
-                        parts.append(
-                            types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=base64.b64decode(prod_img["data"])))
-                        )
-
-                    contents = [types.Content(role="user", parts=parts)]
+                        contents.append(f"\nProduct {prod_img['index']} reference image ({prod_img['name']}):")
+                        prod_image_bytes = base64.b64decode(prod_img["data"])
+                        prod_pil_image = Image.open(io.BytesIO(prod_image_bytes))
+                        if prod_pil_image.mode != "RGB":
+                            prod_pil_image = prod_pil_image.convert("RGB")
+                        contents.append(prod_pil_image)
 
                     # Use response modalities for image and text generation
                     generate_content_config = types.GenerateContentConfig(
