@@ -420,6 +420,11 @@ User: "yes"
 15. **Create detailed layout_guidance** - specific placement instructions for the visualizer (e.g., "Place accent chair opposite sofa at 45-degree angle")
 16. **Select color_palette** - choose 4-6 hex codes that harmonize with the space and style
 17. **Write styling_tips** - include specific materials, textures, and product types for keyword matching
+18. **SEMANTIC UNDERSTANDING (CRITICAL)** - Understand the MEANING of user responses, not just literal words:
+    - "no", "nope", "none", "no preference", "don't care", "anything", "whatever", "doesn't matter", "not really", "I'm open" = NO PREFERENCE (proceed without that filter)
+    - DO NOT use these words as search keywords!
+    - Example: User says "no" to color preference → search for ALL colors, not products with "no" in the name
+    - Example: User says "anything" for material → search for ALL materials, not products with "anything" in the name
 
 ## Tone Requirements
 
@@ -582,7 +587,8 @@ Examples:
 1. During GATHERING states: Friendly acknowledgment + ONE question. NO furniture/color suggestions yet.
 2. Parse embedded info: "modern sofa under 50k" → skip to READY_TO_RECOMMEND
 3. Keep responses SHORT but WARM (1-2 sentences during gathering)
-4. Always sound excited to help!"""
+4. Always sound excited to help!
+5. **SEMANTIC UNDERSTANDING**: "no", "nope", "none", "anything", "whatever" = NO PREFERENCE (don't use as search keywords!)"""
 
     async def analyze_user_input(
         self,
