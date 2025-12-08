@@ -850,9 +850,22 @@ Return only the processed image."""
                                     image_data = part.inline_data.data
                                     mime_type = getattr(part.inline_data, "mime_type", None) or "image/png"
 
-                                    # google-genai 1.41.0 returns raw image bytes
                                     if isinstance(image_data, bytes):
-                                        image_base64_result = base64.b64encode(image_data).decode("utf-8")
+                                        # Check first bytes to determine format
+                                        # Raw PNG: 89504e47, Raw JPEG: ffd8ff
+                                        # Base64 PNG starts with 'iVBORw0K' (bytes: 69 56 42 4f = "iVBO")
+                                        # Base64 JPEG starts with '/9j/' (bytes: 2f 39 6a 2f)
+                                        first_hex = image_data[:4].hex()
+                                        logger.info(f"Image data first 4 bytes hex: {first_hex}")
+
+                                        if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                            # Raw image bytes - encode to base64
+                                            logger.info("Raw image bytes detected, encoding to base64")
+                                            image_base64_result = base64.b64encode(image_data).decode("utf-8")
+                                        else:
+                                            # Bytes are base64 string - decode to string directly
+                                            logger.info("Base64 string bytes detected, using directly")
+                                            image_base64_result = image_data.decode("utf-8")
                                         data_size = len(image_data)
                                     else:
                                         logger.error(f"Unexpected image data type: {type(image_data)}")
