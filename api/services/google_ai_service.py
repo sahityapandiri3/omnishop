@@ -1896,13 +1896,31 @@ Create a photorealistic interior design visualization that addresses the user's 
                             if part.inline_data and part.inline_data.data:
                                 # Extract generated image data
                                 inline_data = part.inline_data
-                                image_bytes = inline_data.data
+                                image_data = inline_data.data
                                 mime_type = inline_data.mime_type or "image/png"
 
-                                # Convert to base64 data URI
-                                image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+                                # Handle both raw bytes and base64 string bytes
+                                # (same approach as furniture removal)
+                                if isinstance(image_data, bytes):
+                                    # Check first bytes to determine format
+                                    # Raw PNG: 89504e47, Raw JPEG: ffd8ff
+                                    first_hex = image_data[:4].hex()
+                                    logger.info(f"Visualization image first 4 bytes hex: {first_hex}")
+
+                                    if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                        # Raw image bytes - encode to base64
+                                        logger.info("Raw image bytes detected, encoding to base64")
+                                        image_base64 = base64.b64encode(image_data).decode("utf-8")
+                                    else:
+                                        # Bytes are base64 string - decode to string directly
+                                        logger.info("Base64 string bytes detected, using directly")
+                                        image_base64 = image_data.decode("utf-8")
+                                else:
+                                    # Already a string
+                                    image_base64 = image_data
+
                                 transformed_image = f"data:{mime_type};base64,{image_base64}"
-                                logger.info(f"Generated image with {model} ({len(image_bytes)} bytes)")
+                                logger.info(f"Generated image with {model} ({len(image_data)} bytes)")
 
                             elif part.text:
                                 transformation_description += part.text
