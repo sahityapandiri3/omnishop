@@ -426,6 +426,39 @@ User: "yes"
     - Example: User says "no" to color preference → search for ALL colors, not products with "no" in the name
     - Example: User says "anything" for material → search for ALL materials, not products with "anything" in the name
 
+## CONVERSATION CONTEXT UNDERSTANDING (CRITICAL)
+
+When the user sends follow-up messages, apply previous search context:
+
+### CARRY FORWARD CONTEXT:
+- If user previously asked for "study tables" and now asks for "products under ₹5000", search for "study tables under ₹5000"
+- If user asked for "modern sofas" and says "show me blue ones", search for "modern blue sofas"
+- If user said "living room furniture" then "show me cheaper ones", keep living room context with lower price
+
+### IMPLICIT REFERENCES - Recognize patterns:
+- "show me cheaper ones" = same category, lower price
+- "what about in red?" = same category, red color
+- "any between ₹X and ₹Y?" = same category, new price range
+- "more options" = same filters, different products
+- "under ₹X" = same category, new max price
+
+### AUTO-CLEAR ON CATEGORY CHANGE:
+When user explicitly asks for a DIFFERENT furniture type/category, CLEAR all previous filters:
+- "Now show me dining tables" = NEW category, clear price/style/color filters
+- "I want beds instead" = NEW category, start fresh
+- "Show me coffee tables" (after searching sofas) = NEW category, clear all
+
+### EXPLICIT CLEAR SIGNALS:
+- "Start over", "Start fresh", "New search", "Clear filters" = CLEAR ALL accumulated filters
+
+### CONTEXT INHERITANCE IN RESPONSE:
+When you detect a follow-up query, ALWAYS include the FULL accumulated context in your product_matching_criteria, not just what the user mentioned in the current message.
+
+Example:
+- Previous: User asked for "sofas"
+- Current: User says "under ₹50000"
+- Your product_matching_criteria MUST include: product_types: ["sofa"], price_max: 50000
+
 ## Tone Requirements
 
 - Use design authority and professional expertise
@@ -588,7 +621,13 @@ Examples:
 2. Parse embedded info: "modern sofa under 50k" → skip to READY_TO_RECOMMEND
 3. Keep responses SHORT but WARM (1-2 sentences during gathering)
 4. Always sound excited to help!
-5. **SEMANTIC UNDERSTANDING**: "no", "nope", "none", "anything", "whatever" = NO PREFERENCE (don't use as search keywords!)"""
+5. **SEMANTIC UNDERSTANDING**: "no", "nope", "none", "anything", "whatever" = NO PREFERENCE (don't use as search keywords!)
+
+## CONVERSATION CONTEXT (CRITICAL)
+6. **CARRY FORWARD**: If user asked for "sofas" then says "under ₹50000" → search for "sofas under ₹50000"
+7. **IMPLICIT REFERENCES**: "cheaper ones", "in blue", "under ₹X" = same category with new filter
+8. **AUTO-CLEAR ON CATEGORY CHANGE**: "show me tables" (after sofas) = NEW category, clear price/style filters
+9. **INCLUDE FULL CONTEXT**: Your product_matching_criteria MUST include accumulated context, not just current message"""
 
     async def analyze_user_input(
         self,
@@ -627,6 +666,13 @@ Examples:
                 # For fast mode, use condensed system prompt
                 if use_fast_mode and messages and messages[0]["role"] == "system":
                     messages[0]["content"] = self.system_prompt_fast
+
+                # Inject accumulated search context summary if available
+                context_summary = self.context_manager.get_search_context_summary(session_id)
+                if context_summary:
+                    # Insert context summary after system prompt
+                    messages.insert(1, {"role": "system", "content": context_summary})
+                    logger.info(f"Injected context summary for session {session_id}")
             else:
                 # Fallback to basic system prompt
                 system_prompt = self.system_prompt_fast if use_fast_mode else self.system_prompt
@@ -677,6 +723,9 @@ Examples:
                     self.context_manager.add_design_analysis(
                         session_id, analysis.dict() if hasattr(analysis, "dict") else analysis
                     )
+
+                    # Extract filters from AI response and update accumulated filters
+                    self._update_accumulated_filters_from_analysis(session_id, analysis, user_message)
 
                 # Legacy context storage for backward compatibility
                 if session_id not in self.conversation_memory:
@@ -1166,6 +1215,88 @@ Examples:
         except Exception as e:
             logger.error(f"Error processing image: {e}")
             return None
+
+    def _update_accumulated_filters_from_analysis(self, session_id: str, analysis: Any, user_message: str) -> None:
+        """
+        Extract filters from AI analysis and update accumulated filters.
+        Handles auto-clear on category change and merging logic.
+        """
+        try:
+            # Check for explicit clear signals in user message
+            clear_signals = ["start over", "start fresh", "new search", "clear filters", "reset"]
+            user_message_lower = user_message.lower()
+            if any(signal in user_message_lower for signal in clear_signals):
+                self.context_manager.clear_accumulated_filters(session_id)
+                logger.info(f"Cleared accumulated filters due to clear signal in message")
+                return
+
+            # Extract filters from analysis
+            analysis_dict = analysis.dict() if hasattr(analysis, "dict") else analysis
+            product_criteria = analysis_dict.get("product_matching_criteria", {})
+
+            # Build new filters from analysis
+            new_filters = {}
+
+            # Extract product types and categories
+            product_types = product_criteria.get("product_types", [])
+            categories = product_criteria.get("categories", [])
+            search_terms = product_criteria.get("search_terms", [])
+
+            if product_types:
+                new_filters["product_types"] = product_types
+                # Use first product type as category if no explicit category
+                new_filters["category"] = product_types[0] if product_types else None
+
+            if categories:
+                new_filters["furniture_type"] = categories[0] if categories else None
+
+            if search_terms:
+                new_filters["search_terms"] = search_terms
+
+            # Extract budget/price from design_analysis
+            design_analysis = analysis_dict.get("design_analysis", {})
+            budget_indicators = design_analysis.get("budget_indicators", {})
+
+            # Check if explicit price range is mentioned
+            if "price_range" in budget_indicators:
+                price_range = budget_indicators.get("price_range")
+                # Map descriptive ranges to numeric if needed
+                if isinstance(price_range, str):
+                    if "budget" in price_range.lower():
+                        new_filters["price_max"] = 10000
+                    elif "luxury" in price_range.lower():
+                        new_filters["price_min"] = 50000
+
+            # Extract style from analysis
+            style_prefs = design_analysis.get("style_preferences", {})
+            if style_prefs.get("primary_style"):
+                new_filters["style"] = style_prefs.get("primary_style")
+
+            # Extract color preference
+            color_scheme = design_analysis.get("color_scheme", {})
+            preferred_colors = color_scheme.get("preferred_colors", [])
+            if preferred_colors:
+                new_filters["color"] = preferred_colors[0]
+
+            # Extract room type
+            space_analysis = design_analysis.get("space_analysis", {})
+            if space_analysis.get("room_type"):
+                new_filters["room_type"] = space_analysis.get("room_type")
+
+            # Determine if category changed (auto-clear behavior)
+            current_filters = self.context_manager.get_accumulated_filters(session_id)
+            old_category = current_filters.get("category")
+            new_category = new_filters.get("category")
+
+            category_changed = new_category is not None and old_category is not None and new_category != old_category
+
+            # Update accumulated filters
+            if new_filters:
+                self.context_manager.update_accumulated_filters(session_id, new_filters, category_changed=category_changed)
+                logger.info(f"Updated accumulated filters from analysis: {new_filters}")
+
+        except Exception as e:
+            logger.warning(f"Error updating accumulated filters from analysis: {e}")
 
     def get_conversation_context(self, session_id: str) -> List[Dict[str, str]]:
         """Get conversation context for a session (legacy method)"""

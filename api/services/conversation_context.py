@@ -28,6 +28,8 @@ class ConversationContext:
     pending_action_options: Optional[Dict[str, Any]] = None  # Store pending action options (A, B, C, etc.)
     visualization_history: List[Dict[str, Any]] = None  # Stack of visualization states for undo/redo
     visualization_redo_stack: List[Dict[str, Any]] = None  # Stack for redo operations
+    # Accumulated search filters for conversational context understanding
+    accumulated_filters: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization"""
@@ -46,6 +48,8 @@ class ConversationContext:
             data["visualization_history"] = []
         if "visualization_redo_stack" not in data:
             data["visualization_redo_stack"] = []
+        if "accumulated_filters" not in data:
+            data["accumulated_filters"] = None
         return cls(**data)
 
 
@@ -86,6 +90,7 @@ class ConversationContextManager:
             last_uploaded_image=None,
             visualization_history=[],
             visualization_redo_stack=[],
+            accumulated_filters=self._get_default_accumulated_filters(),
         )
 
         self.contexts[session_id] = context
@@ -384,6 +389,126 @@ class ConversationContextManager:
             logger.info(f"Cleaned up {len(expired_sessions)} expired contexts")
 
         return len(expired_sessions)
+
+    # ==================== Accumulated Filters Management ====================
+
+    def _get_default_accumulated_filters(self) -> Dict[str, Any]:
+        """Get default accumulated filters structure"""
+        return {
+            "category": None,  # Last searched category (e.g., "sofas", "tables")
+            "furniture_type": None,  # Specific furniture type
+            "product_types": [],  # Product types list
+            "price_min": None,  # Price range minimum
+            "price_max": None,  # Price range maximum
+            "style": None,  # Style preference (modern, traditional)
+            "color": None,  # Color preference
+            "material": None,  # Material preference
+            "room_type": None,  # Living room, bedroom, etc.
+            "search_terms": [],  # Search terms from user queries
+        }
+
+    def update_accumulated_filters(
+        self, session_id: str, new_filters: Dict[str, Any], category_changed: bool = False
+    ) -> ConversationContext:
+        """
+        Update accumulated filters for a session.
+
+        If category_changed is True, clears all other filters (auto-clear on category change behavior).
+        Otherwise, merges new filters with existing ones (new values override old).
+
+        Args:
+            session_id: Session ID
+            new_filters: New filter values to merge/set
+            category_changed: If True, clear other filters when category changes
+
+        Returns:
+            Updated ConversationContext
+        """
+        context = self.get_or_create_context(session_id)
+
+        # Initialize filters if None
+        if context.accumulated_filters is None:
+            context.accumulated_filters = self._get_default_accumulated_filters()
+
+        # If category changed, clear all filters and start fresh with new category
+        if category_changed:
+            old_category = context.accumulated_filters.get("category")
+            new_category = new_filters.get("category") or new_filters.get("furniture_type")
+
+            if new_category and new_category != old_category:
+                logger.info(f"Category changed from '{old_category}' to '{new_category}' - clearing other filters")
+                context.accumulated_filters = self._get_default_accumulated_filters()
+
+        # Merge new filters with existing (new values override old, but None/empty don't clear)
+        for key, value in new_filters.items():
+            if value is not None and value != "" and value != []:
+                context.accumulated_filters[key] = value
+
+        context.last_updated = datetime.now()
+        logger.info(f"Updated accumulated filters for session {session_id}: {context.accumulated_filters}")
+        return context
+
+    def clear_accumulated_filters(self, session_id: str) -> ConversationContext:
+        """Clear all accumulated filters for a session (e.g., on 'start fresh')"""
+        context = self.get_or_create_context(session_id)
+        context.accumulated_filters = self._get_default_accumulated_filters()
+        context.last_updated = datetime.now()
+        logger.info(f"Cleared accumulated filters for session {session_id}")
+        return context
+
+    def get_accumulated_filters(self, session_id: str) -> Dict[str, Any]:
+        """Get accumulated filters for a session"""
+        context = self.get_or_create_context(session_id)
+        if context.accumulated_filters is None:
+            context.accumulated_filters = self._get_default_accumulated_filters()
+        return context.accumulated_filters
+
+    def get_search_context_summary(self, session_id: str) -> str:
+        """
+        Generate a human-readable summary of current search context for AI.
+        This helps the AI understand what filters are currently active.
+
+        Returns:
+            String summary of active filters, or empty string if no filters active
+        """
+        filters = self.get_accumulated_filters(session_id)
+
+        # Build list of active filters
+        active_parts = []
+
+        if filters.get("category"):
+            active_parts.append(f"Category: {filters['category']}")
+        if filters.get("furniture_type"):
+            active_parts.append(f"Furniture type: {filters['furniture_type']}")
+        if filters.get("product_types"):
+            active_parts.append(f"Product types: {', '.join(filters['product_types'])}")
+        if filters.get("price_min") is not None or filters.get("price_max") is not None:
+            price_min = filters.get("price_min", 0)
+            price_max = filters.get("price_max", "unlimited")
+            active_parts.append(f"Price range: ₹{price_min} - ₹{price_max}")
+        if filters.get("style"):
+            active_parts.append(f"Style: {filters['style']}")
+        if filters.get("color"):
+            active_parts.append(f"Color: {filters['color']}")
+        if filters.get("material"):
+            active_parts.append(f"Material: {filters['material']}")
+        if filters.get("room_type"):
+            active_parts.append(f"Room: {filters['room_type']}")
+
+        if not active_parts:
+            return ""
+
+        summary = "CURRENT SEARCH CONTEXT (from previous messages):\n"
+        summary += "- " + "\n- ".join(active_parts)
+        summary += "\n\nApply these filters to follow-up queries unless user explicitly changes them."
+        summary += "\nIf user asks for a DIFFERENT category/furniture type, CLEAR all other filters and start fresh."
+
+        return summary
+
+    def has_active_filters(self, session_id: str) -> bool:
+        """Check if session has any active accumulated filters"""
+        filters = self.get_accumulated_filters(session_id)
+        return any(value is not None and value != "" and value != [] for key, value in filters.items())
 
     def export_context(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Export context for persistence"""

@@ -304,6 +304,82 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 except Exception as e:
                     logger.error(f"[DIRECT SEARCH FOLLOW-UP] Error parsing previous message: {e}")
 
+        # =================================================================
+        # ACCUMULATED CONTEXT SEARCH: Use accumulated filters when user provides only qualifiers
+        # Example: User says "green color" or "under ₹50000" without mentioning a category
+        # If we have an accumulated category from conversation history, use it
+        # =================================================================
+        if not is_direct_search and session_id:
+            # Check if user message contains qualifiers (colors, styles, prices) but no category
+            message_lower = request.message.lower().strip()
+            has_color_qualifier = any(color in message_lower for color in COLOR_KEYWORDS)
+            has_style_qualifier = any(style in message_lower for style in STYLE_KEYWORDS_DIRECT)
+            has_material_qualifier = any(material in message_lower for material in MATERIAL_KEYWORDS)
+
+            # Extract price from message
+            import re
+
+            price_pattern = r"(?:under|below|less than|max|upto|up to|within|budget)\s*(?:₹|rs\.?|inr)?\s*([\d,\s]+)"
+            price_match = re.search(price_pattern, message_lower)
+            has_price_qualifier = price_match is not None
+
+            has_any_qualifier = has_color_qualifier or has_style_qualifier or has_material_qualifier or has_price_qualifier
+            has_no_category = len(direct_search_result.get("detected_categories", [])) == 0
+
+            if has_any_qualifier and has_no_category:
+                # Check accumulated filters for a category
+                accumulated_filters = conversation_context_manager.get_accumulated_filters(session_id)
+                accumulated_category = accumulated_filters.get("category")
+                accumulated_product_types = accumulated_filters.get("product_types", [])
+
+                if accumulated_category or accumulated_product_types:
+                    # We have an accumulated category - convert to direct search
+                    logger.info(
+                        f"[ACCUMULATED CONTEXT] User provided qualifiers without category, using accumulated: {accumulated_category or accumulated_product_types}"
+                    )
+
+                    is_direct_search = True
+                    direct_search_result["is_direct_search"] = True
+                    direct_search_result["has_sufficient_info"] = True
+
+                    # Build categories from accumulated context
+                    if accumulated_product_types:
+                        # Use product_types if available (more specific)
+                        for ptype in accumulated_product_types:
+                            direct_search_result["detected_categories"].append(
+                                {
+                                    "category_id": ptype,
+                                    "display_name": ptype.replace("_", " ").title(),
+                                    "matched_keyword": ptype,
+                                }
+                            )
+                    elif accumulated_category:
+                        # Fall back to generic category
+                        direct_search_result["detected_categories"].append(
+                            {
+                                "category_id": accumulated_category,
+                                "display_name": accumulated_category.replace("_", " ").title(),
+                                "matched_keyword": accumulated_category,
+                            }
+                        )
+
+                    # Extract qualifiers from current message
+                    if has_color_qualifier:
+                        direct_search_result["extracted_colors"] = [c for c in COLOR_KEYWORDS if c in message_lower]
+                    if has_style_qualifier:
+                        direct_search_result["extracted_styles"] = [s for s in STYLE_KEYWORDS_DIRECT if s in message_lower]
+                    if has_material_qualifier:
+                        direct_search_result["extracted_materials"] = [m for m in MATERIAL_KEYWORDS if m in message_lower]
+                    if has_price_qualifier and price_match:
+                        direct_search_result["extracted_budget_max"] = int(
+                            price_match.group(1).replace(",", "").replace(" ", "")
+                        )
+
+                    logger.info(
+                        f"[ACCUMULATED CONTEXT] Converted to direct search: categories={[c['category_id'] for c in direct_search_result['detected_categories']]}, "
+                        f"colors={direct_search_result.get('extracted_colors', [])}, styles={direct_search_result.get('extracted_styles', [])}"
+                    )
+
         # Determine early conversation state
         # States: GATHERING_USAGE (msg 1), GATHERING_STYLE (msg 2), GATHERING_BUDGET (msg 3), READY_TO_RECOMMEND (msg 4+)
         early_conversation_state = "INITIAL"
@@ -898,9 +974,10 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     logger.info(f"[GUIDED FLOW] Parsed {len(selected_categories_response)} categories")
 
                     # MANDATORY: Ensure generic categories (planters, wall_art, decor, rugs) are ALWAYS included
-                    # BUT ONLY for READY_TO_RECOMMEND - NOT for DIRECT_SEARCH
+                    # BUT ONLY for READY_TO_RECOMMEND - NOT for DIRECT_SEARCH or GATHERING states
                     # Direct search should ONLY show what the user asked for (e.g., "sofas" -> only sofas)
-                    if conversation_state != "DIRECT_SEARCH":
+                    # Gathering states should NOT show categories yet (we're still collecting preferences)
+                    if conversation_state == "READY_TO_RECOMMEND":
                         existing_cat_ids = {cat.category_id for cat in selected_categories_response}
                         mandatory_generic = [
                             ("planters", "Planters", 100),
@@ -2729,6 +2806,15 @@ async def _get_product_recommendations(
         room_context = None
         primary_style = None  # For context-aware keyword extraction
 
+        # Get accumulated filters from conversation context (fallback mechanism)
+        accumulated_filters = None
+        if session_id:
+            from services.conversation_context import conversation_context_manager
+
+            accumulated_filters = conversation_context_manager.get_accumulated_filters(session_id)
+            if accumulated_filters:
+                logger.info(f"[CONTEXT] Loaded accumulated filters for session {session_id}: {accumulated_filters}")
+
         # Extract design analysis data
         if hasattr(analysis, "design_analysis") and analysis.design_analysis:
             design_analysis = analysis.design_analysis
@@ -2852,6 +2938,35 @@ async def _get_product_recommendations(
                         if matches:
                             user_preferences["product_keywords"] = list(set(matches))
                             logger.info(f"Extracted product keywords from message: {matches}")
+
+        # ACCUMULATED CONTEXT FALLBACK: If still no product keywords, use accumulated filters from conversation context
+        # This ensures context is carried forward even if AI doesn't properly populate product_matching_criteria
+        if ("product_keywords" not in user_preferences or not user_preferences["product_keywords"]) and accumulated_filters:
+            accumulated_product_types = accumulated_filters.get("product_types", [])
+            accumulated_category = accumulated_filters.get("category")
+            accumulated_search_terms = accumulated_filters.get("search_terms", [])
+
+            # Build product keywords from accumulated context
+            accumulated_keywords = []
+            if accumulated_product_types:
+                accumulated_keywords.extend(accumulated_product_types)
+            if accumulated_category:
+                accumulated_keywords.append(accumulated_category)
+            if accumulated_search_terms:
+                accumulated_keywords.extend(accumulated_search_terms)
+
+            if accumulated_keywords:
+                user_preferences["product_keywords"] = list(set(accumulated_keywords))
+                logger.info(f"[CONTEXT FALLBACK] Applied accumulated filters as product keywords: {accumulated_keywords}")
+
+        # Also merge accumulated style/color if not in AI response
+        if accumulated_filters:
+            if not style_preferences and accumulated_filters.get("style"):
+                style_preferences.append(accumulated_filters["style"])
+                logger.info(f"[CONTEXT FALLBACK] Applied accumulated style: {accumulated_filters['style']}")
+            if not user_preferences.get("colors") and accumulated_filters.get("color"):
+                user_preferences["colors"] = [accumulated_filters["color"]]
+                logger.info(f"[CONTEXT FALLBACK] Applied accumulated color: {accumulated_filters['color']}")
 
         # NEW: Extract professional designer fields from analysis
         color_palette = None
