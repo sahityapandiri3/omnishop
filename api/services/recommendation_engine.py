@@ -624,6 +624,11 @@ class AdvancedRecommendationEngine:
             "bookshelf": ["bookshelf", "shelves", "bookcase"],
             "cabinet": ["cabinet", "storage", "sideboard"],
             "wardrobe": ["wardrobe", "closet", "armoire"],
+            # Study furniture - maps to Study Tables and Study Chairs categories
+            "study table": ["study table", "study tables", "desk"],
+            "study tables": ["study table", "study tables", "desk"],
+            "study chair": ["study chair", "study chairs", "office chair", "chair"],
+            "study chairs": ["study chair", "study chairs", "office chair", "chair"],
             # Lighting
             "lamp": ["lamp", "table lamp", "floor lamp", "pendant lamp", "wall lamp", "lighting", "light"],
             "lighting": ["lamp", "table lamp", "floor lamp", "pendant lamp", "wall lamp", "chandelier", "lighting", "light"],

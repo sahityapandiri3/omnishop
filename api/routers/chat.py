@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.database import get_db
-from database.models import ChatMessage, ChatSession, Product
+from database.models import Category, ChatMessage, ChatSession, Product
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
@@ -2088,6 +2088,8 @@ def _detect_direct_search_query(message: str) -> Dict[str, Any]:
         "sideboards": ["sideboard", "buffet", "credenza", "console"],
         "desks": ["desk", "writing desk", "computer desk", "work table"],
         "office_chairs": ["office chair", "task chair", "ergonomic chair"],
+        "study_tables": ["study table", "study desk", "student desk", "homework desk"],
+        "study_chairs": ["study chair", "student chair", "homework chair"],
         "bookshelves": ["bookshelf", "bookcase", "shelving unit"],
         "storage_cabinets": ["storage cabinet", "cabinet", "cupboard"],
         "planters": ["planter", "plant pot", "flower pot", "plant stand"],
@@ -2406,6 +2408,11 @@ def _extract_product_keywords(user_message: str, style_context: Optional[str] = 
             {"traditional": ["secretary desk", "writing bureau"], "modern": ["computer desk", "standing desk"]},
         ),
         ("workstation", ["desk", "workstation", "work desk"], {}),
+        # Study furniture - maps to Study Tables and Study Chairs database categories
+        ("study table", ["study table", "study tables", "desk", "writing desk"], {}),
+        ("study tables", ["study table", "study tables", "desk", "writing desk"], {}),
+        ("study chair", ["study chair", "study chairs", "office chair", "desk chair"], {}),
+        ("study chairs", ["study chair", "study chairs", "office chair", "desk chair"], {}),
         # Storage furniture with comprehensive synonyms
         (
             "dresser",
@@ -3149,6 +3156,8 @@ CATEGORY_KEYWORDS = {
     "sideboards": ["sideboard", "buffet", "credenza", "console"],
     "desks": ["desk", "writing desk", "computer desk", "work table"],
     "office_chairs": ["office chair", "task chair", "ergonomic chair", "executive chair"],
+    "study_tables": ["study table", "study desk", "student desk", "homework desk"],
+    "study_chairs": ["study chair", "student chair", "homework chair"],
     "bookshelves": ["bookshelf", "bookcase", "shelving unit", "display shelf"],
     "storage_cabinets": ["storage cabinet", "cabinet", "cupboard", "hutch"],
     # Generic categories for ALL room types
@@ -3274,10 +3283,13 @@ async def _get_category_based_recommendations(
 
             logger.info(f"[CATEGORY RECS] Fetching {category_id} with keywords: {keywords}, exclusions: {exclusions}")
 
-            # Build keyword filter - match any keyword in product name
+            # Build keyword filter - match any keyword in product name OR category name
             keyword_conditions = []
             for keyword in keywords:
+                # Match in product name
                 keyword_conditions.append(Product.name.ilike(f"%{keyword}%"))
+                # Also match in category name (to find products in "Study Tables" category)
+                keyword_conditions.append(Category.name.ilike(f"%{keyword}%"))
 
             # Build exclusion filter - exclude products with these terms
             exclusion_conditions = []
@@ -3285,8 +3297,10 @@ async def _get_category_based_recommendations(
                 exclusion_conditions.append(~Product.name.ilike(f"%{exclusion}%"))
 
             # Base query with eager loading (including attributes for style matching)
+            # Join with Category to also filter by category name
             query = (
                 select(Product)
+                .join(Category, Product.category_id == Category.id, isouter=True)
                 .options(selectinload(Product.images), selectinload(Product.attributes))
                 .where(Product.is_available.is_(True), or_(*keyword_conditions) if keyword_conditions else True)
             )

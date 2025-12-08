@@ -509,6 +509,7 @@ Based on room type and conversation, select 6-10 relevant categories:
 - Bedroom: beds, nightstands, table_lamps, floor_lamps, dressers, wardrobes
 - Dining Room: dining_tables, dining_chairs, pendant_lamps, sideboards, buffets
 - Office: desks, office_chairs, bookshelves, table_lamps, storage_cabinets
+- Study: study_tables, study_chairs, desks, office_chairs, bookshelves, table_lamps
 
 **⛔ MANDATORY Generic Categories (MUST ALWAYS INCLUDE ALL 4 for EVERY room type):**
 - planters (plants add life to any room)

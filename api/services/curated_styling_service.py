@@ -95,7 +95,13 @@ class CuratedStylingService:
             "optional": ["floor rug", "cabinet"],
         },
         "office": {
-            "primary": ["desk", "office chair"],
+            "primary": ["desk", "study_table", "office chair", "study_chair"],
+            "secondary": ["bookshelf", "shelves"],
+            "accent": ["table lamp", "floor lamp"],
+            "optional": ["cabinet", "storage"],
+        },
+        "study": {
+            "primary": ["study_table", "desk", "study_chair", "office chair"],
             "secondary": ["bookshelf", "shelves"],
             "accent": ["table lamp", "floor lamp"],
             "optional": ["cabinet", "storage"],
@@ -127,8 +133,10 @@ class CuratedStylingService:
         "nightstand": ["nightstand", "bedside table", "side table"],
         "dining_table": ["dining table", "table"],
         "dining_chair": ["dining chair", "chair"],
-        "desk": ["desk", "table"],
-        "office_chair": ["office chair", "chair"],
+        "desk": ["desk", "study table", "study tables", "table"],
+        "office_chair": ["office chair", "study chair", "study chairs", "chair"],
+        "study_table": ["study table", "study tables", "desk"],
+        "study_chair": ["study chair", "study chairs", "office chair", "chair"],
         "bookshelf": ["bookshelf", "shelves", "shelf"],
     }
 
