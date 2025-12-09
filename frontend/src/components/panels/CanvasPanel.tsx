@@ -284,6 +284,74 @@ export default function CanvasPanel({
     return { type: 'no_change' };
   };
 
+  // Helper function to make fetch request with timeout and retry
+  const fetchWithRetry = async (
+    url: string,
+    options: RequestInit,
+    maxRetries: number = 2,
+    timeoutMs: number = 180000,  // 3 minutes default
+    retryDelayMs: number = 2000  // 2 seconds initial delay
+  ): Promise<Response> => {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        console.error(`[CanvasPanel] Request timeout after ${timeoutMs / 1000}s (attempt ${attempt + 1}/${maxRetries + 1})`);
+        controller.abort();
+      }, timeoutMs);
+
+      try {
+        if (attempt > 0) {
+          const delay = retryDelayMs * Math.pow(2, attempt - 1);  // Exponential backoff
+          console.log(`[CanvasPanel] Retry attempt ${attempt}/${maxRetries} after ${delay}ms delay...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+
+        console.log(`[CanvasPanel] Starting request (attempt ${attempt + 1}/${maxRetries + 1})...`);
+        const requestStartTime = Date.now();
+
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        const fetchTime = Date.now() - requestStartTime;
+        console.log(`[CanvasPanel] HTTP response received in ${fetchTime}ms, status: ${response.status}`);
+
+        // Don't retry on client errors (4xx), only on server errors (5xx) or network issues
+        if (response.ok || (response.status >= 400 && response.status < 500)) {
+          return response;
+        }
+
+        // Server error - will retry
+        const errorText = await response.text().catch(() => 'Unknown server error');
+        lastError = new Error(`Server error ${response.status}: ${errorText}`);
+        console.error(`[CanvasPanel] Server error on attempt ${attempt + 1}:`, lastError.message);
+
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+        lastError = error;
+
+        if (error.name === 'AbortError') {
+          console.error(`[CanvasPanel] Request timed out on attempt ${attempt + 1}`);
+          // Continue to retry on timeout
+        } else if (error.message?.includes('fetch') || error.message?.includes('network')) {
+          console.error(`[CanvasPanel] Network error on attempt ${attempt + 1}:`, error.message);
+          // Continue to retry on network errors
+        } else {
+          // Unknown error - don't retry
+          throw error;
+        }
+      }
+    }
+
+    // All retries exhausted
+    throw lastError || new Error('Request failed after all retries');
+  };
+
   // V1 Visualization: Smart re-visualization with incremental support
   const handleVisualize = async () => {
     // Need at least one base image (prefer cleanRoomImage) and products
@@ -386,32 +454,44 @@ export default function CanvasPanel({
       // needs to know the complete state of all products in the scene.
       const allProductDetails = products.map(formatProductForApi);
 
-      // V1 Visualization API call
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          image: baseImage,
-          products: productDetails,  // Products to visualize in this request (may be subset for incremental)
-          all_products: allProductDetails,  // All products currently in the scene (for backend history)
-          analysis: {
-            design_style: 'modern',
-            color_palette: [],
-            room_type: 'living_room',
-          },
-          is_incremental: isIncremental,
-          force_reset: forceReset,
-          user_uploaded_new_image: changeInfo.type === 'initial'
-        }),
-      });
+      // V1 Visualization API call with timeout and retry
+      const requestStartTime = Date.now();
+      const response = await fetchWithRetry(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: baseImage,
+            products: productDetails,  // Products to visualize in this request (may be subset for incremental)
+            all_products: allProductDetails,  // All products currently in the scene (for backend history)
+            analysis: {
+              design_style: 'modern',
+              color_palette: [],
+              room_type: 'living_room',
+            },
+            is_incremental: isIncremental,
+            force_reset: forceReset,
+            user_uploaded_new_image: changeInfo.type === 'initial'
+          }),
+        },
+        2,  // maxRetries: 2 retries (3 total attempts)
+        180000,  // timeout: 3 minutes per attempt
+        3000  // retryDelay: 3 seconds initial delay
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
         throw new Error(errorData.detail || 'Visualization failed');
       }
 
+      // Parse JSON response - this can take time for large images
+      console.log('[CanvasPanel] Parsing JSON response...');
+      const parseStartTime = Date.now();
       const data = await response.json();
-      console.log('[CanvasPanel] Visualization response:', data);
+      const parseTime = Date.now() - parseStartTime;
+      console.log(`[CanvasPanel] JSON parsed in ${parseTime}ms, total time: ${Date.now() - requestStartTime}ms`);
+      console.log('[CanvasPanel] Visualization response received, image length:', data.visualization?.rendered_image?.length || 0);
 
       if (!data.visualization?.rendered_image) {
         throw new Error('No visualization image was generated');
@@ -441,11 +521,23 @@ export default function CanvasPanel({
       console.log(`[CanvasPanel] Visualization successful. Tracked ${products.length} products as visualized. History size: ${visualizationHistory.length + 1}`);
     } catch (error: any) {
       console.error('[CanvasPanel] Visualization error:', error);
-      alert(
-        error.response?.data?.detail ||
-        error.message ||
-        'Failed to generate visualization. Please try again.'
-      );
+
+      // Provide more specific error messages
+      let errorMessage = 'Failed to generate visualization. Please try again.';
+
+      if (error.name === 'AbortError') {
+        errorMessage = 'Visualization request timed out after multiple attempts. Please try with fewer products or a simpler image.';
+      } else if (error.message?.includes('fetch') || error.message?.includes('network')) {
+        errorMessage = 'Network error: Unable to reach the server. Please check your connection and try again.';
+      } else if (error.message?.includes('after all retries')) {
+        errorMessage = 'Server is temporarily unavailable. Please try again in a few moments.';
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      alert(errorMessage);
     } finally {
       setIsVisualizing(false);
     }
@@ -680,8 +772,8 @@ export default function CanvasPanel({
         category: 'furniture'
       }));
 
-      // Call API with custom_positions
-      const response = await fetch(
+      // Call API with custom_positions using retry logic
+      const response = await fetchWithRetry(
         `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`,
         {
           method: 'POST',
@@ -698,7 +790,10 @@ export default function CanvasPanel({
             is_incremental: false,
             force_reset: false,
           }),
-        }
+        },
+        2,  // maxRetries
+        180000,  // timeout: 3 minutes
+        3000  // retryDelay: 3 seconds
       );
 
       if (!response.ok) {
@@ -707,7 +802,7 @@ export default function CanvasPanel({
       }
 
       const data = await response.json();
-      console.log('[CanvasPanel] Visualization response:', data);
+      console.log('[CanvasPanel] Visualization response received, image length:', data.visualization?.rendered_image?.length || 0);
 
       if (!data.visualization?.rendered_image) {
         throw new Error('No visualization image was generated');
@@ -724,11 +819,19 @@ export default function CanvasPanel({
       console.log('[CanvasPanel] Re-visualization complete, exited edit mode');
     } catch (error: any) {
       console.error('[CanvasPanel] Error re-visualizing with positions:', error);
-      alert(
-        error.response?.data?.detail ||
-        error.message ||
-        'Failed to re-visualize with new positions. Please try again.'
-      );
+
+      let errorMessage = 'Failed to re-visualize with new positions. Please try again.';
+      if (error.name === 'AbortError') {
+        errorMessage = 'Request timed out after multiple attempts. Please try again.';
+      } else if (error.message?.includes('after all retries')) {
+        errorMessage = 'Server is temporarily unavailable. Please try again in a few moments.';
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      alert(errorMessage);
     } finally {
       setIsVisualizing(false);
     }

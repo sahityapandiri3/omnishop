@@ -1238,8 +1238,10 @@ The room structure, walls, and camera angle MUST be identical to the input image
                     # Check if it's a 503 (overloaded) error - retry with longer backoff
                     if "503" in error_str or "overloaded" in error_str.lower() or "UNAVAILABLE" in error_str:
                         if attempt < max_retries - 1:
-                            wait_time = 4 * (2 ** attempt)  # Longer backoff for 503: 4, 8, 16 seconds
-                            logger.warning(f"ADD visualization: Model overloaded (503), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                            wait_time = 4 * (2**attempt)  # Longer backoff for 503: 4, 8, 16 seconds
+                            logger.warning(
+                                f"ADD visualization: Model overloaded (503), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})"
+                            )
                             await asyncio.sleep(wait_time)
                             continue
                     logger.error(f"ADD visualization attempt {attempt + 1} failed: {e}")
@@ -1439,8 +1441,10 @@ The room structure, walls, and camera angle MUST be identical to the input image
                     # Check if it's a 503 (overloaded) error - retry with longer backoff
                     if "503" in error_str or "overloaded" in error_str.lower() or "UNAVAILABLE" in error_str:
                         if attempt < max_retries - 1:
-                            wait_time = 4 * (2 ** attempt)  # Longer backoff for 503: 4, 8, 16 seconds
-                            logger.warning(f"ADD MULTIPLE visualization: Model overloaded (503), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                            wait_time = 4 * (2**attempt)  # Longer backoff for 503: 4, 8, 16 seconds
+                            logger.warning(
+                                f"ADD MULTIPLE visualization: Model overloaded (503), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})"
+                            )
                             await asyncio.sleep(wait_time)
                             continue
                     logger.error(f"ADD MULTIPLE visualization attempt {attempt + 1} failed: {e}")
@@ -1615,8 +1619,10 @@ Generate a photorealistic image of the room with the {product_name} replacing th
                     # Check if it's a 503 (overloaded) error - retry with longer backoff
                     if "503" in error_str or "overloaded" in error_str.lower() or "UNAVAILABLE" in error_str:
                         if attempt < max_retries - 1:
-                            wait_time = 4 * (2 ** attempt)  # Longer backoff for 503: 4, 8, 16 seconds
-                            logger.warning(f"REPLACE visualization: Model overloaded (503), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                            wait_time = 4 * (2**attempt)  # Longer backoff for 503: 4, 8, 16 seconds
+                            logger.warning(
+                                f"REPLACE visualization: Model overloaded (503), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})"
+                            )
                             await asyncio.sleep(wait_time)
                             continue
                     logger.error(f"REPLACE visualization attempt {attempt + 1} failed: {e}")
@@ -2068,12 +2074,21 @@ Create a photorealistic interior design visualization that addresses the user's 
                         temperature=0.25,  # Lower temperature for better room preservation consistency
                     )
 
-                    # Stream response
+                    # Stream response with timeout protection
+                    # Use a helper to wrap the streaming loop with asyncio timeout
+                    visualization_timeout = 150  # 2.5 minutes max for visualization
+                    stream_start_time = time.time()
+
                     for chunk in self.genai_client.models.generate_content_stream(
                         model=model,
                         contents=contents,
                         config=generate_content_config,
                     ):
+                        # Check timeout between chunks to prevent indefinite hanging
+                        elapsed = time.time() - stream_start_time
+                        if elapsed > visualization_timeout:
+                            logger.error(f"Visualization stream timeout after {elapsed:.1f}s")
+                            raise asyncio.TimeoutError(f"Visualization timed out after {visualization_timeout}s")
                         if (
                             chunk.candidates is None
                             or chunk.candidates[0].content is None
