@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { getCuratedLooks, getCuratedLookById, CuratedLook, CuratedLooksResponse, projectsAPI } from '@/utils/api';
+import { getCuratedLooks, CuratedLook, CuratedLooksResponse, projectsAPI } from '@/utils/api';
 import { CuratedLookCard } from '@/components/curated/CuratedLookCard';
 import { LookDetailModal } from '@/components/curated/LookDetailModal';
 import { useAuth } from '@/contexts/AuthContext';
@@ -51,38 +51,21 @@ function CuratedPageContent() {
     try {
       setIsCreatingProject(true);
 
-      // Check if user has uploaded their own room image
-      const userRoomImage = sessionStorage.getItem('roomImage');
-      const hasUserRoom = !!userRoomImage;
-
-      console.log('[CuratedPage] User has own room image:', hasUserRoom);
-
       // Clear session data for fresh start
+      // IMPORTANT: Clear room image too so user is prompted to upload their own
       sessionStorage.removeItem('design_session_id');
       sessionStorage.removeItem('curatedVisualizationImage');
       sessionStorage.removeItem('curatedRoomImage');
+      sessionStorage.removeItem('roomImage');
+      sessionStorage.removeItem('cleanRoomImage');
+
+      console.log('[CuratedPage] Use Style clicked - cleared all images, user will upload their own');
 
       // Store selected look data in sessionStorage for design studio
+      // Products will be loaded into canvas, but visualization will be blank
+      // User needs to upload their own room image and hit "Visualize"
       sessionStorage.setItem('preselectedProducts', JSON.stringify(look.products));
       sessionStorage.setItem('preselectedLookTheme', look.style_theme);
-
-      if (hasUserRoom) {
-        // User uploaded their own room - keep their room, leave visualization blank
-        // They will hit "Visualize" to see products in their space
-        console.log('[CuratedPage] Using user room image, visualization will be blank');
-      } else {
-        // No user room - fetch and use the curated look's images
-        console.log('[CuratedPage] No user room, fetching curated look images for ID:', look.look_id);
-        const fullLook = await getCuratedLookById(look.look_id);
-
-        if (fullLook.room_image) {
-          sessionStorage.setItem('curatedRoomImage', fullLook.room_image);
-        }
-        if (fullLook.visualization_image) {
-          sessionStorage.setItem('curatedVisualizationImage', fullLook.visualization_image);
-          console.log('[CuratedPage] Stored visualization_image, length:', fullLook.visualization_image.length);
-        }
-      }
 
       // If user is authenticated, create a new project
       if (isAuthenticated) {
@@ -120,14 +103,6 @@ function CuratedPageContent() {
     sessionStorage.removeItem('curatedVisualizationImage');
     router.push('/design');
   }, [router]);
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0,
-    }).format(price);
-  };
 
   const roomTypes: { value: RoomType; label: string }[] = [
     { value: 'all', label: 'All Rooms' },
