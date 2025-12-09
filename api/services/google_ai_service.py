@@ -1175,43 +1175,81 @@ The room structure, walls, and camera angle MUST be identical to the input image
             # Generate visualization with Gemini 3 Pro Image (Nano Banana Pro)
             generate_content_config = types.GenerateContentConfig(response_modalities=["IMAGE"], temperature=0.3)
 
-            generated_image = None
-            for chunk in self.genai_client.models.generate_content_stream(
-                model="gemini-3-pro-image-preview",
-                contents=contents,
-                config=generate_content_config,
-            ):
-                if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
-                    for part in chunk.candidates[0].content.parts:
-                        if part.inline_data and part.inline_data.data:
-                            image_data = part.inline_data.data
-                            mime_type = part.inline_data.mime_type or "image/png"
+            # Retry configuration with timeout protection
+            max_retries = 3
+            timeout_seconds = 90
 
-                            # Handle both raw bytes and base64 string bytes
-                            # (google-genai SDK may return either format)
-                            if isinstance(image_data, bytes):
-                                first_hex = image_data[:4].hex()
-                                logger.info(f"ADD visualization first 4 bytes hex: {first_hex}")
+            def _run_generate_add():
+                """Run the streaming generation in a thread for timeout support."""
+                result_image = None
+                for chunk in self.genai_client.models.generate_content_stream(
+                    model="gemini-3-pro-image-preview",
+                    contents=contents,
+                    config=generate_content_config,
+                ):
+                    if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+                        for part in chunk.candidates[0].content.parts:
+                            if part.inline_data and part.inline_data.data:
+                                image_data = part.inline_data.data
+                                mime_type = part.inline_data.mime_type or "image/png"
 
-                                # Check if raw image bytes (PNG starts with 89504e47, JPEG with ffd8ff)
-                                if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
-                                    # Raw image bytes - encode to base64
-                                    image_base64 = base64.b64encode(image_data).decode("utf-8")
-                                    logger.info("ADD: Raw image bytes detected, encoded to base64")
+                                # Handle both raw bytes and base64 string bytes
+                                # (google-genai SDK may return either format)
+                                if isinstance(image_data, bytes):
+                                    first_hex = image_data[:4].hex()
+                                    logger.info(f"ADD visualization first 4 bytes hex: {first_hex}")
+
+                                    # Check if raw image bytes (PNG starts with 89504e47, JPEG with ffd8ff)
+                                    if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                        # Raw image bytes - encode to base64
+                                        image_base64 = base64.b64encode(image_data).decode("utf-8")
+                                        logger.info("ADD: Raw image bytes detected, encoded to base64")
+                                    else:
+                                        # Bytes are likely base64 string - decode to string directly
+                                        image_base64 = image_data.decode("utf-8")
+                                        logger.info("ADD: Base64 string bytes detected, decoded directly")
                                 else:
-                                    # Bytes are likely base64 string - decode to string directly
-                                    image_base64 = image_data.decode("utf-8")
-                                    logger.info("ADD: Base64 string bytes detected, decoded directly")
-                            else:
-                                # Already a string
-                                image_base64 = image_data
-                                logger.info("ADD: String data received directly")
+                                    # Already a string
+                                    image_base64 = image_data
+                                    logger.info("ADD: String data received directly")
 
-                            generated_image = f"data:{mime_type};base64,{image_base64}"
-                            logger.info("Generated ADD visualization")
+                                result_image = f"data:{mime_type};base64,{image_base64}"
+                                logger.info("Generated ADD visualization")
+                return result_image
+
+            generated_image = None
+            for attempt in range(max_retries):
+                try:
+                    loop = asyncio.get_event_loop()
+                    generated_image = await asyncio.wait_for(
+                        loop.run_in_executor(None, _run_generate_add), timeout=timeout_seconds
+                    )
+                    if generated_image:
+                        break
+                except asyncio.TimeoutError:
+                    logger.warning(f"ADD visualization attempt {attempt + 1} timed out after {timeout_seconds}s")
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** (attempt + 1)  # Exponential backoff: 2, 4, 8 seconds
+                        logger.info(f"Retrying in {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                    continue
+                except Exception as e:
+                    error_str = str(e)
+                    # Check if it's a 503 (overloaded) error - retry with longer backoff
+                    if "503" in error_str or "overloaded" in error_str.lower() or "UNAVAILABLE" in error_str:
+                        if attempt < max_retries - 1:
+                            wait_time = 4 * (2 ** attempt)  # Longer backoff for 503: 4, 8, 16 seconds
+                            logger.warning(f"ADD visualization: Model overloaded (503), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                            await asyncio.sleep(wait_time)
+                            continue
+                    logger.error(f"ADD visualization attempt {attempt + 1} failed: {e}")
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** (attempt + 1)
+                        await asyncio.sleep(wait_time)
+                    continue
 
             if not generated_image:
-                logger.error("AI failed to generate visualization - no image returned")
+                logger.error(f"AI failed to generate ADD visualization after {max_retries} attempts")
                 raise ValueError("AI failed to generate visualization image")
 
             return generated_image
@@ -1337,43 +1375,82 @@ The room structure, walls, and camera angle MUST be identical to the input image
             # Generate visualization with Gemini 3 Pro Image
             generate_content_config = types.GenerateContentConfig(response_modalities=["IMAGE"], temperature=0.3)
 
-            generated_image = None
-            for chunk in self.genai_client.models.generate_content_stream(
-                model="gemini-3-pro-image-preview",
-                contents=contents,
-                config=generate_content_config,
-            ):
-                if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
-                    for part in chunk.candidates[0].content.parts:
-                        if part.inline_data and part.inline_data.data:
-                            image_data = part.inline_data.data
-                            mime_type = part.inline_data.mime_type or "image/png"
+            # Retry configuration with timeout protection
+            max_retries = 3
+            timeout_seconds = 90
+            num_products = len(products)
 
-                            # Handle both raw bytes and base64 string bytes
-                            # (google-genai SDK may return either format)
-                            if isinstance(image_data, bytes):
-                                first_hex = image_data[:4].hex()
-                                logger.info(f"ADD MULTIPLE visualization first 4 bytes hex: {first_hex}")
+            def _run_generate_add_multiple():
+                """Run the streaming generation in a thread for timeout support."""
+                result_image = None
+                for chunk in self.genai_client.models.generate_content_stream(
+                    model="gemini-3-pro-image-preview",
+                    contents=contents,
+                    config=generate_content_config,
+                ):
+                    if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+                        for part in chunk.candidates[0].content.parts:
+                            if part.inline_data and part.inline_data.data:
+                                image_data = part.inline_data.data
+                                mime_type = part.inline_data.mime_type or "image/png"
 
-                                # Check if raw image bytes (PNG starts with 89504e47, JPEG with ffd8ff)
-                                if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
-                                    # Raw image bytes - encode to base64
-                                    image_base64 = base64.b64encode(image_data).decode("utf-8")
-                                    logger.info("ADD MULTIPLE: Raw image bytes detected, encoded to base64")
+                                # Handle both raw bytes and base64 string bytes
+                                # (google-genai SDK may return either format)
+                                if isinstance(image_data, bytes):
+                                    first_hex = image_data[:4].hex()
+                                    logger.info(f"ADD MULTIPLE visualization first 4 bytes hex: {first_hex}")
+
+                                    # Check if raw image bytes (PNG starts with 89504e47, JPEG with ffd8ff)
+                                    if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                        # Raw image bytes - encode to base64
+                                        image_base64 = base64.b64encode(image_data).decode("utf-8")
+                                        logger.info("ADD MULTIPLE: Raw image bytes detected, encoded to base64")
+                                    else:
+                                        # Bytes are likely base64 string - decode to string directly
+                                        image_base64 = image_data.decode("utf-8")
+                                        logger.info("ADD MULTIPLE: Base64 string bytes detected, decoded directly")
                                 else:
-                                    # Bytes are likely base64 string - decode to string directly
-                                    image_base64 = image_data.decode("utf-8")
-                                    logger.info("ADD MULTIPLE: Base64 string bytes detected, decoded directly")
-                            else:
-                                # Already a string
-                                image_base64 = image_data
-                                logger.info("ADD MULTIPLE: String data received directly")
+                                    # Already a string
+                                    image_base64 = image_data
+                                    logger.info("ADD MULTIPLE: String data received directly")
 
-                            generated_image = f"data:{mime_type};base64,{image_base64}"
-                            logger.info(f"Generated ADD MULTIPLE visualization for {len(products)} products")
+                                result_image = f"data:{mime_type};base64,{image_base64}"
+                                logger.info(f"Generated ADD MULTIPLE visualization for {num_products} products")
+                return result_image
+
+            generated_image = None
+            for attempt in range(max_retries):
+                try:
+                    loop = asyncio.get_event_loop()
+                    generated_image = await asyncio.wait_for(
+                        loop.run_in_executor(None, _run_generate_add_multiple), timeout=timeout_seconds
+                    )
+                    if generated_image:
+                        break
+                except asyncio.TimeoutError:
+                    logger.warning(f"ADD MULTIPLE visualization attempt {attempt + 1} timed out after {timeout_seconds}s")
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** (attempt + 1)  # Exponential backoff: 2, 4, 8 seconds
+                        logger.info(f"Retrying in {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                    continue
+                except Exception as e:
+                    error_str = str(e)
+                    # Check if it's a 503 (overloaded) error - retry with longer backoff
+                    if "503" in error_str or "overloaded" in error_str.lower() or "UNAVAILABLE" in error_str:
+                        if attempt < max_retries - 1:
+                            wait_time = 4 * (2 ** attempt)  # Longer backoff for 503: 4, 8, 16 seconds
+                            logger.warning(f"ADD MULTIPLE visualization: Model overloaded (503), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                            await asyncio.sleep(wait_time)
+                            continue
+                    logger.error(f"ADD MULTIPLE visualization attempt {attempt + 1} failed: {e}")
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** (attempt + 1)
+                        await asyncio.sleep(wait_time)
+                    continue
 
             if not generated_image:
-                logger.error("AI failed to generate visualization - no image returned")
+                logger.error(f"AI failed to generate ADD MULTIPLE visualization after {max_retries} attempts")
                 raise ValueError("AI failed to generate visualization image")
 
             return generated_image
@@ -1475,43 +1552,81 @@ Generate a photorealistic image of the room with the {product_name} replacing th
             # Use temperature 0.4 to match Google AI Studio's default
             generate_content_config = types.GenerateContentConfig(response_modalities=["IMAGE"], temperature=0.4)
 
-            generated_image = None
-            for chunk in self.genai_client.models.generate_content_stream(
-                model="gemini-3-pro-image-preview",
-                contents=contents,
-                config=generate_content_config,
-            ):
-                if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
-                    for part in chunk.candidates[0].content.parts:
-                        if part.inline_data and part.inline_data.data:
-                            image_data = part.inline_data.data
-                            mime_type = part.inline_data.mime_type or "image/png"
+            # Retry configuration with timeout protection
+            max_retries = 3
+            timeout_seconds = 90
 
-                            # Handle both raw bytes and base64 string bytes
-                            # (google-genai SDK may return either format)
-                            if isinstance(image_data, bytes):
-                                first_hex = image_data[:4].hex()
-                                logger.info(f"REPLACE visualization first 4 bytes hex: {first_hex}")
+            def _run_generate_replace():
+                """Run the streaming generation in a thread for timeout support."""
+                result_image = None
+                for chunk in self.genai_client.models.generate_content_stream(
+                    model="gemini-3-pro-image-preview",
+                    contents=contents,
+                    config=generate_content_config,
+                ):
+                    if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+                        for part in chunk.candidates[0].content.parts:
+                            if part.inline_data and part.inline_data.data:
+                                image_data = part.inline_data.data
+                                mime_type = part.inline_data.mime_type or "image/png"
 
-                                # Check if raw image bytes (PNG starts with 89504e47, JPEG with ffd8ff)
-                                if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
-                                    # Raw image bytes - encode to base64
-                                    image_base64 = base64.b64encode(image_data).decode("utf-8")
-                                    logger.info("REPLACE: Raw image bytes detected, encoded to base64")
+                                # Handle both raw bytes and base64 string bytes
+                                # (google-genai SDK may return either format)
+                                if isinstance(image_data, bytes):
+                                    first_hex = image_data[:4].hex()
+                                    logger.info(f"REPLACE visualization first 4 bytes hex: {first_hex}")
+
+                                    # Check if raw image bytes (PNG starts with 89504e47, JPEG with ffd8ff)
+                                    if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                        # Raw image bytes - encode to base64
+                                        image_base64 = base64.b64encode(image_data).decode("utf-8")
+                                        logger.info("REPLACE: Raw image bytes detected, encoded to base64")
+                                    else:
+                                        # Bytes are likely base64 string - decode to string directly
+                                        image_base64 = image_data.decode("utf-8")
+                                        logger.info("REPLACE: Base64 string bytes detected, decoded directly")
                                 else:
-                                    # Bytes are likely base64 string - decode to string directly
-                                    image_base64 = image_data.decode("utf-8")
-                                    logger.info("REPLACE: Base64 string bytes detected, decoded directly")
-                            else:
-                                # Already a string
-                                image_base64 = image_data
-                                logger.info("REPLACE: String data received directly")
+                                    # Already a string
+                                    image_base64 = image_data
+                                    logger.info("REPLACE: String data received directly")
 
-                            generated_image = f"data:{mime_type};base64,{image_base64}"
-                            logger.info("Generated REPLACE visualization")
+                                result_image = f"data:{mime_type};base64,{image_base64}"
+                                logger.info("Generated REPLACE visualization")
+                return result_image
+
+            generated_image = None
+            for attempt in range(max_retries):
+                try:
+                    loop = asyncio.get_event_loop()
+                    generated_image = await asyncio.wait_for(
+                        loop.run_in_executor(None, _run_generate_replace), timeout=timeout_seconds
+                    )
+                    if generated_image:
+                        break
+                except asyncio.TimeoutError:
+                    logger.warning(f"REPLACE visualization attempt {attempt + 1} timed out after {timeout_seconds}s")
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** (attempt + 1)  # Exponential backoff: 2, 4, 8 seconds
+                        logger.info(f"Retrying in {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                    continue
+                except Exception as e:
+                    error_str = str(e)
+                    # Check if it's a 503 (overloaded) error - retry with longer backoff
+                    if "503" in error_str or "overloaded" in error_str.lower() or "UNAVAILABLE" in error_str:
+                        if attempt < max_retries - 1:
+                            wait_time = 4 * (2 ** attempt)  # Longer backoff for 503: 4, 8, 16 seconds
+                            logger.warning(f"REPLACE visualization: Model overloaded (503), retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                            await asyncio.sleep(wait_time)
+                            continue
+                    logger.error(f"REPLACE visualization attempt {attempt + 1} failed: {e}")
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** (attempt + 1)
+                        await asyncio.sleep(wait_time)
+                    continue
 
             if not generated_image:
-                logger.error("AI failed to generate REPLACE visualization - no image returned")
+                logger.error(f"AI failed to generate REPLACE visualization after {max_retries} attempts")
                 raise ValueError("AI failed to generate visualization image")
 
             return generated_image

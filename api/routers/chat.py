@@ -2179,6 +2179,22 @@ def _detect_direct_search_query(message: str) -> Dict[str, Any]:
         "side_tables": ["side table", "end table", "accent table", "occasional table"],
         "floor_lamps": ["floor lamp", "standing lamp", "arc lamp", "tripod lamp"],
         "table_lamps": ["table lamp", "desk lamp", "bedside lamp"],
+        "ceiling_lights": [
+            "ceiling light",
+            "ceiling lights",
+            "ceiling lamp",
+            "ceiling lamps",
+            "pendant light",
+            "pendant lights",
+            "pendant lamp",
+            "pendant",
+            "chandelier",
+            "chandeliers",
+            "hanging light",
+            "hanging lamp",
+            "overhead light",
+        ],
+        "wall_lights": ["wall light", "wall lights", "wall lamp", "wall lamps", "sconce", "wall sconce"],
         "accent_chairs": ["accent chair", "armchair", "club chair", "lounge chair", "wing chair", "chair"],
         "beds": ["bed", "bedframe", "headboard"],
         "nightstands": ["nightstand", "bedside table", "night table"],
@@ -2186,7 +2202,7 @@ def _detect_direct_search_query(message: str) -> Dict[str, Any]:
         "wardrobes": ["wardrobe", "armoire", "closet"],
         "dining_tables": ["dining table", "dinner table", "kitchen table"],
         "dining_chairs": ["dining chair", "kitchen chair"],
-        "pendant_lamps": ["pendant", "chandelier", "hanging lamp", "ceiling lamp"],
+        # Note: pendant_lamps removed - merged into ceiling_lights above
         "sideboards": ["sideboard", "buffet", "credenza", "console"],
         "desks": ["desk", "writing desk", "computer desk", "work table"],
         "office_chairs": ["office chair", "task chair", "ergonomic chair"],
@@ -2215,9 +2231,23 @@ def _detect_direct_search_query(message: str) -> Dict[str, Any]:
 
     result["detected_categories"] = detected_cats
 
-    # Extract colors
+    # Collect matched keywords to avoid extracting them as qualifiers
+    # e.g., "light" in "ceiling lights" should not be extracted as a color
+    matched_category_keywords = set()
+    for cat in detected_cats:
+        keyword = cat.get("matched_keyword", "")
+        if keyword:
+            matched_category_keywords.update(keyword.split())
+
+    # Extract colors (skip if part of detected category keyword)
     for color in COLOR_KEYWORDS:
         if color in message_lower:
+            # Skip "light" if it's part of a lighting category keyword
+            if color == "light" and "light" in matched_category_keywords:
+                continue
+            # Skip "dark" if it's part of a category keyword (e.g., future-proofing)
+            if color in matched_category_keywords:
+                continue
             result["extracted_colors"].append(color)
 
     # Extract materials
@@ -3285,6 +3315,22 @@ CATEGORY_KEYWORDS = {
     "side_tables": ["side table", "end table", "accent table", "occasional table", "lamp table"],
     "floor_lamps": ["floor lamp", "standing lamp", "arc lamp", "tripod lamp", "torchiere"],
     "table_lamps": ["table lamp", "desk lamp", "bedside lamp", "accent lamp"],
+    "ceiling_lights": [
+        "ceiling light",
+        "ceiling lights",
+        "ceiling lamp",
+        "ceiling lamps",
+        "pendant light",
+        "pendant lights",
+        "pendant lamp",
+        "pendant",
+        "chandelier",
+        "chandeliers",
+        "hanging light",
+        "hanging lamp",
+        "overhead light",
+    ],
+    "wall_lights": ["wall light", "wall lights", "wall lamp", "wall lamps", "sconce", "wall sconce"],
     "accent_chairs": ["accent chair", "armchair", "club chair", "lounge chair", "wing chair", "chair"],
     "beds": ["bed", "bedframe", "headboard", "king bed", "queen bed", "double bed"],
     "nightstands": ["nightstand", "bedside table", "night table"],
@@ -3292,7 +3338,7 @@ CATEGORY_KEYWORDS = {
     "wardrobes": ["wardrobe", "armoire", "closet"],
     "dining_tables": ["dining table", "dinner table", "kitchen table"],
     "dining_chairs": ["dining chair", "kitchen chair", "side chair"],
-    "pendant_lamps": ["pendant", "chandelier", "hanging lamp", "ceiling lamp", "suspended lamp"],
+    # Note: pendant_lamps merged into ceiling_lights above
     "sideboards": ["sideboard", "buffet", "credenza", "console"],
     "desks": ["desk", "writing desk", "computer desk", "work table"],
     "office_chairs": ["office chair", "task chair", "ergonomic chair", "executive chair"],
