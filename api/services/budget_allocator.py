@@ -97,14 +97,26 @@ def validate_and_adjust_budget_allocations(
         if budget_alloc is None and isinstance(cat, dict):
             budget_alloc = cat.get("budget_allocation")
 
-        if budget_alloc and budget_alloc.get("max"):
+        # Handle both dict and Pydantic model for budget_allocation
+        max_val = None
+        min_val = None
+        if budget_alloc:
+            if isinstance(budget_alloc, dict):
+                max_val = budget_alloc.get("max")
+                min_val = budget_alloc.get("min")
+            else:
+                # Pydantic model - use getattr
+                max_val = getattr(budget_alloc, "max", None)
+                min_val = getattr(budget_alloc, "min", None)
+
+        if max_val:
             has_any_allocation = True
             allocations.append(
                 {
                     "category": cat,
                     "cat_id": cat_id,
-                    "current_max": float(budget_alloc.get("max", 0)),
-                    "current_min": float(budget_alloc.get("min", 0)),
+                    "current_max": float(max_val),
+                    "current_min": float(min_val) if min_val else 0,
                 }
             )
         else:
@@ -271,16 +283,25 @@ def get_budget_summary(total_budget: float, categories: List[Any], category_id_f
             budget_alloc = cat.get("budget_allocation")
 
         if budget_alloc:
-            max_val = budget_alloc.get("max", 0)
-            min_val = budget_alloc.get("min", 0)
+            # Handle both dict and Pydantic model
+            if isinstance(budget_alloc, dict):
+                max_val = budget_alloc.get("max", 0)
+                min_val = budget_alloc.get("min", 0)
+            else:
+                max_val = getattr(budget_alloc, "max", 0) or 0
+                min_val = getattr(budget_alloc, "min", 0) or 0
             allocated_sum += max_val
+
+            # Handle display_name for both dict and Pydantic model
+            if isinstance(cat, dict):
+                display_name = cat.get("display_name") or cat_id.replace("_", " ").title()
+            else:
+                display_name = getattr(cat, "display_name", None) or cat_id.replace("_", " ").title()
 
             breakdown.append(
                 {
                     "category": cat_id,
-                    "display_name": (
-                        getattr(cat, "display_name", None) or cat.get("display_name") or cat_id.replace("_", " ").title()
-                    ),
+                    "display_name": display_name,
                     "min": min_val,
                     "max": max_val,
                     "percent": (max_val / total_budget * 100) if total_budget > 0 else 0,
