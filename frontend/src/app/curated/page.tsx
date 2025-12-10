@@ -126,7 +126,8 @@ function CuratedPageContent() {
           </div>
 
           {/* Room Type Filter Tabs + Create Your Own */}
-          <div className="flex items-center justify-center gap-4 mb-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="w-[140px]"></div>
             <div className="bg-white rounded-lg p-1 shadow-sm border border-neutral-200 inline-flex gap-1">
               {roomTypes.map((type) => (
                 <button
