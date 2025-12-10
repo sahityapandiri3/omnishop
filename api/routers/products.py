@@ -1,20 +1,27 @@
 """
 Product API routes
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_
-from sqlalchemy.orm import selectinload
-from typing import Optional, List
 import logging
+import re
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from schemas.products import (
+    CategorySchema,
+    ProductDetailResponse,
+    ProductFilters,
+    ProductQuery,
+    ProductSchema,
+    ProductSearchResponse,
+    ProductStatsResponse,
+    ProductSummarySchema,
+)
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from core.database import get_db
-from schemas.products import (
-    ProductSchema, ProductSummarySchema, ProductDetailResponse,
-    ProductSearchResponse, ProductQuery, ProductFilters,
-    CategorySchema, ProductStatsResponse
-)
-from database.models import Product, Category, ProductImage, ProductAttribute
+from database.models import Category, Product, ProductAttribute, ProductImage
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/products", tags=["products"])
@@ -34,7 +41,7 @@ async def get_products(
     is_on_sale: Optional[bool] = Query(None),
     sort_by: str = Query("created_at"),
     sort_direction: str = Query("desc"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Get paginated product list with filtering and search"""
     try:
@@ -46,11 +53,14 @@ async def get_products(
 
         # Apply filters
         if search:
+            # Use PostgreSQL regex with word boundaries (\y) for accurate matching
+            # This prevents "bed" from matching "bedspread", "bedside", etc.
+            escaped_search = re.escape(search)
             query = query.where(
                 or_(
-                    Product.name.ilike(f"%{search}%"),
-                    Product.description.ilike(f"%{search}%"),
-                    Product.brand.ilike(f"%{search}%")
+                    Product.name.op("~*")(rf"\y{escaped_search}\y"),
+                    Product.description.op("~*")(rf"\y{escaped_search}\y"),
+                    Product.brand.op("~*")(rf"\y{escaped_search}\y"),
                 )
             )
 
@@ -97,9 +107,9 @@ async def get_products(
         if search:
             count_query = count_query.where(
                 or_(
-                    Product.name.ilike(f"%{search}%"),
-                    Product.description.ilike(f"%{search}%"),
-                    Product.brand.ilike(f"%{search}%")
+                    Product.name.op("~*")(rf"\y{escaped_search}\y"),
+                    Product.description.op("~*")(rf"\y{escaped_search}\y"),
+                    Product.brand.op("~*")(rf"\y{escaped_search}\y"),
                 )
             )
 
@@ -141,19 +151,21 @@ async def get_products(
                 logger.info(f"  - Category: {category.name if category else None}")
 
                 logger.info(f"  - Creating ProductSummarySchema for product {product.id}")
-                product_summaries.append(ProductSummarySchema(
-                    id=product.id,
-                    name=product.name,
-                    price=product.price,
-                    original_price=product.original_price,
-                    currency=product.currency,
-                    brand=product.brand,
-                    source_website=product.source_website,
-                    is_available=product.is_available,
-                    is_on_sale=product.is_on_sale,
-                    primary_image=primary_image,
-                    category=category
-                ))
+                product_summaries.append(
+                    ProductSummarySchema(
+                        id=product.id,
+                        name=product.name,
+                        price=product.price,
+                        original_price=product.original_price,
+                        currency=product.currency,
+                        brand=product.brand,
+                        source_website=product.source_website,
+                        is_available=product.is_available,
+                        is_on_sale=product.is_on_sale,
+                        primary_image=primary_image,
+                        category=category,
+                    )
+                )
                 logger.info(f"  - Successfully processed product {product.id}")
             except Exception as e:
                 logger.error(f"Error processing product {product.id}: {e}", exc_info=True)
@@ -175,8 +187,8 @@ async def get_products(
                 "brand": brand,
                 "source_website": source_website,
                 "is_available": is_available,
-                "is_on_sale": is_on_sale
-            }
+                "is_on_sale": is_on_sale,
+            },
         )
 
     except Exception as e:
@@ -197,13 +209,11 @@ async def get_product(product_id: int, db: AsyncSession = Depends(get_db)):
             raise HTTPException(status_code=404, detail="Product not found")
 
         # Get related products (same category, different product)
-        related_query = select(Product).where(
-            and_(
-                Product.category_id == product.category_id,
-                Product.id != product.id,
-                Product.is_available == True
-            )
-        ).limit(6)
+        related_query = (
+            select(Product)
+            .where(and_(Product.category_id == product.category_id, Product.id != product.id, Product.is_available == True))
+            .limit(6)
+        )
 
         related_result = await db.execute(related_query)
         related_products = related_result.scalars().all()
@@ -215,24 +225,23 @@ async def get_product(product_id: int, db: AsyncSession = Depends(get_db)):
             if related.images:
                 primary_image = next((img for img in related.images if img.is_primary), related.images[0])
 
-            related_summaries.append(ProductSummarySchema(
-                id=related.id,
-                name=related.name,
-                price=related.price,
-                original_price=related.original_price,
-                currency=related.currency,
-                brand=related.brand,
-                source_website=related.source_website,
-                is_available=related.is_available,
-                is_on_sale=related.is_on_sale,
-                primary_image=primary_image,
-                category=related.category
-            ))
+            related_summaries.append(
+                ProductSummarySchema(
+                    id=related.id,
+                    name=related.name,
+                    price=related.price,
+                    original_price=related.original_price,
+                    currency=related.currency,
+                    brand=related.brand,
+                    source_website=related.source_website,
+                    is_available=related.is_available,
+                    is_on_sale=related.is_on_sale,
+                    primary_image=primary_image,
+                    category=related.category,
+                )
+            )
 
-        return ProductDetailResponse(
-            product=ProductSchema.from_orm(product),
-            related_products=related_summaries
-        )
+        return ProductDetailResponse(product=ProductSchema.from_orm(product), related_products=related_summaries)
 
     except HTTPException:
         raise
@@ -256,20 +265,16 @@ async def get_product_stats(db: AsyncSession = Depends(get_db)):
         by_source = {row[0]: row[1] for row in source_result.all()}
 
         # By category
-        category_query = select(Category.name, func.count(Product.id)).join(
-            Product, Category.id == Product.category_id, isouter=True
-        ).group_by(Category.name)
+        category_query = (
+            select(Category.name, func.count(Product.id))
+            .join(Product, Category.id == Product.category_id, isouter=True)
+            .group_by(Category.name)
+        )
         category_result = await db.execute(category_query)
         by_category = {row[0] or "Uncategorized": row[1] for row in category_result.all()}
 
         # Price ranges
-        price_ranges = {
-            "Under $50": 0,
-            "$50-$200": 0,
-            "$200-$500": 0,
-            "$500-$1000": 0,
-            "Over $1000": 0
-        }
+        price_ranges = {"Under $50": 0, "$50-$200": 0, "$200-$500": 0, "$500-$1000": 0, "Over $1000": 0}
 
         price_query = select(Product.price).where(Product.price.isnot(None))
         price_result = await db.execute(price_query)
@@ -303,7 +308,7 @@ async def get_product_stats(db: AsyncSession = Depends(get_db)):
             by_source=by_source,
             by_category=by_category,
             price_ranges=price_ranges,
-            availability=availability
+            availability=availability,
         )
 
     except Exception as e:
