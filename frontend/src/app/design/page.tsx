@@ -703,7 +703,7 @@ function DesignPageContent() {
   // UNLIMITED: Multiple instances allowed (always adds new)
   const FURNITURE_QUANTITY_RULES = {
     SINGLE_INSTANCE: ['sofa', 'bed', 'coffee_table', 'floor_rug', 'ceiling_lamp'],
-    UNLIMITED: ['planter', 'floor_lamp', 'standing_lamp', 'side_table', 'ottoman', 'table_lamp', 'vase', 'flower', 'decor', 'sculpture', 'figurine', 'candle', 'picture_frame', 'accent_chair', 'dining_chair', 'cushion', 'throw'],
+    UNLIMITED: ['planter', 'floor_lamp', 'standing_lamp', 'side_table', 'ottoman', 'table_lamp', 'vase', 'flower', 'decor', 'sculpture', 'figurine', 'candle', 'picture_frame', 'wall_art', 'accent_chair', 'dining_chair', 'cushion', 'throw'],
   };
 
   // Extract product type from product name
@@ -723,9 +723,15 @@ function DesignPageContent() {
     if (name.includes('floor lamp') || name.includes('standing lamp')) return 'floor_lamp';
     if (name.includes('ceiling lamp') || name.includes('pendant') || name.includes('chandelier')) return 'ceiling_lamp';
     if (name.includes('planter') || name.includes('plant pot') || name.includes('flower pot') || name.includes(' pot')) return 'planter';
+    // Wall art - paintings, canvas, wall hangings (goes ON walls)
+    if (name.includes('wall art') || name.includes('wall decor') || name.includes('painting') ||
+        name.includes('canvas art') || name.includes('wall hanging') || name.includes('wall panel') ||
+        name.includes('artwork') || name.includes('print') || name.includes('poster') ||
+        name.includes('wall plate') || name.includes('wall clock')) return 'wall_art';
     // Decor items - these go ON tables/surfaces (UNLIMITED - multiple allowed)
     if (name.includes('vase') || name.includes('flower bunch') || name.includes('flower arrangement') || name.includes('artificial flower')) return 'vase';
-    if (name.includes('sculpture') || name.includes('statue') || name.includes('figurine')) return 'sculpture';
+    // Sculptures - 3D decorative items that sit on surfaces (NOT wall art)
+    if (name.includes('sculpture') || name.includes('statue') || name.includes('figurine') || name.includes('bust')) return 'sculpture';
     if (name.includes('candle') || name.includes('candle holder') || name.includes('candlestick')) return 'candle';
     if (name.includes('picture frame') || name.includes('photo frame')) return 'picture_frame';
     if (name.includes('decor') || name.includes('decorative') || name.includes('ornament') || name.includes('accent piece')) return 'decor';
