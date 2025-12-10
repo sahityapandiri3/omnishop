@@ -10,8 +10,6 @@ const navigation = [
   { name: 'Home', href: '/' },
   { name: 'Curated Looks', href: '/curated', badge: 'New' },
   { name: 'Design Studio', href: '/design' },
-  { name: 'Products', href: '/products' },
-  { name: 'Chat', href: '/chat' },
   { name: 'Admin', href: '/admin', admin: true },
 ]
 

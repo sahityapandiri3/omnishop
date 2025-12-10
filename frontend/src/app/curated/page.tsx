@@ -125,8 +125,8 @@ function CuratedPageContent() {
             </p>
           </div>
 
-          {/* Room Type Filter Tabs */}
-          <div className="flex justify-center mb-6">
+          {/* Room Type Filter Tabs + Create Your Own */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
             <div className="bg-white rounded-lg p-1 shadow-sm border border-neutral-200 inline-flex gap-1">
               {roomTypes.map((type) => (
                 <button
@@ -142,6 +142,16 @@ function CuratedPageContent() {
                 </button>
               ))}
             </div>
+            <span className="hidden sm:block text-neutral-300">|</span>
+            <button
+              onClick={handleStyleFromScratch}
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-neutral-800 hover:bg-neutral-900 text-white text-xs font-medium rounded-lg transition-all shadow-sm"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Create Your Own
+            </button>
           </div>
 
           {/* Loading state */}
