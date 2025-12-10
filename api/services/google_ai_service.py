@@ -789,18 +789,20 @@ Remove all movable objects and keep all fixed architecture.
 
 REMOVE (completely):
 Sofas, chairs, tables, beds, mattresses
-Rugs, curtains, loose shelves, lamps
+Rugs, curtains, loose shelves
+All lighting fixtures: floor lamps, table lamps, pendant lights, chandeliers, hanging lights
 Décor items (plants, art, frames, pillows, vases)
 Toys, clutter, electronics, bags, personal items
 
 KEEP (unchanged):
 Walls, windows, doors, built-in wardrobes
-Fixed lights, ceiling, flooring, wall trims
+Ceiling (but remove any pendant/hanging lights from it), flooring, wall trims
+Recessed/built-in ceiling lights only (not hanging fixtures)
 Electrical outlets, switches, AC vents
 
 OUTPUT REQUIREMENTS:
 Return an empty, realistic version of the same room
-Keep lighting, shadows, perspective, and proportions natural
+Keep natural daylight, shadows, perspective, and proportions natural
 No artifacts, smudges, ghost objects, or distortions
 Image must look like a clean, vacant room ready for styling
 Return only the processed image."""
