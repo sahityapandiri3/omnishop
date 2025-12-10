@@ -2,6 +2,7 @@
 Admin API routes for managing curated looks
 """
 import logging
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -15,7 +16,7 @@ from schemas.curated import (
     CuratedLookSummarySchema,
     CuratedLookUpdate,
 )
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -30,20 +31,41 @@ SEARCH_SYNONYMS = {
     "carpet": ["rug", "carpet", "runner", "mat", "floor covering"],
     "rug": ["rug", "carpet", "runner", "mat", "floor covering"],
     "sofa": ["sofa", "couch", "settee"],
+    "sofas": ["sofa", "couch", "settee"],
     "couch": ["sofa", "couch", "settee"],
+    "couches": ["sofa", "couch", "settee"],
     "cupboard": ["cupboard", "cabinet", "wardrobe", "armoire"],
     "cabinet": ["cupboard", "cabinet", "wardrobe", "armoire"],
     "lamp": ["lamp", "floor lamp", "standing lamp", "table lamp"],
+    "lamps": ["lamp", "floor lamp", "standing lamp", "table lamp"],
     "floor lamp": ["floor lamp", "standing lamp", "lamp"],
     "standing lamp": ["standing lamp", "floor lamp", "lamp"],
     "table lamp": ["table lamp", "desk lamp", "lamp"],
     "light": ["light", "lighting", "chandelier", "pendant light"],
+    "lights": ["light", "lighting", "chandelier", "pendant light"],
     "chandelier": ["chandelier", "pendant light", "ceiling light"],
     "table": ["table", "desk"],
+    "tables": ["table", "desk"],
     "desk": ["table", "desk"],
+    "desks": ["table", "desk"],
     "chair": ["chair", "seat", "seating"],
+    "chairs": ["chair", "seat", "seating"],
     "curtain": ["curtain", "drape", "drapes", "blind", "blinds"],
+    "curtains": ["curtain", "drape", "drapes", "blind", "blinds"],
     "drape": ["curtain", "drape", "drapes"],
+    "drapes": ["curtain", "drape", "drapes"],
+    # Bedroom furniture - handle plurals
+    "bed": ["bed", "bedframe", "bed frame"],
+    "beds": ["bed", "bedframe", "bed frame"],
+    "bedside table": ["bedside table", "nightstand", "night stand", "bedside"],
+    "bedside tables": ["bedside table", "nightstand", "night stand", "bedside"],
+    "nightstand": ["nightstand", "bedside table", "night stand", "bedside"],
+    "nightstands": ["nightstand", "bedside table", "night stand", "bedside"],
+    # Planters and pots
+    "planter": ["planter", "pot", "plant pot", "flower pot"],
+    "planters": ["planter", "pot", "plant pot", "flower pot"],
+    "pot": ["pot", "planter", "plant pot", "flower pot"],
+    "pots": ["pot", "planter", "plant pot", "flower pot"],
 }
 
 
@@ -101,8 +123,6 @@ async def search_products_for_look(
 ):
     """Search for products to add to a curated look. Can search by text query or filter by category."""
     try:
-        from sqlalchemy import or_
-
         # Build search query
         search_query = select(Product).options(selectinload(Product.images)).where(Product.is_available.is_(True))
 
@@ -111,15 +131,20 @@ async def search_products_for_look(
             search_terms = expand_search_query(query)
             logger.info(f"Search query '{query}' expanded to: {search_terms}")
 
-            # Build search conditions:
-            # - Synonym terms only match in product NAME (to avoid false positives from descriptions)
-            # - Original query matches in name, brand, OR description
+            # Build search conditions using word boundaries for accurate matching
+            # This prevents "bed" from matching "bedspread", "bedding", etc.
             name_conditions = []
             for term in search_terms:
-                name_conditions.append(Product.name.ilike(f"%{term}%"))
+                escaped_term = re.escape(term)
+                # Use PostgreSQL regex with word boundaries (\y) for accurate matching
+                name_conditions.append(Product.name.op("~*")(rf"\y{escaped_term}\y"))
 
-            # Also match original query in brand and description
-            original_query_conditions = [Product.brand.ilike(f"%{query}%"), Product.description.ilike(f"%{query}%")]
+            # Also match original query in brand and description with word boundaries
+            escaped_query = re.escape(query)
+            original_query_conditions = [
+                Product.brand.op("~*")(rf"\y{escaped_query}\y"),
+                Product.description.op("~*")(rf"\y{escaped_query}\y"),
+            ]
 
             # Combine: (synonym matches in name) OR (original query in brand/description)
             all_conditions = name_conditions + original_query_conditions
@@ -149,8 +174,17 @@ async def search_products_for_look(
             if color_conditions:
                 search_query = search_query.where(or_(*color_conditions))
 
-        # Order by price (available products first)
-        search_query = search_query.order_by(Product.price.desc().nullslast())
+        # Order by: exact match priority (if searching), then price
+        # This ensures "bedside table" shows bedside tables first, not random matches
+        if query:
+            escaped_query = re.escape(query)
+            # Case expression to prioritize exact matches in name
+            exact_match_priority = case(
+                (Product.name.op("~*")(rf"\y{escaped_query}\y"), 0), else_=1  # Exact query match first
+            )
+            search_query = search_query.order_by(exact_match_priority, Product.price.desc().nullslast())
+        else:
+            search_query = search_query.order_by(Product.price.desc().nullslast())
 
         # Limit results
         search_query = search_query.limit(limit)
