@@ -4,11 +4,13 @@ Filtering Service for Product Filtering
 Handles advanced product filtering by various criteria.
 """
 import logging
-from typing import List, Dict, Optional, Any
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
 
 from database.models import Product
+
 from .schemas import FilterCriteria
 
 logger = logging.getLogger(__name__)
@@ -29,15 +31,10 @@ class FilteringService:
             "dining_room": ["dining_tables", "dining_chairs", "sideboards", "lighting"],
             "kitchen": ["bar_stools", "kitchen_islands", "storage", "lighting"],
             "office": ["desks", "office_chairs", "bookcases", "storage", "lighting"],
-            "bathroom": ["vanities", "mirrors", "storage", "lighting"]
+            "bathroom": ["vanities", "mirrors", "storage", "lighting"],
         }
 
-    async def filter_products(
-        self,
-        products: List[Product],
-        criteria: FilterCriteria,
-        db: AsyncSession
-    ) -> List[Product]:
+    async def filter_products(self, products: List[Product], criteria: FilterCriteria, db: AsyncSession) -> List[Product]:
         """
         Filter products based on multiple criteria
 
@@ -54,16 +51,16 @@ class FilteringService:
         # Price range filter
         if criteria.price_min is not None or criteria.price_max is not None:
             min_price = criteria.price_min or 0
-            max_price = criteria.price_max or float('inf')
+            max_price = criteria.price_max or float("inf")
             filtered = [p for p in filtered if min_price <= p.price <= max_price]
 
         # Website filter
         if criteria.website:
-            filtered = [p for p in filtered if criteria.website.lower() in (p.source_website or '').lower()]
+            filtered = [p for p in filtered if criteria.website.lower() in (p.source_website or "").lower()]
 
         # Brand filter
         if criteria.brand:
-            filtered = [p for p in filtered if criteria.brand.lower() in (p.brand or '').lower()]
+            filtered = [p for p in filtered if criteria.brand.lower() in (p.brand or "").lower()]
 
         # In stock filter
         if criteria.in_stock is not None:
@@ -77,25 +74,44 @@ class FilteringService:
         if criteria.style:
             style_keywords = [s.lower() for s in criteria.style]
             filtered = [
-                p for p in filtered
-                if any(style in (p.name + ' ' + (p.description or '')).lower() for style in style_keywords)
+                p for p in filtered if any(style in (p.name + " " + (p.description or "")).lower() for style in style_keywords)
             ]
 
-        # Material filter
+        # Material filter with match mode support
         if criteria.material:
             material_keywords = [m.lower() for m in criteria.material]
-            filtered = [
-                p for p in filtered
-                if any(material in (p.name + ' ' + (p.description or '')).lower() for material in material_keywords)
-            ]
+            if criteria.material_match_mode == "and":
+                # AND mode: product must match ALL specified materials
+                filtered = [
+                    p
+                    for p in filtered
+                    if all(material in (p.name + " " + (p.description or "")).lower() for material in material_keywords)
+                ]
+            else:
+                # OR mode (default): product matches if ANY material matches
+                filtered = [
+                    p
+                    for p in filtered
+                    if any(material in (p.name + " " + (p.description or "")).lower() for material in material_keywords)
+                ]
 
-        # Color filter
+        # Color filter with match mode support
         if criteria.color:
             color_keywords = [c.lower() for c in criteria.color]
-            filtered = [
-                p for p in filtered
-                if any(color in (p.name + ' ' + (p.description or '')).lower() for color in color_keywords)
-            ]
+            if criteria.color_match_mode == "and":
+                # AND mode: product must match ALL specified colors
+                filtered = [
+                    p
+                    for p in filtered
+                    if all(color in (p.name + " " + (p.description or "")).lower() for color in color_keywords)
+                ]
+            else:
+                # OR mode (default): product matches if ANY color matches
+                filtered = [
+                    p
+                    for p in filtered
+                    if any(color in (p.name + " " + (p.description or "")).lower() for color in color_keywords)
+                ]
 
         logger.info(f"Filtered from {len(products)} to {len(filtered)} products")
         return filtered
@@ -123,7 +139,7 @@ class FilteringService:
         Returns:
             Filtered products suitable for the room
         """
-        room_type = room_context.get('room_type')
+        room_type = room_context.get("room_type")
         if not room_type:
             return products
 

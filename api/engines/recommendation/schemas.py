@@ -1,13 +1,15 @@
 """
 Pydantic schemas for Recommendation Engine
 """
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
+
+from pydantic import BaseModel, Field
 
 
 class RecommendationRequest(BaseModel):
     """Request for product recommendations"""
+
     user_preferences: Dict[str, Any] = Field(default_factory=dict)
     room_context: Optional[Dict[str, Any]] = None
     budget_range: Optional[Tuple[float, float]] = None
@@ -25,13 +27,14 @@ class RecommendationRequest(BaseModel):
                 "budget_range": [500, 2000],
                 "style_preferences": ["modern", "minimalist"],
                 "product_keywords": ["sofa", "couch"],
-                "max_recommendations": 20
+                "max_recommendations": 20,
             }
         }
 
 
 class RecommendationResult(BaseModel):
     """Single product recommendation result"""
+
     product_id: str
     product_name: str
     confidence_score: float = Field(ge=0.0, le=1.0)
@@ -46,6 +49,7 @@ class RecommendationResult(BaseModel):
 
 class RecommendationResponse(BaseModel):
     """Complete recommendation response"""
+
     recommendations: List[RecommendationResult]
     total_found: int = Field(ge=0)
     processing_time: float = Field(ge=0.0)
@@ -56,6 +60,7 @@ class RecommendationResponse(BaseModel):
 
 class SearchRequest(BaseModel):
     """Request for product search"""
+
     query: str = Field(min_length=1)
     keywords: Optional[List[str]] = None
     filters: Optional[Dict[str, Any]] = None
@@ -64,6 +69,7 @@ class SearchRequest(BaseModel):
 
 class FilterCriteria(BaseModel):
     """Filtering criteria for products"""
+
     price_min: Optional[float] = Field(default=None, ge=0)
     price_max: Optional[float] = None
     website: Optional[str] = None
@@ -74,10 +80,14 @@ class FilterCriteria(BaseModel):
     style: Optional[List[str]] = None
     material: Optional[List[str]] = None
     color: Optional[List[str]] = None
+    # Match mode for colors/materials: "or" (union - any match) vs "and" (intersection - all must match)
+    color_match_mode: str = Field(default="or", pattern="^(or|and)$")
+    material_match_mode: str = Field(default="or", pattern="^(or|and)$")
 
 
 class ProductScore(BaseModel):
     """Scoring breakdown for a single product"""
+
     product_id: str
     content_score: float = Field(ge=0.0, le=1.0)
     popularity_score: float = Field(ge=0.0, le=1.0)

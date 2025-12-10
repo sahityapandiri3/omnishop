@@ -1,13 +1,13 @@
 """
 Natural Language Processing service for design style extraction and preference analysis
 """
-import re
-import logging
-from typing import Dict, List, Tuple, Optional, Any, Set
-from dataclasses import dataclass
-import json
-from collections import Counter, defaultdict
 import asyncio
+import json
+import logging
+import re
+from collections import Counter, defaultdict
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class StyleExtraction:
     """Results from style extraction"""
+
     primary_style: str
     secondary_styles: List[str]
     confidence_score: float
@@ -25,6 +26,7 @@ class StyleExtraction:
 @dataclass
 class PreferenceAnalysis:
     """Results from preference analysis"""
+
     colors: List[str]
     materials: List[str]
     patterns: List[str]
@@ -32,11 +34,15 @@ class PreferenceAnalysis:
     budget_indicators: str
     functional_requirements: List[str]
     confidence_score: float
+    # Match modes: "or" (union - any match) vs "and" (intersection - all must match)
+    color_match_mode: str = "or"  # "or" or "and"
+    material_match_mode: str = "or"  # "or" or "and"
 
 
 @dataclass
 class IntentClassification:
     """Results from intent classification"""
+
     primary_intent: str
     confidence_score: float
     entities: Dict[str, List[str]]
@@ -59,171 +65,474 @@ class DesignNLPProcessor:
         """Load design style keywords and synonyms"""
         return {
             "modern": [
-                "modern", "contemporary", "sleek", "minimalist", "clean lines",
-                "simple", "uncluttered", "streamlined", "geometric", "monochromatic"
+                "modern",
+                "contemporary",
+                "sleek",
+                "minimalist",
+                "clean lines",
+                "simple",
+                "uncluttered",
+                "streamlined",
+                "geometric",
+                "monochromatic",
             ],
             "traditional": [
-                "traditional", "classic", "timeless", "elegant", "formal",
-                "ornate", "detailed", "refined", "sophisticated", "conventional"
+                "traditional",
+                "classic",
+                "timeless",
+                "elegant",
+                "formal",
+                "ornate",
+                "detailed",
+                "refined",
+                "sophisticated",
+                "conventional",
             ],
             "rustic": [
-                "rustic", "farmhouse", "country", "barn", "reclaimed", "weathered",
-                "natural", "raw", "distressed", "vintage", "aged"
+                "rustic",
+                "farmhouse",
+                "country",
+                "barn",
+                "reclaimed",
+                "weathered",
+                "natural",
+                "raw",
+                "distressed",
+                "vintage",
+                "aged",
             ],
             "industrial": [
-                "industrial", "urban", "loft", "exposed", "raw", "concrete",
-                "steel", "iron", "warehouse", "factory", "utilitarian"
+                "industrial",
+                "urban",
+                "loft",
+                "exposed",
+                "raw",
+                "concrete",
+                "steel",
+                "iron",
+                "warehouse",
+                "factory",
+                "utilitarian",
             ],
             "scandinavian": [
-                "scandinavian", "nordic", "hygge", "cozy", "light", "airy",
-                "functional", "minimal", "natural light", "white", "blonde wood"
+                "scandinavian",
+                "nordic",
+                "hygge",
+                "cozy",
+                "light",
+                "airy",
+                "functional",
+                "minimal",
+                "natural light",
+                "white",
+                "blonde wood",
             ],
             "bohemian": [
-                "bohemian", "boho", "eclectic", "artistic", "layered", "textured",
-                "colorful", "mixed patterns", "global", "artistic", "free-spirited"
+                "bohemian",
+                "boho",
+                "eclectic",
+                "artistic",
+                "layered",
+                "textured",
+                "colorful",
+                "mixed patterns",
+                "global",
+                "artistic",
+                "free-spirited",
             ],
             "mid-century": [
-                "mid-century", "retro", "vintage", "atomic", "geometric",
-                "teak", "walnut", "clean lines", "functional", "iconic"
+                "mid-century",
+                "retro",
+                "vintage",
+                "atomic",
+                "geometric",
+                "teak",
+                "walnut",
+                "clean lines",
+                "functional",
+                "iconic",
             ],
             "mediterranean": [
-                "mediterranean", "coastal", "tuscan", "warm", "earthy",
-                "terracotta", "stucco", "arched", "wrought iron", "tile"
+                "mediterranean",
+                "coastal",
+                "tuscan",
+                "warm",
+                "earthy",
+                "terracotta",
+                "stucco",
+                "arched",
+                "wrought iron",
+                "tile",
             ],
             "art_deco": [
-                "art deco", "glamorous", "luxury", "geometric patterns", "metallic",
-                "bold", "dramatic", "ornamental", "symmetrical", "lavish"
+                "art deco",
+                "glamorous",
+                "luxury",
+                "geometric patterns",
+                "metallic",
+                "bold",
+                "dramatic",
+                "ornamental",
+                "symmetrical",
+                "lavish",
             ],
             "transitional": [
-                "transitional", "blend", "balanced", "neutral", "comfortable",
-                "accessible", "timeless", "versatile", "relaxed", "updated"
-            ]
+                "transitional",
+                "blend",
+                "balanced",
+                "neutral",
+                "comfortable",
+                "accessible",
+                "timeless",
+                "versatile",
+                "relaxed",
+                "updated",
+            ],
         }
 
     def _load_color_keywords(self) -> Dict[str, List[str]]:
         """Load color keywords and descriptions"""
         return {
             "neutral": [
-                "white", "off-white", "cream", "beige", "tan", "taupe", "gray",
-                "grey", "charcoal", "black", "ivory", "bone", "linen", "sand"
+                "white",
+                "off-white",
+                "cream",
+                "beige",
+                "tan",
+                "taupe",
+                "gray",
+                "grey",
+                "charcoal",
+                "black",
+                "ivory",
+                "bone",
+                "linen",
+                "sand",
             ],
             "warm": [
-                "red", "orange", "yellow", "coral", "peach", "salmon", "gold",
-                "amber", "burnt orange", "terracotta", "rust", "burgundy"
+                "red",
+                "orange",
+                "yellow",
+                "coral",
+                "peach",
+                "salmon",
+                "gold",
+                "amber",
+                "burnt orange",
+                "terracotta",
+                "rust",
+                "burgundy",
             ],
             "cool": [
-                "blue", "green", "purple", "violet", "teal", "turquoise", "mint",
-                "sage", "navy", "royal blue", "emerald", "forest green"
+                "blue",
+                "green",
+                "purple",
+                "violet",
+                "teal",
+                "turquoise",
+                "mint",
+                "sage",
+                "navy",
+                "royal blue",
+                "emerald",
+                "forest green",
             ],
             "earth_tones": [
-                "brown", "tan", "olive", "moss", "clay", "sienna", "umber",
-                "chocolate", "coffee", "camel", "khaki", "bronze"
+                "brown",
+                "tan",
+                "olive",
+                "moss",
+                "clay",
+                "sienna",
+                "umber",
+                "chocolate",
+                "coffee",
+                "camel",
+                "khaki",
+                "bronze",
             ],
             "jewel_tones": [
-                "emerald", "sapphire", "ruby", "amethyst", "topaz", "garnet",
-                "jade", "opal", "turquoise", "citrine"
+                "emerald",
+                "sapphire",
+                "ruby",
+                "amethyst",
+                "topaz",
+                "garnet",
+                "jade",
+                "opal",
+                "turquoise",
+                "citrine",
             ],
             "pastels": [
-                "pastel", "soft", "light", "pale", "blush", "lavender", "mint",
-                "powder blue", "rose", "champagne", "pearl"
-            ]
+                "pastel",
+                "soft",
+                "light",
+                "pale",
+                "blush",
+                "lavender",
+                "mint",
+                "powder blue",
+                "rose",
+                "champagne",
+                "pearl",
+            ],
         }
 
     def _load_material_keywords(self) -> Dict[str, List[str]]:
         """Load material keywords"""
         return {
             "wood": [
-                "wood", "wooden", "timber", "oak", "maple", "walnut", "cherry",
-                "pine", "mahogany", "teak", "bamboo", "reclaimed wood", "hardwood"
+                "wood",
+                "wooden",
+                "timber",
+                "oak",
+                "maple",
+                "walnut",
+                "cherry",
+                "pine",
+                "mahogany",
+                "teak",
+                "bamboo",
+                "reclaimed wood",
+                "hardwood",
             ],
             "metal": [
-                "metal", "steel", "iron", "brass", "copper", "bronze", "aluminum",
-                "chrome", "nickel", "gold", "silver", "wrought iron", "stainless steel"
+                "metal",
+                "steel",
+                "iron",
+                "brass",
+                "copper",
+                "bronze",
+                "aluminum",
+                "chrome",
+                "nickel",
+                "gold",
+                "silver",
+                "wrought iron",
+                "stainless steel",
             ],
             "fabric": [
-                "fabric", "textile", "cotton", "linen", "silk", "wool", "velvet",
-                "leather", "suede", "canvas", "burlap", "cashmere", "tweed"
+                "fabric",
+                "textile",
+                "cotton",
+                "linen",
+                "silk",
+                "wool",
+                "velvet",
+                "leather",
+                "suede",
+                "canvas",
+                "burlap",
+                "cashmere",
+                "tweed",
             ],
             "stone": [
-                "stone", "marble", "granite", "limestone", "travertine", "slate",
-                "quartz", "concrete", "brick", "ceramic", "porcelain", "tile"
+                "stone",
+                "marble",
+                "granite",
+                "limestone",
+                "travertine",
+                "slate",
+                "quartz",
+                "concrete",
+                "brick",
+                "ceramic",
+                "porcelain",
+                "tile",
             ],
             "glass": [
-                "glass", "crystal", "acrylic", "lucite", "transparent", "translucent",
-                "frosted", "tempered", "mirrored", "stained glass"
+                "glass",
+                "crystal",
+                "acrylic",
+                "lucite",
+                "transparent",
+                "translucent",
+                "frosted",
+                "tempered",
+                "mirrored",
+                "stained glass",
             ],
             "natural": [
-                "natural", "organic", "rattan", "wicker", "jute", "sisal", "hemp",
-                "cork", "bamboo", "seagrass", "rush", "cane"
-            ]
+                "natural",
+                "organic",
+                "rattan",
+                "wicker",
+                "jute",
+                "sisal",
+                "hemp",
+                "cork",
+                "bamboo",
+                "seagrass",
+                "rush",
+                "cane",
+            ],
         }
 
     def _load_intent_patterns(self) -> Dict[str, List[str]]:
         """Load intent classification patterns"""
         return {
             "browse_products": [
-                "show me", "find", "looking for", "need", "want", "browse",
-                "search", "recommend", "suggest", "options", "choices",
-                "add furniture", "add some furniture"
+                "show me",
+                "find",
+                "looking for",
+                "need",
+                "want",
+                "browse",
+                "search",
+                "recommend",
+                "suggest",
+                "options",
+                "choices",
+                "add furniture",
+                "add some furniture",
             ],
             "design_consultation": [
-                "help with", "advice", "how to", "design", "decorate", "style",
-                "ideas", "inspiration", "guidance",
-                "what colors", "which colors", "what style", "which style",
-                "what would work", "what works best"
+                "help with",
+                "advice",
+                "how to",
+                "design",
+                "decorate",
+                "style",
+                "ideas",
+                "inspiration",
+                "guidance",
+                "what colors",
+                "which colors",
+                "what style",
+                "which style",
+                "what would work",
+                "what works best",
             ],
             "room_analysis": [
-                "analyze my", "analyze this", "analyze the",
-                "what do you think", "your opinion",
-                "feedback on", "assessment of", "evaluate my", "evaluate this"
+                "analyze my",
+                "analyze this",
+                "analyze the",
+                "what do you think",
+                "your opinion",
+                "feedback on",
+                "assessment of",
+                "evaluate my",
+                "evaluate this",
             ],
-            "visualization": [
-                "visualize", "see how", "would look",
-                "preview", "render", "show in my", "try out"
-            ],
+            "visualization": ["visualize", "see how", "would look", "preview", "render", "show in my", "try out"],
             "image_modification": [
                 # Addition patterns
-                "add more", "add another", "add some", "add a", "add the",
+                "add more",
+                "add another",
+                "add some",
+                "add a",
+                "add the",
                 # Removal patterns (high priority)
-                "remove all", "remove everything", "remove the", "remove",
-                "take away", "get rid of", "delete", "clear the", "clear",
-                "empty the", "empty",
+                "remove all",
+                "remove everything",
+                "remove the",
+                "remove",
+                "take away",
+                "get rid of",
+                "delete",
+                "clear the",
+                "clear",
+                "empty the",
+                "empty",
                 # Placement/movement patterns (high priority)
-                "place the", "place it", "put the", "put it",
-                "move the", "move it", "reposition", "relocate",
+                "place the",
+                "place it",
+                "put the",
+                "put it",
+                "move the",
+                "move it",
+                "reposition",
+                "relocate",
                 # Modification patterns
-                "make it", "make this", "change the", "change this",
-                "adjust", "tweak", "modify", "update", "edit",
-                "brighter", "darker", "bigger", "smaller", "lighter",
+                "make it",
+                "make this",
+                "change the",
+                "change this",
+                "adjust",
+                "tweak",
+                "modify",
+                "update",
+                "edit",
+                "brighter",
+                "darker",
+                "bigger",
+                "smaller",
+                "lighter",
                 # Replacement patterns
-                "of the same kind", "similar to", "like this", "like these",
-                "more like", "less", "fewer", "replace with"
+                "of the same kind",
+                "similar to",
+                "like this",
+                "like these",
+                "more like",
+                "less",
+                "fewer",
+                "replace with",
             ],
             "budget_planning": [
-                "budget", "cost", "price", "afford", "expensive", "cheap",
-                "investment", "spend", "money", "financing"
+                "budget",
+                "cost",
+                "price",
+                "afford",
+                "expensive",
+                "cheap",
+                "investment",
+                "spend",
+                "money",
+                "financing",
             ],
             "style_guidance": [
-                "style for", "aesthetic for", "theme for", "look for", "vibe for", "mood for",
-                "feeling for", "atmosphere for", "character for", "personality for"
-            ]
+                "style for",
+                "aesthetic for",
+                "theme for",
+                "look for",
+                "vibe for",
+                "mood for",
+                "feeling for",
+                "atmosphere for",
+                "character for",
+                "personality for",
+            ],
         }
 
     def _load_budget_indicators(self) -> Dict[str, List[str]]:
         """Load budget indicator keywords"""
         return {
             "budget": [
-                "budget", "affordable", "cheap", "inexpensive", "economical",
-                "cost-effective", "value", "deal", "bargain", "low-cost"
+                "budget",
+                "affordable",
+                "cheap",
+                "inexpensive",
+                "economical",
+                "cost-effective",
+                "value",
+                "deal",
+                "bargain",
+                "low-cost",
             ],
             "mid_range": [
-                "mid-range", "moderate", "reasonable", "fair price", "average",
-                "standard", "typical", "normal", "middle", "balanced"
+                "mid-range",
+                "moderate",
+                "reasonable",
+                "fair price",
+                "average",
+                "standard",
+                "typical",
+                "normal",
+                "middle",
+                "balanced",
             ],
             "luxury": [
-                "luxury", "high-end", "premium", "expensive", "designer",
-                "exclusive", "upscale", "sophisticated", "investment", "splurge"
-            ]
+                "luxury",
+                "high-end",
+                "premium",
+                "expensive",
+                "designer",
+                "exclusive",
+                "upscale",
+                "sophisticated",
+                "investment",
+                "splurge",
+            ],
         }
 
     async def extract_design_styles(self, text: str) -> StyleExtraction:
@@ -254,7 +563,7 @@ class DesignNLPProcessor:
                 secondary_styles=[],
                 confidence_score=0.1,
                 style_keywords=[],
-                reasoning="No specific style keywords found, defaulting to modern"
+                reasoning="No specific style keywords found, defaulting to modern",
             )
 
         # Sort styles by score
@@ -274,7 +583,7 @@ class DesignNLPProcessor:
             secondary_styles=secondary_styles,
             confidence_score=confidence_score,
             style_keywords=list(set(found_keywords)),
-            reasoning=reasoning
+            reasoning=reasoning,
         )
 
     async def analyze_preferences(self, text: str) -> PreferenceAnalysis:
@@ -305,6 +614,10 @@ class DesignNLPProcessor:
         # Extract functional requirements
         functional_requirements = self._extract_functional_requirements(text_lower)
 
+        # Detect match modes for colors and materials
+        color_match_mode = self._detect_match_mode(text_lower, list(set(colors)))
+        material_match_mode = self._detect_match_mode(text_lower, list(set(materials)))
+
         # Calculate confidence score
         total_found = len(colors) + len(materials) + len(patterns) + len(textures)
         confidence_score = min(total_found * 0.1, 1.0)
@@ -316,7 +629,9 @@ class DesignNLPProcessor:
             textures=textures,
             budget_indicators=budget,
             functional_requirements=functional_requirements,
-            confidence_score=confidence_score
+            confidence_score=confidence_score,
+            color_match_mode=color_match_mode,
+            material_match_mode=material_match_mode,
         )
 
     async def classify_intent(self, text: str) -> IntentClassification:
@@ -353,15 +668,75 @@ class DesignNLPProcessor:
             primary_intent=primary_intent,
             confidence_score=confidence_score,
             entities=entities,
-            action_required=action_required
+            action_required=action_required,
         )
+
+    def _detect_match_mode(self, text: str, items: List[str]) -> str:
+        """
+        Detect whether user wants OR (union) or AND (intersection) matching for a list of items.
+
+        Examples:
+        - "red or blue sofa" → "or" (match products with red OR blue)
+        - "red and blue sofa" → "and" (match products with BOTH red AND blue)
+        - "wood and leather" → "and" (match products with BOTH wood AND leather)
+        - "wood or leather" → "or" (match products with wood OR leather)
+        - "red blue sofa" (no connector) → defaults to "or" (union)
+
+        Args:
+            text: The user's input text (lowercased)
+            items: List of extracted items (colors or materials)
+
+        Returns:
+            "or" or "and" based on detected connector
+        """
+        if len(items) < 2:
+            # Only one item or no items - match mode doesn't matter
+            return "or"
+
+        # Look for explicit "and" between items
+        # Pattern: item1 and item2, item1, item2, and item3
+        for i, item1 in enumerate(items):
+            for item2 in items[i + 1 :]:
+                # Check for "X and Y" pattern
+                and_pattern = rf"\b{re.escape(item1)}\b\s+and\s+\b{re.escape(item2)}\b"
+                reverse_and_pattern = rf"\b{re.escape(item2)}\b\s+and\s+\b{re.escape(item1)}\b"
+                if re.search(and_pattern, text) or re.search(reverse_and_pattern, text):
+                    logger.info(f"Detected AND mode between '{item1}' and '{item2}'")
+                    return "and"
+
+        # Look for explicit "or" between items (this confirms OR mode)
+        for i, item1 in enumerate(items):
+            for item2 in items[i + 1 :]:
+                or_pattern = rf"\b{re.escape(item1)}\b\s+or\s+\b{re.escape(item2)}\b"
+                reverse_or_pattern = rf"\b{re.escape(item2)}\b\s+or\s+\b{re.escape(item1)}\b"
+                if re.search(or_pattern, text) or re.search(reverse_or_pattern, text):
+                    logger.info(f"Detected OR mode between '{item1}' and '{item2}'")
+                    return "or"
+
+        # Default to OR (union) - more lenient, returns more results
+        return "or"
 
     def _extract_patterns(self, text: str) -> List[str]:
         """Extract pattern keywords from text"""
         pattern_keywords = [
-            "stripes", "striped", "dots", "polka dot", "geometric", "floral",
-            "paisley", "checkered", "plaid", "solid", "abstract", "chevron",
-            "herringbone", "damask", "toile", "ikat", "tribal", "moroccan"
+            "stripes",
+            "striped",
+            "dots",
+            "polka dot",
+            "geometric",
+            "floral",
+            "paisley",
+            "checkered",
+            "plaid",
+            "solid",
+            "abstract",
+            "chevron",
+            "herringbone",
+            "damask",
+            "toile",
+            "ikat",
+            "tribal",
+            "moroccan",
         ]
 
         found_patterns = []
@@ -374,9 +749,25 @@ class DesignNLPProcessor:
     def _extract_textures(self, text: str) -> List[str]:
         """Extract texture keywords from text"""
         texture_keywords = [
-            "smooth", "rough", "soft", "hard", "glossy", "matte", "textured",
-            "bumpy", "ribbed", "woven", "knitted", "brushed", "polished",
-            "distressed", "weathered", "sleek", "coarse", "fine", "grainy"
+            "smooth",
+            "rough",
+            "soft",
+            "hard",
+            "glossy",
+            "matte",
+            "textured",
+            "bumpy",
+            "ribbed",
+            "woven",
+            "knitted",
+            "brushed",
+            "polished",
+            "distressed",
+            "weathered",
+            "sleek",
+            "coarse",
+            "fine",
+            "grainy",
         ]
 
         found_textures = []
@@ -414,7 +805,7 @@ class DesignNLPProcessor:
             "dining": ["dining", "eat", "kitchen", "table", "meals"],
             "sleeping": ["sleep", "bed", "bedroom", "rest", "nap"],
             "lighting": ["light", "bright", "dark", "lamp", "illumination"],
-            "privacy": ["private", "quiet", "separate", "intimate", "secluded"]
+            "privacy": ["private", "quiet", "separate", "intimate", "secluded"],
         }
 
         requirements = []
@@ -426,20 +817,26 @@ class DesignNLPProcessor:
 
     def _extract_entities(self, text: str) -> Dict[str, List[str]]:
         """Extract named entities from text"""
-        entities = {
-            "rooms": [],
-            "furniture": [],
-            "colors": [],
-            "materials": [],
-            "brands": [],
-            "dimensions": []
-        }
+        entities = {"rooms": [], "furniture": [], "colors": [], "materials": [], "brands": [], "dimensions": []}
 
         # Room types
         room_patterns = [
-            "living room", "bedroom", "kitchen", "bathroom", "dining room",
-            "office", "study", "basement", "attic", "garage", "patio",
-            "balcony", "terrace", "foyer", "hallway", "closet"
+            "living room",
+            "bedroom",
+            "kitchen",
+            "bathroom",
+            "dining room",
+            "office",
+            "study",
+            "basement",
+            "attic",
+            "garage",
+            "patio",
+            "balcony",
+            "terrace",
+            "foyer",
+            "hallway",
+            "closet",
         ]
 
         for room in room_patterns:
@@ -448,8 +845,18 @@ class DesignNLPProcessor:
 
         # Furniture types
         furniture_patterns = [
-            "sofa", "chair", "table", "bed", "dresser", "bookshelf",
-            "cabinet", "desk", "lamp", "mirror", "rug", "curtains"
+            "sofa",
+            "chair",
+            "table",
+            "bed",
+            "dresser",
+            "bookshelf",
+            "cabinet",
+            "desk",
+            "lamp",
+            "mirror",
+            "rug",
+            "curtains",
         ]
 
         for furniture in furniture_patterns:
@@ -457,7 +864,7 @@ class DesignNLPProcessor:
                 entities["furniture"].append(furniture)
 
         # Extract dimensions
-        dimension_pattern = r'\b\d+\s*(ft|feet|foot|in|inch|inches|cm|meter|meters|m)\b'
+        dimension_pattern = r"\b\d+\s*(ft|feet|foot|in|inch|inches|cm|meter|meters|m)\b"
         dimensions = re.findall(dimension_pattern, text, re.IGNORECASE)
         entities["dimensions"] = [f"{match[0]} {match[1]}" for match in dimensions]
 
@@ -471,7 +878,7 @@ class DesignNLPProcessor:
             "room_analysis": "analyze_space_layout",
             "visualization": "create_room_visualization",
             "budget_planning": "suggest_budget_options",
-            "style_guidance": "explain_style_principles"
+            "style_guidance": "explain_style_principles",
         }
 
         base_action = action_map.get(intent, "general_assistance")
@@ -488,9 +895,7 @@ class DesignNLPProcessor:
 
         # Run all analyses in parallel
         style_extraction, preference_analysis, intent_classification = await asyncio.gather(
-            self.extract_design_styles(all_text),
-            self.analyze_preferences(all_text),
-            self.classify_intent(all_text)
+            self.extract_design_styles(all_text), self.analyze_preferences(all_text), self.classify_intent(all_text)
         )
 
         return {
@@ -499,7 +904,7 @@ class DesignNLPProcessor:
                 "secondary_styles": style_extraction.secondary_styles,
                 "confidence": style_extraction.confidence_score,
                 "keywords": style_extraction.style_keywords,
-                "reasoning": style_extraction.reasoning
+                "reasoning": style_extraction.reasoning,
             },
             "preferences": {
                 "colors": preference_analysis.colors,
@@ -508,20 +913,20 @@ class DesignNLPProcessor:
                 "textures": preference_analysis.textures,
                 "budget": preference_analysis.budget_indicators,
                 "functional_needs": preference_analysis.functional_requirements,
-                "confidence": preference_analysis.confidence_score
+                "confidence": preference_analysis.confidence_score,
             },
             "intent": {
                 "primary_intent": intent_classification.primary_intent,
                 "confidence": intent_classification.confidence_score,
                 "entities": intent_classification.entities,
-                "suggested_action": intent_classification.action_required
+                "suggested_action": intent_classification.action_required,
             },
             "conversation_metrics": {
                 "total_messages": len(messages),
                 "user_messages": len([m for m in messages if m.get("role") == "user"]),
                 "text_length": len(all_text),
-                "engagement_level": "high" if len(messages) > 10 else "medium" if len(messages) > 5 else "low"
-            }
+                "engagement_level": "high" if len(messages) > 10 else "medium" if len(messages) > 5 else "low",
+            },
         }
 
 

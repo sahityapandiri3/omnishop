@@ -38,6 +38,12 @@ class RecommendationRequest:
     user_styles: Optional[List[str]] = None  # e.g., ['modern', 'contemporary']
     strict_attribute_match: bool = False  # Enable strict filtering (zero false positives)
 
+    # Match modes for colors/materials: "or" (union - any match) vs "and" (intersection - all must match)
+    # "or" = "red or blue" means product can have red OR blue
+    # "and" = "red and blue" means product must have BOTH red AND blue
+    color_match_mode: str = "or"  # "or" or "and"
+    material_match_mode: str = "or"  # "or" or "and"
+
     # NEW FIELDS from professional AI designer
     color_palette: Optional[List[str]] = None  # From AI designer: hex codes or color names to boost matching
     styling_tips: Optional[List[str]] = None  # From AI designer: tips with product keywords for matching
@@ -362,7 +368,7 @@ class AdvancedRecommendationEngine:
             # Check each specified attribute
             passes_filter = True
 
-            # Color filtering
+            # Color filtering with match mode support
             if user_colors:
                 result = await db.execute(
                     select(ProductAttribute.attribute_value).where(
@@ -373,30 +379,42 @@ class AdvancedRecommendationEngine:
                 product_colors = [c.lower() for c in result.scalars().all() if c]
 
                 logger.debug(
-                    f"Product {product.id} '{product.name}': product_colors={product_colors}, user_colors={user_colors}"
+                    f"Product {product.id} '{product.name}': product_colors={product_colors}, user_colors={user_colors}, mode={request.color_match_mode}"
                 )
 
-                # Product MUST have matching color
-                if not product_colors or not any(uc.lower() in product_colors for uc in user_colors):
-                    # Check color families for fuzzy matching
-                    color_families = self._get_color_families()
-                    has_family_match = False
-                    for user_color in user_colors:
-                        user_family = color_families.get(user_color.lower(), [])
-                        if any(pc in user_family for pc in product_colors):
-                            has_family_match = True
-                            break
-                    if not has_family_match:
-                        logger.debug(
-                            f"Product {product.id} FILTERED OUT: no color match (product_colors={product_colors}, user_colors={user_colors})"
-                        )
-                        passes_filter = False
-                    else:
-                        logger.debug(f"Product {product.id} PASSED: color family match")
-                else:
-                    logger.debug(f"Product {product.id} PASSED: exact color match")
+                # Check match based on mode
+                color_families = self._get_color_families()
 
-            # Material filtering
+                def color_matches(user_color: str, product_colors: list) -> bool:
+                    """Check if a single user color matches any product color (exact or family match)"""
+                    uc_lower = user_color.lower()
+                    # Exact match
+                    if uc_lower in product_colors:
+                        return True
+                    # Color family match
+                    user_family = color_families.get(uc_lower, [])
+                    return any(pc in user_family for pc in product_colors)
+
+                if not product_colors:
+                    # No color data - filter out
+                    passes_filter = False
+                    logger.debug(f"Product {product.id} FILTERED OUT: no color data")
+                elif request.color_match_mode == "and":
+                    # AND mode: product must match ALL user colors
+                    if all(color_matches(uc, product_colors) for uc in user_colors):
+                        logger.debug(f"Product {product.id} PASSED: ALL colors match (AND mode)")
+                    else:
+                        passes_filter = False
+                        logger.debug(f"Product {product.id} FILTERED OUT: not all colors match (AND mode)")
+                else:
+                    # OR mode (default): product matches if ANY color matches
+                    if any(color_matches(uc, product_colors) for uc in user_colors):
+                        logger.debug(f"Product {product.id} PASSED: at least one color matches (OR mode)")
+                    else:
+                        passes_filter = False
+                        logger.debug(f"Product {product.id} FILTERED OUT: no color match (OR mode)")
+
+            # Material filtering with match mode support
             if passes_filter and user_materials:
                 result = await db.execute(
                     select(ProductAttribute.attribute_value).where(
@@ -406,9 +424,29 @@ class AdvancedRecommendationEngine:
                 )
                 product_materials = [m.lower() for m in result.scalars().all() if m]
 
-                # Product MUST have matching material
-                if not product_materials or not any(um.lower() in product_materials for um in user_materials):
+                def material_matches(user_material: str, product_materials: list) -> bool:
+                    """Check if a single user material matches any product material"""
+                    um_lower = user_material.lower()
+                    return any(um_lower in pm or pm in um_lower for pm in product_materials)
+
+                if not product_materials:
+                    # No material data - filter out
                     passes_filter = False
+                    logger.debug(f"Product {product.id} FILTERED OUT: no material data")
+                elif request.material_match_mode == "and":
+                    # AND mode: product must match ALL user materials
+                    if all(material_matches(um, product_materials) for um in user_materials):
+                        logger.debug(f"Product {product.id} PASSED: ALL materials match (AND mode)")
+                    else:
+                        passes_filter = False
+                        logger.debug(f"Product {product.id} FILTERED OUT: not all materials match (AND mode)")
+                else:
+                    # OR mode (default): product matches if ANY material matches
+                    if any(material_matches(um, product_materials) for um in user_materials):
+                        logger.debug(f"Product {product.id} PASSED: at least one material matches (OR mode)")
+                    else:
+                        passes_filter = False
+                        logger.debug(f"Product {product.id} FILTERED OUT: no material match (OR mode)")
 
             # Texture filtering
             if passes_filter and user_textures:
