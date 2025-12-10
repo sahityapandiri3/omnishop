@@ -435,6 +435,9 @@ function DesignPageContent() {
     });
 
     setSaveStatus('saving');
+    const saveStartTime = Date.now();
+    const MIN_SAVE_DISPLAY_MS = 400; // Minimum time to show "Saving..." for better UX
+
     try {
       await projectsAPI.update(projectId, {
         name: projectName || undefined,
@@ -456,6 +459,12 @@ function DesignPageContent() {
       lastSavedVizImageRef.current = initialVisualizationImage;
       lastSavedChatSessionRef.current = chatSessionId;
       console.log('[DesignPage] Updated saved refs synchronously in saveProject');
+
+      // Ensure minimum display time for "Saving..." spinner
+      const elapsed = Date.now() - saveStartTime;
+      if (elapsed < MIN_SAVE_DISPLAY_MS) {
+        await new Promise(resolve => setTimeout(resolve, MIN_SAVE_DISPLAY_MS - elapsed));
+      }
 
       setSaveStatus('saved');
       setLastSavedAt(new Date());
@@ -713,7 +722,7 @@ function DesignPageContent() {
     if (name.includes('table lamp') || name.includes('desk lamp')) return 'table_lamp';
     if (name.includes('floor lamp') || name.includes('standing lamp')) return 'floor_lamp';
     if (name.includes('ceiling lamp') || name.includes('pendant') || name.includes('chandelier')) return 'ceiling_lamp';
-    if (name.includes('planter') || name.includes('plant pot') || name.includes('flower pot')) return 'planter';
+    if (name.includes('planter') || name.includes('plant pot') || name.includes('flower pot') || name.includes(' pot')) return 'planter';
     // Decor items - these go ON tables/surfaces (UNLIMITED - multiple allowed)
     if (name.includes('vase') || name.includes('flower bunch') || name.includes('flower arrangement') || name.includes('artificial flower')) return 'vase';
     if (name.includes('sculpture') || name.includes('statue') || name.includes('figurine')) return 'sculpture';
@@ -756,9 +765,9 @@ function DesignPageContent() {
     const isSingleInstance = FURNITURE_QUANTITY_RULES.SINGLE_INSTANCE.includes(productType);
     const isUnlimited = FURNITURE_QUANTITY_RULES.UNLIMITED.includes(productType);
 
-    if (isSingleInstance) {
-      // SINGLE INSTANCE: Replace existing product of same type
-      const existingIndex = canvasProducts.findIndex((p) => p.productType === productType);
+    if (isSingleInstance && productType !== 'other') {
+      // SINGLE INSTANCE: Replace existing product of same type (but NOT for 'other' category)
+      const existingIndex = canvasProducts.findIndex((p) => p.productType === productType && p.productType !== 'other');
 
       if (existingIndex >= 0) {
         console.log('[DesignPage] Replacing existing single-instance product at index', existingIndex);
@@ -774,7 +783,7 @@ function DesignPageContent() {
       console.log('[DesignPage] Adding new unlimited-instance product (multiples allowed)');
       setCanvasProducts([...canvasProducts, productWithType]);
     } else {
-      // DEFAULT: For unclassified items, ALWAYS ADD (never replace) to prevent unexpected behavior
+      // DEFAULT: For unclassified items ('other'), ALWAYS ADD (never replace) to prevent unexpected behavior
       // This ensures new products from Product Discovery are added to the canvas, not replacing existing ones
       console.log('[DesignPage] Adding unclassified product (type:', productType, ') - not replacing any existing products');
       setCanvasProducts([...canvasProducts, productWithType]);
