@@ -115,29 +115,18 @@ function CuratedPageContent() {
       {/* Main content */}
       <div className="py-6 px-4">
         <div className="max-w-6xl mx-auto">
-          {/* Header with Create Your Own button */}
-          <div className="relative mb-5">
-            <div className="text-center">
-              <h1 className="text-xl md:text-2xl font-bold text-neutral-800 mb-2">
-                Designer's Choice
-              </h1>
-              <p className="text-sm text-neutral-500 max-w-xl mx-auto">
-                Professionally curated room designs. Style your space with a click.
-              </p>
-            </div>
-            <button
-              onClick={handleStyleFromScratch}
-              className="absolute right-0 top-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-900 text-white text-xs font-medium rounded-lg transition-all shadow-sm"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Create Your Own
-            </button>
+          {/* Header */}
+          <div className="text-center mb-5">
+            <h1 className="text-xl md:text-2xl font-bold text-neutral-800 mb-2">
+              Designer's Choice
+            </h1>
+            <p className="text-sm text-neutral-500 max-w-xl mx-auto">
+              Professionally curated room designs. Style your space with a click.
+            </p>
           </div>
 
-          {/* Room Type Filter Tabs */}
-          <div className="flex justify-center mb-6">
+          {/* Room Type Filter Tabs + Create Your Own */}
+          <div className="flex items-center justify-center gap-4 mb-6">
             <div className="bg-white rounded-lg p-1 shadow-sm border border-neutral-200 inline-flex gap-1">
               {roomTypes.map((type) => (
                 <button
@@ -153,6 +142,15 @@ function CuratedPageContent() {
                 </button>
               ))}
             </div>
+            <button
+              onClick={handleStyleFromScratch}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-900 text-white text-sm font-medium rounded-lg transition-all shadow-sm"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Create Your Own
+            </button>
           </div>
 
           {/* Loading state */}
