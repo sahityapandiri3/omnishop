@@ -116,24 +116,24 @@ function CuratedPageContent() {
       <div className="py-6 px-4">
         <div className="max-w-6xl mx-auto">
           {/* Header with Create Your Own button */}
-          <div className="text-center mb-5">
-            <div className="flex items-center justify-center gap-3 mb-2">
-              <h1 className="text-xl md:text-2xl font-bold text-neutral-800">
+          <div className="flex items-start justify-between mb-5">
+            <div>
+              <h1 className="text-xl md:text-2xl font-bold text-neutral-800 mb-1">
                 Designer's Choice
               </h1>
-              <button
-                onClick={handleStyleFromScratch}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-900 text-white text-xs font-medium rounded-lg transition-all shadow-sm"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Create Your Own
-              </button>
+              <p className="text-sm text-neutral-500">
+                Professionally curated room designs. Style your space with a click.
+              </p>
             </div>
-            <p className="text-sm text-neutral-500 max-w-xl mx-auto">
-              Professionally curated room designs. Style your space with a click.
-            </p>
+            <button
+              onClick={handleStyleFromScratch}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-900 text-white text-xs font-medium rounded-lg transition-all shadow-sm shrink-0"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Create Your Own
+            </button>
           </div>
 
           {/* Room Type Filter Tabs */}
