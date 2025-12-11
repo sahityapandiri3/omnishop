@@ -442,11 +442,43 @@ User: "yes"
     - Example: User says "no" to color preference → search for ALL colors, not products with "no" in the name
     - Example: User says "anything" for material → search for ALL materials, not products with "anything" in the name
 
-    🚨 CRITICAL PHRASE UNDERSTANDING 🚨
-    - "whatever matches the room", "match the room", "matching the room", "something that matches", "anything that matches", "that goes with the room", "that fits the room", "that complements", "that works with" = STYLE PREFERENCE meaning "coordinate with the existing room colors/style"
-    - DO NOT interpret "matches" as "mats" (floor mats)! This is a VERY COMMON MISTAKE.
-    - When user says "whatever matches" they mean KEEP THE SAME PRODUCT CATEGORY and select based on room's color palette/style
-    - Example: User searching for "planters" says "whatever matches the room" → search for PLANTERS that match the room's colors, NOT "mats"!
+    🚨 CRITICAL: VERBS AND COMMON WORDS ARE NOT PRODUCT CATEGORIES 🚨
+
+    NEVER extract product categories from these common English words when used as VERBS or in PHRASES:
+
+    WORD CONFUSION LIST (verb/phrase → WRONG product interpretation):
+    - "matches" / "matching" / "match" → NOT "mats" (floor mats)
+    - "covers" / "covering" → NOT "covers" (bed covers, cushion covers) unless explicitly asking for covers
+    - "stands" / "standing" → NOT "stands" (TV stands) unless explicitly asking for stands
+    - "sets" / "setting" → NOT "sets" (dining sets) unless explicitly asking for sets
+    - "lights" / "lighting" / "lit" → NOT "lights" (lamps) unless explicitly asking for lighting
+    - "works" / "working" → NOT "works" (artwork)
+    - "fits" / "fitting" → NOT furniture
+    - "goes" / "going" → NOT furniture
+    - "runs" / "running" → NOT "runners" (table runners)
+    - "draws" / "drawing" → NOT "drawers"
+    - "seats" / "seating" → NOT "seats" unless explicitly asking for seating
+    - "tables" (as in "price tables") → NOT "tables" (furniture) unless asking for furniture
+    - "frames" / "framing" → NOT "frames" (photo frames) unless explicitly asking for frames
+    - "pieces" → NOT a product category, it's a quantity reference
+    - "looks" → NOT "looks" (curated looks), it's a verb
+    - "style" → NOT a product, it's a design preference
+    - "touch" → NOT a product
+    - "feel" → NOT a product
+    - "vibe" → NOT a product
+
+    CORRECT INTERPRETATION EXAMPLES:
+    - "whatever matches the room" → STYLE PREFERENCE (keep same category, match room colors)
+    - "something that covers the wall" → could mean wall art, NOT bed covers
+    - "it really stands out" → compliment, NOT asking for stands
+    - "the whole room lights up" → description, NOT asking for lights
+    - "that really works" → approval, NOT asking for artwork
+    - "these go well together" → styling comment, NOT new search
+    - "I love how it sets the mood" → appreciation, NOT asking for sets
+    - "that draws the eye" → design comment, NOT asking for drawers
+    - "nice touch" → compliment, NOT a product search
+
+    RULE: If user previously asked for a SPECIFIC product (planters, sofas, tables, etc.) and their follow-up message contains only style/preference language without a NEW product noun, KEEP the previous product category.
 
 ## CONVERSATION CONTEXT UNDERSTANDING (CRITICAL)
 
