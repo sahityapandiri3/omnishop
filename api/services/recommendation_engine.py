@@ -518,7 +518,8 @@ class AdvancedRecommendationEngine:
             ],  # Chairs - additive items only
             "other_seating": ["bench", "stool", "ottoman"],  # Other seating - additive items
             "center_tables": ["coffee table", "center table", "centre table"],  # Placed in front of sofa
-            "side_tables": ["side table", "end table", "nightstand", "bedside table"],  # Placed beside furniture
+            "bedside_tables": ["bedside table", "bedside tables", "nightstand", "nightstands", "night stand"],  # Bedroom tables
+            "side_tables": ["side table", "end table"],  # Placed beside furniture (NOT bedside)
             "dining_tables": ["dining table"],  # Separate category for dining tables
             "other_tables": ["console table", "desk", "table"],  # Generic tables
             "storage_furniture": ["dresser", "chest", "cabinet", "bookshelf", "shelving", "shelf", "wardrobe"],
@@ -627,7 +628,8 @@ class AdvancedRecommendationEngine:
             ],
             "other_seating": ["bench", "stool", "ottoman", "pouf", "recliner"],
             "center_tables": ["table", "tables", "coffee table", "center table", "console"],
-            "side_tables": ["table", "tables", "side table", "nightstand", "console"],
+            "bedside_tables": ["bedside table", "bedside tables", "nightstand", "nightstands", "night stand"],
+            "side_tables": ["table", "tables", "side table", "end table", "console"],
             "dining_tables": ["table", "tables", "dining table"],
             "other_tables": ["console", "console table", "desk", "table", "tables"],
             "storage_furniture": [
@@ -649,7 +651,6 @@ class AdvancedRecommendationEngine:
                 "single bed",
                 "mattress",
                 "headboard",
-                "nightstand",
             ],
             # Decor categories - split out planters and wall decor separately!
             "wall_decor": ["wall art", "wall decor", "wall accessories", "wall hanging", "tapestry"],
@@ -682,7 +683,9 @@ class AdvancedRecommendationEngine:
             "lounge chair": ["lounge chair", "armchair", "chair"],
             # Tables - include specific table types
             "coffee table": ["coffee table", "center table", "table"],
-            "side table": ["side table", "nightstand", "table"],
+            "bedside table": ["bedside table", "bedside tables", "nightstand", "nightstands"],
+            "nightstand": ["nightstand", "nightstands", "bedside table", "bedside tables"],
+            "side table": ["side table", "end table", "table"],
             "dining table": ["dining table", "table"],
             "console table": ["console table", "console", "table"],
             # Beds - include all bed sizes
@@ -950,7 +953,7 @@ class AdvancedRecommendationEngine:
         """Map room types to relevant product categories"""
         room_category_map = {
             "living_room": ["sofas", "chairs", "coffee_tables", "entertainment_centers", "rugs", "lighting"],
-            "bedroom": ["beds", "dressers", "nightstands", "mirrors", "lighting", "rugs"],
+            "bedroom": ["beds", "dressers", "bedside_tables", "nightstands", "mirrors", "lighting", "rugs"],
             "dining_room": ["dining_tables", "dining_chairs", "sideboards", "lighting"],
             "kitchen": ["bar_stools", "kitchen_islands", "storage", "lighting"],
             "office": ["desks", "office_chairs", "bookcases", "storage", "lighting"],
@@ -1737,6 +1740,7 @@ class AdvancedRecommendationEngine:
             "stool",
             "desk",
             "bed",
+            "bedside table",
             "nightstand",
             "dresser",
             "bookshelf",
