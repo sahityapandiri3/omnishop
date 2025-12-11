@@ -129,6 +129,41 @@ class GoogleAIStudioService:
 
         logger.info("Google AI Studio API key validated")
 
+    def _get_closest_aspect_ratio(self, width: int, height: int) -> str:
+        """
+        Calculate the closest supported aspect ratio for the given image dimensions.
+        Supported ratios: "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"
+        """
+        # Calculate image aspect ratio
+        image_ratio = width / height
+
+        # Supported aspect ratios and their decimal values
+        supported_ratios = {
+            "1:1": 1.0,
+            "2:3": 2 / 3,  # 0.667 - portrait
+            "3:2": 3 / 2,  # 1.5 - landscape
+            "3:4": 3 / 4,  # 0.75 - portrait
+            "4:3": 4 / 3,  # 1.333 - landscape
+            "4:5": 4 / 5,  # 0.8 - portrait
+            "5:4": 5 / 4,  # 1.25 - landscape
+            "9:16": 9 / 16,  # 0.5625 - tall portrait
+            "16:9": 16 / 9,  # 1.778 - widescreen
+            "21:9": 21 / 9,  # 2.333 - ultrawide
+        }
+
+        # Find closest match
+        closest_ratio = "16:9"  # Default
+        min_diff = float("inf")
+
+        for ratio_str, ratio_val in supported_ratios.items():
+            diff = abs(image_ratio - ratio_val)
+            if diff < min_diff:
+                min_diff = diff
+                closest_ratio = ratio_str
+
+        logger.info(f"Image dimensions: {width}x{height}, ratio: {image_ratio:.3f}, closest supported: {closest_ratio}")
+        return closest_ratio
+
     def _create_rate_limiter(self):
         """Create rate limiter for API calls"""
 
@@ -1246,6 +1281,12 @@ The room structure, walls, and camera angle MUST be identical to the input image
             room_pil_image = Image.open(io.BytesIO(room_image_bytes))
             if room_pil_image.mode != "RGB":
                 room_pil_image = room_pil_image.convert("RGB")
+
+            # Get the input image dimensions and calculate aspect ratio
+            input_width, input_height = room_pil_image.size
+            target_aspect_ratio = self._get_closest_aspect_ratio(input_width, input_height)
+            logger.info(f"Input room image: {input_width}x{input_height}, using aspect ratio: {target_aspect_ratio}")
+
             contents.append(room_pil_image)
 
             # Add product reference image if available
@@ -1258,7 +1299,14 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 contents.append(prod_pil_image)
 
             # Generate visualization with Gemini 3 Pro Image (Nano Banana Pro)
-            generate_content_config = types.GenerateContentConfig(response_modalities=["IMAGE"], temperature=0.3)
+            # IMPORTANT: Set aspect_ratio in ImageConfig to match input image
+            generate_content_config = types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                temperature=0.3,
+                image_generation_config=types.ImageGenerationConfig(
+                    aspect_ratio=target_aspect_ratio,
+                ),
+            )
 
             # Retry configuration with timeout protection
             max_retries = 3
@@ -1470,6 +1518,12 @@ The room structure, walls, and camera angle MUST be identical to the input image
             room_pil_image = Image.open(io.BytesIO(room_image_bytes))
             if room_pil_image.mode != "RGB":
                 room_pil_image = room_pil_image.convert("RGB")
+
+            # Get the input image dimensions and calculate aspect ratio
+            input_width, input_height = room_pil_image.size
+            target_aspect_ratio = self._get_closest_aspect_ratio(input_width, input_height)
+            logger.info(f"Input room image (MULTIPLE): {input_width}x{input_height}, using aspect ratio: {target_aspect_ratio}")
+
             contents.append(room_pil_image)
 
             # Add all product reference images as PIL Images
@@ -1483,7 +1537,14 @@ The room structure, walls, and camera angle MUST be identical to the input image
                     contents.append(prod_pil_image)
 
             # Generate visualization with Gemini 3 Pro Image
-            generate_content_config = types.GenerateContentConfig(response_modalities=["IMAGE"], temperature=0.3)
+            # IMPORTANT: Set aspect_ratio in ImageConfig to match input image
+            generate_content_config = types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                temperature=0.3,
+                image_generation_config=types.ImageGenerationConfig(
+                    aspect_ratio=target_aspect_ratio,
+                ),
+            )
 
             # Retry configuration with timeout protection
             max_retries = 3
@@ -1650,6 +1711,12 @@ Generate a photorealistic image of the room with the {product_name} replacing th
             room_pil_image = Image.open(io.BytesIO(room_image_bytes))
             if room_pil_image.mode != "RGB":
                 room_pil_image = room_pil_image.convert("RGB")
+
+            # Get the input image dimensions and calculate aspect ratio
+            input_width, input_height = room_pil_image.size
+            target_aspect_ratio = self._get_closest_aspect_ratio(input_width, input_height)
+            logger.info(f"Input room image (REPLACE): {input_width}x{input_height}, using aspect ratio: {target_aspect_ratio}")
+
             contents.append(room_pil_image)
 
             # Add product reference image if available
@@ -1662,7 +1729,14 @@ Generate a photorealistic image of the room with the {product_name} replacing th
 
             # Generate visualization with Gemini 3 Pro Image (Nano Banana Pro)
             # Use temperature 0.4 to match Google AI Studio's default
-            generate_content_config = types.GenerateContentConfig(response_modalities=["IMAGE"], temperature=0.4)
+            # IMPORTANT: Set aspect_ratio in ImageConfig to match input image
+            generate_content_config = types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                temperature=0.4,
+                image_generation_config=types.ImageGenerationConfig(
+                    aspect_ratio=target_aspect_ratio,
+                ),
+            )
 
             # Retry configuration with timeout protection
             max_retries = 3
@@ -2189,6 +2263,12 @@ Create a photorealistic interior design visualization that addresses the user's 
                     room_pil_image = Image.open(io.BytesIO(room_image_bytes))
                     if room_pil_image.mode != "RGB":
                         room_pil_image = room_pil_image.convert("RGB")
+
+                    # Get the input image dimensions and calculate aspect ratio
+                    input_width, input_height = room_pil_image.size
+                    target_aspect_ratio = self._get_closest_aspect_ratio(input_width, input_height)
+                    logger.info(f"Input room image (ROOM VIZ): {input_width}x{input_height}, using aspect ratio: {target_aspect_ratio}")
+
                     contents.append(room_pil_image)
 
                     # Add product images as PIL Images
@@ -2201,9 +2281,13 @@ Create a photorealistic interior design visualization that addresses the user's 
                         contents.append(prod_pil_image)
 
                     # Use response modalities for image and text generation
+                    # IMPORTANT: Set aspect_ratio in ImageConfig to match input image
                     generate_content_config = types.GenerateContentConfig(
                         response_modalities=["IMAGE", "TEXT"],
                         temperature=0.25,  # Lower temperature for better room preservation consistency
+                        image_generation_config=types.ImageGenerationConfig(
+                            aspect_ratio=target_aspect_ratio,
+                        ),
                     )
 
                     # Stream response with timeout protection
