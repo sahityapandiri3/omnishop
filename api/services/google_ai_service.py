@@ -1391,8 +1391,31 @@ The room structure, walls, and camera angle MUST be identical to the input image
             # Build product list for prompt
             product_list = "\n".join([f"  {i+1}. {name}" for i, name in enumerate(product_names)])
 
+            # Check if any product is a planter
+            has_planter = any(
+                any(term in name.lower() for term in ["planter", "plant pot", "flower pot", "pot", "succulent"])
+                for name in product_names
+            )
+
+            # Planter-specific instruction
+            planter_instruction = ""
+            if has_planter:
+                planter_instruction = """
+🌿🌿🌿 PLANTER-SPECIFIC INSTRUCTION 🌿🌿🌿
+═══════════════════════════════════════════════════════════════
+For any planter being added:
+Keep the original aspect ratio and viewing angle.
+Do not zoom in on the planter.
+
+THE ASPECT RATIO SHOULD BE THE SAME.
+THE IMAGE SHOULD NOT BE ZOOMED IN.
+THE CAMERA ANGLE SHOULD BE THE SAME.
+═══════════════════════════════════════════════════════════════
+
+"""
+
             # Build prompt for ADD MULTIPLE action
-            prompt = f"""ADD the following {len(products)} products to this room in appropriate locations WITHOUT removing any existing furniture:
+            prompt = f"""{planter_instruction}ADD the following {len(products)} products to this room in appropriate locations WITHOUT removing any existing furniture:
 
 PRODUCTS TO ADD:
 {product_list}
@@ -1782,6 +1805,30 @@ Product {idx + 1}:
                 # ULTRA-STRICT room preservation prompt
                 product_count = len(visualization_request.products_to_place)
 
+                # Check if any product is a planter
+                has_planter = any(
+                    any(term in (product.get("full_name") or product.get("name", "")).lower()
+                        for term in ["planter", "plant pot", "flower pot", "pot", "succulent"])
+                    for product in visualization_request.products_to_place
+                )
+
+                # Planter-specific instruction
+                planter_instruction = ""
+                if has_planter:
+                    planter_instruction = """
+🌿🌿🌿 PLANTER-SPECIFIC INSTRUCTION 🌿🌿🌿
+═══════════════════════════════════════════════════════════════
+For any planter being added:
+Keep the original aspect ratio and viewing angle.
+Do not zoom in on the planter.
+
+THE ASPECT RATIO SHOULD BE THE SAME.
+THE IMAGE SHOULD NOT BE ZOOMED IN.
+THE CAMERA ANGLE SHOULD BE THE SAME.
+═══════════════════════════════════════════════════════════════
+
+"""
+
                 # Create explicit product count instruction
                 product_count_instruction = ""
                 if product_count == 1:
@@ -1811,7 +1858,7 @@ Product {idx + 1}:
    - You are ONLY adding NEW products, NOT modifying existing ones
    - Example: If input has a blue velvet sofa, the output MUST show the same blue velvet sofa + your new products"""
 
-                visualization_prompt = f"""🔒🔒🔒 CRITICAL INSTRUCTION - READ CAREFULLY 🔒🔒🔒
+                visualization_prompt = f"""{planter_instruction}🔒🔒🔒 CRITICAL INSTRUCTION - READ CAREFULLY 🔒🔒🔒
 
 THIS IS A PRODUCT PLACEMENT TASK. YOUR GOAL: Take the EXACT room image provided and ADD {product_count} furniture product(s) to it.
 
