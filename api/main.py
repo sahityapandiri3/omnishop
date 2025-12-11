@@ -35,7 +35,7 @@ import_error_message = None
 import_error_traceback = None
 
 try:
-    from routers import admin_curated, auth, categories, chat, curated, furniture, products, projects, stores, visualization
+    from routers import admin_curated, admin_migrations, auth, categories, chat, curated, furniture, products, projects, stores, visualization
     from routers.curated import warm_curated_looks_cache
     from services.furniture_removal_service import furniture_removal_service
 
@@ -341,6 +341,9 @@ if "auth" in dir():
 
 if "projects" in dir():
     app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
+
+if "admin_migrations" in dir():
+    app.include_router(admin_migrations.router, prefix="/api", tags=["admin"])
 
 # Additional routers can be added here as needed
 
