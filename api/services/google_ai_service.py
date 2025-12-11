@@ -961,6 +961,13 @@ Return only the processed image."""
 
             # Detect if product is a small item (planter, decor, etc.) that tends to cause zoom issues
             product_lower = product_name.lower()
+
+            # Specific detection for planters
+            is_planter = any(
+                term in product_lower
+                for term in ["planter", "plant pot", "flower pot", "pot", "succulent"]
+            )
+
             is_small_item = any(
                 term in product_lower
                 for term in [
@@ -1015,20 +1022,28 @@ This is an ACCENT ITEM. Critical rules:
 ⛔ ZOOMING IN = AUTOMATIC FAILURE ⛔
 ⛔ CHANGING CAMERA ANGLE = AUTOMATIC FAILURE ⛔
 ⛔ THE FULL ROOM MUST BE VISIBLE IN THE OUTPUT ⛔
-
-📝 EXAMPLE PROMPT FOR PLANTERS:
-"Add a ceramic planter to the corner of the room. Keep the original aspect ratio and viewing angle. Do not zoom in on the planter."
-
-This means:
-✅ CORRECT: Same room view, same camera angle, planter added naturally at appropriate size
-❌ WRONG: Zoomed in to show planter details
-❌ WRONG: Changed camera angle to focus on planter
-❌ WRONG: Cropped or altered the room view in any way
 ═══════════════════════════════════════════════════════════════
 
 """
 
-            prompt = f"""{zoom_warning}{small_item_warning}ADD the following product to this room in an appropriate location WITHOUT removing any existing furniture:
+            # Specific instruction for planters
+            planter_instruction = ""
+            if is_planter:
+                planter_instruction = f"""
+🌿🌿🌿 PLANTER-SPECIFIC INSTRUCTION 🌿🌿🌿
+═══════════════════════════════════════════════════════════════
+Add a ceramic planter to the corner of the room.
+Keep the original aspect ratio and viewing angle.
+Do not zoom in on the planter.
+
+THE ASPECT RATIO SHOULD BE THE SAME.
+THE IMAGE SHOULD NOT BE ZOOMED IN.
+THE CAMERA ANGLE SHOULD BE THE SAME.
+═══════════════════════════════════════════════════════════════
+
+"""
+
+            prompt = f"""{zoom_warning}{small_item_warning}{planter_instruction}ADD the following product to this room in an appropriate location WITHOUT removing any existing furniture:
 
 Product to add: {product_name}
 
