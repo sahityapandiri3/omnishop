@@ -355,74 +355,117 @@ function DesignPageContent() {
           });
         } else {
           // Load existing project data
-          // First, clear sessionStorage to free up space for large images
-          try {
-            sessionStorage.removeItem('roomImage');
-            sessionStorage.removeItem('cleanRoomImage');
-            sessionStorage.removeItem('curatedRoomImage');
-            sessionStorage.removeItem('curatedVisualizationImage');
-          } catch (e) {
-            // Ignore errors when clearing
-          }
+          // BUT FIRST: Check if there's recovered session data (from 401 redirect during save)
+          // If recovery data exists, use it instead of backend data since it's more recent
+          const recoveredRoomImage = sessionStorage.getItem('roomImage');
+          const recoveredCleanRoomImage = sessionStorage.getItem('cleanRoomImage');
+          const recoveredCanvasProducts = sessionStorage.getItem('persistedCanvasProducts');
+          const hasRecoveredData = recoveredRoomImage || recoveredCanvasProducts;
 
-          if (project.room_image) {
-            setRoomImage(project.room_image);
-            // Try to cache in sessionStorage but don't fail if quota exceeded
-            try {
-              sessionStorage.setItem('roomImage', project.room_image);
-            } catch (storageError) {
-              console.warn('[DesignPage] Could not cache room image in sessionStorage (quota exceeded)');
+          if (hasRecoveredData) {
+            console.log('[DesignPage] Found recovered session data - using it instead of backend data');
+            // Use recovered data (already in sessionStorage from restoreDesignStateFromRecovery)
+            if (recoveredRoomImage) {
+              setRoomImage(recoveredRoomImage);
             }
-          }
-          if (project.clean_room_image) {
-            setCleanRoomImage(project.clean_room_image);
-          }
-          if (project.visualization_image) {
-            setInitialVisualizationImage(project.visualization_image);
-          }
-          if (project.canvas_products) {
+            if (recoveredCleanRoomImage) {
+              setCleanRoomImage(recoveredCleanRoomImage);
+            }
+            if (recoveredCanvasProducts) {
+              try {
+                const products = JSON.parse(recoveredCanvasProducts);
+                setCanvasProducts(products);
+                console.log('[DesignPage] Restored', products.length, 'products from session recovery');
+              } catch (e) {
+                console.error('[DesignPage] Failed to parse recovered canvas products:', e);
+              }
+            }
+            // For visualization, chat session - use backend data if available
+            if (project.visualization_image) {
+              setInitialVisualizationImage(project.visualization_image);
+            }
+            if (project.chat_session_id) {
+              setChatSessionId(project.chat_session_id);
+            }
+            // Mark as having unsaved changes since recovery data wasn't saved
+            lastSaveDataRef.current = JSON.stringify({
+              room_image: null,
+              clean_room_image: null,
+              visualization_image: null,
+              canvas_products: null,
+              visualization_history: null,
+              chat_session_id: null,
+            });
+          } else {
+            // No recovered data - clear sessionStorage and load from backend as usual
             try {
-              const products = JSON.parse(project.canvas_products);
-              setCanvasProducts(products);
-              console.log('[DesignPage] Loaded', products.length, 'products from project');
+              sessionStorage.removeItem('roomImage');
+              sessionStorage.removeItem('cleanRoomImage');
+              sessionStorage.removeItem('curatedRoomImage');
+              sessionStorage.removeItem('curatedVisualizationImage');
             } catch (e) {
-              console.error('[DesignPage] Failed to parse project canvas_products:', e);
+              // Ignore errors when clearing
             }
-          }
-          // Load visualization history for undo/redo
-          if (project.visualization_history) {
-            try {
-              const history = JSON.parse(project.visualization_history);
-              setVisualizationHistory(history);
-              console.log('[DesignPage] Loaded', history.length, 'visualization history entries');
-            } catch (e) {
-              console.error('[DesignPage] Failed to parse visualization history:', e);
-            }
-          }
-          // Load chat session ID for restoring conversation
-          if (project.chat_session_id) {
-            setChatSessionId(project.chat_session_id);
-            console.log('[DesignPage] Loaded chat session ID:', project.chat_session_id);
-          }
 
-          // Store the initial state for change detection
-          // IMPORTANT: Re-stringify canvas_products and visualization_history to ensure consistent format
-          // This is needed because JSON from database might have different formatting than JSON.stringify produces
-          const savedState = {
-            room_image: project.room_image,
-            clean_room_image: project.clean_room_image,
-            visualization_image: project.visualization_image,
-            canvas_products: project.canvas_products ? JSON.stringify(JSON.parse(project.canvas_products)) : null,
-            visualization_history: project.visualization_history ? JSON.stringify(JSON.parse(project.visualization_history)) : null,
-            chat_session_id: project.chat_session_id,
-          };
-          lastSaveDataRef.current = JSON.stringify(savedState);
-          console.log('[DesignPage] Set lastSaveDataRef for existing project:', {
-            roomImageLength: savedState.room_image?.length || 0,
-            vizImageLength: savedState.visualization_image?.length || 0,
-            canvasProductsLength: savedState.canvas_products?.length || 0,
-            chatSessionId: savedState.chat_session_id,
-          });
+            if (project.room_image) {
+              setRoomImage(project.room_image);
+              // Try to cache in sessionStorage but don't fail if quota exceeded
+              try {
+                sessionStorage.setItem('roomImage', project.room_image);
+              } catch (storageError) {
+                console.warn('[DesignPage] Could not cache room image in sessionStorage (quota exceeded)');
+              }
+            }
+            if (project.clean_room_image) {
+              setCleanRoomImage(project.clean_room_image);
+            }
+            if (project.visualization_image) {
+              setInitialVisualizationImage(project.visualization_image);
+            }
+            if (project.canvas_products) {
+              try {
+                const products = JSON.parse(project.canvas_products);
+                setCanvasProducts(products);
+                console.log('[DesignPage] Loaded', products.length, 'products from project');
+              } catch (e) {
+                console.error('[DesignPage] Failed to parse project canvas_products:', e);
+              }
+            }
+            // Load visualization history for undo/redo
+            if (project.visualization_history) {
+              try {
+                const history = JSON.parse(project.visualization_history);
+                setVisualizationHistory(history);
+                console.log('[DesignPage] Loaded', history.length, 'visualization history entries');
+              } catch (e) {
+                console.error('[DesignPage] Failed to parse visualization history:', e);
+              }
+            }
+            // Load chat session ID for restoring conversation
+            if (project.chat_session_id) {
+              setChatSessionId(project.chat_session_id);
+              console.log('[DesignPage] Loaded chat session ID:', project.chat_session_id);
+            }
+
+            // Store the initial state for change detection
+            // IMPORTANT: Re-stringify canvas_products and visualization_history to ensure consistent format
+            // This is needed because JSON from database might have different formatting than JSON.stringify produces
+            const savedState = {
+              room_image: project.room_image,
+              clean_room_image: project.clean_room_image,
+              visualization_image: project.visualization_image,
+              canvas_products: project.canvas_products ? JSON.stringify(JSON.parse(project.canvas_products)) : null,
+              visualization_history: project.visualization_history ? JSON.stringify(JSON.parse(project.visualization_history)) : null,
+              chat_session_id: project.chat_session_id,
+            };
+            lastSaveDataRef.current = JSON.stringify(savedState);
+            console.log('[DesignPage] Set lastSaveDataRef for existing project:', {
+              roomImageLength: savedState.room_image?.length || 0,
+              vizImageLength: savedState.visualization_image?.length || 0,
+              canvasProductsLength: savedState.canvas_products?.length || 0,
+              chatSessionId: savedState.chat_session_id,
+            });
+          }
         }
 
         console.log('[DesignPage] Project loaded successfully:', project.name);
