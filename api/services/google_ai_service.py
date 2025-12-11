@@ -998,10 +998,7 @@ Return only the processed image."""
             product_lower = product_name.lower()
 
             # Specific detection for planters
-            is_planter = any(
-                term in product_lower
-                for term in ["planter", "plant pot", "flower pot", "pot", "succulent"]
-            )
+            is_planter = any(term in product_lower for term in ["planter", "plant pot", "flower pot", "pot", "succulent"])
 
             is_small_item = any(
                 term in product_lower
@@ -1061,24 +1058,17 @@ This is an ACCENT ITEM. Critical rules:
 
 """
 
-            # Specific instruction for planters
-            planter_instruction = ""
+            # For planters, use a SIMPLIFIED prompt similar to what works on Gemini website
+            # Instead of all the complex warnings, use a direct natural language description
             if is_planter:
-                planter_instruction = f"""
-🌿🌿🌿 PLANTER-SPECIFIC INSTRUCTION 🌿🌿🌿
-═══════════════════════════════════════════════════════════════
-Add the planter to the room.
+                # Build a simplified prompt like the one that works on Gemini website
+                prompt = f"""Based on the input image, add the {product_name} to the room. Place it on the floor in an appropriate corner or beside existing furniture. The planter should be filled with appropriate green foliage. Realistic shadows should be cast by the planter onto the floor. The existing furniture, wall decor, and overall lighting should remain exactly as shown in the input image."""
 
-THE ORIGINAL ASPECT RATIO AND VIEWING ANGLE OF THE IMAGE SHOULD REMAIN THE SAME.
-THE EXISTING PRODUCTS IN THE ROOM SHOULD BE CLEARLY VISIBLE AND NOT CUT FROM VIEW.
-THE IMAGE SHOULD NOT BE ZOOMED IN.
-THE CAMERA ANGLE SHOULD BE THE SAME.
-DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
-═══════════════════════════════════════════════════════════════
+                logger.info(f"Using simplified planter prompt for: {product_name}")
 
-"""
-
-            prompt = f"""{zoom_warning}{small_item_warning}{planter_instruction}ADD the following product to this room in an appropriate location WITHOUT removing any existing furniture:
+            else:
+                # For non-planters, use the complex prompt with all warnings
+                prompt = f"""{zoom_warning}{small_item_warning}ADD the following product to this room in an appropriate location WITHOUT removing any existing furniture:
 
 Product to add: {product_name}
 
@@ -1522,7 +1512,9 @@ The room structure, walls, and camera angle MUST be identical to the input image
             # Get the input image dimensions and calculate aspect ratio
             input_width, input_height = room_pil_image.size
             target_aspect_ratio = self._get_closest_aspect_ratio(input_width, input_height)
-            logger.info(f"Input room image (MULTIPLE): {input_width}x{input_height}, using aspect ratio: {target_aspect_ratio}")
+            logger.info(
+                f"Input room image (MULTIPLE): {input_width}x{input_height}, using aspect ratio: {target_aspect_ratio}"
+            )
 
             contents.append(room_pil_image)
 
@@ -1881,8 +1873,10 @@ Product {idx + 1}:
 
                 # Check if any product is a planter
                 has_planter = any(
-                    any(term in (product.get("full_name") or product.get("name", "")).lower()
-                        for term in ["planter", "plant pot", "flower pot", "pot", "succulent"])
+                    any(
+                        term in (product.get("full_name") or product.get("name", "")).lower()
+                        for term in ["planter", "plant pot", "flower pot", "pot", "succulent"]
+                    )
                     for product in visualization_request.products_to_place
                 )
 
@@ -2267,7 +2261,9 @@ Create a photorealistic interior design visualization that addresses the user's 
                     # Get the input image dimensions and calculate aspect ratio
                     input_width, input_height = room_pil_image.size
                     target_aspect_ratio = self._get_closest_aspect_ratio(input_width, input_height)
-                    logger.info(f"Input room image (ROOM VIZ): {input_width}x{input_height}, using aspect ratio: {target_aspect_ratio}")
+                    logger.info(
+                        f"Input room image (ROOM VIZ): {input_width}x{input_height}, using aspect ratio: {target_aspect_ratio}"
+                    )
 
                     contents.append(room_pil_image)
 
