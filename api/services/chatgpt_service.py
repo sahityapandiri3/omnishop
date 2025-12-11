@@ -334,6 +334,32 @@ When the user mentions ANY furniture or product (table, sofa, chair, bed, lamp, 
 - If user previously asked for planters/vases/sofas etc. and then says "whatever matches" → KEEP the previous product type, just apply room-matching colors
 - NEVER extract "mat" or "mats" from the word "matches" - this is a semantic misunderstanding!
 
+🚨 COMPOUND FURNITURE TERMS - DO NOT DECOMPOSE 🚨
+When user asks for a COMPOUND furniture term, search for EXACTLY that term. DO NOT break it into separate categories!
+
+COMPOUND TERMS THAT MUST BE KEPT TOGETHER:
+- "bedside tables" → search for "bedside tables" ONLY, NOT "beds" + "tables" + "nightstands" separately
+- "coffee tables" → search for "coffee tables" ONLY, NOT "coffee" + "tables"
+- "dining chairs" → search for "dining chairs" ONLY, NOT "dining" + "chairs"
+- "accent chairs" → search for "accent chairs" ONLY, NOT "accent" + "chairs"
+- "side tables" → search for "side tables" ONLY, NOT "side" + "tables"
+- "end tables" → search for "end tables" ONLY, NOT "end" + "tables"
+- "console tables" → search for "console tables" ONLY, NOT "console" + "tables"
+- "study tables" → search for "study tables" ONLY, NOT "study" + "tables"
+- "center tables" → search for "center tables" ONLY, NOT "center" + "tables"
+- "floor lamps" → search for "floor lamps" ONLY, NOT "floor" + "lamps"
+- "table lamps" → search for "table lamps" ONLY, NOT "table" + "lamps"
+- "wall art" → search for "wall art" ONLY, NOT "wall" + "art"
+
+WRONG EXAMPLE for "bedside tables":
+"product_types": ["table", "bed", "nightstand"]  ← WRONG! Decomposed the term!
+"search_terms": ["table", "tables", "bed", "beds", "nightstand"]  ← WRONG!
+
+CORRECT EXAMPLE for "bedside tables":
+"product_types": ["bedside table"]  ← Kept as single compound term!
+"categories": ["bedside_table", "nightstand"]  ← Only closely related synonyms
+"search_terms": ["bedside table", "bedside tables"]  ← Exact term only!
+
 IMPORTANT: DO NOT set budget_indicators.price_range UNLESS the user explicitly mentions a budget or price range. Leave it empty if not mentioned.
 
 PRODUCT EXTRACTION EXAMPLES:
@@ -366,6 +392,21 @@ PRODUCT EXTRACTION EXAMPLES:
     "product_types": ["chair"],
     "categories": ["accent_chair", "armchair", "lounge_chair", "single_chair"],
     "search_terms": ["single seater", "one seater", "chair", "accent chair", "armchair"]
+  }
+
+🚨 CRITICAL: BEDSIDE TABLES EXAMPLE (COMPOUND TERM - DO NOT SPLIT!) 🚨
+- User: "Show me bedside tables" or "I need bedside tables"
+→ CORRECT:
+  "product_matching_criteria": {
+    "product_types": ["bedside table"],
+    "categories": ["bedside_table", "nightstand"],
+    "search_terms": ["bedside table", "bedside tables", "nightstand"]
+  }
+→ WRONG (DO NOT DO THIS!):
+  "product_matching_criteria": {
+    "product_types": ["table", "bed", "nightstand"],  ← WRONG! Split the compound term!
+    "categories": ["table", "bed", "nightstand"],
+    "search_terms": ["table", "tables", "bed", "beds", "nightstand"]  ← WRONG!
   }
 
 🚨 IMPORTANT: "MATCHES" IS NOT "MATS" EXAMPLE 🚨
@@ -683,6 +724,12 @@ Examples:
 3. Keep responses SHORT but WARM (1-2 sentences during gathering)
 4. Always sound excited to help!
 5. **SEMANTIC UNDERSTANDING**: "no", "nope", "none", "anything", "whatever" = NO PREFERENCE (don't use as search keywords!)
+
+## COMPOUND FURNITURE TERMS (CRITICAL - DO NOT SPLIT!)
+- "bedside tables" → product_types: ["bedside table"], search_terms: ["bedside table", "nightstand"] (NOT ["table", "bed", "nightstand"])
+- "coffee tables" → product_types: ["coffee table"] (NOT ["coffee", "table"])
+- "dining chairs" → product_types: ["dining chair"] (NOT ["dining", "chair"])
+- Keep compound terms together! Never decompose into individual words!
 
 ## CONVERSATION CONTEXT (CRITICAL)
 6. **CARRY FORWARD**: If user asked for "sofas" then says "under ₹50000" → search for "sofas under ₹50000"
