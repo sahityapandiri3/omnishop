@@ -1014,6 +1014,15 @@ This is a SMALL ACCENT ITEM. It should:
 
 ⛔ ZOOMING IN ON A PLANTER/DECOR ITEM = AUTOMATIC FAILURE ⛔
 ⛔ THE FULL ROOM MUST BE VISIBLE IN THE OUTPUT ⛔
+
+📝 EXAMPLE PROMPT FOR PLANTERS:
+"Add a ceramic planter to the corner of the room. Keep the original aspect ratio and viewing angle. Do not zoom in on the planter."
+
+This means:
+✅ CORRECT: Wide room shot with tiny planter barely visible in corner
+❌ WRONG: Close-up of planter filling the frame
+❌ WRONG: Zoomed view showing planter as main subject
+❌ WRONG: Changed camera angle to focus on planter
 ═══════════════════════════════════════════════════════════════
 
 """
