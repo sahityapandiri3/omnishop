@@ -1005,24 +1005,25 @@ The item you add should be a SMALL part of the overall image.
                 small_item_warning = f"""
 🚨🚨🚨 SPECIAL WARNING FOR {product_name.upper()} 🚨🚨🚨
 ═══════════════════════════════════════════════════════════════
-This is a SMALL ACCENT ITEM. It should:
-- Appear TINY in the final image (5-10% of image area MAX)
-- Be placed in a CORNER or EDGE of the room
-- NOT be the focus of the image
-- NOT cause any zoom or crop
-- The ROOM is the subject, not this small item
+This is an ACCENT ITEM. Critical rules:
+- KEEP THE EXACT SAME CAMERA ANGLE as the input image
+- KEEP THE EXACT SAME ASPECT RATIO as the input image
+- DO NOT ZOOM IN regardless of the item's size
+- Place naturally in the room at its appropriate real-world size
+- The room view must remain UNCHANGED - only ADD the item
 
-⛔ ZOOMING IN ON A PLANTER/DECOR ITEM = AUTOMATIC FAILURE ⛔
+⛔ ZOOMING IN = AUTOMATIC FAILURE ⛔
+⛔ CHANGING CAMERA ANGLE = AUTOMATIC FAILURE ⛔
 ⛔ THE FULL ROOM MUST BE VISIBLE IN THE OUTPUT ⛔
 
 📝 EXAMPLE PROMPT FOR PLANTERS:
 "Add a ceramic planter to the corner of the room. Keep the original aspect ratio and viewing angle. Do not zoom in on the planter."
 
 This means:
-✅ CORRECT: Wide room shot with tiny planter barely visible in corner
-❌ WRONG: Close-up of planter filling the frame
-❌ WRONG: Zoomed view showing planter as main subject
+✅ CORRECT: Same room view, same camera angle, planter added naturally at appropriate size
+❌ WRONG: Zoomed in to show planter details
 ❌ WRONG: Changed camera angle to focus on planter
+❌ WRONG: Cropped or altered the room view in any way
 ═══════════════════════════════════════════════════════════════
 
 """
