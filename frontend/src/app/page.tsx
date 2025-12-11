@@ -43,12 +43,15 @@ export default function HomePage() {
     fetchLooks();
   }, []);
 
-  // Find specific looks by name for consistent display
-  const heroLook = findLookByTheme(looks, 'Coastal Chic');
-  const featuredLook = findLookByTheme(looks, 'Modern Luxe');
-  const bottomLook = findLookByTheme(looks, 'Organic Modern Foyer');
-  const smallLook1 = findLookByTheme(looks, 'Palace-Inspired');
-  const smallLook2 = findLookByTheme(looks, 'Scandinavian');
+  // Find specific looks by name for consistent display, with fallbacks
+  const heroLook = findLookByTheme(looks, 'Coastal Chic') || looks[0];
+  const featuredLook = findLookByTheme(looks, 'Modern Luxe') || looks.find(l => l !== heroLook);
+  const bottomLook = findLookByTheme(looks, 'Organic Modern Foyer') || looks[2];
+
+  // Get remaining looks for smaller tiles (exclude hero and featured)
+  const remainingLooks = looks.filter(l => l !== heroLook && l !== featuredLook);
+  const smallLook1 = findLookByTheme(looks, 'Palace-Inspired') || remainingLooks[0];
+  const smallLook2 = findLookByTheme(looks, 'Scandinavian') || remainingLooks[1];
 
   // Get hero image - use Coastal Chic Living & Kitchen Space
   const heroImage = formatImageSrc(heroLook?.visualization_image || heroLook?.room_image);
