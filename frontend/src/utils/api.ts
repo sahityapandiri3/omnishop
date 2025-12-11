@@ -32,10 +32,16 @@ api.interceptors.response.use(
   },
   (error) => {
     if (error.response?.status === 401) {
-      // Handle unauthorized access
+      // Handle unauthorized access - token expired or invalid
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('auth_token');
-        // Optionally redirect to login
+        const currentPath = window.location.pathname;
+        // Only clear token and redirect if not already on auth pages
+        if (!currentPath.startsWith('/login') && !currentPath.startsWith('/register')) {
+          console.warn('[API] 401 Unauthorized - Session expired. Redirecting to login...');
+          localStorage.removeItem('auth_token');
+          // Force page reload to trigger auth check and redirect
+          window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`;
+        }
       }
     }
     return Promise.reject(error);
