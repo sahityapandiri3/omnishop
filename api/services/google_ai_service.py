@@ -959,8 +959,66 @@ Return only the processed image."""
                 except Exception as e:
                     logger.warning(f"Failed to download product image: {e}")
 
+            # Detect if product is a small item (planter, decor, etc.) that tends to cause zoom issues
+            product_lower = product_name.lower()
+            is_small_item = any(
+                term in product_lower
+                for term in [
+                    "planter",
+                    "plant",
+                    "vase",
+                    "flower",
+                    "sculpture",
+                    "figurine",
+                    "candle",
+                    "decor",
+                    "decorative",
+                    "accent",
+                    "pot",
+                    "succulent",
+                ]
+            )
+
             # Build prompt for ADD action
-            prompt = f"""ADD the following product to this room in an appropriate location WITHOUT removing any existing furniture:
+            # Start with absolute critical instruction about camera/zoom
+            zoom_warning = """
+🚨🚨🚨 CRITICAL INSTRUCTION - READ THIS FIRST 🚨🚨🚨
+═══════════════════════════════════════════════════════════════
+⛔ DO NOT ZOOM IN - THIS IS THE #1 PRIORITY ⛔
+⛔ DO NOT CHANGE THE CAMERA ANGLE OR PERSPECTIVE ⛔
+⛔ THE OUTPUT MUST SHOW THE EXACT SAME VIEW AS THE INPUT ⛔
+
+The output image MUST be a WIDE SHOT showing the ENTIRE ROOM.
+The camera position, angle, and field of view MUST BE IDENTICAL to the input.
+If the input shows the full room, the output MUST show the full room.
+Adding a small item does NOT mean zooming in on it.
+The item you add should be a SMALL part of the overall image.
+
+⛔ IF YOU ZOOM IN OR CROP THE IMAGE, YOU HAVE FAILED ⛔
+═══════════════════════════════════════════════════════════════
+
+"""
+
+            # Extra warning for small items like planters
+            small_item_warning = ""
+            if is_small_item:
+                small_item_warning = f"""
+🚨🚨🚨 SPECIAL WARNING FOR {product_name.upper()} 🚨🚨🚨
+═══════════════════════════════════════════════════════════════
+This is a SMALL ACCENT ITEM. It should:
+- Appear TINY in the final image (5-10% of image area MAX)
+- Be placed in a CORNER or EDGE of the room
+- NOT be the focus of the image
+- NOT cause any zoom or crop
+- The ROOM is the subject, not this small item
+
+⛔ ZOOMING IN ON A PLANTER/DECOR ITEM = AUTOMATIC FAILURE ⛔
+⛔ THE FULL ROOM MUST BE VISIBLE IN THE OUTPUT ⛔
+═══════════════════════════════════════════════════════════════
+
+"""
+
+            prompt = f"""{zoom_warning}{small_item_warning}ADD the following product to this room in an appropriate location WITHOUT removing any existing furniture:
 
 Product to add: {product_name}
 

@@ -121,6 +121,12 @@ class AuthService:
             return None
         if not self.verify_password(password, user.hashed_password):
             return None
+
+        # Update last_login timestamp
+        user.last_login = datetime.utcnow()
+        await db.commit()
+        await db.refresh(user)
+
         return user
 
     async def authenticate_google_user(self, db: AsyncSession, google_token: str) -> Optional[tuple[User, bool]]:
@@ -136,6 +142,10 @@ class AuthService:
         # Check if user exists by Google ID
         user = await self.get_user_by_google_id(db, google_info["google_id"])
         if user:
+            # Update last_login timestamp
+            user.last_login = datetime.utcnow()
+            await db.commit()
+            await db.refresh(user)
             return (user, False)
 
         # Check if user exists by email (may have registered with email/password)
@@ -144,6 +154,7 @@ class AuthService:
             # Link Google account to existing user
             user.google_id = google_info["google_id"]
             user.auth_provider = "google"
+            user.last_login = datetime.utcnow()
             if not user.profile_image_url:
                 user.profile_image_url = google_info["profile_image_url"]
             if not user.name:
@@ -152,7 +163,7 @@ class AuthService:
             await db.refresh(user)
             return (user, False)
 
-        # Create new user
+        # Create new user (last_login set to now for first login)
         user = await self.create_user(
             db=db,
             email=google_info["email"],
@@ -161,6 +172,10 @@ class AuthService:
             google_id=google_info["google_id"],
             profile_image_url=google_info["profile_image_url"],
         )
+        # Set last_login for new user
+        user.last_login = datetime.utcnow()
+        await db.commit()
+        await db.refresh(user)
         return (user, True)
 
 
