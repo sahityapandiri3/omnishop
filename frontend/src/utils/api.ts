@@ -25,6 +25,133 @@ api.interceptors.request.use(
   }
 );
 
+// Session recovery storage key
+const SESSION_RECOVERY_KEY = 'omnishop_session_recovery';
+
+// Function to save design state before 401 redirect
+export const saveDesignStateForRecovery = () => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    // Get current design state from sessionStorage (using the actual keys the design page uses)
+    const roomImage = sessionStorage.getItem('roomImage');
+    const cleanRoomImage = sessionStorage.getItem('cleanRoomImage');
+    const persistedCanvasProducts = sessionStorage.getItem('persistedCanvasProducts');
+    const chatSessionId = sessionStorage.getItem('design_session_id');
+
+    // Also grab curated look data if present
+    const curatedRoomImage = sessionStorage.getItem('curatedRoomImage');
+    const curatedVisualizationImage = sessionStorage.getItem('curatedVisualizationImage');
+    const preselectedProducts = sessionStorage.getItem('preselectedProducts');
+    const primaryStores = sessionStorage.getItem('primaryStores');
+
+    // Only save if there's actual data to recover
+    if (roomImage || curatedVisualizationImage || persistedCanvasProducts || preselectedProducts) {
+      const recoveryData = {
+        roomImage,
+        cleanRoomImage,
+        persistedCanvasProducts,
+        chatSessionId,
+        curatedRoomImage,
+        curatedVisualizationImage,
+        preselectedProducts,
+        primaryStores,
+        timestamp: Date.now(),
+      };
+
+      // Use localStorage so it persists across page reloads during login
+      localStorage.setItem(SESSION_RECOVERY_KEY, JSON.stringify(recoveryData));
+      console.log('[API] Saved design state for recovery:', {
+        hasRoomImage: !!roomImage,
+        hasCleanRoomImage: !!cleanRoomImage,
+        hasCanvasProducts: !!persistedCanvasProducts,
+        hasCuratedData: !!(curatedRoomImage || curatedVisualizationImage),
+      });
+    }
+  } catch (e) {
+    console.warn('[API] Failed to save design state for recovery:', e);
+  }
+};
+
+// Function to get recovered design state after login
+export const getRecoveredDesignState = () => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const data = localStorage.getItem(SESSION_RECOVERY_KEY);
+    if (!data) return null;
+
+    const recoveryData = JSON.parse(data);
+
+    // Check if recovery data is less than 1 hour old
+    const ageMs = Date.now() - recoveryData.timestamp;
+    if (ageMs > 60 * 60 * 1000) {
+      console.log('[API] Recovery data expired, discarding');
+      localStorage.removeItem(SESSION_RECOVERY_KEY);
+      return null;
+    }
+
+    return recoveryData;
+  } catch (e) {
+    console.warn('[API] Failed to get recovered design state:', e);
+    return null;
+  }
+};
+
+// Function to clear recovered design state (after successful restore)
+export const clearRecoveredDesignState = () => {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(SESSION_RECOVERY_KEY);
+  }
+};
+
+// Function to restore design state to sessionStorage (called after login redirect back to design)
+export const restoreDesignStateFromRecovery = (): boolean => {
+  if (typeof window === 'undefined') return false;
+
+  try {
+    const recoveryData = getRecoveredDesignState();
+    if (!recoveryData) return false;
+
+    console.log('[API] Restoring design state from recovery...');
+
+    // Restore each piece of state to sessionStorage
+    if (recoveryData.roomImage) {
+      sessionStorage.setItem('roomImage', recoveryData.roomImage);
+    }
+    if (recoveryData.cleanRoomImage) {
+      sessionStorage.setItem('cleanRoomImage', recoveryData.cleanRoomImage);
+    }
+    if (recoveryData.persistedCanvasProducts) {
+      sessionStorage.setItem('persistedCanvasProducts', recoveryData.persistedCanvasProducts);
+    }
+    if (recoveryData.chatSessionId) {
+      sessionStorage.setItem('design_session_id', recoveryData.chatSessionId);
+    }
+    if (recoveryData.curatedRoomImage) {
+      sessionStorage.setItem('curatedRoomImage', recoveryData.curatedRoomImage);
+    }
+    if (recoveryData.curatedVisualizationImage) {
+      sessionStorage.setItem('curatedVisualizationImage', recoveryData.curatedVisualizationImage);
+    }
+    if (recoveryData.preselectedProducts) {
+      sessionStorage.setItem('preselectedProducts', recoveryData.preselectedProducts);
+    }
+    if (recoveryData.primaryStores) {
+      sessionStorage.setItem('primaryStores', recoveryData.primaryStores);
+    }
+
+    // Clear the recovery data after successful restore
+    clearRecoveredDesignState();
+
+    console.log('[API] Design state restored successfully');
+    return true;
+  } catch (e) {
+    console.warn('[API] Failed to restore design state:', e);
+    return false;
+  }
+};
+
 // Response interceptor for error handling
 api.interceptors.response.use(
   (response) => {
@@ -38,6 +165,12 @@ api.interceptors.response.use(
         // Only clear token and redirect if not already on auth pages
         if (!currentPath.startsWith('/login') && !currentPath.startsWith('/register')) {
           console.warn('[API] 401 Unauthorized - Session expired. Redirecting to login...');
+
+          // Save design state before redirecting (if on design page)
+          if (currentPath.startsWith('/design')) {
+            saveDesignStateForRecovery();
+          }
+
           localStorage.removeItem('auth_token');
           // Force page reload to trigger auth check and redirect
           window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`;

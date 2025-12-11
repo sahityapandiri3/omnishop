@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import ChatPanel from '@/components/panels/ChatPanel';
 import ProductDiscoveryPanel from '@/components/panels/ProductDiscoveryPanel';
 import CanvasPanel from '@/components/panels/CanvasPanel';
-import { checkFurnitureRemovalStatus, startFurnitureRemoval, getAvailableStores, projectsAPI } from '@/utils/api';
+import { checkFurnitureRemovalStatus, startFurnitureRemoval, getAvailableStores, projectsAPI, restoreDesignStateFromRecovery } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigationGuard } from '@/hooks/useNavigationGuard';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
@@ -91,6 +91,13 @@ function DesignPageContent() {
       sessionStorage.removeItem('furnitureRemovalJobId');
       // Don't load any stored images - let the user start fresh
       return;
+    }
+
+    // Try to restore state from 401 recovery (session expiry during work)
+    // This restores data that was saved to localStorage before redirect to login
+    const wasRecovered = restoreDesignStateFromRecovery();
+    if (wasRecovered) {
+      console.log('[DesignPage] Restored design state from session recovery');
     }
 
     // Check if user has uploaded their own room image
@@ -233,6 +240,23 @@ function DesignPageContent() {
     sessionStorage.removeItem('design_session_id');
     console.log('[DesignPage] Cleared session ID on page load - starting fresh session');
   }, []);
+
+  // Keep design state synced to sessionStorage for 401 recovery
+  // This ensures we can restore the user's work if their session expires
+  useEffect(() => {
+    try {
+      // Persist canvas products
+      if (canvasProducts.length > 0) {
+        sessionStorage.setItem('persistedCanvasProducts', JSON.stringify(canvasProducts));
+      }
+      // Persist chat session ID
+      if (chatSessionId) {
+        sessionStorage.setItem('design_session_id', chatSessionId);
+      }
+    } catch (e) {
+      // Silently fail if storage quota exceeded
+    }
+  }, [canvasProducts, chatSessionId]);
 
   // Load project data if projectId is in URL params, or auto-create if authenticated without projectId
   useEffect(() => {
