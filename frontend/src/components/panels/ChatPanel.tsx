@@ -55,17 +55,27 @@ export default function ChatPanel({
   const [pendingMessages, setPendingMessages] = useState<string[]>([]);
   const [imageSentToBackend, setImageSentToBackend] = useState(false); // Track if image was already sent
   const [conversationState, setConversationState] = useState<string>('INITIAL'); // Track conversation state for two-phase flow
+  const [isRestoringSession, setIsRestoringSession] = useState(false); // Flag to prevent processing during restore
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const sessionInitializedRef = useRef(false); // Prevent double initialization
 
   // Initialize chat session (use existing or create new)
   useEffect(() => {
+    // Guard against double initialization (React StrictMode)
+    if (sessionInitializedRef.current) {
+      console.log('[ChatPanel] Session already initialized, skipping');
+      return;
+    }
+
     const initSession = async () => {
       try {
         // If we have an initial session ID (from saved project), use it and load history
         if (initialSessionId) {
           console.log('[ChatPanel] Restoring existing session:', initialSessionId);
+          setIsRestoringSession(true); // Mark as restoring to prevent processing
+          sessionInitializedRef.current = true;
           setSessionId(initialSessionId);
 
           // Load chat history from the existing session
@@ -79,6 +89,15 @@ export default function ChatPanel({
                 timestamp: new Date(msg.timestamp),
               }));
               setMessages(restoredMessages);
+
+              // Restore conversation state from last assistant message if available
+              // Find the last message with conversation_state in the analysis_data
+              // For now, assume we're in BROWSING state if there are messages
+              if (restoredMessages.length > 1) {
+                setConversationState('BROWSING');
+                setImageSentToBackend(true); // Image was already sent in previous session
+              }
+
               console.log('[ChatPanel] Restored', restoredMessages.length, 'messages from history');
             }
           } catch (historyError) {
@@ -89,8 +108,12 @@ export default function ChatPanel({
             if (onSessionIdChange) {
               onSessionIdChange(response.session_id);
             }
+          } finally {
+            // Done restoring - allow normal processing
+            setIsRestoringSession(false);
           }
         } else {
+          sessionInitializedRef.current = true;
           // No initial session, create a new one
           const response = await startChatSession();
           console.log('[ChatPanel] Created new session:', response.session_id);
@@ -264,12 +287,12 @@ export default function ChatPanel({
     }
   }, [sessionId, pendingMessages, roomImage, onProductRecommendations, conversationState, imageSentToBackend, selectedStores]);
 
-  // Auto-process when new messages are added
+  // Auto-process when new messages are added (but not during session restore)
   useEffect(() => {
-    if (pendingMessages.length > 0 && !isLoading && sessionId) {
+    if (pendingMessages.length > 0 && !isLoading && sessionId && !isRestoringSession) {
       processPendingMessages();
     }
-  }, [pendingMessages, isLoading, sessionId, processPendingMessages]);
+  }, [pendingMessages, isLoading, sessionId, processPendingMessages, isRestoringSession]);
 
   const handleSend = () => {
     if (!input.trim() || !sessionId) return;
