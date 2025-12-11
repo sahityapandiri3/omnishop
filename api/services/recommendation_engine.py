@@ -518,13 +518,29 @@ class AdvancedRecommendationEngine:
             ],  # Chairs - additive items only
             "other_seating": ["bench", "stool", "ottoman"],  # Other seating - additive items
             "center_tables": ["coffee table", "center table", "centre table"],  # Placed in front of sofa
-            "bedside_tables": ["bedside table", "bedside tables", "nightstand", "nightstands", "night stand"],  # Bedroom tables
+            "bedside_tables": [
+                "bedside table",
+                "bedside tables",
+                "nightstand",
+                "nightstands",
+                "night stand",
+            ],  # Bedroom tables
             "side_tables": ["side table", "end table"],  # Placed beside furniture (NOT bedside)
             "dining_tables": ["dining table"],  # Separate category for dining tables
             "other_tables": ["console table", "desk", "table"],  # Generic tables
             "storage_furniture": ["dresser", "chest", "cabinet", "bookshelf", "shelving", "shelf", "wardrobe"],
             "bedroom_furniture": ["bed", "mattress", "headboard"],
             "wall_decor": ["wall art", "wall decor", "wall hanging", "tapestry"],  # Wall decoration items
+            "table_mats": [
+                "table mat",
+                "table mats",
+                "placemat",
+                "placemats",
+                "table runner",
+                "table runners",
+                "runner",
+                "runners",
+            ],
             "decor": [
                 "mirror",
                 "rug",
@@ -652,6 +668,17 @@ class AdvancedRecommendationEngine:
                 "mattress",
                 "headboard",
             ],
+            # Table mats (placemats, runners)
+            "table_mats": [
+                "table mat",
+                "table mats",
+                "placemat",
+                "placemats",
+                "table runner",
+                "table runners",
+                "runner",
+                "runners",
+            ],
             # Decor categories - split out planters and wall decor separately!
             "wall_decor": ["wall art", "wall decor", "wall accessories", "wall hanging", "tapestry"],
             "decor": [
@@ -718,6 +745,15 @@ class AdvancedRecommendationEngine:
             "wall decor": ["wall art", "wall decor", "wall accessories"],
             "wall hanging": ["wall art", "wall decor", "wall accessories", "wall hanging"],
             "tapestry": ["tapestry", "wall hanging", "wall art"],
+            # Table mats (placemats, runners)
+            "table mat": ["table mat", "table mats", "placemat", "placemats", "table runner", "runner"],
+            "table mats": ["table mat", "table mats", "placemat", "placemats", "table runner", "runner"],
+            "placemat": ["table mat", "table mats", "placemat", "placemats"],
+            "placemats": ["table mat", "table mats", "placemat", "placemats"],
+            "table runner": ["table runner", "table runners", "runner", "runners", "table mat"],
+            "table runners": ["table runner", "table runners", "runner", "runners", "table mat"],
+            "runner": ["table runner", "table runners", "runner", "runners", "table mat"],
+            "runners": ["table runner", "table runners", "runner", "runners", "table mat"],
         }
 
         # Check if this is a specific item first

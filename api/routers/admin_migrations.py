@@ -20,14 +20,18 @@ async def migrate_bedside_tables(db: AsyncSession = Depends(get_db)):
     """
     try:
         # Check current state
-        result = await db.execute(text("""
+        result = await db.execute(
+            text(
+                """
             SELECT p.category_id, c.name as category_name, COUNT(*) as product_count
             FROM products p
             LEFT JOIN categories c ON p.category_id = c.id
             WHERE LOWER(p.name) LIKE '%bedside%' OR LOWER(p.name) LIKE '%nightstand%' OR LOWER(p.name) LIKE '%night stand%'
             GROUP BY p.category_id, c.name
             ORDER BY product_count DESC;
-        """))
+        """
+            )
+        )
         before_state = [{"category_id": row[0], "category_name": row[1], "count": row[2]} for row in result]
 
         # Find Bedside Tables category
@@ -40,30 +44,130 @@ async def migrate_bedside_tables(db: AsyncSession = Depends(get_db)):
         bedside_category_id = bedside_category[0]
 
         # Update products
-        result = await db.execute(text(f"""
+        result = await db.execute(
+            text(
+                f"""
             UPDATE products
             SET category_id = {bedside_category_id}
             WHERE LOWER(name) LIKE '%bedside%' OR LOWER(name) LIKE '%nightstand%' OR LOWER(name) LIKE '%night stand%';
-        """))
+        """
+            )
+        )
         await db.commit()
         updated_count = result.rowcount
 
         # Check final state
-        result = await db.execute(text("""
+        result = await db.execute(
+            text(
+                """
             SELECT p.category_id, c.name as category_name, COUNT(*) as product_count
             FROM products p
             LEFT JOIN categories c ON p.category_id = c.id
             WHERE LOWER(p.name) LIKE '%bedside%' OR LOWER(p.name) LIKE '%nightstand%' OR LOWER(p.name) LIKE '%night stand%'
             GROUP BY p.category_id, c.name
             ORDER BY product_count DESC;
-        """))
+        """
+            )
+        )
         after_state = [{"category_id": row[0], "category_name": row[1], "count": row[2]} for row in result]
 
         return {
             "success": True,
             "message": f"Migrated {updated_count} products to Bedside Tables category (id={bedside_category_id})",
             "before": before_state,
-            "after": after_state
+            "after": after_state,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Migration error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Migration failed: {str(e)}")
+
+
+@router.post("/migrate-table-mats")
+async def migrate_table_mats(db: AsyncSession = Depends(get_db)):
+    """
+    One-time migration to:
+    1. Create Table Mats category if it doesn't exist
+    2. Migrate placemat and table runner products into Table Mats category
+    """
+    try:
+        # Check current state of placemat/runner products
+        result = await db.execute(
+            text(
+                """
+            SELECT p.category_id, c.name as category_name, COUNT(*) as product_count
+            FROM products p
+            LEFT JOIN categories c ON p.category_id = c.id
+            WHERE LOWER(p.name) LIKE '%placemat%'
+               OR LOWER(p.name) LIKE '%table mat%'
+               OR (LOWER(p.name) LIKE '%runner%' AND LOWER(p.name) NOT LIKE '%floor runner%')
+            GROUP BY p.category_id, c.name
+            ORDER BY product_count DESC;
+        """
+            )
+        )
+        before_state = [{"category_id": row[0], "category_name": row[1], "count": row[2]} for row in result]
+
+        # Check if Table Mats category exists
+        result = await db.execute(text("SELECT id, name FROM categories WHERE slug = 'table-mats';"))
+        table_mats_category = result.fetchone()
+
+        if not table_mats_category:
+            # Create the Table Mats category
+            result = await db.execute(
+                text(
+                    """
+                INSERT INTO categories (name, slug, description, created_at, updated_at)
+                VALUES ('Table Mats', 'table-mats', 'Placemats, table runners, and table linens', NOW(), NOW())
+                RETURNING id, name;
+            """
+                )
+            )
+            table_mats_category = result.fetchone()
+            await db.commit()
+            logger.info(f"Created Table Mats category with id={table_mats_category[0]}")
+
+        table_mats_category_id = table_mats_category[0]
+
+        # Update products - placemats, table mats, and runners (excluding floor runners)
+        result = await db.execute(
+            text(
+                f"""
+            UPDATE products
+            SET category_id = {table_mats_category_id}
+            WHERE LOWER(name) LIKE '%placemat%'
+               OR LOWER(name) LIKE '%table mat%'
+               OR (LOWER(name) LIKE '%runner%' AND LOWER(name) NOT LIKE '%floor runner%');
+        """
+            )
+        )
+        await db.commit()
+        updated_count = result.rowcount
+
+        # Check final state
+        result = await db.execute(
+            text(
+                """
+            SELECT p.category_id, c.name as category_name, COUNT(*) as product_count
+            FROM products p
+            LEFT JOIN categories c ON p.category_id = c.id
+            WHERE LOWER(p.name) LIKE '%placemat%'
+               OR LOWER(p.name) LIKE '%table mat%'
+               OR (LOWER(p.name) LIKE '%runner%' AND LOWER(p.name) NOT LIKE '%floor runner%')
+            GROUP BY p.category_id, c.name
+            ORDER BY product_count DESC;
+        """
+            )
+        )
+        after_state = [{"category_id": row[0], "category_name": row[1], "count": row[2]} for row in result]
+
+        return {
+            "success": True,
+            "message": f"Migrated {updated_count} products to Table Mats category (id={table_mats_category_id})",
+            "before": before_state,
+            "after": after_state,
         }
 
     except HTTPException:
