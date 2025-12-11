@@ -329,6 +329,11 @@ When the user mentions ANY furniture or product (table, sofa, chair, bed, lamp, 
 2. categories: Array of specific categories or variations
 3. search_terms: Array of searchable terms from user message
 
+⚠️ WORD CONFUSION WARNING ⚠️
+- "matches" / "matching" / "match" (as in "whatever matches the room") = STYLE COORDINATION, NOT "mats" (floor mats)!
+- If user previously asked for planters/vases/sofas etc. and then says "whatever matches" → KEEP the previous product type, just apply room-matching colors
+- NEVER extract "mat" or "mats" from the word "matches" - this is a semantic misunderstanding!
+
 IMPORTANT: DO NOT set budget_indicators.price_range UNLESS the user explicitly mentions a budget or price range. Leave it empty if not mentioned.
 
 PRODUCT EXTRACTION EXAMPLES:
@@ -362,6 +367,17 @@ PRODUCT EXTRACTION EXAMPLES:
     "categories": ["accent_chair", "armchair", "lounge_chair", "single_chair"],
     "search_terms": ["single seater", "one seater", "chair", "accent chair", "armchair"]
   }
+
+🚨 IMPORTANT: "MATCHES" IS NOT "MATS" EXAMPLE 🚨
+- Previous conversation: User asked for "planters"
+- Current message: "whatever matches the room"
+- CORRECT response: Continue searching for PLANTERS with room-coordinated colors
+  "product_matching_criteria": {
+    "product_types": ["planter"],
+    "categories": ["planter", "plant_pot", "indoor_planter"],
+    "search_terms": ["planter", "plant pot", "indoor planter"]
+  }
+- WRONG response: Searching for "mats" (floor mats) - THIS IS A SEMANTIC ERROR!
 
 🎨 VISUALIZATION MODE DETECTION 🎨
 Detect which visualization mode the user wants:
@@ -425,6 +441,12 @@ User: "yes"
     - DO NOT use these words as search keywords!
     - Example: User says "no" to color preference → search for ALL colors, not products with "no" in the name
     - Example: User says "anything" for material → search for ALL materials, not products with "anything" in the name
+
+    🚨 CRITICAL PHRASE UNDERSTANDING 🚨
+    - "whatever matches the room", "match the room", "matching the room", "something that matches", "anything that matches", "that goes with the room", "that fits the room", "that complements", "that works with" = STYLE PREFERENCE meaning "coordinate with the existing room colors/style"
+    - DO NOT interpret "matches" as "mats" (floor mats)! This is a VERY COMMON MISTAKE.
+    - When user says "whatever matches" they mean KEEP THE SAME PRODUCT CATEGORY and select based on room's color palette/style
+    - Example: User searching for "planters" says "whatever matches the room" → search for PLANTERS that match the room's colors, NOT "mats"!
 
 ## CONVERSATION CONTEXT UNDERSTANDING (CRITICAL)
 

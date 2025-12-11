@@ -561,6 +561,36 @@ class AdvancedRecommendationEngine:
         logger.info(f"Categorized keywords: {dict(categorized)}")
         return dict(categorized)
 
+    def _get_db_category_ids(self, keyword_category: str) -> List[int]:
+        """
+        Map keyword categories to actual database category IDs.
+        This ensures strict category filtering - beds will only return beds, not vases.
+        """
+        # Database category IDs mapping
+        category_id_mapping = {
+            # Beds
+            "bed": [189, 253, 246, 251, 271, 272],  # Beds, Bed, Queen Bed, King Bed, Double Bed, Single Bed
+            "beds": [189, 253, 246, 251, 271, 272],
+            "bedroom_furniture": [189, 253, 246, 251, 271, 272, 191],  # + Bedside Tables
+            # Wall Art - EXCLUDING photo frames
+            "wall art": [19],  # Wall Art only
+            "wall_art": [19],
+            "wall_decor": [19, 60],  # Wall Art, Wall Accessories
+            # Photo frames - separate from wall art
+            "photo frame": [103, 104, 107, 114, 126],  # Photo Frames Large/Medium/Mini, Photo Display Sets, Picture Frames
+            "picture frame": [103, 104, 107, 114, 126],
+            # Vases
+            "vase": [259, 52],  # Vase, Vases
+            "vases": [259, 52],
+            # Planters
+            "planter": [16, 93],  # Planter, Planters
+            "planters": [16, 93],
+            # Sculptures
+            "sculpture": [116],  # Sculptures (consolidated)
+            "sculptures": [116],
+        }
+        return category_id_mapping.get(keyword_category.lower(), [])
+
     def _get_db_category_patterns(self, keyword_category: str) -> List[str]:
         """
         Map keyword categories to database category name patterns.
@@ -736,8 +766,23 @@ class AdvancedRecommendationEngine:
                 if keyword_conditions:
                     # Combine keywords within category with OR
                     name_condition = or_(*keyword_conditions)
-                    # Use name matching only - database category filtering is too restrictive
-                    category_conditions.append(name_condition)
+
+                    # Check if we have strict category IDs for this keyword
+                    # If so, use category_id filtering INSTEAD of name matching
+                    # This prevents cross-category contamination (vases appearing in beds, photoframes in wall art)
+                    category_ids = []
+                    for keyword in keywords:
+                        category_ids.extend(self._get_db_category_ids(keyword))
+                    category_ids = list(set(category_ids))  # Deduplicate
+
+                    if category_ids:
+                        # Use strict category_id filtering for known categories
+                        logger.info(f"Using category_id filtering for '{keyword_category}': category_ids={category_ids}")
+                        category_conditions.append(Product.category_id.in_(category_ids))
+                    else:
+                        # Fall back to name matching for unknown categories
+                        logger.info(f"Using name matching for '{keyword_category}' (no category_id mapping)")
+                        category_conditions.append(name_condition)
 
             # STEP 3: Combine category conditions
             # If keywords span multiple categories, OR them together
