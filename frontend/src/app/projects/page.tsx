@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { projectsAPI, ProjectListItem } from '@/utils/api';
-import { PlusIcon, TrashIcon, FolderIcon, PhotoIcon, PaintBrushIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, TrashIcon, FolderIcon } from '@heroicons/react/24/outline';
 
 export default function ProjectsPage() {
   const router = useRouter();
@@ -93,7 +93,10 @@ export default function ProjectsPage() {
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
+    // Parse the date - backend returns UTC timestamps
+    // Append 'Z' if not present to ensure it's treated as UTC
+    const normalizedDateString = dateString.endsWith('Z') ? dateString : dateString + 'Z';
+    const date = new Date(normalizedDateString);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
@@ -248,16 +251,8 @@ export default function ProjectsPage() {
               >
                 {/* Thumbnail */}
                 <div className="aspect-video relative bg-gray-100">
-                  {project.has_visualization ? (
+                  {project.has_visualization && (
                     <ProjectThumbnail projectId={project.id} />
-                  ) : project.has_room_image ? (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <PhotoIcon className="w-12 h-12 text-gray-300" />
-                    </div>
-                  ) : (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <PaintBrushIcon className="w-12 h-12 text-gray-300" />
-                    </div>
                   )}
 
                   {/* Delete Button */}
@@ -344,11 +339,7 @@ function ProjectThumbnail({ projectId }: { projectId: string }) {
   }
 
   if (!imageUrl) {
-    return (
-      <div className="absolute inset-0 flex items-center justify-center">
-        <PaintBrushIcon className="w-12 h-12 text-gray-300" />
-      </div>
-    );
+    return null;
   }
 
   return (
