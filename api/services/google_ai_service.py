@@ -1032,13 +1032,13 @@ This is an ACCENT ITEM. Critical rules:
                 planter_instruction = f"""
 🌿🌿🌿 PLANTER-SPECIFIC INSTRUCTION 🌿🌿🌿
 ═══════════════════════════════════════════════════════════════
-Add a ceramic planter to the corner of the room.
-Keep the original aspect ratio and viewing angle.
-Do not zoom in on the planter.
+Add the planter to the room.
 
-THE ASPECT RATIO SHOULD BE THE SAME.
+THE ORIGINAL ASPECT RATIO AND VIEWING ANGLE OF THE IMAGE SHOULD REMAIN THE SAME.
+THE EXISTING PRODUCTS IN THE ROOM SHOULD BE CLEARLY VISIBLE AND NOT CUT FROM VIEW.
 THE IMAGE SHOULD NOT BE ZOOMED IN.
 THE CAMERA ANGLE SHOULD BE THE SAME.
+DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
 ═══════════════════════════════════════════════════════════════
 
 """
@@ -1404,12 +1404,12 @@ The room structure, walls, and camera angle MUST be identical to the input image
 🌿🌿🌿 PLANTER-SPECIFIC INSTRUCTION 🌿🌿🌿
 ═══════════════════════════════════════════════════════════════
 For any planter being added:
-Keep the original aspect ratio and viewing angle.
-Do not zoom in on the planter.
 
-THE ASPECT RATIO SHOULD BE THE SAME.
+THE ORIGINAL ASPECT RATIO AND VIEWING ANGLE OF THE IMAGE SHOULD REMAIN THE SAME.
+THE EXISTING PRODUCTS IN THE ROOM SHOULD BE CLEARLY VISIBLE AND NOT CUT FROM VIEW.
 THE IMAGE SHOULD NOT BE ZOOMED IN.
 THE CAMERA ANGLE SHOULD BE THE SAME.
+DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
 ═══════════════════════════════════════════════════════════════
 
 """
@@ -1819,12 +1819,12 @@ Product {idx + 1}:
 🌿🌿🌿 PLANTER-SPECIFIC INSTRUCTION 🌿🌿🌿
 ═══════════════════════════════════════════════════════════════
 For any planter being added:
-Keep the original aspect ratio and viewing angle.
-Do not zoom in on the planter.
 
-THE ASPECT RATIO SHOULD BE THE SAME.
+THE ORIGINAL ASPECT RATIO AND VIEWING ANGLE OF THE IMAGE SHOULD REMAIN THE SAME.
+THE EXISTING PRODUCTS IN THE ROOM SHOULD BE CLEARLY VISIBLE AND NOT CUT FROM VIEW.
 THE IMAGE SHOULD NOT BE ZOOMED IN.
 THE CAMERA ANGLE SHOULD BE THE SAME.
+DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
 ═══════════════════════════════════════════════════════════════
 
 """
