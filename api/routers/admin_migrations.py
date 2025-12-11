@@ -115,12 +115,15 @@ async def migrate_table_mats(db: AsyncSession = Depends(get_db)):
         table_mats_category = result.fetchone()
 
         if not table_mats_category:
-            # Create the Table Mats category
+            # Create the Table Mats category - get next available ID
+            result = await db.execute(text("SELECT COALESCE(MAX(id), 0) + 1 FROM categories;"))
+            next_id = result.scalar()
+
             result = await db.execute(
                 text(
-                    """
-                INSERT INTO categories (name, slug, description, created_at, updated_at)
-                VALUES ('Table Mats', 'table-mats', 'Placemats, table runners, and table linens', NOW(), NOW())
+                    f"""
+                INSERT INTO categories (id, name, slug, description, created_at, updated_at)
+                VALUES ({next_id}, 'Table Mats', 'table-mats', 'Placemats, table runners, and table linens', NOW(), NOW())
                 RETURNING id, name;
             """
                 )
