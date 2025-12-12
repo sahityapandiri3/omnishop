@@ -33,7 +33,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.database import get_db
-from database.models import Category, ChatMessage, ChatSession, Product
+from database.models import Category, ChatLog, ChatMessage, ChatSession, Product
+from utils.chat_logger import chat_logger
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
@@ -147,7 +148,25 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
         session.updated_at = datetime.utcnow()
         session.message_count += 2
 
+        # Add persistent chat log entry to database
+        chat_log_entry = ChatLog(
+            session_id=session_id,
+            user_id=session.user_id,
+            server_type=chat_logger.server_type,
+            user_message=request.message,
+            assistant_response=conversational_response,
+        )
+        db.add(chat_log_entry)
+
         await db.commit()
+
+        # Also log to chat.md file (for local development quick viewing)
+        chat_logger.log_conversation(
+            session_id=session_id,
+            user_id=session.user_id,
+            user_message=request.message,
+            assistant_response=conversational_response,
+        )
 
         # Initialize response fields
         recommended_products = []

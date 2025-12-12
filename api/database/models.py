@@ -406,3 +406,26 @@ class CuratedLookProduct(Base):
 
     def __repr__(self):
         return f"<CuratedLookProduct(id={self.id}, look_id={self.curated_look_id}, product_id={self.product_id})>"
+
+
+class ChatLog(Base):
+    """Persistent chat conversation logs for analytics and debugging"""
+
+    __tablename__ = "chat_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String(36), nullable=False, index=True)
+    user_id = Column(String(36), nullable=True, index=True)
+    server_type = Column(String(10), nullable=False)  # "local" or "prod"
+    user_message = Column(Text, nullable=False)
+    assistant_response = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    # Indexes for efficient querying
+    __table_args__ = (
+        Index("idx_chat_logs_session_created", "session_id", "created_at"),
+        Index("idx_chat_logs_user_created", "user_id", "created_at"),
+    )
+
+    def __repr__(self):
+        return f"<ChatLog(id={self.id}, session={self.session_id[:8]}..., user={self.user_id})>"
