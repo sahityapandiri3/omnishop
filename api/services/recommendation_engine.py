@@ -541,17 +541,19 @@ class AdvancedRecommendationEngine:
                 "runner",
                 "runners",
             ],
-            "decor": [
-                "mirror",
+            # Rugs & Carpets - separate category for strict filtering (DB category ID 36)
+            "rugs": [
                 "rug",
                 "carpet",
-                "floor mat",  # Changed from "mat" - too ambiguous (matches "matte" finish in product names)
+                "floor rug",
+                "area rug",
+                "wall rug",
+            ],
+            "decor": [
+                "mirror",
                 "planter",
                 "pot",
                 "vase",
-                "wall rug",
-                "floor rug",
-                "area rug",
                 "sculpture",
                 "figurine",
                 "statue",
@@ -606,6 +608,11 @@ class AdvancedRecommendationEngine:
             # Sculptures
             "sculpture": [116],  # Sculptures (consolidated)
             "sculptures": [116],
+            # Rugs & Carpets - Use ONLY category 36 "Rug" (243 actual rugs)
+            # EXCLUDE category 168 "Rugs & Textiles" (has no real rugs - miscategorized)
+            "rugs": [36],  # Rug category only
+            "rug": [36],
+            "carpet": [36],
         }
         return category_id_mapping.get(keyword_category.lower(), [])
 
@@ -884,31 +891,9 @@ class AdvancedRecommendationEngine:
             query = query.where(and_(*exclusion_conditions))
             logger.info(f"Applied {len(accessory_exclusions)} accessory exclusions")
 
-        # CATEGORY-SPECIFIC EXCLUSIONS
-        # When searching for rugs/carpets, exclude products that are NOT floor coverings
-        if request.product_keywords:
-            keywords_lower = [k.lower() for k in request.product_keywords]
-            is_rug_search = any(k in keywords_lower for k in ["rug", "carpet", "floor mat", "area rug"])
-
-            if is_rug_search:
-                # Exclude non-floor-covering items that might have "rug" or "mat" in name
-                rug_exclusions = [
-                    "placemat",      # Table mat, not floor rug
-                    "place mat",     # Table mat variant
-                    "table mat",     # Table accessory
-                    "mouse",         # Mouse pad/rug
-                    "mousepad",      # Mouse pad
-                    "coaster",       # Drink coaster
-                    "trivet",        # Hot plate trivet
-                    "doormat",       # Door mat (different category)
-                    "bath mat",      # Bathroom accessory
-                    "yoga mat",      # Exercise equipment
-                    "prayer mat",    # Religious item
-                ]
-                for exclusion in rug_exclusions:
-                    escaped = re.escape(exclusion)
-                    query = query.where(~Product.name.op("~*")(rf"\y{escaped}\y"))
-                logger.info(f"Applied {len(rug_exclusions)} rug-specific exclusions")
+        # NOTE: Rug-specific exclusions removed - now using category_id filtering (category 36)
+        # This ensures only actual rugs from the "Rug" category are returned, avoiding
+        # miscategorized products from "Rugs & Textiles" (category 168)
 
         # Apply budget filter
         if request.budget_range:
