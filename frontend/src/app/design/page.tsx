@@ -765,15 +765,7 @@ function DesignPageContent() {
     }
   };
 
-  // Furniture quantity restriction rules
-  // SINGLE_INSTANCE: Only one of this type allowed in the canvas (replaces existing)
-  // UNLIMITED: Multiple instances allowed (always adds new)
-  const FURNITURE_QUANTITY_RULES = {
-    SINGLE_INSTANCE: ['sofa', 'bed', 'coffee_table', 'floor_rug', 'ceiling_lamp'],
-    UNLIMITED: ['planter', 'floor_lamp', 'standing_lamp', 'side_table', 'ottoman', 'table_lamp', 'vase', 'flower', 'decor', 'sculpture', 'figurine', 'candle', 'picture_frame', 'wall_art', 'accent_chair', 'dining_chair', 'cushion', 'throw'],
-  };
-
-  // Extract product type from product name
+  // Extract product type from product name (used for categorization/display)
   const extractProductType = (productName: string): string => {
     const name = productName.toLowerCase();
 
@@ -831,36 +823,9 @@ function DesignPageContent() {
     const productWithType = { ...product, productType };
 
     console.log('[DesignPage] Adding product to canvas:', product.name);
-    console.log('[DesignPage] Product type:', productType);
-    console.log('[DesignPage] Current canvas products:', canvasProducts.map(p => ({ name: p.name, type: p.productType })));
 
-    // Check if this product type has quantity restrictions
-    const isSingleInstance = FURNITURE_QUANTITY_RULES.SINGLE_INSTANCE.includes(productType);
-    const isUnlimited = FURNITURE_QUANTITY_RULES.UNLIMITED.includes(productType);
-
-    if (isSingleInstance && productType !== 'other') {
-      // SINGLE INSTANCE: Replace existing product of same type (but NOT for 'other' category)
-      const existingIndex = canvasProducts.findIndex((p) => p.productType === productType && p.productType !== 'other');
-
-      if (existingIndex >= 0) {
-        console.log('[DesignPage] Replacing existing single-instance product at index', existingIndex);
-        const updated = [...canvasProducts];
-        updated[existingIndex] = productWithType;
-        setCanvasProducts(updated);
-      } else {
-        console.log('[DesignPage] Adding new single-instance product');
-        setCanvasProducts([...canvasProducts, productWithType]);
-      }
-    } else if (isUnlimited) {
-      // UNLIMITED: Always add new instance (allow multiples)
-      console.log('[DesignPage] Adding new unlimited-instance product (multiples allowed)');
-      setCanvasProducts([...canvasProducts, productWithType]);
-    } else {
-      // DEFAULT: For unclassified items ('other'), ALWAYS ADD (never replace) to prevent unexpected behavior
-      // This ensures new products from Product Discovery are added to the canvas, not replacing existing ones
-      console.log('[DesignPage] Adding unclassified product (type:', productType, ') - not replacing any existing products');
-      setCanvasProducts([...canvasProducts, productWithType]);
-    }
+    // Simply add the product to canvas - users can add unlimited products of any type
+    setCanvasProducts([...canvasProducts, productWithType]);
 
     // Auto-switch to canvas tab on mobile
     if (window.innerWidth < 768) {
