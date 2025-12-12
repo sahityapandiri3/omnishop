@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import aiohttp
 from google import genai
 from google.genai import types
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageEnhance, ImageOps
 
 from core.config import settings
 
@@ -778,11 +778,15 @@ RESPOND WITH JSON ONLY - NO OTHER TEXT."""
 
             pil_image = Image.open(io.BytesIO(image_bytes))
 
+            # Apply EXIF orientation correction (important for smartphone photos)
+            # This rotates the image to its correct orientation based on EXIF metadata
+            pil_image = ImageOps.exif_transpose(pil_image)
+
             # Convert to RGB if needed (e.g., RGBA images)
             if pil_image.mode != "RGB":
                 pil_image = pil_image.convert("RGB")
 
-            logger.info(f"Loaded image for furniture removal: {pil_image.width}x{pil_image.height} pixels")
+            logger.info(f"Loaded image for furniture removal (EXIF corrected): {pil_image.width}x{pil_image.height} pixels")
 
             prompt = """Clean the room in this image for interior styling.
 Remove all movable objects and keep all fixed architecture.
@@ -1234,12 +1238,14 @@ The room structure, walls, and camera angle MUST be identical to the input image
             # Add room image as PIL Image
             room_image_bytes = base64.b64decode(processed_room)
             room_pil_image = Image.open(io.BytesIO(room_image_bytes))
+            # Apply EXIF orientation correction (important for smartphone photos)
+            room_pil_image = ImageOps.exif_transpose(room_pil_image)
             if room_pil_image.mode != "RGB":
                 room_pil_image = room_pil_image.convert("RGB")
 
             # Get the input image dimensions for logging
             input_width, input_height = room_pil_image.size
-            logger.info(f"Input room image: {input_width}x{input_height}")
+            logger.info(f"Input room image (EXIF corrected): {input_width}x{input_height}")
 
             contents.append(room_pil_image)
 
@@ -1466,12 +1472,14 @@ The room structure, walls, and camera angle MUST be identical to the input image
             # Add room image as PIL Image
             room_image_bytes = base64.b64decode(processed_room)
             room_pil_image = Image.open(io.BytesIO(room_image_bytes))
+            # Apply EXIF orientation correction (important for smartphone photos)
+            room_pil_image = ImageOps.exif_transpose(room_pil_image)
             if room_pil_image.mode != "RGB":
                 room_pil_image = room_pil_image.convert("RGB")
 
             # Get the input image dimensions for logging
             input_width, input_height = room_pil_image.size
-            logger.info(f"Input room image (MULTIPLE): {input_width}x{input_height}")
+            logger.info(f"Input room image (MULTIPLE, EXIF corrected): {input_width}x{input_height}")
 
             contents.append(room_pil_image)
 
@@ -1654,12 +1662,14 @@ Generate a photorealistic image of the room with the {product_name} replacing th
             # Add room image as PIL Image
             room_image_bytes = base64.b64decode(processed_room)
             room_pil_image = Image.open(io.BytesIO(room_image_bytes))
+            # Apply EXIF orientation correction (important for smartphone photos)
+            room_pil_image = ImageOps.exif_transpose(room_pil_image)
             if room_pil_image.mode != "RGB":
                 room_pil_image = room_pil_image.convert("RGB")
 
             # Get the input image dimensions for logging
             input_width, input_height = room_pil_image.size
-            logger.info(f"Input room image (REPLACE): {input_width}x{input_height}")
+            logger.info(f"Input room image (REPLACE, EXIF corrected): {input_width}x{input_height}")
 
             contents.append(room_pil_image)
 
@@ -2203,12 +2213,14 @@ Create a photorealistic interior design visualization that addresses the user's 
                     # Add room image as PIL Image
                     room_image_bytes = base64.b64decode(processed_image)
                     room_pil_image = Image.open(io.BytesIO(room_image_bytes))
+                    # Apply EXIF orientation correction (important for smartphone photos)
+                    room_pil_image = ImageOps.exif_transpose(room_pil_image)
                     if room_pil_image.mode != "RGB":
                         room_pil_image = room_pil_image.convert("RGB")
 
                     # Get the input image dimensions for logging
                     input_width, input_height = room_pil_image.size
-                    logger.info(f"Input room image (ROOM VIZ): {input_width}x{input_height}")
+                    logger.info(f"Input room image (ROOM VIZ, EXIF corrected): {input_width}x{input_height}")
 
                     contents.append(room_pil_image)
 
