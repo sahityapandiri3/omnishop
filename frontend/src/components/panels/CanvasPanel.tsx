@@ -11,6 +11,25 @@ const DraggableFurnitureCanvas = dynamic(
   { ssr: false }
 );
 
+// Helper to format image source - handles base64 and URLs
+const formatImageSrc = (src: string | null | undefined): string => {
+  if (!src) return '';
+  // If it's already a URL or data URI, return as-is
+  if (src.startsWith('http') || src.startsWith('data:')) return src;
+  // If it's base64 data (starts with /9j/ for JPEG or iVBOR for PNG), add data URI prefix
+  if (src.startsWith('/9j/') || src.startsWith('iVBOR')) {
+    const isJpeg = src.startsWith('/9j/');
+    return `data:image/${isJpeg ? 'jpeg' : 'png'};base64,${src}`;
+  }
+  return src;
+};
+
+// Check if image source is base64 or data URI (needs <img> tag, not Next.js Image)
+const isBase64Image = (src: string | null | undefined): boolean => {
+  if (!src) return false;
+  return src.startsWith('data:') || src.startsWith('/9j/') || src.startsWith('iVBOR');
+};
+
 interface Product {
   id: string;
   name: string;
@@ -202,9 +221,7 @@ export default function CanvasPanel({
     if (initialVisualizationImage && !visualizationResult) {
       console.log('[CanvasPanel] Initializing visualization from curated look image, length:', initialVisualizationImage.length);
       // Format the image properly (ensure data URI format)
-      const formattedImage = initialVisualizationImage.startsWith('data:')
-        ? initialVisualizationImage
-        : `data:image/png;base64,${initialVisualizationImage}`;
+      const formattedImage = formatImageSrc(initialVisualizationImage);
 
       console.log('[CanvasPanel] Setting visualizationResult with formatted image, starts with data:', formattedImage.startsWith('data:'));
       setVisualizationResult(formattedImage);
@@ -1005,9 +1022,9 @@ export default function CanvasPanel({
             <div className="p-4 pt-0">
               {roomImage ? (
                 <div className="relative aspect-video bg-neutral-100 dark:bg-neutral-700 rounded-lg overflow-hidden">
-                  {roomImage.startsWith('data:') ? (
+                  {isBase64Image(roomImage) ? (
                     <img
-                      src={roomImage}
+                      src={formatImageSrc(roomImage)}
                       alt="Room"
                       className="w-full h-full object-cover"
                     />
@@ -1340,9 +1357,9 @@ export default function CanvasPanel({
                 />
               ) : (
                 <>
-                  {visualizationResult.startsWith('data:') ? (
+                  {isBase64Image(visualizationResult) ? (
                     <img
-                      src={visualizationResult}
+                      src={formatImageSrc(visualizationResult)}
                       alt="Visualization result"
                       className="w-full h-full object-cover"
                     />
