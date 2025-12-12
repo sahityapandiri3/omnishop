@@ -389,10 +389,22 @@ PRODUCT EXTRACTION EXAMPLES:
 
 - User: "Suggest single seater sofas that go well with my room" →
   "product_matching_criteria": {
-    "product_types": ["chair"],
-    "categories": ["accent_chair", "armchair", "lounge_chair", "single_chair"],
-    "search_terms": ["single seater", "one seater", "chair", "accent chair", "armchair"]
+    "product_types": ["single seater sofa"],
+    "categories": ["single_seater_sofa", "single seater sofa"],
+    "search_terms": ["single seater sofa", "single seater", "one seater sofa", "1 seater sofa"]
   }
+
+🚨 CRITICAL: SOFA SIZE VARIANTS EXAMPLE (DO NOT MIX SIZES!) 🚨
+- User: "Show me single seater sofas" → ONLY search for "single seater sofa" category
+- User: "Show me two seater sofas" → ONLY search for "two seater sofa" category
+- User: "Show me three seater sofas" → ONLY search for "three seater sofa" category
+- User: "Show me sofas" (generic) → Search all sofa categories
+
+Examples:
+- "single seater sofas" → categories: ["single_seater_sofa", "single seater sofa"], search_terms: ["single seater sofa", "1 seater"]
+- "two seater sofas" → categories: ["two_seater_sofa", "two seater sofa"], search_terms: ["two seater sofa", "2 seater", "loveseat"]
+- "three seater sofas" → categories: ["three_seater_sofa", "three seater sofa"], search_terms: ["three seater sofa", "3 seater"]
+- "sofas" (generic) → categories: ["sofa", "single_seater_sofa", "two_seater_sofa", "three_seater_sofa"], search_terms: ["sofa"]
 
 🚨 CRITICAL: BEDSIDE TABLES EXAMPLE (COMPOUND TERM - DO NOT SPLIT!) 🚨
 - User: "Show me bedside tables" or "I need bedside tables"
