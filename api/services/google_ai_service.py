@@ -788,30 +788,36 @@ RESPOND WITH JSON ONLY - NO OTHER TEXT."""
 
             logger.info(f"Loaded image for furniture removal (EXIF corrected): {pil_image.width}x{pil_image.height} pixels")
 
-            prompt = """Clean the room in this image for interior styling.
-Remove all movable objects and keep all fixed architecture.
+            prompt = """🚨 CRITICAL TASK: Remove ALL furniture and movable objects from this room image.
 
-REMOVE (completely):
-Sofas, chairs, tables, beds, mattresses
-Rugs, curtains, loose shelves
-All lighting fixtures: floor lamps, table lamps, pendant lights, chandeliers, hanging lights, tripod lamps
-Mirrors: standing mirrors, floor mirrors, full-length mirrors, leaning mirrors
-Décor items (plants, art, frames, pillows, vases)
-Toys, clutter, electronics, bags, personal items
+The output MUST be a COMPLETELY EMPTY room with ZERO furniture remaining.
 
-KEEP (unchanged):
-Walls, windows, doors, built-in wardrobes
-Ceiling (but remove any pendant/hanging lights from it), flooring, wall trims
-Recessed/built-in ceiling lights only (not hanging fixtures)
-Electrical outlets, switches, AC vents
-Wall-mounted mirrors that are fixed to the wall (not freestanding)
+⚠️ MANDATORY REMOVALS - These items MUST be deleted from the image:
+1. ALL SEATING: Sofas (including curved/sectional sofas), couches, chairs, armchairs, ottomans
+2. ALL TABLES: Coffee tables, side tables, dining tables, console tables
+3. ALL BEDS: Beds, mattresses, headboards
+4. ALL LAMPS: Floor lamps, tripod lamps, standing lamps, table lamps, any lamp with a base on the floor
+5. ALL MIRRORS: Standing mirrors, floor mirrors, full-length mirrors, leaning mirrors against walls
+6. ALL PLANTS: Potted plants, planters, indoor trees
+7. ALL DECOR: Vases, sculptures, frames, artwork, cushions, throws, rugs
 
-OUTPUT REQUIREMENTS:
-Return an empty, realistic version of the same room
-Keep natural daylight, shadows, perspective, and proportions natural
-No artifacts, smudges, ghost objects, or distortions
-Image must look like a clean, vacant room ready for styling
-Return only the processed image."""
+🔴 IMPORTANT: If you see ANY of these in the image, they MUST be removed:
+- A curved or L-shaped sofa → REMOVE IT
+- A lamp with wooden tripod legs → REMOVE IT
+- A tall standing mirror leaning against wall → REMOVE IT
+- Any potted plant → REMOVE IT
+
+✅ KEEP ONLY (do not modify these):
+- Walls, ceiling, floor (the room structure)
+- Windows, doors, built-in closets
+- Curtains/drapes on windows
+- AC units mounted on walls
+- Electrical outlets and switches
+- Archways and architectural features
+
+OUTPUT: Generate an image of the SAME room but COMPLETELY EMPTY - no furniture, no lamps, no mirrors, no plants. The room should look vacant and ready for new furniture to be added.
+
+FAILURE IS NOT ACCEPTABLE: Every single piece of furniture MUST be removed. Do not leave any sofa, lamp, or mirror in the output."""
 
             # Retry loop with exponential backoff
             for attempt in range(max_retries):
