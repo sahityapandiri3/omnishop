@@ -545,12 +545,13 @@ class AdvancedRecommendationEngine:
                 "mirror",
                 "rug",
                 "carpet",
-                "mat",
+                "floor mat",  # Changed from "mat" - too ambiguous (matches "matte" finish in product names)
                 "planter",
                 "pot",
                 "vase",
                 "wall rug",
                 "floor rug",
+                "area rug",
                 "sculpture",
                 "figurine",
                 "statue",
@@ -688,7 +689,8 @@ class AdvancedRecommendationEngine:
                 "mirror",
                 "rug",
                 "carpet",
-                "mat",
+                "floor mat",  # Changed from "mat" - too ambiguous (matches "matte" finish)
+                "area rug",
                 "sculpture",
                 "figurine",
                 "statue",
@@ -734,7 +736,7 @@ class AdvancedRecommendationEngine:
             # Decor
             "planter": ["planter", "pot"],
             "pot": ["planter", "pot"],
-            "rug": ["rug", "carpet", "mat"],
+            "rug": ["rug", "carpet", "floor mat", "area rug"],  # Removed standalone "mat" - too ambiguous (matte finish, table mat)
             "vase": ["vase"],
             "cushion": ["cushion", "pillow"],
             "throw": ["throw", "blanket"],
