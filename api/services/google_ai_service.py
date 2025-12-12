@@ -824,7 +824,7 @@ FAILURE IS NOT ACCEPTABLE: Every single piece of furniture MUST be removed. Do n
                 try:
                     logger.info(f"Furniture removal attempt {attempt + 1} of {max_retries}")
                     logger.info(
-                        f"Sending furniture removal prompt to gemini-2.5-flash-image with IMAGE output (PIL Image: {pil_image.width}x{pil_image.height})"
+                        f"Sending furniture removal prompt to gemini-3-pro-image-preview with IMAGE output (PIL Image: {pil_image.width}x{pil_image.height})"
                     )
 
                     # Generate furniture removal with proper asyncio timeout (90 seconds max per attempt)
@@ -833,14 +833,15 @@ FAILURE IS NOT ACCEPTABLE: Every single piece of furniture MUST be removed. Do n
 
                     def _run_generate():
                         """Run the blocking generate_content call in a separate thread"""
-                        # Use Gemini 2.5 Flash Image - the ONLY model that supports image editing
+                        # Use Gemini 3 Pro Image Preview - better at understanding complex removal tasks
+                        # Previously used gemini-2.5-flash-image but it struggled with furniture removal
                         # response_modalities=["IMAGE"] tells the model to output an edited image
-                        # Without response_modalities, the model may just describe the image instead of editing it
                         response = self.genai_client.models.generate_content(
-                            model="gemini-2.5-flash-image",
+                            model="gemini-3-pro-image-preview",
                             contents=[prompt, pil_image],
                             config=types.GenerateContentConfig(
                                 response_modalities=["IMAGE"],
+                                temperature=0.2,  # Lower temperature for more consistent removal
                             ),
                         )
 
