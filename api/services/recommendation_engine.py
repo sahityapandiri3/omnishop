@@ -884,6 +884,32 @@ class AdvancedRecommendationEngine:
             query = query.where(and_(*exclusion_conditions))
             logger.info(f"Applied {len(accessory_exclusions)} accessory exclusions")
 
+        # CATEGORY-SPECIFIC EXCLUSIONS
+        # When searching for rugs/carpets, exclude products that are NOT floor coverings
+        if request.product_keywords:
+            keywords_lower = [k.lower() for k in request.product_keywords]
+            is_rug_search = any(k in keywords_lower for k in ["rug", "carpet", "floor mat", "area rug"])
+
+            if is_rug_search:
+                # Exclude non-floor-covering items that might have "rug" or "mat" in name
+                rug_exclusions = [
+                    "placemat",      # Table mat, not floor rug
+                    "place mat",     # Table mat variant
+                    "table mat",     # Table accessory
+                    "mouse",         # Mouse pad/rug
+                    "mousepad",      # Mouse pad
+                    "coaster",       # Drink coaster
+                    "trivet",        # Hot plate trivet
+                    "doormat",       # Door mat (different category)
+                    "bath mat",      # Bathroom accessory
+                    "yoga mat",      # Exercise equipment
+                    "prayer mat",    # Religious item
+                ]
+                for exclusion in rug_exclusions:
+                    escaped = re.escape(exclusion)
+                    query = query.where(~Product.name.op("~*")(rf"\y{escaped}\y"))
+                logger.info(f"Applied {len(rug_exclusions)} rug-specific exclusions")
+
         # Apply budget filter
         if request.budget_range:
             min_price, max_price = request.budget_range
