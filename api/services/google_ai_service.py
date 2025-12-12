@@ -794,7 +794,8 @@ Remove all movable objects and keep all fixed architecture.
 REMOVE (completely):
 Sofas, chairs, tables, beds, mattresses
 Rugs, curtains, loose shelves
-All lighting fixtures: floor lamps, table lamps, pendant lights, chandeliers, hanging lights
+All lighting fixtures: floor lamps, table lamps, pendant lights, chandeliers, hanging lights, tripod lamps
+Mirrors: standing mirrors, floor mirrors, full-length mirrors, leaning mirrors
 Décor items (plants, art, frames, pillows, vases)
 Toys, clutter, electronics, bags, personal items
 
@@ -803,6 +804,7 @@ Walls, windows, doors, built-in wardrobes
 Ceiling (but remove any pendant/hanging lights from it), flooring, wall trims
 Recessed/built-in ceiling lights only (not hanging fixtures)
 Electrical outlets, switches, AC vents
+Wall-mounted mirrors that are fixed to the wall (not freestanding)
 
 OUTPUT REQUIREMENTS:
 Return an empty, realistic version of the same room
