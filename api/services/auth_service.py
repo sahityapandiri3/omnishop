@@ -18,7 +18,7 @@ from database.models import User
 logger = logging.getLogger(__name__)
 
 # Whitelist of allowed email addresses (set to None to allow all)
-ALLOWED_EMAILS: Optional[List[str]] = ["sahityapandiri3@gmail.com"]
+ALLOWED_EMAILS: Optional[List[str]] = None  # Disabled for customer testing
 
 
 def check_email_allowed(email: str) -> bool:
