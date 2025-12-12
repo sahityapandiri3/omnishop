@@ -15,6 +15,16 @@ from database.models import User
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Whitelist of allowed email addresses (set to None to allow all)
+ALLOWED_EMAILS = ["sahityapandiri3@gmail.com"]
+
+
+def check_email_allowed(email: str) -> bool:
+    """Check if email is in the whitelist. Returns True if whitelist is disabled or email is allowed."""
+    if ALLOWED_EMAILS is None:
+        return True
+    return email.lower() in [e.lower() for e in ALLOWED_EMAILS]
+
 
 @router.post("/register", response_model=TokenResponse)
 async def register(
@@ -25,6 +35,14 @@ async def register(
     Register a new user with email and password.
     Returns access token on success.
     """
+    # Check whitelist
+    if not check_email_allowed(user_data.email):
+        logger.warning(f"Registration blocked for non-whitelisted email: {user_data.email}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is currently restricted. Please contact the administrator.",
+        )
+
     # Check if email already exists
     existing_user = await auth_service.get_user_by_email(db, user_data.email)
     if existing_user:
@@ -60,6 +78,14 @@ async def login(
     Login with email and password.
     Returns access token on success.
     """
+    # Check whitelist
+    if not check_email_allowed(credentials.email):
+        logger.warning(f"Login blocked for non-whitelisted email: {credentials.email}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access is currently restricted. Please contact the administrator.",
+        )
+
     user = await auth_service.authenticate_user(db, credentials.email, credentials.password)
     if not user:
         raise HTTPException(
@@ -91,6 +117,13 @@ async def google_auth(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Google token",
+        )
+
+    # Check if email was blocked by whitelist
+    if result == "blocked":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access is currently restricted. Please contact the administrator.",
         )
 
     user, is_new = result

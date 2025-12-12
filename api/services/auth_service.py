@@ -3,7 +3,7 @@ Authentication service for user management, JWT tokens, and OAuth
 """
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import List, Optional
 
 import bcrypt
 from google.auth.transport import requests as google_requests
@@ -16,6 +16,16 @@ from core.config import settings
 from database.models import User
 
 logger = logging.getLogger(__name__)
+
+# Whitelist of allowed email addresses (set to None to allow all)
+ALLOWED_EMAILS: Optional[List[str]] = ["sahityapandiri3@gmail.com"]
+
+
+def check_email_allowed(email: str) -> bool:
+    """Check if email is in the whitelist. Returns True if whitelist is disabled or email is allowed."""
+    if ALLOWED_EMAILS is None:
+        return True
+    return email.lower() in [e.lower() for e in ALLOWED_EMAILS]
 
 
 class AuthService:
@@ -133,11 +143,17 @@ class AuthService:
         """
         Authenticate or create a user via Google OAuth.
         Returns (user, is_new_user) tuple or None if failed.
+        Returns "blocked" string if email is not whitelisted.
         """
         # Verify the Google token
         google_info = await self.verify_google_token(google_token)
         if not google_info:
             return None
+
+        # Check whitelist
+        if not check_email_allowed(google_info["email"]):
+            logger.warning(f"Google auth blocked for non-whitelisted email: {google_info['email']}")
+            return "blocked"  # type: ignore
 
         # Check if user exists by Google ID
         user = await self.get_user_by_google_id(db, google_info["google_id"])
