@@ -1404,6 +1404,26 @@ The room structure, walls, and camera angle MUST be identical to the input image
             # Build product list for prompt
             product_list = "\n".join([f"  {i+1}. {name}" for i, name in enumerate(product_names)])
 
+            # Check if we have multiple instances of the same product (e.g., "Dining Chair #1", "Dining Chair #2")
+            # These should be placed in different but coordinated positions
+            has_multiple_instances = any("#" in name for name in product_names)
+            multiple_instance_instruction = ""
+            if has_multiple_instances:
+                multiple_instance_instruction = """
+🪑🪑 MULTIPLE INSTANCES OF SAME PRODUCT 🪑🪑
+═══════════════════════════════════════════════════════════════
+Products with numbered names (e.g., "Dining Chair #1", "Dining Chair #2") are MULTIPLE COPIES of the SAME item.
+- Place each instance in a DIFFERENT but RELATED position
+- For chairs: arrange around a table or in a conversational grouping
+- For dining chairs: place around the dining table at regular intervals
+- For accent chairs: place in complementary positions (e.g., flanking a fireplace or sofa)
+- For side tables: place at opposite ends of a sofa or beside different seating
+- Maintain consistent spacing and alignment between instances
+- All instances should face logical directions (not backs to the room)
+═══════════════════════════════════════════════════════════════
+
+"""
+
             # Check if any product is a planter
             has_planter = any(
                 any(term in name.lower() for term in ["planter", "plant pot", "flower pot", "pot", "succulent"])
@@ -1428,7 +1448,7 @@ DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
 """
 
             # Build prompt for ADD MULTIPLE action
-            prompt = f"""{planter_instruction}ADD the following {len(products)} products to this room in appropriate locations WITHOUT removing any existing furniture:
+            prompt = f"""{multiple_instance_instruction}{planter_instruction}ADD the following {len(products)} products to this room in appropriate locations WITHOUT removing any existing furniture:
 
 PRODUCTS TO ADD:
 {product_list}
@@ -1864,6 +1884,28 @@ DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
 
 """
 
+                # Check if we have multiple instances of the same product (e.g., "Dining Chair #1", "Dining Chair #2")
+                product_names = [
+                    product.get("full_name") or product.get("name", "") for product in visualization_request.products_to_place
+                ]
+                has_multiple_instances = any("#" in name for name in product_names)
+                multiple_instance_instruction = ""
+                if has_multiple_instances:
+                    multiple_instance_instruction = """
+🪑🪑 MULTIPLE INSTANCES OF SAME PRODUCT 🪑🪑
+═══════════════════════════════════════════════════════════════
+Products with numbered names (e.g., "Dining Chair #1", "Dining Chair #2") are MULTIPLE COPIES of the SAME item.
+- Place each instance in a DIFFERENT but RELATED position
+- For chairs: arrange around a table or in a conversational grouping
+- For dining chairs: place around the dining table at regular intervals
+- For accent chairs: place in complementary positions (e.g., flanking a fireplace or sofa)
+- For side tables: place at opposite ends of a sofa or beside different seating
+- Maintain consistent spacing and alignment between instances
+- All instances should face logical directions (not backs to the room)
+═══════════════════════════════════════════════════════════════
+
+"""
+
                 # Create explicit product count instruction
                 product_count_instruction = ""
                 if product_count == 1:
@@ -1893,7 +1935,7 @@ DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
    - You are ONLY adding NEW products, NOT modifying existing ones
    - Example: If input has a blue velvet sofa, the output MUST show the same blue velvet sofa + your new products"""
 
-                visualization_prompt = f"""{planter_instruction}🔒🔒🔒 CRITICAL INSTRUCTION - READ CAREFULLY 🔒🔒🔒
+                visualization_prompt = f"""{multiple_instance_instruction}{planter_instruction}🔒🔒🔒 CRITICAL INSTRUCTION - READ CAREFULLY 🔒🔒🔒
 
 THIS IS A PRODUCT PLACEMENT TASK. YOUR GOAL: Take the EXACT room image provided and ADD {product_count} furniture product(s) to it.
 

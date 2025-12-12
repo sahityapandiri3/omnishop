@@ -1045,6 +1045,9 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
 
                     # If we're in READY_TO_RECOMMEND or DIRECT_SEARCH state, fetch products by category
                     if conversation_state in ["READY_TO_RECOMMEND", "DIRECT_SEARCH"] and selected_categories_response:
+                        # Extract size keywords for category-specific filtering
+                        size_keywords_for_search = []
+
                         if conversation_state == "DIRECT_SEARCH":
                             logger.info("[DIRECT SEARCH] Fetching products for direct search query...")
 
@@ -1057,8 +1060,11 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                             # Also add size keywords to style_keywords for matching
                             if direct_search_result["extracted_sizes"]:
                                 style_attributes["style_keywords"].extend(direct_search_result["extracted_sizes"])
+                                # IMPORTANT: Pass size keywords separately for category-first filtering
+                                size_keywords_for_search = direct_search_result["extracted_sizes"]
 
                             logger.info(f"[DIRECT SEARCH] Style attributes from user query: {style_attributes}")
+                            logger.info(f"[DIRECT SEARCH] Size keywords for category filtering: {size_keywords_for_search}")
                         else:
                             logger.info("[GUIDED FLOW] Fetching category-based recommendations...")
 
@@ -1073,6 +1079,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                             selected_stores=request.selected_stores,
                             limit_per_category=50,  # Increased from 20 to provide more variety
                             style_attributes=style_attributes,
+                            size_keywords=size_keywords_for_search,
                         )
 
                         # Update product counts in category recommendations
@@ -1681,6 +1688,40 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
 
         logger.info(f"Generating visualization with instruction: {user_style_description}")
 
+        # Expand products based on quantity for multiple placements
+        # If a product has quantity > 1, create multiple entries for the AI to place
+        def expand_products_by_quantity(product_list):
+            """Expand products list based on quantity field. If qty=3, create 3 entries."""
+            expanded = []
+            for product in product_list:
+                qty = product.get("quantity", 1)
+                if qty <= 1:
+                    expanded.append(product)
+                else:
+                    # Create multiple entries with numbered names for distinct placement
+                    for i in range(qty):
+                        expanded_product = product.copy()
+                        if qty > 1:
+                            # Add instance number to help AI place them distinctly
+                            original_name = product.get("full_name") or product.get("name", "item")
+                            expanded_product["name"] = f"{original_name} #{i+1}"
+                            expanded_product["full_name"] = f"{original_name} #{i+1}"
+                            expanded_product["instance_number"] = i + 1
+                            expanded_product["total_instances"] = qty
+                        expanded.append(expanded_product)
+            return expanded
+
+        # Expand products for visualization (handles quantity > 1)
+        expanded_products = expand_products_by_quantity(products)
+        expanded_new_products = (
+            expand_products_by_quantity(new_products_to_visualize)
+            if new_products_to_visualize != products
+            else expanded_products
+        )
+
+        if len(expanded_products) != len(products):
+            logger.info(f"Expanded {len(products)} products to {len(expanded_products)} items based on quantities")
+
         # Handle incremental visualization (add ONLY NEW products to existing visualization)
         if is_incremental:
             logger.info(
@@ -1690,12 +1731,14 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             # Use BATCH add visualization for all new products in a SINGLE API call
             # This is much faster than calling generate_add_visualization one product at a time
             try:
-                product_names = [p.get("full_name") or p.get("name") for p in new_products_to_visualize]
+                # Use expanded products (handles quantity > 1)
+                products_for_viz = expanded_new_products
+                product_names = [p.get("full_name") or p.get("name") for p in products_for_viz]
                 logger.info(f"  Batch adding products: {', '.join(product_names)}")
 
                 current_image = await google_ai_service.generate_add_multiple_visualization(
                     room_image=base_image,  # Start with previous visualization (already has old products)
-                    products=new_products_to_visualize,
+                    products=products_for_viz,  # Use expanded products for quantity support
                 )
             except ValueError as e:
                 logger.error(f"Batch visualization error: {e}")
@@ -1720,7 +1763,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             # and remove any existing furniture from the base image
             viz_request = VisualizationRequest(
                 base_image=base_image,
-                products_to_place=products,
+                products_to_place=expanded_products,  # Use expanded products for quantity support
                 placement_positions=custom_positions if custom_positions else [],
                 lighting_conditions=lighting_conditions,
                 render_quality="high",
@@ -2111,14 +2154,27 @@ SIZE_KEYWORDS = [
     "single",
     "double",
     "twin",
-    "3 seater",
-    "three seater",
+    # Seater variations - include both with and without hyphen
+    "single seater",
+    "single-seater",
+    "1 seater",
+    "one seater",
     "2 seater",
     "two seater",
+    "two-seater",
+    "3 seater",
+    "three seater",
+    "three-seater",
     "4 seater",
     "four seater",
+    "four-seater",
+    "5 seater",
+    "five seater",
     "6 seater",
     "six seater",
+    "l shaped",
+    "l-shaped",
+    "sectional",
 ]
 
 # Style keywords to detect in user messages
@@ -3437,6 +3493,7 @@ async def _get_category_based_recommendations(
     selected_stores: Optional[List[str]] = None,
     limit_per_category: int = 50,
     style_attributes: Optional[Dict[str, Any]] = None,
+    size_keywords: Optional[List[str]] = None,
 ) -> Dict[str, List[dict]]:
     """
     Get product recommendations grouped by AI-selected categories.
@@ -3475,6 +3532,39 @@ async def _get_category_based_recommendations(
     logger.info(
         f"[CATEGORY RECS] Style attributes - keywords: {style_keywords}, colors: {preferred_colors}, materials: {preferred_materials}"
     )
+    logger.info(f"[CATEGORY RECS] Size keywords: {size_keywords}")
+
+    # Normalize size keywords for flexible matching
+    # Map various formats to a standard form for database search
+    size_keyword_normalizations = {
+        "single-seater": "single seater",
+        "single": "single seater",
+        "one seater": "single seater",
+        "1 seater": "single seater",
+        "two-seater": "two seater",
+        "2 seater": "two seater",
+        "three-seater": "three seater",
+        "3 seater": "three seater",
+        "four-seater": "four seater",
+        "4 seater": "four seater",
+        "five-seater": "five seater",
+        "5 seater": "five seater",
+        "six-seater": "six seater",
+        "6 seater": "six seater",
+        "l-shaped": "l shaped",
+        "sectional": "sectional",
+    }
+
+    normalized_sizes = []
+    if size_keywords:
+        for size in size_keywords:
+            size_lower = size.lower()
+            if size_lower in size_keyword_normalizations:
+                normalized_sizes.append(size_keyword_normalizations[size_lower])
+            else:
+                normalized_sizes.append(size_lower)
+
+    logger.info(f"[CATEGORY RECS] Normalized sizes: {normalized_sizes}")
 
     products_by_category: Dict[str, List[dict]] = {}
 
@@ -3488,27 +3578,85 @@ async def _get_category_based_recommendations(
 
             logger.info(f"[CATEGORY RECS] Fetching {category_id} with keywords: {keywords}, exclusions: {exclusions}")
 
-            # Build keyword filter - match any keyword in product name OR category name
-            keyword_conditions = []
-            for keyword in keywords:
-                # Match in product name
-                keyword_conditions.append(Product.name.ilike(f"%{keyword}%"))
-                # Also match in category name (to find products in "Study Tables" category)
-                keyword_conditions.append(Category.name.ilike(f"%{keyword}%"))
+            # =====================================================================
+            # CATEGORY-FIRST FILTERING with SIZE-SPECIFIC PRIORITIZATION
+            # First find matching database categories, prioritizing size-specific
+            # categories when size keywords are present (e.g., "Single Seater Sofa"
+            # when user searches for "single-seater sofas")
+            # =====================================================================
+
+            matching_category_ids = []
+
+            # Step 1A: If size keywords are present, first try to find specific category matches
+            # E.g., "single seater" + "sofa" -> find "Single Seater Sofa" category
+            if normalized_sizes:
+                specific_category_conditions = []
+                for size in normalized_sizes:
+                    for keyword in keywords:
+                        # Look for categories containing both size AND category keyword
+                        specific_category_conditions.append(
+                            Category.name.ilike(f"%{size}%") & Category.name.ilike(f"%{keyword}%")
+                        )
+
+                if specific_category_conditions:
+                    specific_query = select(Category.id, Category.name).where(or_(*specific_category_conditions))
+                    specific_result = await db.execute(specific_query)
+                    specific_matches = [(row[0], row[1]) for row in specific_result.fetchall()]
+
+                    if specific_matches:
+                        matching_category_ids = [row[0] for row in specific_matches]
+                        matched_names = [row[1] for row in specific_matches]
+                        logger.info(
+                            f"[CATEGORY RECS] Found {len(matching_category_ids)} SIZE-SPECIFIC categories: {matched_names}"
+                        )
+
+            # Step 1B: If no specific matches found, fall back to general category matching
+            if not matching_category_ids:
+                category_conditions = []
+                for keyword in keywords:
+                    category_conditions.append(Category.name.ilike(f"%{keyword}%"))
+
+                # Query for matching category IDs
+                category_query = select(Category.id, Category.name).where(
+                    or_(*category_conditions) if category_conditions else True
+                )
+                category_result = await db.execute(category_query)
+                general_matches = [(row[0], row[1]) for row in category_result.fetchall()]
+                matching_category_ids = [row[0] for row in general_matches]
+                matched_names = [row[1] for row in general_matches]
+                logger.info(f"[CATEGORY RECS] Found {len(matching_category_ids)} GENERAL categories: {matched_names}")
+
+            logger.info(f"[CATEGORY RECS] Final matching category IDs for {category_id}: {matching_category_ids}")
+
+            # Step 2: Build product query with category-first filtering
+            if matching_category_ids:
+                # Primary filter: products in matching categories
+                query = (
+                    select(Product)
+                    .join(Category, Product.category_id == Category.id, isouter=True)
+                    .options(selectinload(Product.images), selectinload(Product.attributes))
+                    .where(Product.is_available.is_(True), Product.category_id.in_(matching_category_ids))
+                )
+                logger.info(f"[CATEGORY RECS] Using category-first filtering with {len(matching_category_ids)} category IDs")
+            else:
+                # Fallback: no matching categories found, use keyword matching on product name
+                # This ensures we still return results even if category names don't match
+                keyword_conditions = []
+                for keyword in keywords:
+                    keyword_conditions.append(Product.name.ilike(f"%{keyword}%"))
+
+                query = (
+                    select(Product)
+                    .join(Category, Product.category_id == Category.id, isouter=True)
+                    .options(selectinload(Product.images), selectinload(Product.attributes))
+                    .where(Product.is_available.is_(True), or_(*keyword_conditions) if keyword_conditions else True)
+                )
+                logger.info(f"[CATEGORY RECS] Fallback to keyword matching (no matching categories found)")
 
             # Build exclusion filter - exclude products with these terms
             exclusion_conditions = []
             for exclusion in exclusions:
                 exclusion_conditions.append(~Product.name.ilike(f"%{exclusion}%"))
-
-            # Base query with eager loading (including attributes for style matching)
-            # Join with Category to also filter by category name
-            query = (
-                select(Product)
-                .join(Category, Product.category_id == Category.id, isouter=True)
-                .options(selectinload(Product.images), selectinload(Product.attributes))
-                .where(Product.is_available.is_(True), or_(*keyword_conditions) if keyword_conditions else True)
-            )
 
             # Apply exclusion filters
             for excl_condition in exclusion_conditions:

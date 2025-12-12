@@ -44,6 +44,7 @@ interface Product {
   productType?: string;
   source?: string;
   description?: string;
+  quantity?: number;  // Quantity for multiple of same product (default: 1)
 }
 
 // Visualization history entry for local undo/redo tracking
@@ -58,7 +59,8 @@ interface CanvasPanelProps {
   products: Product[];
   roomImage: string | null;
   cleanRoomImage?: string | null;  // Clean room without products - used for reset visualization
-  onRemoveProduct: (productId: string) => void;
+  onRemoveProduct: (productId: string, removeAll?: boolean) => void;
+  onIncrementQuantity: (productId: string) => void;  // Increment quantity for +/- controls
   onClearCanvas: () => void;
   onRoomImageUpload: (imageData: string) => void;
   onSetProducts: (products: Product[]) => void;
@@ -77,6 +79,7 @@ export default function CanvasPanel({
   roomImage,
   cleanRoomImage,
   onRemoveProduct,
+  onIncrementQuantity,
   onClearCanvas,
   onRoomImageUpload,
   onSetProducts,
@@ -94,6 +97,7 @@ export default function CanvasPanel({
   // Smart re-visualization tracking
   const [visualizedProductIds, setVisualizedProductIds] = useState<Set<string>>(new Set());
   const [visualizedProducts, setVisualizedProducts] = useState<Product[]>([]); // Track all visualized products
+  const [visualizedQuantities, setVisualizedQuantities] = useState<Map<string, number>>(new Map()); // Track quantities at time of visualization
   const [needsRevisualization, setNeedsRevisualization] = useState(false);
 
   // Undo/Redo state
@@ -121,8 +125,14 @@ export default function CanvasPanel({
   const canvasProductsRef = useRef<HTMLDivElement>(null);
   const visualizationRef = useRef<HTMLDivElement>(null);
 
-  // Calculate total price
-  const totalPrice = products.reduce((sum, product) => sum + (product.price || 0), 0);
+  // Calculate total price (accounting for quantity)
+  const totalPrice = products.reduce((sum, product) => {
+    const qty = product.quantity || 1;
+    return sum + (product.price || 0) * qty;
+  }, 0);
+
+  // Calculate total items (accounting for quantity)
+  const totalItems = products.reduce((sum, product) => sum + (product.quantity || 1), 0);
 
   // Check if canvas has changed since last visualization
   useEffect(() => {
@@ -138,10 +148,20 @@ export default function CanvasPanel({
       products.length !== visualizedProductIds.size ||
       products.some(p => !visualizedProductIds.has(String(p.id)));
 
-    if (productsChanged) {
+    // Also check if any quantities have changed
+    const quantitiesChanged = products.some(p => {
+      const currentQty = p.quantity || 1;
+      const visualizedQty = visualizedQuantities.get(String(p.id)) || 0;
+      return currentQty !== visualizedQty;
+    });
+
+    if (productsChanged || quantitiesChanged) {
       setNeedsRevisualization(true);
+      if (quantitiesChanged && !productsChanged) {
+        console.log('[CanvasPanel] Quantity changed, needs re-visualization');
+      }
     }
-  }, [products, visualizedProductIds, visualizationResult]);
+  }, [products, visualizedProductIds, visualizedQuantities, visualizationResult]);
 
   // Auto-scroll to canvas products when a product is added
   useEffect(() => {
@@ -292,6 +312,17 @@ export default function CanvasPanel({
     if (removedProducts.length > 0) {
       console.log('[CanvasPanel] Detected removal, will reset visualization');
       return { type: 'reset', reason: 'products_removed' };
+    }
+
+    // Check for quantity changes (requires full re-visualization since positions may change)
+    const quantityChanged = products.some(p => {
+      const currentQty = p.quantity || 1;
+      const visualizedQty = visualizedQuantities.get(String(p.id)) || 0;
+      return visualizedProductIds.has(String(p.id)) && currentQty !== visualizedQty;
+    });
+    if (quantityChanged) {
+      console.log('[CanvasPanel] Detected quantity change, will reset visualization to re-place products');
+      return { type: 'reset', reason: 'quantity_changed' };
     }
 
     // Check for additions (products in canvas but not yet visualized)
@@ -468,7 +499,8 @@ export default function CanvasPanel({
         description: p.description || '',  // Include description for AI context (materials, colors, style)
         product_type: p.productType || 'furniture',
         style: 0.8,
-        category: p.productType || 'furniture'
+        category: p.productType || 'furniture',
+        quantity: p.quantity || 1  // Include quantity for placing multiple of same product
       });
 
       // Prepare products for V1 API with complete context
@@ -527,10 +559,17 @@ export default function CanvasPanel({
       const newImage = data.visualization.rendered_image;
       const newProductIds = new Set(products.map(p => String(p.id)));
 
+      // Track quantities at time of visualization
+      const newQuantities = new Map<string, number>();
+      products.forEach(p => {
+        newQuantities.set(String(p.id), p.quantity || 1);
+      });
+
       setVisualizationResult(newImage);
       // Ensure IDs are strings for consistency with undo/redo
       setVisualizedProductIds(newProductIds); // Track all current products as visualized
       setVisualizedProducts([...products]); // Store actual product objects for edit mode
+      setVisualizedQuantities(newQuantities); // Track quantities at visualization time
       setNeedsRevisualization(false); // Reset change flag
 
       // Push to local visualization history for reliable undo (fixes server restart issue)
@@ -987,7 +1026,10 @@ export default function CanvasPanel({
         </div>
         <div className="flex items-center justify-between text-sm">
           <span className="text-neutral-600 dark:text-neutral-400">
-            {products.length} {products.length === 1 ? 'item' : 'items'}
+            {totalItems} {totalItems === 1 ? 'item' : 'items'}
+            {products.length !== totalItems && (
+              <span className="text-neutral-400 dark:text-neutral-500"> ({products.length} unique)</span>
+            )}
           </span>
           {products.length > 0 && (
             <span className="font-semibold text-neutral-900 dark:text-white">
@@ -1154,6 +1196,7 @@ export default function CanvasPanel({
             <div className="grid grid-cols-3 gap-2">
               {products.map((product) => {
                 const imageUrl = getProductImageUrl(product);
+                const qty = product.quantity || 1;
                 return (
                   <div
                     key={product.id}
@@ -1175,9 +1218,17 @@ export default function CanvasPanel({
                           </svg>
                         </div>
                       )}
+                      {/* Quantity badge */}
+                      {qty > 1 && (
+                        <div className="absolute top-0.5 left-0.5 w-5 h-5 bg-primary-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
+                          {qty}
+                        </div>
+                      )}
+                      {/* Remove all button */}
                       <button
-                        onClick={() => onRemoveProduct(product.id)}
+                        onClick={() => onRemoveProduct(product.id, true)}
                         className="absolute top-0.5 right-0.5 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Remove all"
                       >
                         <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                           <path
@@ -1194,9 +1245,30 @@ export default function CanvasPanel({
                       </p>
                       {product.price && (
                         <p className="text-[10px] text-primary-600 dark:text-primary-400 font-semibold">
-                          ₹{product.price.toLocaleString()}
+                          ₹{(product.price * qty).toLocaleString()}
+                          {qty > 1 && <span className="text-neutral-400 font-normal"> (₹{product.price.toLocaleString()} x {qty})</span>}
                         </p>
                       )}
+                      {/* Quantity controls */}
+                      <div className="flex items-center justify-center gap-1 mt-1">
+                        <button
+                          onClick={() => onRemoveProduct(product.id)}
+                          className="w-5 h-5 bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-700 dark:text-neutral-300 rounded flex items-center justify-center text-xs font-bold"
+                          title={qty > 1 ? "Decrease quantity" : "Remove"}
+                        >
+                          −
+                        </button>
+                        <span className="w-5 text-center text-[10px] font-semibold text-neutral-900 dark:text-white">
+                          {qty}
+                        </span>
+                        <button
+                          onClick={() => onIncrementQuantity(product.id)}
+                          className="w-5 h-5 bg-primary-100 dark:bg-primary-900/30 hover:bg-primary-200 dark:hover:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded flex items-center justify-center text-xs font-bold"
+                          title="Increase quantity"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -1206,6 +1278,7 @@ export default function CanvasPanel({
             <div className="space-y-1.5">
               {products.map((product) => {
                 const imageUrl = getProductImageUrl(product);
+                const qty = product.quantity || 1;
                 return (
                   <div
                     key={product.id}
@@ -1227,6 +1300,12 @@ export default function CanvasPanel({
                           </svg>
                         </div>
                       )}
+                      {/* Quantity badge */}
+                      {qty > 1 && (
+                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary-600 text-white rounded-full flex items-center justify-center text-[9px] font-bold">
+                          {qty}
+                        </div>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-[10px] font-medium text-neutral-900 dark:text-white truncate">
@@ -1237,13 +1316,36 @@ export default function CanvasPanel({
                       </p>
                       {product.price && (
                         <p className="text-xs font-semibold text-primary-600 dark:text-primary-400">
-                          ₹{product.price.toLocaleString()}
+                          ₹{(product.price * qty).toLocaleString()}
+                          {qty > 1 && <span className="text-neutral-400 font-normal text-[10px]"> (x{qty})</span>}
                         </p>
                       )}
                     </div>
+                    {/* Quantity controls */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => onRemoveProduct(product.id)}
+                        className="w-6 h-6 bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-700 dark:text-neutral-300 rounded flex items-center justify-center text-sm font-bold"
+                        title={qty > 1 ? "Decrease quantity" : "Remove"}
+                      >
+                        −
+                      </button>
+                      <span className="w-5 text-center text-xs font-semibold text-neutral-900 dark:text-white">
+                        {qty}
+                      </span>
+                      <button
+                        onClick={() => onIncrementQuantity(product.id)}
+                        className="w-6 h-6 bg-primary-100 dark:bg-primary-900/30 hover:bg-primary-200 dark:hover:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded flex items-center justify-center text-sm font-bold"
+                        title="Increase quantity"
+                      >
+                        +
+                      </button>
+                    </div>
+                    {/* Remove all button */}
                     <button
-                      onClick={() => onRemoveProduct(product.id)}
+                      onClick={() => onRemoveProduct(product.id, true)}
                       className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-0.5"
+                      title="Remove all"
                     >
                       <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                         <path

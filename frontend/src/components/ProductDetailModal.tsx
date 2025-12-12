@@ -11,6 +11,7 @@ interface ProductDetailModalProps {
   onClose: () => void;
   onAddToCanvas?: () => void;
   inCanvas?: boolean;
+  canvasQuantity?: number;  // Quantity in canvas (for showing "Add Another" button)
 }
 
 export function ProductDetailModal({
@@ -19,6 +20,7 @@ export function ProductDetailModal({
   onClose,
   onAddToCanvas,
   inCanvas = false,
+  canvasQuantity = 0,
 }: ProductDetailModalProps) {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
@@ -218,21 +220,24 @@ export function ProductDetailModal({
                 <p className="text-xs text-gray-400 mb-6">SKU: {product.sku}</p>
               )}
 
-              {/* Action Button */}
+              {/* Action Button - always allow adding (supports multiple quantities) */}
               <div className="mt-auto">
-                {onAddToCanvas && !inCanvas && (
+                {onAddToCanvas && (
                   <button
                     onClick={onAddToCanvas}
                     disabled={!product.is_available}
-                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-semibold py-3 px-6 rounded-xl transition-colors disabled:cursor-not-allowed"
+                    className={`w-full font-semibold py-3 px-6 rounded-xl transition-colors disabled:cursor-not-allowed ${
+                      inCanvas
+                        ? 'bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white'
+                        : 'bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white'
+                    }`}
                   >
-                    {product.is_available ? 'Add to Canvas' : 'Out of Stock'}
+                    {!product.is_available
+                      ? 'Out of Stock'
+                      : inCanvas
+                        ? `Add Another (${canvasQuantity} in cart)`
+                        : 'Add to Canvas'}
                   </button>
-                )}
-                {inCanvas && (
-                  <div className="bg-green-50 border border-green-200 text-green-700 text-center py-3 px-6 rounded-xl font-medium">
-                    ✓ Added to Canvas
-                  </div>
                 )}
               </div>
             </div>

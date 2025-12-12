@@ -824,8 +824,26 @@ function DesignPageContent() {
 
     console.log('[DesignPage] Adding product to canvas:', product.name);
 
-    // Simply add the product to canvas - users can add unlimited products of any type
-    setCanvasProducts([...canvasProducts, productWithType]);
+    // Check if product already exists in canvas (by ID)
+    const existingIndex = canvasProducts.findIndex(
+      (p) => p.id.toString() === product.id.toString()
+    );
+
+    if (existingIndex >= 0) {
+      // Product exists - increment quantity
+      const updatedProducts = [...canvasProducts];
+      const currentQuantity = updatedProducts[existingIndex].quantity || 1;
+      updatedProducts[existingIndex] = {
+        ...updatedProducts[existingIndex],
+        quantity: currentQuantity + 1,
+      };
+      setCanvasProducts(updatedProducts);
+      console.log('[DesignPage] Incremented quantity for:', product.name, 'to', currentQuantity + 1);
+    } else {
+      // New product - add with quantity: 1
+      setCanvasProducts([...canvasProducts, { ...productWithType, quantity: 1 }]);
+      console.log('[DesignPage] Added new product to canvas with quantity 1');
+    }
 
     // Auto-switch to canvas tab on mobile
     if (window.innerWidth < 768) {
@@ -833,9 +851,48 @@ function DesignPageContent() {
     }
   };
 
-  // Handle remove from canvas
-  const handleRemoveFromCanvas = (productId: string) => {
-    setCanvasProducts(canvasProducts.filter((p) => p.id !== productId));
+  // Handle remove from canvas (decrements quantity, removes when qty = 0)
+  const handleRemoveFromCanvas = (productId: string, removeAll: boolean = false) => {
+    const existingIndex = canvasProducts.findIndex(
+      (p) => p.id.toString() === productId.toString()
+    );
+
+    if (existingIndex < 0) return;
+
+    const product = canvasProducts[existingIndex];
+    const currentQuantity = product.quantity || 1;
+
+    if (removeAll || currentQuantity <= 1) {
+      // Remove completely
+      setCanvasProducts(canvasProducts.filter((p) => p.id.toString() !== productId.toString()));
+      console.log('[DesignPage] Removed product from canvas:', product.name);
+    } else {
+      // Decrement quantity
+      const updatedProducts = [...canvasProducts];
+      updatedProducts[existingIndex] = {
+        ...updatedProducts[existingIndex],
+        quantity: currentQuantity - 1,
+      };
+      setCanvasProducts(updatedProducts);
+      console.log('[DesignPage] Decremented quantity for:', product.name, 'to', currentQuantity - 1);
+    }
+  };
+
+  // Handle increment quantity (used by CanvasPanel +/- controls)
+  const handleIncrementQuantity = (productId: string) => {
+    const existingIndex = canvasProducts.findIndex(
+      (p) => p.id.toString() === productId.toString()
+    );
+
+    if (existingIndex < 0) return;
+
+    const updatedProducts = [...canvasProducts];
+    const currentQuantity = updatedProducts[existingIndex].quantity || 1;
+    updatedProducts[existingIndex] = {
+      ...updatedProducts[existingIndex],
+      quantity: currentQuantity + 1,
+    };
+    setCanvasProducts(updatedProducts);
   };
 
   // Handle clear canvas
@@ -1252,6 +1309,7 @@ function DesignPageContent() {
               roomImage={roomImage}
               cleanRoomImage={cleanRoomImage}
               onRemoveProduct={handleRemoveFromCanvas}
+              onIncrementQuantity={handleIncrementQuantity}
               onClearCanvas={handleClearCanvas}
               onRoomImageUpload={handleRoomImageUpload}
               onSetProducts={setCanvasProducts}
@@ -1296,6 +1354,7 @@ function DesignPageContent() {
               roomImage={roomImage}
               cleanRoomImage={cleanRoomImage}
               onRemoveProduct={handleRemoveFromCanvas}
+              onIncrementQuantity={handleIncrementQuantity}
               onClearCanvas={handleClearCanvas}
               onRoomImageUpload={handleRoomImageUpload}
               onSetProducts={setCanvasProducts}

@@ -73,6 +73,12 @@ export default function CategoryCarousel({
     return canvasProducts.some((p) => p.id?.toString() === productId?.toString());
   };
 
+  // Get quantity of product in canvas
+  const getCanvasQuantity = (productId: string | number) => {
+    const product = canvasProducts.find((p) => p.id?.toString() === productId?.toString());
+    return product?.quantity || 0;
+  };
+
   // Get image URL helper
   const getImageUrl = (product: Product) => {
     if (product.images && Array.isArray(product.images) && product.images.length > 0) {
@@ -208,6 +214,7 @@ export default function CategoryCarousel({
                       <svg className="w-2 h-2" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                       </svg>
+                      {getCanvasQuantity(product.id) > 1 && getCanvasQuantity(product.id)}
                     </span>
                   )}
 
@@ -229,20 +236,19 @@ export default function CategoryCarousel({
                     </span>
                   </div>
 
-                  {/* Add to Canvas Button */}
+                  {/* Add to Canvas Button - always enabled (allows adding multiple) */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       onAddToCanvas(product);
                     }}
-                    disabled={productInCanvas}
                     className={`w-full py-1 text-[9px] font-medium rounded transition-colors ${
                       productInCanvas
-                        ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                        ? 'bg-green-600 hover:bg-green-700 text-white'
                         : 'bg-primary-600 hover:bg-primary-700 text-white'
                     }`}
                   >
-                    {productInCanvas ? 'Added' : 'Add'}
+                    {productInCanvas ? `Add +1 (${getCanvasQuantity(product.id)})` : 'Add'}
                   </button>
                 </div>
               </div>
@@ -269,6 +275,7 @@ export default function CategoryCarousel({
           onClose={() => setSelectedProduct(null)}
           onAddToCanvas={handleAddToCanvasFromModal}
           inCanvas={isInCanvas(selectedProduct.id)}
+          canvasQuantity={getCanvasQuantity(selectedProduct.id)}
         />
       )}
     </div>

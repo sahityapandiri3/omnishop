@@ -108,9 +108,15 @@ export default function ProductDiscoveryPanel({
     } as Product;
   };
 
-  // Check if product is in canvas
+  // Check if product is in canvas and get quantity
   const isInCanvas = (productId: string | number) => {
     return canvasProducts.some((p) => p.id.toString() === productId.toString());
+  };
+
+  // Get quantity of product in canvas
+  const getCanvasQuantity = (productId: string | number) => {
+    const product = canvasProducts.find((p) => p.id.toString() === productId.toString());
+    return product?.quantity || 0;
   };
 
   // Handle product click (open modal)
@@ -494,7 +500,7 @@ export default function ProductDiscoveryPanel({
                       )}
                     </div>
 
-                    {/* In Canvas Badge */}
+                    {/* In Canvas Badge with Quantity */}
                     {productInCanvas && (
                       <div className="absolute top-1.5 right-1.5">
                         <span className="px-1.5 py-0.5 bg-green-500 text-white text-[10px] font-bold rounded-full flex items-center gap-0.5 shadow-lg">
@@ -509,7 +515,7 @@ export default function ProductDiscoveryPanel({
                               clipRule="evenodd"
                             />
                           </svg>
-                          In Canvas
+                          {getCanvasQuantity(product.id) > 1 ? `${getCanvasQuantity(product.id)} in Canvas` : 'In Canvas'}
                         </span>
                       </div>
                     )}
@@ -550,23 +556,25 @@ export default function ProductDiscoveryPanel({
                       )}
                     </div>
 
-                    {/* Add to Canvas Button */}
-                    {!productInCanvas ? (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onAddToCanvas(product);
-                        }}
-                        disabled={product.is_available === false}
-                        className="w-full py-1.5 px-2 bg-primary-600 hover:bg-primary-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors"
-                      >
-                        {product.is_available === false ? 'Out of Stock' : 'Add to Canvas'}
-                      </button>
-                    ) : (
-                      <div className="w-full py-1.5 px-2 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 rounded-lg text-xs font-medium text-center">
-                        Added to Canvas ✓
-                      </div>
-                    )}
+                    {/* Add to Canvas Button - always enabled (allows adding multiple) */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAddToCanvas(product);
+                      }}
+                      disabled={product.is_available === false}
+                      className={`w-full py-1.5 px-2 rounded-lg text-xs font-medium transition-colors ${
+                        productInCanvas
+                          ? 'bg-green-600 hover:bg-green-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 text-white'
+                          : 'bg-primary-600 hover:bg-primary-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 text-white'
+                      } disabled:cursor-not-allowed`}
+                    >
+                      {product.is_available === false
+                        ? 'Out of Stock'
+                        : productInCanvas
+                          ? `Add Another (${getCanvasQuantity(product.id)} in cart)`
+                          : 'Add to Canvas'}
+                    </button>
 
                     {/* Click to view details hint */}
                     <p className="text-[10px] text-neutral-400 text-center mt-1">
@@ -588,6 +596,7 @@ export default function ProductDiscoveryPanel({
           onClose={() => setSelectedProduct(null)}
           onAddToCanvas={handleAddToCanvasFromModal}
           inCanvas={isInCanvas(selectedProduct.id)}
+          canvasQuantity={getCanvasQuantity(selectedProduct.id)}
         />
       )}
     </>
