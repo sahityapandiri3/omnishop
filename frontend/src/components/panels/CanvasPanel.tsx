@@ -268,9 +268,18 @@ export default function CanvasPanel({
       // Clear visualization and reset state when new room image is uploaded
       setVisualizationResult(null);
       setVisualizedProductIds(new Set());
+      setVisualizedProducts([]);
       setNeedsRevisualization(false);
+      // Clear visualization history when uploading new room
+      setVisualizationHistory([]);
+      setRedoStack([]);
+      setCanUndo(false);
+      setCanRedo(false);
     };
     reader.readAsDataURL(file);
+
+    // Reset the input value so selecting the same file triggers onChange again
+    e.target.value = '';
   };
 
   // Detect visualization change type
@@ -958,15 +967,6 @@ export default function CanvasPanel({
               </div>
             </div>
           </div>
-
-          {/* Hidden file input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
         </div>
       )}
 
