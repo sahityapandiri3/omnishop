@@ -18,9 +18,12 @@ const formatImageSrc = (src: string | null | undefined): string => {
 };
 
 // Helper to find a look by style theme name (case-insensitive partial match)
+// Also checks title field as fallback
 const findLookByTheme = (looks: CuratedLook[], themeName: string): CuratedLook | undefined => {
+  const themeNameLower = themeName.toLowerCase();
   return looks.find(look =>
-    look.style_theme?.toLowerCase().includes(themeName.toLowerCase())
+    look.style_theme?.toLowerCase().includes(themeNameLower) ||
+    (look as any).title?.toLowerCase().includes(themeNameLower)
   );
 };
 
@@ -32,8 +35,9 @@ export default function HomePage() {
     const fetchLooks = async () => {
       try {
         // Request medium-quality images for landing page (1200px, 80% quality - faster loading)
+        // Fetch ALL looks so findLookByTheme can always find the hardcoded home page looks
         const response = await getCuratedLooks(undefined, 'medium');
-        setLooks(response.looks.slice(0, 7)); // Get first 7 looks
+        setLooks(response.looks); // Get all looks - specific ones are selected by name below
       } catch (error) {
         console.error('Failed to fetch curated looks:', error);
       } finally {
