@@ -35,5 +35,6 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
 # Start the API server
-# Note: When Railway root is /api, files are already in /app (not /app/api)
-CMD ["bash", "start.sh"]
+# Handle both cases: Railway root could be / or /api
+# If main.py exists in /app, run from there; otherwise try /app/api
+CMD ["bash", "-c", "if [ -f /app/main.py ]; then cd /app && bash start.sh; else cd /app/api && bash start.sh; fi"]
