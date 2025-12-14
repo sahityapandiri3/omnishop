@@ -35,6 +35,6 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
 # Start the API server
-# Handle both cases: Railway root could be / or /api
-# If main.py exists in /app, run from there; otherwise try /app/api
-CMD ["bash", "-c", "if [ -f /app/main.py ]; then cd /app && bash start.sh; else cd /app/api && bash start.sh; fi"]
+# Railway root is /api, so files (main.py, alembic.ini, start.sh) are in /app
+# start.sh handles: migrations, uvicorn startup, and cache warming
+CMD ["bash", "start.sh"]

@@ -2,5 +2,4 @@
 builder = "DOCKERFILE"
 dockerfilePath = "./Dockerfile"
 
-[deploy]
-startCommand = "cd api && bash start.sh"
+# Start command is in Dockerfile CMD - no override needed
