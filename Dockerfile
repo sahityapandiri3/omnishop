@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y \
     wget \
     git \
     postgresql-client \
+    python3 \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
