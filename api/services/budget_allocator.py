@@ -9,7 +9,22 @@ allocations equals exactly the total user budget.
 import logging
 from typing import Any, Dict, List
 
+from schemas.chat import BudgetAllocation
+
 logger = logging.getLogger(__name__)
+
+
+def _get_budget_max_value(cat) -> float:
+    """Get max value from budget_allocation, handling both dict and Pydantic model."""
+    budget_alloc = getattr(cat, "budget_allocation", None)
+    if budget_alloc is None and isinstance(cat, dict):
+        budget_alloc = cat.get("budget_allocation")
+    if budget_alloc is None:
+        return 0
+    if isinstance(budget_alloc, dict):
+        return budget_alloc.get("max", 0)
+    return getattr(budget_alloc, "max", 0)
+
 
 # Default allocation percentages by category type
 # These are used when AI doesn't provide allocations or for validation
@@ -159,25 +174,16 @@ def validate_and_adjust_budget_allocations(
             new_min = max(500, min(new_min, new_max * 0.5))
 
             # Update the category's budget_allocation
-            new_budget_alloc = {"min": round(new_min), "max": round(new_max)}
-
+            # Use BudgetAllocation object for Pydantic models, dict for plain dicts
             if hasattr(cat, "budget_allocation"):
-                cat.budget_allocation = new_budget_alloc
+                cat.budget_allocation = BudgetAllocation(min=round(new_min), max=round(new_max))
             elif isinstance(cat, dict):
-                cat["budget_allocation"] = new_budget_alloc
+                cat["budget_allocation"] = {"min": round(new_min), "max": round(new_max)}
 
             logger.info(f"[BUDGET] {alloc['cat_id']}: ₹{alloc['current_max']:,.0f} → ₹{new_max:,.0f}")
 
     # Verify the final sum
-    final_sum = sum(
-        (
-            getattr(a["category"], "budget_allocation", {}).get("max", 0)
-            if hasattr(a["category"], "budget_allocation")
-            else a["category"].get("budget_allocation", {}).get("max", 0)
-        )
-        for a in allocations
-        if a["current_max"] is not None
-    )
+    final_sum = sum(_get_budget_max_value(a["category"]) for a in allocations if a["current_max"] is not None)
     logger.info(f"[BUDGET] Final sum after scaling: ₹{final_sum:,.0f}")
 
     return categories
@@ -235,12 +241,11 @@ def _generate_default_allocations(
         max_budget = total_budget * cp["normalized_percent"]
         min_budget = max(500, max_budget * 0.5)  # Min is 50% of max, at least 500
 
-        new_budget_alloc = {"min": round(min_budget), "max": round(max_budget)}
-
+        # Use BudgetAllocation object for Pydantic models, dict for plain dicts
         if hasattr(cat, "budget_allocation"):
-            cat.budget_allocation = new_budget_alloc
+            cat.budget_allocation = BudgetAllocation(min=round(min_budget), max=round(max_budget))
         elif isinstance(cat, dict):
-            cat["budget_allocation"] = new_budget_alloc
+            cat["budget_allocation"] = {"min": round(min_budget), "max": round(max_budget)}
 
         logger.info(
             f"[BUDGET] Generated default for {cp['cat_id']}: "
@@ -248,14 +253,7 @@ def _generate_default_allocations(
         )
 
     # Verify the sum
-    final_sum = sum(
-        (
-            getattr(cp["category"], "budget_allocation", {}).get("max", 0)
-            if hasattr(cp["category"], "budget_allocation")
-            else cp["category"].get("budget_allocation", {}).get("max", 0)
-        )
-        for cp in category_percents
-    )
+    final_sum = sum(_get_budget_max_value(cp["category"]) for cp in category_percents)
     logger.info(f"[BUDGET] Generated allocations sum: ₹{final_sum:,.0f} (target: ₹{total_budget:,.0f})")
 
     return categories

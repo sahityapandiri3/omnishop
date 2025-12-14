@@ -2,9 +2,128 @@
 Pydantic schemas for Recommendation Engine
 """
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field
+
+# ==================== ProductSearchCriteria for Omni Stylist ====================
+
+
+class BudgetCriteria(BaseModel):
+    """Budget constraints for product search"""
+
+    min: Optional[float] = Field(default=None, description="Minimum price (optional)")
+    max: Optional[float] = Field(default=None, description="Maximum price (required for recommendations)")
+    currency: str = Field(default="INR", description="Currency code")
+
+
+class StyleCriteria(BaseModel):
+    """Style attributes for product search"""
+
+    primary: Optional[str] = Field(default=None, description="Primary style (modern, minimalist, etc.)")
+    secondary: Optional[List[str]] = Field(default=None, description="Additional style tags")
+
+
+class ColorCriteria(BaseModel):
+    """Color preferences for product search"""
+
+    preferred: List[str] = Field(default_factory=list, description="Preferred colors")
+    avoid: Optional[List[str]] = Field(default=None, description="Colors to exclude")
+
+
+class MaterialCriteria(BaseModel):
+    """Material preferences for product search"""
+
+    preferred: List[str] = Field(default_factory=list, description="Preferred materials")
+    avoid: Optional[List[str]] = Field(default=None, description="Materials to exclude")
+
+
+class DimensionRange(BaseModel):
+    """Dimension range for size filtering"""
+
+    min: float
+    max: float
+
+
+class DimensionsCriteria(BaseModel):
+    """Dimension constraints"""
+
+    width: Optional[DimensionRange] = None
+    height: Optional[DimensionRange] = None
+    depth: Optional[DimensionRange] = None
+
+
+class SizeCriteria(BaseModel):
+    """Size/dimensions for product search"""
+
+    seating_capacity: Optional[int] = Field(default=None, description="For sofas: 1, 2, 3")
+    dimensions: Optional[DimensionsCriteria] = None
+
+
+class ProductSearchCriteria(BaseModel):
+    """
+    Structured JSON output from Omni when ready to recommend products.
+    This bridges the conversation to the database query.
+    """
+
+    # Required
+    category: str = Field(description="Product category: sofas, coffee_tables, rugs, etc.")
+
+    # Budget constraints
+    budget: Optional[BudgetCriteria] = Field(default=None, description="Budget constraints")
+
+    # Style attributes
+    style: Optional[StyleCriteria] = Field(default=None, description="Style preferences")
+
+    # Visual attributes
+    colors: Optional[ColorCriteria] = Field(default=None, description="Color preferences")
+    materials: Optional[MaterialCriteria] = Field(default=None, description="Material preferences")
+
+    # Size/dimensions (category-specific)
+    size: Optional[SizeCriteria] = Field(default=None, description="Size constraints")
+
+    # Additional filters (category-specific attributes)
+    attributes: Optional[Dict[str, Union[str, List[str], bool]]] = Field(
+        default=None, description="Additional filters like has_storage, shape, finish"
+    )
+
+    # Search metadata
+    source: Literal["user", "omni"] = Field(default="omni", description="Who specified these criteria")
+    confidence: float = Field(default=85.0, ge=0, le=100, description="Confidence in the match (0-100)")
+
+    # Sorting preference
+    sort_by: Optional[Literal["relevance", "price_low", "price_high", "newest"]] = Field(
+        default="relevance", description="Sorting preference"
+    )
+    limit: int = Field(default=20, ge=1, le=50, description="Max products to return")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "category": "sofas",
+                "budget": {"min": None, "max": 75000, "currency": "INR"},
+                "style": {"primary": "modern", "secondary": ["minimalist"]},
+                "colors": {"preferred": ["grey", "cream"], "avoid": None},
+                "materials": {"preferred": ["linen", "bouclé"], "avoid": ["leather"]},
+                "size": {"seating_capacity": 3, "dimensions": None},
+                "attributes": None,
+                "source": "omni",
+                "confidence": 85,
+                "sort_by": "relevance",
+                "limit": 20,
+            }
+        }
+
+    def to_filter_criteria(self) -> "FilterCriteria":
+        """Convert to FilterCriteria for existing search pipeline"""
+        return FilterCriteria(
+            price_min=self.budget.min if self.budget else None,
+            price_max=self.budget.max if self.budget else None,
+            category=self.category,
+            style=[self.style.primary] + (self.style.secondary or []) if self.style and self.style.primary else None,
+            color=self.colors.preferred if self.colors else None,
+            material=self.materials.preferred if self.materials else None,
+        )
 
 
 class RecommendationRequest(BaseModel):

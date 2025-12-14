@@ -45,7 +45,7 @@ export default function ChatPanel({
     {
       role: 'assistant',
       content:
-        "Hi! I'm your interior styling assistant. Tell me about your space and what you're looking for!",
+        "Hi! I'm Omni, your AI interior stylist. I'd love to help you transform your space. Upload a photo of your room, or tell me what you're looking for!",
       timestamp: new Date(),
     },
   ]);
@@ -331,10 +331,10 @@ export default function ChatPanel({
           </div>
           <div>
             <h2 className="font-semibold text-neutral-900 dark:text-white">
-              Styling Assistant
+              Omni
             </h2>
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              Ask me anything about furniture
+              Your AI Interior Stylist
             </p>
           </div>
         </div>

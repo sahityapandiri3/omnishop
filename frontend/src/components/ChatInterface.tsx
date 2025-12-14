@@ -41,6 +41,17 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
     mutationFn: startChatSession,
     onSuccess: (response) => {
       setSessionId(response.session_id)
+      // Add the Omni welcome message as the first assistant message
+      if (response.message) {
+        const welcomeMessage: ChatMessage = {
+          id: `welcome-${Date.now()}`,
+          type: 'assistant',
+          content: response.message,
+          timestamp: new Date(),
+          session_id: response.session_id
+        }
+        setMessages([welcomeMessage])
+      }
     },
     onError: (error) => {
       console.error('Failed to start session:', error)
@@ -491,8 +502,8 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">AI Design Assistant</h3>
-          <p className="text-sm text-gray-500">Get personalized interior design recommendations</p>
+          <h3 className="text-lg font-semibold text-gray-900">Omni</h3>
+          <p className="text-sm text-gray-500">Your AI Interior Stylist</p>
         </div>
         {selectedProducts.size > 0 && (
           <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
@@ -506,9 +517,9 @@ export function ChatInterface({ sessionId: initialSessionId, className = '' }: C
         {messages.length === 0 && !isLoading && (
           <div className="text-center py-8">
             <div className="bg-blue-50 rounded-lg p-6 max-w-md mx-auto">
-              <h4 className="font-medium text-blue-900 mb-2">Welcome! 👋</h4>
+              <h4 className="font-medium text-blue-900 mb-2">Hi! I'm Omni 👋</h4>
               <p className="text-blue-700 text-sm">
-                I'm your AI interior design assistant. Share your space, style preferences, or upload a photo to get started!
+                Your AI interior stylist. Upload a photo of your room, or tell me what you're looking for!
               </p>
             </div>
           </div>

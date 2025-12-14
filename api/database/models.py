@@ -238,6 +238,47 @@ class User(Base):
         return f"<User(id={self.id}, email='{self.email}', auth_provider='{self.auth_provider}')>"
 
 
+class UserPreferences(Base):
+    """Persistent user preferences for AI stylist conversations"""
+
+    __tablename__ = "user_preferences"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), unique=True, nullable=False, index=True)
+
+    # Session context
+    scope = Column(String(50), nullable=True)  # "full_room" | "specific_category"
+    preference_mode = Column(String(50), nullable=True)  # "omni_decides" | "user_provides"
+    target_category = Column(String(100), nullable=True)  # If scope = specific_category
+
+    # Room-level preferences
+    room_type = Column(String(100), nullable=True)  # "living room", "bedroom", etc.
+    usage = Column(JSON, default=list)  # Array of usage types
+    overall_style = Column(String(100), nullable=True)  # "minimalist", "modern", etc.
+    budget_total = Column(Float, nullable=True)
+
+    # Room analysis suggestions (populated from image analysis)
+    room_analysis_suggestions = Column(
+        JSON, default=dict
+    )  # {detected_style, color_palette, detected_materials, suggested_categories}
+
+    # Category-specific preferences
+    category_preferences = Column(
+        JSON, default=dict
+    )  # {category: {colors, materials, textures, style_override, budget_allocation, source}}
+
+    # Metadata
+    preferences_confirmed = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    user = relationship("User", backref="preferences")
+
+    def __repr__(self):
+        return f"<UserPreferences(id={self.id}, user_id={self.user_id}, style='{self.overall_style}')>"
+
+
 class Project(Base):
     """User design projects for saving and resuming work"""
 

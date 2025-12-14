@@ -4,11 +4,220 @@ Conversation context management for maintaining chat session state and memory
 import hashlib
 import json
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+# ==================== User Preferences for Omni Stylist ====================
+
+
+@dataclass
+class CategoryPreference:
+    """Preferences for a specific product category"""
+
+    colors: List[str] = field(default_factory=list)
+    materials: List[str] = field(default_factory=list)
+    textures: List[str] = field(default_factory=list)
+    style_override: Optional[str] = None  # If different from room style
+    budget_allocation: Optional[float] = None
+    source: str = "omni"  # "user" or "omni" - who set this preference
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "CategoryPreference":
+        return cls(**data)
+
+
+@dataclass
+class RoomAnalysisSuggestions:
+    """Suggestions from room image analysis"""
+
+    detected_style: Optional[str] = None
+    color_palette: List[str] = field(default_factory=list)
+    detected_materials: List[str] = field(default_factory=list)
+    suggested_categories: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RoomAnalysisSuggestions":
+        return cls(**data)
+
+
+@dataclass
+class UserPreferencesData:
+    """
+    Structured user preferences for Omni AI stylist.
+    These persist across sessions and are used to avoid repetitive questions.
+    """
+
+    # Session context
+    scope: Optional[str] = None  # "full_room" | "specific_category"
+    preference_mode: Optional[str] = None  # "omni_decides" | "user_provides"
+    target_category: Optional[str] = None  # If scope = specific_category
+
+    # Room-level preferences
+    room_type: Optional[str] = None  # "living room", "bedroom", etc.
+    usage: List[str] = field(default_factory=list)  # ["relaxing", "entertaining"]
+    overall_style: Optional[str] = None  # "minimalist", "modern", "traditional"
+    budget_total: Optional[float] = None  # Total budget for room
+
+    # Room analysis suggestions (populated from image analysis)
+    room_analysis_suggestions: Optional[RoomAnalysisSuggestions] = None
+
+    # Category-specific preferences
+    category_preferences: Dict[str, CategoryPreference] = field(default_factory=dict)
+
+    # Metadata
+    preferences_confirmed: bool = False
+    last_updated: Optional[datetime] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization"""
+        data = {
+            "scope": self.scope,
+            "preference_mode": self.preference_mode,
+            "target_category": self.target_category,
+            "room_type": self.room_type,
+            "usage": self.usage,
+            "overall_style": self.overall_style,
+            "budget_total": self.budget_total,
+            "room_analysis_suggestions": self.room_analysis_suggestions.to_dict() if self.room_analysis_suggestions else None,
+            "category_preferences": {k: v.to_dict() for k, v in self.category_preferences.items()},
+            "preferences_confirmed": self.preferences_confirmed,
+            "last_updated": self.last_updated.isoformat() if self.last_updated else None,
+        }
+        return data
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "UserPreferencesData":
+        """Create from dictionary"""
+        room_suggestions = data.get("room_analysis_suggestions")
+        category_prefs = data.get("category_preferences", {})
+
+        return cls(
+            scope=data.get("scope"),
+            preference_mode=data.get("preference_mode"),
+            target_category=data.get("target_category"),
+            room_type=data.get("room_type"),
+            usage=data.get("usage", []),
+            overall_style=data.get("overall_style"),
+            budget_total=data.get("budget_total"),
+            room_analysis_suggestions=RoomAnalysisSuggestions.from_dict(room_suggestions) if room_suggestions else None,
+            category_preferences={k: CategoryPreference.from_dict(v) for k, v in category_prefs.items()},
+            preferences_confirmed=data.get("preferences_confirmed", False),
+            last_updated=datetime.fromisoformat(data["last_updated"]) if data.get("last_updated") else None,
+        )
+
+    def get_known_preferences(self) -> List[str]:
+        """Get list of known preferences (do NOT ask about these again)"""
+        known = []
+
+        if self.scope:
+            scope_display = "entire room" if self.scope == "full_room" else f"specific category: {self.target_category}"
+            known.append(f"Scope: {scope_display}")
+
+        if self.preference_mode:
+            mode_display = (
+                "Omni suggests based on room" if self.preference_mode == "omni_decides" else "User provides preferences"
+            )
+            known.append(f"Preference mode: {mode_display}")
+
+        if self.room_type:
+            known.append(f"Room type: {self.room_type}")
+
+        if self.usage:
+            known.append(f"Room usage: {', '.join(self.usage)}")
+
+        if self.overall_style:
+            known.append(f"Style: {self.overall_style}")
+
+        if self.budget_total:
+            known.append(f"Budget: ₹{self.budget_total:,.0f}")
+
+        # Room analysis suggestions
+        if self.room_analysis_suggestions:
+            if self.room_analysis_suggestions.detected_style:
+                known.append(f"Detected room style: {self.room_analysis_suggestions.detected_style}")
+            if self.room_analysis_suggestions.color_palette:
+                known.append(f"Room colors: {', '.join(self.room_analysis_suggestions.color_palette[:3])}")
+
+        # Category-specific preferences
+        for cat, pref in self.category_preferences.items():
+            cat_info = []
+            if pref.colors:
+                cat_info.append(f"colors: {', '.join(pref.colors)}")
+            if pref.materials:
+                cat_info.append(f"materials: {', '.join(pref.materials)}")
+            if pref.style_override:
+                cat_info.append(f"style: {pref.style_override}")
+            if pref.budget_allocation:
+                cat_info.append(f"budget: ₹{pref.budget_allocation:,.0f}")
+            if cat_info:
+                source_tag = "(user)" if pref.source == "user" else "(suggested)"
+                known.append(f"{cat.replace('_', ' ').title()} {source_tag}: {', '.join(cat_info)}")
+
+        return known
+
+    def get_unknown_preferences(self) -> List[str]:
+        """Get list of unknown preferences (may ask about these naturally)"""
+        unknown = []
+
+        if not self.scope:
+            unknown.append("Scope: entire room or specific category")
+
+        if not self.preference_mode:
+            unknown.append("Preference mode: user provides or Omni suggests")
+
+        if not self.room_type:
+            unknown.append("Room type")
+
+        if not self.overall_style:
+            unknown.append("Overall style preference")
+
+        if not self.budget_total:
+            unknown.append("Budget")
+
+        return unknown
+
+    def update_category_preference(
+        self,
+        category: str,
+        colors: Optional[List[str]] = None,
+        materials: Optional[List[str]] = None,
+        textures: Optional[List[str]] = None,
+        style_override: Optional[str] = None,
+        budget_allocation: Optional[float] = None,
+        source: str = "user",
+    ) -> None:
+        """Update or create category preference"""
+        if category not in self.category_preferences:
+            self.category_preferences[category] = CategoryPreference(source=source)
+
+        pref = self.category_preferences[category]
+
+        if colors:
+            pref.colors = colors
+        if materials:
+            pref.materials = materials
+        if textures:
+            pref.textures = textures
+        if style_override:
+            pref.style_override = style_override
+        if budget_allocation:
+            pref.budget_allocation = budget_allocation
+
+        # Always update source if user is overriding
+        if source == "user":
+            pref.source = "user"
+
+        self.last_updated = datetime.now()
 
 
 @dataclass
@@ -30,10 +239,17 @@ class ConversationContext:
     visualization_redo_stack: List[Dict[str, Any]] = None  # Stack for redo operations
     # Accumulated search filters for conversational context understanding
     accumulated_filters: Optional[Dict[str, Any]] = None
+    # Omni stylist preferences (persists across sessions)
+    omni_preferences: Optional[UserPreferencesData] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization"""
-        return {**asdict(self), "last_updated": self.last_updated.isoformat()}
+        data = asdict(self)
+        data["last_updated"] = self.last_updated.isoformat()
+        # Handle omni_preferences separately since it's a dataclass
+        if self.omni_preferences:
+            data["omni_preferences"] = self.omni_preferences.to_dict()
+        return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ConversationContext":
@@ -50,6 +266,11 @@ class ConversationContext:
             data["visualization_redo_stack"] = []
         if "accumulated_filters" not in data:
             data["accumulated_filters"] = None
+        # Handle omni_preferences
+        if "omni_preferences" in data and data["omni_preferences"]:
+            data["omni_preferences"] = UserPreferencesData.from_dict(data["omni_preferences"])
+        else:
+            data["omni_preferences"] = None
         return cls(**data)
 
 
@@ -91,6 +312,7 @@ class ConversationContextManager:
             visualization_history=[],
             visualization_redo_stack=[],
             accumulated_filters=self._get_default_accumulated_filters(),
+            omni_preferences=UserPreferencesData(),  # Initialize empty Omni preferences
         )
 
         self.contexts[session_id] = context
@@ -509,6 +731,116 @@ class ConversationContextManager:
         """Check if session has any active accumulated filters"""
         filters = self.get_accumulated_filters(session_id)
         return any(value is not None and value != "" and value != [] for key, value in filters.items())
+
+    # ==================== Omni Stylist Preferences Management ====================
+
+    def get_omni_preferences(self, session_id: str) -> UserPreferencesData:
+        """Get Omni stylist preferences for a session"""
+        context = self.get_or_create_context(session_id)
+        if context.omni_preferences is None:
+            context.omni_preferences = UserPreferencesData()
+        return context.omni_preferences
+
+    def update_omni_preferences(
+        self,
+        session_id: str,
+        scope: Optional[str] = None,
+        preference_mode: Optional[str] = None,
+        target_category: Optional[str] = None,
+        room_type: Optional[str] = None,
+        usage: Optional[List[str]] = None,
+        overall_style: Optional[str] = None,
+        budget_total: Optional[float] = None,
+        room_analysis_suggestions: Optional[Dict[str, Any]] = None,
+    ) -> UserPreferencesData:
+        """Update Omni preferences with new values (only updates non-None fields)"""
+        prefs = self.get_omni_preferences(session_id)
+
+        if scope is not None:
+            prefs.scope = scope
+        if preference_mode is not None:
+            prefs.preference_mode = preference_mode
+        if target_category is not None:
+            prefs.target_category = target_category
+        if room_type is not None:
+            prefs.room_type = room_type
+        if usage is not None:
+            prefs.usage = usage
+        if overall_style is not None:
+            prefs.overall_style = overall_style
+        if budget_total is not None:
+            prefs.budget_total = budget_total
+        if room_analysis_suggestions is not None:
+            prefs.room_analysis_suggestions = RoomAnalysisSuggestions.from_dict(room_analysis_suggestions)
+
+        prefs.last_updated = datetime.now()
+        logger.info(f"Updated Omni preferences for session {session_id}")
+        return prefs
+
+    def update_omni_category_preference(
+        self,
+        session_id: str,
+        category: str,
+        colors: Optional[List[str]] = None,
+        materials: Optional[List[str]] = None,
+        textures: Optional[List[str]] = None,
+        style_override: Optional[str] = None,
+        budget_allocation: Optional[float] = None,
+        source: str = "user",
+    ) -> UserPreferencesData:
+        """Update category-specific preferences"""
+        prefs = self.get_omni_preferences(session_id)
+        prefs.update_category_preference(
+            category=category,
+            colors=colors,
+            materials=materials,
+            textures=textures,
+            style_override=style_override,
+            budget_allocation=budget_allocation,
+            source=source,
+        )
+        logger.info(f"Updated Omni category preference for {category} in session {session_id}")
+        return prefs
+
+    def get_omni_context_summary(self, session_id: str) -> str:
+        """
+        Generate a context summary for GPT injection.
+        This tells Omni what preferences are known and what to ask about.
+        """
+        prefs = self.get_omni_preferences(session_id)
+
+        known = prefs.get_known_preferences()
+        unknown = prefs.get_unknown_preferences()
+
+        if not known and not unknown:
+            return ""
+
+        summary = "\n=== OMNI STYLIST CONTEXT ===\n"
+
+        if known:
+            summary += "KNOWN PREFERENCES (do NOT ask about these again):\n"
+            summary += "- " + "\n- ".join(known) + "\n\n"
+
+        if unknown:
+            summary += "STILL UNKNOWN (ask naturally if relevant):\n"
+            summary += "- " + "\n- ".join(unknown) + "\n"
+
+        summary += "===========================\n"
+        return summary
+
+    def clear_omni_preferences(self, session_id: str) -> UserPreferencesData:
+        """Clear all Omni preferences (start fresh)"""
+        context = self.get_or_create_context(session_id)
+        context.omni_preferences = UserPreferencesData()
+        context.last_updated = datetime.now()
+        logger.info(f"Cleared Omni preferences for session {session_id}")
+        return context.omni_preferences
+
+    def is_returning_user(self, session_id: str) -> bool:
+        """Check if user has existing preferences (returning user)"""
+        prefs = self.get_omni_preferences(session_id)
+        # User is returning if they have style, budget, or room type set
+        return bool(prefs.overall_style or prefs.budget_total or prefs.room_type)
 
     def export_context(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Export context for persistence"""

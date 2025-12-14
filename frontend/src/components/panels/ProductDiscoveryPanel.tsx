@@ -51,6 +51,29 @@ export default function ProductDiscoveryPanel({
   // NEW: State for "View All" mode - which category to show in full grid (null = carousel view)
   const [viewAllCategory, setViewAllCategory] = useState<string | null>(null);
 
+  // Reset viewAllCategory when categories change (new search/recommendation)
+  // This ensures we don't show an old category when new results come in
+  useEffect(() => {
+    if (selectedCategories) {
+      const categoryIds = selectedCategories.map(c => c.category_id);
+      // If current viewAllCategory doesn't exist in new categories, reset to carousel view
+      if (viewAllCategory && !categoryIds.includes(viewAllCategory)) {
+        console.log('[ProductDiscoveryPanel] Resetting viewAllCategory - category no longer exists');
+        setViewAllCategory(null);
+      }
+      console.log('[ProductDiscoveryPanel] New categories received:', categoryIds);
+
+      // Scroll to top when new categories arrive
+      if (productsContainerRef.current) {
+        productsContainerRef.current.scrollTo({
+          top: 0,
+          behavior: 'smooth'
+        });
+        console.log('[ProductDiscoveryPanel] Scrolling to top - new categories loaded');
+      }
+    }
+  }, [selectedCategories]);
+
   // Scroll to top when new products arrive
   useEffect(() => {
     if (products.length > 0 && productsContainerRef.current) {

@@ -33,11 +33,122 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.database import get_db
-from database.models import Category, ChatLog, ChatMessage, ChatSession, Product
+from database.models import Category, ChatLog, ChatMessage, ChatSession, Product, UserPreferences
 from utils.chat_logger import chat_logger
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
+
+
+async def load_user_preferences_from_db(user_id: str, session_id: str, db: AsyncSession) -> None:
+    """Load user preferences from database and populate conversation context"""
+    if not user_id:
+        return
+
+    try:
+        # Query user preferences from DB
+        query = select(UserPreferences).where(UserPreferences.user_id == user_id)
+        result = await db.execute(query)
+        db_prefs = result.scalar_one_or_none()
+
+        if db_prefs:
+            # Update conversation context with preferences from DB
+            conversation_context_manager.update_omni_preferences(
+                session_id,
+                scope=db_prefs.scope,
+                preference_mode=db_prefs.preference_mode,
+                target_category=db_prefs.target_category,
+                room_type=db_prefs.room_type,
+                usage=db_prefs.usage if db_prefs.usage else None,
+                overall_style=db_prefs.overall_style,
+                budget_total=float(db_prefs.budget_total) if db_prefs.budget_total else None,
+                room_analysis_suggestions=db_prefs.room_analysis_suggestions,
+            )
+
+            # Load category preferences
+            if db_prefs.category_preferences:
+                for category, pref_data in db_prefs.category_preferences.items():
+                    conversation_context_manager.update_omni_category_preference(
+                        session_id,
+                        category=category,
+                        colors=pref_data.get("colors"),
+                        materials=pref_data.get("materials"),
+                        textures=pref_data.get("textures"),
+                        style_override=pref_data.get("style_override"),
+                        budget_allocation=pref_data.get("budget_allocation"),
+                        source=pref_data.get("source", "omni"),
+                    )
+
+            logger.info(f"Loaded preferences from DB for user {user_id}")
+
+    except Exception as e:
+        logger.warning(f"Error loading user preferences from DB: {e}")
+
+
+async def save_user_preferences_to_db(user_id: str, session_id: str, db: AsyncSession) -> None:
+    """Save user preferences from conversation context to database"""
+    if not user_id:
+        return
+
+    try:
+        # Get preferences from conversation context
+        prefs = conversation_context_manager.get_omni_preferences(session_id)
+
+        # Query existing preferences
+        query = select(UserPreferences).where(UserPreferences.user_id == user_id)
+        result = await db.execute(query)
+        db_prefs = result.scalar_one_or_none()
+
+        # Prepare category preferences dict
+        category_prefs_dict = {}
+        for cat, pref in prefs.category_preferences.items():
+            category_prefs_dict[cat] = {
+                "colors": pref.colors,
+                "materials": pref.materials,
+                "textures": pref.textures,
+                "style_override": pref.style_override,
+                "budget_allocation": pref.budget_allocation,
+                "source": pref.source,
+            }
+
+        if db_prefs:
+            # Update existing preferences
+            db_prefs.scope = prefs.scope
+            db_prefs.preference_mode = prefs.preference_mode
+            db_prefs.target_category = prefs.target_category
+            db_prefs.room_type = prefs.room_type
+            db_prefs.usage = prefs.usage
+            db_prefs.overall_style = prefs.overall_style
+            db_prefs.budget_total = prefs.budget_total
+            db_prefs.room_analysis_suggestions = (
+                prefs.room_analysis_suggestions.to_dict() if prefs.room_analysis_suggestions else None
+            )
+            db_prefs.category_preferences = category_prefs_dict
+            db_prefs.preferences_confirmed = prefs.preferences_confirmed
+        else:
+            # Create new preferences
+            db_prefs = UserPreferences(
+                user_id=user_id,
+                scope=prefs.scope,
+                preference_mode=prefs.preference_mode,
+                target_category=prefs.target_category,
+                room_type=prefs.room_type,
+                usage=prefs.usage,
+                overall_style=prefs.overall_style,
+                budget_total=prefs.budget_total,
+                room_analysis_suggestions=prefs.room_analysis_suggestions.to_dict()
+                if prefs.room_analysis_suggestions
+                else None,
+                category_preferences=category_prefs_dict,
+                preferences_confirmed=prefs.preferences_confirmed,
+            )
+            db.add(db_prefs)
+
+        await db.commit()
+        logger.info(f"Saved preferences to DB for user {user_id}")
+
+    except Exception as e:
+        logger.warning(f"Error saving user preferences to DB: {e}")
 
 
 @router.post("/sessions", response_model=StartSessionResponse)
@@ -53,9 +164,28 @@ async def start_chat_session(request: StartSessionRequest, db: AsyncSession = De
         db.add(session)
         await db.commit()
 
+        # Load user preferences from DB if authenticated
+        if request.user_id:
+            await load_user_preferences_from_db(request.user_id, session_id, db)
+
+        # Check if returning user with preferences
+        is_returning = conversation_context_manager.is_returning_user(session_id)
+        prefs = conversation_context_manager.get_omni_preferences(session_id)
+
+        # Customize welcome message based on returning user status
+        if is_returning and prefs.overall_style and prefs.budget_total:
+            # Returning user with known preferences
+            welcome_message = f"Welcome back! Last time we were working on your {prefs.overall_style} style space with a ₹{prefs.budget_total:,.0f} budget. Ready to continue, or would you like to start fresh?"
+        elif is_returning and prefs.room_type:
+            # Returning user with partial preferences
+            welcome_message = f"Welcome back! I remember you were working on your {prefs.room_type}. Ready to continue?"
+        else:
+            # New user - Omni greeting
+            welcome_message = "Hi! I'm Omni, your AI interior stylist. I'd love to help you transform your space. Upload a photo of your room, or tell me what you're looking for!"
+
         return StartSessionResponse(
             session_id=session_id,
-            message="Hello! I'm your AI interior design assistant. How can I help you transform your space today?",
+            message=welcome_message,
         )
 
     except Exception as e:
@@ -98,6 +228,24 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
         # Get AI response
         # Use active image (latest visualization OR original upload) for analysis
         active_image = conversation_context_manager.get_last_image(session_id) if session_id else None
+
+        # Pre-extract scope from user message BEFORE calling GPT
+        # This ensures GPT knows the scope when generating its response
+        message_lower = request.message.lower()
+        current_prefs = conversation_context_manager.get_omni_preferences(session_id)
+        if not current_prefs.scope:  # Only extract if scope not already set
+            if any(
+                phrase in message_lower
+                for phrase in ["entire room", "full room", "whole room", "complete room", "the room", "my room"]
+            ):
+                conversation_context_manager.update_omni_preferences(session_id, scope="full_room")
+                logger.info(f"[Session {session_id}] Pre-extracted scope: full_room from user message")
+            elif any(
+                phrase in message_lower for phrase in ["specific", "just a", "only a", "just the", "only the", "looking for a"]
+            ):
+                conversation_context_manager.update_omni_preferences(session_id, scope="specific_category")
+                logger.info(f"[Session {session_id}] Pre-extracted scope: specific_category from user message")
+
         conversational_response, analysis = await chatgpt_service.analyze_user_input(
             user_message=request.message,
             session_id=session_id,
@@ -249,6 +397,46 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                                 f"[DIRECT SEARCH FOLLOW-UP] Retrieved {len(stored_categories)} stored categories: {[c.get('display_name') for c in stored_categories]}"
                             )
 
+                        # Check if user wants "all types" of a generic category (e.g., "any kind" of lighting)
+                        message_lower_followup = request.message.lower().strip()
+                        all_types_keywords = [
+                            "any kind",
+                            "all types",
+                            "all of them",
+                            "show me all",
+                            "all",
+                            "any",
+                            "everything",
+                            "all kinds",
+                        ]
+                        user_wants_all_types = any(kw in message_lower_followup for kw in all_types_keywords)
+
+                        # Check if we have a generic category that should be expanded
+                        if previous_direct_search_categories and user_wants_all_types:
+                            expanded_categories = []
+                            for cat in previous_direct_search_categories:
+                                if cat.get("is_generic") and cat.get("subcategories"):
+                                    # Expand generic category to all subcategories
+                                    subcategories = cat.get("subcategories", [])
+                                    for sub_id in subcategories:
+                                        expanded_categories.append(
+                                            {
+                                                "category_id": sub_id,
+                                                "display_name": sub_id.replace("_", " ").title(),
+                                            }
+                                        )
+                                    logger.info(
+                                        f"[GENERIC CATEGORY] Expanded '{cat['category_id']}' to {len(subcategories)} subcategories: {subcategories}"
+                                    )
+                                else:
+                                    expanded_categories.append(cat)
+
+                            if expanded_categories:
+                                previous_direct_search_categories = expanded_categories
+                                logger.info(
+                                    f"[GENERIC CATEGORY] Final categories after expansion: {[c['category_id'] for c in expanded_categories]}"
+                                )
+
                         if previous_direct_search_categories:
                             # User is providing follow-up info - treat current message as qualifiers
                             # Re-run detection but force it to be a direct search with ALL previous categories
@@ -391,9 +579,9 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     if has_material_qualifier:
                         direct_search_result["extracted_materials"] = [m for m in MATERIAL_KEYWORDS if m in message_lower]
                     if has_price_qualifier and price_match:
-                        direct_search_result["extracted_budget_max"] = int(
-                            price_match.group(1).replace(",", "").replace(" ", "")
-                        )
+                        price_str = price_match.group(1).replace(",", "").replace(" ", "")
+                        if price_str:  # Only convert if not empty
+                            direct_search_result["extracted_budget_max"] = int(price_str)
 
                     logger.info(
                         f"[ACCUMULATED CONTEXT] Converted to direct search: categories={[c['category_id'] for c in direct_search_result['detected_categories']]}, "
@@ -794,10 +982,29 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             logger.info(f"[GUIDED FLOW] Session has {user_message_count} user messages")
 
             # =================================================================
+            # OMNI SMART FLOW: Check if Omni already has essentials
+            # Essentials = style + budget + scope (all three required before showing products)
+            # =================================================================
+            omni_prefs = conversation_context_manager.get_omni_preferences(session_id)
+            omni_has_essentials = bool(omni_prefs.overall_style and omni_prefs.budget_total and omni_prefs.scope)
+            gpt_ready_to_recommend = analysis.conversation_state == "READY_TO_RECOMMEND" if analysis else False
+            logger.info(
+                f"[OMNI ESSENTIALS] style='{omni_prefs.overall_style}', budget='{omni_prefs.budget_total}', scope='{omni_prefs.scope}' -> has_essentials={omni_has_essentials}"
+            )
+
+            # =================================================================
             # DIRECT SEARCH BYPASS: Skip guided flow for direct product searches
             # =================================================================
             if is_direct_search:
                 has_sufficient_info = direct_search_result.get("has_sufficient_info", False)
+
+                # OMNI CONTEXT: If Omni already has style + budget, treat direct search as having sufficient info
+                # This allows "show me sofas" to work when user already provided style/budget earlier
+                if not has_sufficient_info and omni_has_essentials:
+                    has_sufficient_info = True
+                    logger.info(
+                        f"[DIRECT SEARCH] Omni has essentials (style='{omni_prefs.overall_style}', budget=₹{omni_prefs.budget_total:,.0f}) - treating as sufficient info"
+                    )
 
                 if has_sufficient_info:
                     # User provided enough info (category + qualifier) - search directly
@@ -808,7 +1015,11 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     # Build categories from detected categories
                     raw_categories = []
                     for idx, cat_data in enumerate(direct_search_result["detected_categories"]):
-                        budget_max = direct_search_result["extracted_budget_max"] or 999999
+                        # Use Omni's budget if available, otherwise use extracted budget from message
+                        budget_max = direct_search_result["extracted_budget_max"]
+                        if not budget_max and omni_has_essentials and omni_prefs.budget_total:
+                            budget_max = int(omni_prefs.budget_total)
+                        budget_max = budget_max or 999999
                         raw_categories.append(
                             {
                                 "category_id": cat_data["category_id"],
@@ -818,154 +1029,305 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                             }
                         )
 
-                    logger.info(f"[DIRECT SEARCH] Built {len(raw_categories)} categories from user query")
+                    logger.info(
+                        f"[DIRECT SEARCH] Built {len(raw_categories)} categories from user query (budget_max: ₹{budget_max:,})"
+                    )
                 else:
                     # User mentioned a category but no qualifiers - ask follow-up
                     conversation_state = "DIRECT_SEARCH_GATHERING"
-                    follow_up_question = _build_direct_search_followup_question(direct_search_result["detected_categories"])
+
+                    # Check if this is a generic category (like "lighting" → needs "what kind?" question)
+                    if direct_search_result.get("is_generic_category"):
+                        generic_info = direct_search_result.get("generic_category_info", {})
+                        follow_up_question = generic_info.get(
+                            "follow_up_question",
+                            _build_direct_search_followup_question(direct_search_result["detected_categories"]),
+                        )
+                        logger.info(f"[GENERIC CATEGORY] Asking: {follow_up_question[:50]}...")
+                    else:
+                        follow_up_question = _build_direct_search_followup_question(
+                            direct_search_result["detected_categories"]
+                        )
+
                     logger.info(f"[DIRECT SEARCH] Set conversation_state=DIRECT_SEARCH_GATHERING (insufficient info)")
                     logger.info(f"[DIRECT SEARCH] Follow-up question: {follow_up_question[:50]}...")
 
-            # ALWAYS enforce guided flow based on message count for consistent friendly tone
-            # Use our friendly fallback questions instead of AI-generated ones for better UX
-            elif user_message_count == 1:
-                conversation_state = "GATHERING_USAGE"
-                # Always use our friendly question for consistent tone
-                follow_up_question = "Love it! How do you usually use this space - relaxing, working, or entertaining?"
-                logger.info(f"[GUIDED FLOW] Set to GATHERING_USAGE (message 1)")
-            elif user_message_count == 2:
-                conversation_state = "GATHERING_STYLE"
-                follow_up_question = "Perfect! What vibe are you going for - modern and sleek, cozy and warm, or eclectic?"
-                logger.info(f"[GUIDED FLOW] Set to GATHERING_STYLE (message 2)")
-            elif user_message_count == 3:
-                conversation_state = "GATHERING_BUDGET"
-                follow_up_question = "Great choice! What's your budget for this transformation?"
-                logger.info(f"[GUIDED FLOW] Set to GATHERING_BUDGET (message 3)")
-            else:
+            # If Omni has style + budget, go directly to READY_TO_RECOMMEND (skip gathering questions)
+            # This allows users who provide all info upfront to get recommendations immediately
+            elif omni_has_essentials:
                 conversation_state = "READY_TO_RECOMMEND"
                 follow_up_question = None
-                logger.info(f"[GUIDED FLOW] Set to READY_TO_RECOMMEND (message {user_message_count})")
+                logger.info(
+                    f"[OMNI SMART FLOW] Style '{omni_prefs.overall_style}' + budget '₹{omni_prefs.budget_total:,.0f}' known - skipping gathering, going to READY_TO_RECOMMEND"
+                )
+            # =================================================================
+            # OMNI NATURAL FLOW: Let GPT's warm responses come through
+            # We track state for internal logic, but DON'T override GPT's follow_up_question
+            # GPT's Omni persona generates context-aware, friendly questions naturally
+            # =================================================================
+            elif user_message_count == 1:
+                conversation_state = "GATHERING_USAGE"
+                # DON'T override follow_up_question - let GPT's Omni response come through
+                logger.info(
+                    f"[OMNI FLOW] State: GATHERING_USAGE (message 1), GPT follow_up: {follow_up_question[:50] if follow_up_question else 'None'}..."
+                )
+            elif user_message_count == 2:
+                conversation_state = "GATHERING_STYLE"
+                logger.info(
+                    f"[OMNI FLOW] State: GATHERING_STYLE (message 2), GPT follow_up: {follow_up_question[:50] if follow_up_question else 'None'}..."
+                )
+            elif user_message_count == 3:
+                conversation_state = "GATHERING_BUDGET"
+                logger.info(
+                    f"[OMNI FLOW] State: GATHERING_BUDGET (message 3), GPT follow_up: {follow_up_question[:50] if follow_up_question else 'None'}..."
+                )
+            else:
+                # Message 4+: Check if we have all essentials (style, budget, scope) before recommending
+                # If scope is missing, stay in GATHERING_SCOPE state
+                if omni_prefs.scope:
+                    conversation_state = "READY_TO_RECOMMEND"
+                    # Only clear follow_up when we're ready to show products
+                    follow_up_question = None
+                    logger.info(
+                        f"[OMNI FLOW] State: READY_TO_RECOMMEND (message {user_message_count}, scope='{omni_prefs.scope}')"
+                    )
+                else:
+                    conversation_state = "GATHERING_SCOPE"
+                    logger.info(
+                        f"[OMNI FLOW] State: GATHERING_SCOPE (message {user_message_count}, scope is missing - waiting for user to specify)"
+                    )
 
-                # Generate default categories if ChatGPT didn't provide them
-                if not raw_categories or len(raw_categories) == 0:
-                    # Determine room type from conversation context (simplified)
-                    room_context = request.message.lower()
-                    if "living" in room_context or "sofa" in room_context:
-                        raw_categories = [
-                            {
-                                "category_id": "sofas",
-                                "display_name": "Sofas",
-                                "priority": 1,
-                                "budget_allocation": {"min": 20000, "max": 50000},
-                            },
-                            {
-                                "category_id": "coffee_tables",
-                                "display_name": "Coffee Tables",
-                                "priority": 2,
-                                "budget_allocation": {"min": 5000, "max": 15000},
-                            },
-                            {
-                                "category_id": "side_tables",
-                                "display_name": "Side Tables",
-                                "priority": 3,
-                                "budget_allocation": {"min": 3000, "max": 10000},
-                            },
-                            {
-                                "category_id": "floor_lamps",
-                                "display_name": "Floor Lamps",
-                                "priority": 4,
-                                "budget_allocation": {"min": 2000, "max": 8000},
-                            },
-                            {
-                                "category_id": "rugs",
-                                "display_name": "Rugs & Carpets",
-                                "priority": 5,
-                                "budget_allocation": {"min": 5000, "max": 20000},
-                            },
-                        ]
-                    elif "bed" in room_context or "sleep" in room_context:
-                        raw_categories = [
-                            {
-                                "category_id": "beds",
-                                "display_name": "Beds",
-                                "priority": 1,
-                                "budget_allocation": {"min": 25000, "max": 60000},
-                            },
-                            {
-                                "category_id": "nightstands",
-                                "display_name": "Nightstands",
-                                "priority": 2,
-                                "budget_allocation": {"min": 5000, "max": 15000},
-                            },
-                            {
-                                "category_id": "table_lamps",
-                                "display_name": "Table Lamps",
-                                "priority": 3,
-                                "budget_allocation": {"min": 2000, "max": 8000},
-                            },
-                            {
-                                "category_id": "wardrobes",
-                                "display_name": "Wardrobes",
-                                "priority": 4,
-                                "budget_allocation": {"min": 20000, "max": 50000},
-                            },
-                        ]
-                    elif "dining" in room_context or "eat" in room_context:
-                        raw_categories = [
-                            {
-                                "category_id": "dining_tables",
-                                "display_name": "Dining Tables",
-                                "priority": 1,
-                                "budget_allocation": {"min": 20000, "max": 50000},
-                            },
-                            {
-                                "category_id": "dining_chairs",
-                                "display_name": "Dining Chairs",
-                                "priority": 2,
-                                "budget_allocation": {"min": 10000, "max": 30000},
-                            },
-                            {
-                                "category_id": "sideboards",
-                                "display_name": "Sideboards",
-                                "priority": 3,
-                                "budget_allocation": {"min": 15000, "max": 40000},
-                            },
-                        ]
-                    else:
-                        # Default to living room categories
-                        raw_categories = [
-                            {
-                                "category_id": "sofas",
-                                "display_name": "Sofas",
-                                "priority": 1,
-                                "budget_allocation": {"min": 20000, "max": 50000},
-                            },
-                            {
-                                "category_id": "coffee_tables",
-                                "display_name": "Coffee Tables",
-                                "priority": 2,
-                                "budget_allocation": {"min": 5000, "max": 15000},
-                            },
-                            {
-                                "category_id": "accent_chairs",
-                                "display_name": "Accent Chairs",
-                                "priority": 3,
-                                "budget_allocation": {"min": 8000, "max": 25000},
-                            },
-                            {
-                                "category_id": "floor_lamps",
-                                "display_name": "Floor Lamps",
-                                "priority": 4,
-                                "budget_allocation": {"min": 2000, "max": 8000},
-                            },
-                            {
-                                "category_id": "decor",
-                                "display_name": "Decor",
-                                "priority": 5,
-                                "budget_allocation": {"min": 2000, "max": 10000},
-                            },
-                        ]
-                    logger.info(f"[GUIDED FLOW] Generated {len(raw_categories)} default categories")
+            # =================================================================
+            # CATEGORY GENERATION: Generate defaults for READY_TO_RECOMMEND
+            # This runs for BOTH Omni smart flow and message-count-based flow
+            # =================================================================
+            if conversation_state == "READY_TO_RECOMMEND" and (not raw_categories or len(raw_categories) == 0):
+                # Determine room type from conversation context (simplified)
+                room_context = request.message.lower()
+                if "living" in room_context or "sofa" in room_context:
+                    raw_categories = [
+                        {
+                            "category_id": "sofas",
+                            "display_name": "Sofas",
+                            "priority": 1,
+                            "budget_allocation": {"min": 20000, "max": 50000},
+                        },
+                        {
+                            "category_id": "coffee_tables",
+                            "display_name": "Coffee Tables",
+                            "priority": 2,
+                            "budget_allocation": {"min": 5000, "max": 15000},
+                        },
+                        {
+                            "category_id": "side_tables",
+                            "display_name": "Side Tables",
+                            "priority": 3,
+                            "budget_allocation": {"min": 3000, "max": 10000},
+                        },
+                        {
+                            "category_id": "floor_lamps",
+                            "display_name": "Floor Lamps",
+                            "priority": 4,
+                            "budget_allocation": {"min": 2000, "max": 8000},
+                        },
+                        {
+                            "category_id": "table_lamps",
+                            "display_name": "Table Lamps",
+                            "priority": 5,
+                            "budget_allocation": {"min": 2000, "max": 8000},
+                        },
+                        {
+                            "category_id": "ceiling_lights",
+                            "display_name": "Ceiling & Pendant Lights",
+                            "priority": 6,
+                            "budget_allocation": {"min": 3000, "max": 15000},
+                        },
+                        {
+                            "category_id": "rugs",
+                            "display_name": "Rugs & Carpets",
+                            "priority": 7,
+                            "budget_allocation": {"min": 5000, "max": 20000},
+                        },
+                        {
+                            "category_id": "planters",
+                            "display_name": "Planters",
+                            "priority": 8,
+                            "budget_allocation": {"min": 1000, "max": 5000},
+                        },
+                        {
+                            "category_id": "wall_art",
+                            "display_name": "Wall Art",
+                            "priority": 9,
+                            "budget_allocation": {"min": 2000, "max": 7000},
+                        },
+                    ]
+                elif "bed" in room_context or "sleep" in room_context:
+                    raw_categories = [
+                        {
+                            "category_id": "beds",
+                            "display_name": "Beds",
+                            "priority": 1,
+                            "budget_allocation": {"min": 25000, "max": 60000},
+                        },
+                        {
+                            "category_id": "nightstands",
+                            "display_name": "Nightstands",
+                            "priority": 2,
+                            "budget_allocation": {"min": 5000, "max": 15000},
+                        },
+                        {
+                            "category_id": "table_lamps",
+                            "display_name": "Table Lamps",
+                            "priority": 3,
+                            "budget_allocation": {"min": 2000, "max": 8000},
+                        },
+                        {
+                            "category_id": "floor_lamps",
+                            "display_name": "Floor Lamps",
+                            "priority": 4,
+                            "budget_allocation": {"min": 2000, "max": 8000},
+                        },
+                        {
+                            "category_id": "ceiling_lights",
+                            "display_name": "Ceiling Lights",
+                            "priority": 5,
+                            "budget_allocation": {"min": 3000, "max": 12000},
+                        },
+                        {
+                            "category_id": "wall_lights",
+                            "display_name": "Wall Lights",
+                            "priority": 6,
+                            "budget_allocation": {"min": 2000, "max": 8000},
+                        },
+                        {
+                            "category_id": "wardrobes",
+                            "display_name": "Wardrobes",
+                            "priority": 7,
+                            "budget_allocation": {"min": 20000, "max": 50000},
+                        },
+                        {
+                            "category_id": "rugs",
+                            "display_name": "Rugs & Carpets",
+                            "priority": 8,
+                            "budget_allocation": {"min": 5000, "max": 20000},
+                        },
+                        {
+                            "category_id": "wall_art",
+                            "display_name": "Wall Art",
+                            "priority": 9,
+                            "budget_allocation": {"min": 2000, "max": 7000},
+                        },
+                    ]
+                elif "dining" in room_context or "eat" in room_context:
+                    raw_categories = [
+                        {
+                            "category_id": "dining_tables",
+                            "display_name": "Dining Tables",
+                            "priority": 1,
+                            "budget_allocation": {"min": 20000, "max": 50000},
+                        },
+                        {
+                            "category_id": "dining_chairs",
+                            "display_name": "Dining Chairs",
+                            "priority": 2,
+                            "budget_allocation": {"min": 10000, "max": 30000},
+                        },
+                        {
+                            "category_id": "sideboards",
+                            "display_name": "Sideboards",
+                            "priority": 3,
+                            "budget_allocation": {"min": 15000, "max": 40000},
+                        },
+                        {
+                            "category_id": "ceiling_lights",
+                            "display_name": "Ceiling & Pendant Lights",
+                            "priority": 4,
+                            "budget_allocation": {"min": 5000, "max": 15000},
+                        },
+                        {
+                            "category_id": "floor_lamps",
+                            "display_name": "Floor Lamps",
+                            "priority": 5,
+                            "budget_allocation": {"min": 2000, "max": 8000},
+                        },
+                        {
+                            "category_id": "wall_lights",
+                            "display_name": "Wall Lights",
+                            "priority": 6,
+                            "budget_allocation": {"min": 2000, "max": 8000},
+                        },
+                        {
+                            "category_id": "rugs",
+                            "display_name": "Rugs & Carpets",
+                            "priority": 7,
+                            "budget_allocation": {"min": 5000, "max": 15000},
+                        },
+                        {
+                            "category_id": "wall_art",
+                            "display_name": "Wall Art",
+                            "priority": 8,
+                            "budget_allocation": {"min": 2000, "max": 7000},
+                        },
+                    ]
+                else:
+                    # Default to living room categories
+                    raw_categories = [
+                        {
+                            "category_id": "sofas",
+                            "display_name": "Sofas",
+                            "priority": 1,
+                            "budget_allocation": {"min": 20000, "max": 50000},
+                        },
+                        {
+                            "category_id": "coffee_tables",
+                            "display_name": "Coffee Tables",
+                            "priority": 2,
+                            "budget_allocation": {"min": 5000, "max": 15000},
+                        },
+                        {
+                            "category_id": "accent_chairs",
+                            "display_name": "Accent Chairs",
+                            "priority": 3,
+                            "budget_allocation": {"min": 8000, "max": 25000},
+                        },
+                        {
+                            "category_id": "floor_lamps",
+                            "display_name": "Floor Lamps",
+                            "priority": 4,
+                            "budget_allocation": {"min": 2000, "max": 8000},
+                        },
+                        {
+                            "category_id": "table_lamps",
+                            "display_name": "Table Lamps",
+                            "priority": 5,
+                            "budget_allocation": {"min": 2000, "max": 8000},
+                        },
+                        {
+                            "category_id": "ceiling_lights",
+                            "display_name": "Ceiling & Pendant Lights",
+                            "priority": 6,
+                            "budget_allocation": {"min": 3000, "max": 15000},
+                        },
+                        {
+                            "category_id": "rugs",
+                            "display_name": "Rugs & Carpets",
+                            "priority": 7,
+                            "budget_allocation": {"min": 5000, "max": 20000},
+                        },
+                        {
+                            "category_id": "planters",
+                            "display_name": "Planters",
+                            "priority": 8,
+                            "budget_allocation": {"min": 1000, "max": 5000},
+                        },
+                        {
+                            "category_id": "wall_art",
+                            "display_name": "Wall Art",
+                            "priority": 9,
+                            "budget_allocation": {"min": 2000, "max": 7000},
+                        },
+                    ]
+                logger.info(f"[CATEGORY GEN] Generated {len(raw_categories)} default categories for room type")
 
             # If we have selected categories, convert to CategoryRecommendation objects
             if raw_categories and isinstance(raw_categories, list) and len(raw_categories) > 0:
@@ -993,7 +1355,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
 
                     logger.info(f"[GUIDED FLOW] Parsed {len(selected_categories_response)} categories")
 
-                    # MANDATORY: Ensure generic categories (planters, wall_art, decor, rugs) are ALWAYS included
+                    # MANDATORY: Ensure generic categories (planters, wall_art, rugs) are ALWAYS included
                     # BUT ONLY for READY_TO_RECOMMEND - NOT for DIRECT_SEARCH or GATHERING states
                     # Direct search should ONLY show what the user asked for (e.g., "sofas" -> only sofas)
                     # Gathering states should NOT show categories yet (we're still collecting preferences)
@@ -1002,8 +1364,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                         mandatory_generic = [
                             ("planters", "Planters", 100),
                             ("wall_art", "Wall Art", 101),
-                            ("decor", "Decor", 102),
-                            ("rugs", "Rugs", 103),
+                            ("rugs", "Rugs", 102),
                         ]
                         for cat_id, display_name, priority in mandatory_generic:
                             if cat_id not in existing_cat_ids:
@@ -1091,17 +1452,31 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                             f"[{'DIRECT SEARCH' if conversation_state == 'DIRECT_SEARCH' else 'GUIDED FLOW'}] Fetched products for {len(products_by_category)} categories"
                         )
 
-                        # For direct search, override the conversational response with a friendly message
+                        # For direct search, use GPT's warm response if available
+                        # Only fall back to generic template if GPT didn't provide a good response
                         if conversation_state == "DIRECT_SEARCH" and products_by_category:
                             total_products = sum(len(prods) for prods in products_by_category.values())
-                            conversational_response = _build_direct_search_response_message(
-                                detected_categories=direct_search_result["detected_categories"],
-                                colors=direct_search_result["extracted_colors"],
-                                materials=direct_search_result["extracted_materials"],
-                                styles=direct_search_result["extracted_styles"],
-                                product_count=total_products,
+
+                            # Check if GPT provided a meaningful response (not generic fallback)
+                            gpt_response_is_good = (
+                                conversational_response
+                                and len(conversational_response) > 30
+                                and "I've analyzed your request" not in conversational_response
                             )
-                            logger.info(f"[DIRECT SEARCH] Response: {conversational_response[:80]}...")
+
+                            if gpt_response_is_good:
+                                # Use GPT's warm response - it already mentions style/budget
+                                logger.info(f"[DIRECT SEARCH] Using GPT's warm response: {conversational_response[:80]}...")
+                            else:
+                                # Fall back to template only if GPT failed
+                                conversational_response = _build_direct_search_response_message(
+                                    detected_categories=direct_search_result["detected_categories"],
+                                    colors=direct_search_result["extracted_colors"],
+                                    materials=direct_search_result["extracted_materials"],
+                                    styles=direct_search_result["extracted_styles"],
+                                    product_count=total_products,
+                                )
+                                logger.info(f"[DIRECT SEARCH] Using template response: {conversational_response[:80]}...")
 
                             # CRITICAL: Rebuild message_schema with the direct search response
                             # (the original was built with ChatGPT's response before we could override)
@@ -1122,27 +1497,42 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     traceback.print_exc()
 
         # =================================================================
-        # CRITICAL FIX: During GATHERING states:
-        # 1. Clear products - don't show any product recommendations
-        # 2. Replace AI response with ONLY the follow-up question
-        #    (ChatGPT often ignores the prompt and gives recommendations anyway)
-        # 3. Clear follow_up_question so frontend doesn't append it again
+        # OMNI DYNAMIC FLOW: Check if style, budget, AND scope are already known
+        # If Omni has all three, let the AI response through (don't force gathering questions)
         # =================================================================
-        if conversation_state in ["GATHERING_USAGE", "GATHERING_STYLE", "GATHERING_BUDGET", "DIRECT_SEARCH_GATHERING"]:
-            logger.info(f"[GUIDED FLOW] State is {conversation_state} - enforcing clean guided flow")
+        omni_prefs = conversation_context_manager.get_omni_preferences(session_id)
+        omni_has_essentials = bool(omni_prefs.overall_style and omni_prefs.budget_total and omni_prefs.scope)
+
+        if omni_has_essentials:
+            logger.info(
+                f"[OMNI FLOW] Style '{omni_prefs.overall_style}', budget '{omni_prefs.budget_total}', scope '{omni_prefs.scope}' known - letting Omni response through"
+            )
+            # Omni has the essentials, don't force gathering flow
+            # Let GPT's dynamic response through unchanged
+        elif conversation_state in [
+            "GATHERING_USAGE",
+            "GATHERING_STYLE",
+            "GATHERING_BUDGET",
+            "GATHERING_SCOPE",
+            "DIRECT_SEARCH_GATHERING",
+        ]:
+            # Omni doesn't have essentials yet - enforce clean gathering flow
+            logger.info(f"[OMNI FLOW] State is {conversation_state} - gathering, clearing products")
             recommended_products = None
-            # CRITICAL: Also clear category-based products - no products during gathering!
+            # CRITICAL: Clear category-based products - no products during gathering!
             products_by_category = None
             selected_categories_response = None
 
-            # CRITICAL: Replace the full AI response with JUST the follow-up question
-            # This ensures NO design recommendations slip through during gathering
-            if follow_up_question:
-                conversational_response = follow_up_question
-                # Clear follow_up_question so frontend doesn't append it again
-                # (frontend appends follow_up_question to message.content)
-                follow_up_question = None
-                logger.info(f"[GUIDED FLOW] Replaced AI response with follow-up question only")
+            # IMPORTANT: DO NOT replace conversational_response with follow_up_question!
+            # GPT's user_friendly_response already contains the warm, natural Omni response
+            # (e.g., "Beautiful space! How do you typically use this room?")
+            # Replacing it with just follow_up_question loses the warmth and personality.
+            # GPT is instructed to keep GATHERING responses brief + warm.
+            # Clear follow_up_question so frontend doesn't duplicate it.
+            follow_up_question = None
+            logger.info(
+                f"[OMNI FLOW] Using GPT's warm response: {conversational_response[:80] if conversational_response else 'None'}..."
+            )
 
             # Rebuild message schema with clean response and no products
             message_schema = ChatMessageSchema(
@@ -1188,6 +1578,10 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             logger.info(
                 f"[ANALYSIS DATA] Updated assistant_message.analysis_data with conversation_state={conversation_state}"
             )
+
+        # Save Omni preferences to database for persistence across sessions
+        if session.user_id:
+            await save_user_preferences_to_db(session.user_id, session_id, db)
 
         return ChatMessageResponse(
             message=message_schema,
@@ -2252,6 +2646,7 @@ def _detect_direct_search_query(message: str) -> Dict[str, Any]:
         "ottomans": ["ottoman", "pouf", "footstool"],
         "coffee_tables": ["coffee table", "center table", "cocktail table"],
         "side_tables": ["side table", "end table", "accent table", "occasional table"],
+        # Specific lighting categories (checked BEFORE generic "lighting")
         "floor_lamps": ["floor lamp", "standing lamp", "arc lamp", "tripod lamp"],
         "table_lamps": ["table lamp", "desk lamp", "bedside lamp"],
         "ceiling_lights": [
@@ -2287,12 +2682,22 @@ def _detect_direct_search_query(message: str) -> Dict[str, Any]:
         "storage_cabinets": ["storage cabinet", "cabinet", "cupboard"],
         "planters": ["planter", "plant pot", "flower pot", "plant stand"],
         "wall_art": ["wall art", "painting", "print", "poster", "canvas", "artwork", "frame"],
-        "decor": ["decor", "sculpture", "figurine", "vase", "decorative", "ornament"],
         "rugs": ["rug", "carpet", "area rug", "dhurrie", "kilim", "floor rug"],
         "mats": ["mat", "floor mat", "door mat", "bath mat", "runner", "table runner"],
         "mirrors": ["mirror", "wall mirror", "floor mirror", "vanity mirror"],
         "cushions": ["cushion", "pillow", "throw pillow", "decorative pillow"],
         "throws": ["throw", "blanket", "throw blanket"],
+    }
+
+    # Generic categories that expand to multiple subcategories
+    # When detected, Omni asks "what kind?" - if user says "any kind", expand all subcategories
+    generic_category_map = {
+        "lighting": {
+            "keywords": ["lights", "lighting", "lamps", "light fixtures"],
+            "subcategories": ["floor_lamps", "table_lamps", "ceiling_lights", "wall_lights"],
+            "follow_up_question": "What kind of lighting are you looking for? Floor lamps, table lamps, ceiling/pendant lights, or wall lights? Or I can show you all types!",
+            "display_name": "Lighting",
+        },
     }
 
     # Check for category matches
@@ -2305,6 +2710,35 @@ def _detect_direct_search_query(message: str) -> Dict[str, Any]:
                 break  # Only match once per category
 
     result["detected_categories"] = detected_cats
+
+    # Check for generic categories (e.g., "lighting" which expands to floor_lamps, table_lamps, etc.)
+    # Only trigger if NO specific subcategory was already detected
+    detected_cat_ids = {cat["category_id"] for cat in detected_cats}
+    for generic_id, generic_info in generic_category_map.items():
+        # Check if any generic keyword matches
+        for keyword in generic_info["keywords"]:
+            if keyword in message_lower:
+                # Check if any specific subcategory was already detected
+                subcategory_detected = any(sub in detected_cat_ids for sub in generic_info["subcategories"])
+                if not subcategory_detected:
+                    # Mark as generic category - needs follow-up question
+                    result["is_generic_category"] = True
+                    result["generic_category_id"] = generic_id
+                    result["generic_category_info"] = generic_info
+                    # Add the generic category to detected_cats so it's treated as a direct search
+                    detected_cats.append(
+                        {
+                            "category_id": generic_id,
+                            "display_name": generic_info["display_name"],
+                            "matched_keyword": keyword,
+                            "is_generic": True,
+                            "subcategories": generic_info["subcategories"],
+                        }
+                    )
+                    logger.info(f"[GENERIC CATEGORY] Detected generic '{generic_id}' - will ask for subcategory preference")
+                break
+        if result.get("is_generic_category"):
+            break
 
     # Collect matched keywords to avoid extracting them as qualifiers
     # e.g., "light" in "ceiling lights" should not be extracted as a color
@@ -2355,12 +2789,13 @@ def _detect_direct_search_query(message: str) -> Dict[str, Any]:
         match = re.search(pattern, message_lower)
         if match:
             budget_str = match.group(1).replace(",", "")
-            # Handle 'k' suffix (e.g., "20k" = 20000)
-            if budget_str.endswith("k"):
-                result["extracted_budget_max"] = int(budget_str[:-1]) * 1000
-            else:
-                result["extracted_budget_max"] = int(budget_str)
-            break
+            if budget_str:  # Only convert if not empty
+                # Handle 'k' suffix (e.g., "20k" = 20000)
+                if budget_str.endswith("k"):
+                    result["extracted_budget_max"] = int(budget_str[:-1]) * 1000
+                else:
+                    result["extracted_budget_max"] = int(budget_str)
+                break
 
     # Determine if this is a direct search query
     # A message is considered a direct search if it contains at least one product category
@@ -3406,6 +3841,21 @@ CATEGORY_KEYWORDS = {
         "overhead light",
     ],
     "wall_lights": ["wall light", "wall lights", "wall lamp", "wall lamps", "sconce", "wall sconce"],
+    # Generic "lighting" category - searches all lighting types
+    "lighting": [
+        "light",
+        "lights",
+        "lighting",
+        "lamp",
+        "lamps",
+        "floor lamp",
+        "table lamp",
+        "desk lamp",
+        "pendant",
+        "chandelier",
+        "sconce",
+        "light fixture",
+    ],
     "accent_chairs": ["accent chair", "armchair", "club chair", "lounge chair", "wing chair", "chair"],
     "beds": ["bed", "bedframe", "headboard", "king bed", "queen bed", "double bed"],
     "nightstands": ["nightstand", "bedside table", "night table"],
