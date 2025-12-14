@@ -236,7 +236,12 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
         if not current_prefs.scope:  # Only extract if scope not already set
             if any(
                 phrase in message_lower
-                for phrase in ["entire room", "full room", "whole room", "complete room", "the room", "my room"]
+                for phrase in [
+                    "entire room", "full room", "whole room", "complete room", "the room", "my room",
+                    "entire area", "full area", "whole area", "the area",
+                    "entire space", "full space", "whole space", "the space",
+                    "everything", "all of it", "the whole thing"
+                ]
             ):
                 conversation_context_manager.update_omni_preferences(session_id, scope="full_room")
                 logger.info(f"[Session {session_id}] Pre-extracted scope: full_room from user message")
