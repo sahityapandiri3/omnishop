@@ -1,9 +1,15 @@
-# Nixpacks configuration - bypass mise and use system Python
+# Nixpacks configuration - bypass mise completely
 [phases.setup]
-nixPkgs = ["python311", "python311Packages.pip"]
+nixPkgs = ["python311", "python311Packages.pip", "gcc", "postgresql"]
+onlyIncludeFiles = ["api", "requirements.txt"]
 
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
+cmds = ["pip install --no-cache-dir -r requirements.txt"]
+dependsOn = ["setup"]
 
 [start]
 cmd = "cd api && bash start.sh"
+
+# Explicitly set providers to avoid mise
+[providers]
+python = false
