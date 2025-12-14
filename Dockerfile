@@ -32,5 +32,6 @@ ENV PYTHONUNBUFFERED=1
 # Expose port for potential API
 EXPOSE 8000
 
-# Default command
-CMD ["python", "scripts/run_scraping.py", "status"]
+# Start the API server (same as Procfile: web: cd api && bash start.sh)
+WORKDIR /app/api
+CMD ["bash", "start.sh"]
