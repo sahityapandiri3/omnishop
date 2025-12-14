@@ -1006,10 +1006,19 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             # =================================================================
             if is_direct_search:
                 has_sufficient_info = direct_search_result.get("has_sufficient_info", False)
+                is_generic_category = direct_search_result.get("is_generic_category", False)
 
+                # GENERIC CATEGORY CHECK: If user asks for generic category like "lighting",
+                # ALWAYS ask for subcategory preference, even if they have style/budget
+                # This ensures we ask "floor lamps, table lamps, or ceiling lights?" first
+                if is_generic_category:
+                    has_sufficient_info = False
+                    logger.info(
+                        f"[GENERIC CATEGORY] Detected generic category - will ask for subcategory preference before showing products"
+                    )
                 # OMNI CONTEXT: If Omni already has style + budget, treat direct search as having sufficient info
                 # This allows "show me sofas" to work when user already provided style/budget earlier
-                if not has_sufficient_info and omni_has_essentials:
+                elif not has_sufficient_info and omni_has_essentials:
                     has_sufficient_info = True
                     logger.info(
                         f"[DIRECT SEARCH] Omni has essentials (style='{omni_prefs.overall_style}', budget=₹{omni_prefs.budget_total:,.0f}) - treating as sufficient info"
@@ -1532,16 +1541,24 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             products_by_category = None
             selected_categories_response = None
 
-            # IMPORTANT: DO NOT replace conversational_response with follow_up_question!
-            # GPT's user_friendly_response already contains the warm, natural Omni response
-            # (e.g., "Beautiful space! How do you typically use this room?")
-            # Replacing it with just follow_up_question loses the warmth and personality.
-            # GPT is instructed to keep GATHERING responses brief + warm.
-            # Clear follow_up_question so frontend doesn't duplicate it.
-            follow_up_question = None
-            logger.info(
-                f"[OMNI FLOW] Using GPT's warm response: {conversational_response[:80] if conversational_response else 'None'}..."
-            )
+            # For GENERIC CATEGORIES (like "lighting"), use our specific subcategory question
+            # This ensures Omni asks "What kind of lighting? Floor lamps, table lamps, etc."
+            # instead of GPT's generic response that skips the subcategory selection
+            is_generic = direct_search_result.get("is_generic_category", False)
+            if is_generic and follow_up_question:
+                # Use the follow-up question as the main response for generic categories
+                conversational_response = follow_up_question
+                logger.info(
+                    f"[GENERIC CATEGORY] Using subcategory question: {follow_up_question[:80]}..."
+                )
+                follow_up_question = None  # Clear so frontend doesn't duplicate
+            else:
+                # Normal gathering flow - use GPT's warm response
+                # Clear follow_up_question so frontend doesn't duplicate it.
+                follow_up_question = None
+                logger.info(
+                    f"[OMNI FLOW] Using GPT's warm response: {conversational_response[:80] if conversational_response else 'None'}..."
+                )
 
             # Rebuild message schema with clean response and no products
             message_schema = ChatMessageSchema(
@@ -1591,6 +1608,31 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
         # Save Omni preferences to database for persistence across sessions
         if session.user_id:
             await save_user_preferences_to_db(session.user_id, session_id, db)
+
+        # =================================================================
+        # GENERIC CATEGORY OVERRIDE: If user asked for a generic category like
+        # "lighting", override the response to ask for subcategory preference
+        # This happens REGARDLESS of omni_has_essentials - we always want to
+        # ask "What kind of lighting?" before showing products
+        # =================================================================
+        if direct_search_result.get("is_generic_category", False):
+            generic_info = direct_search_result.get("generic_category_info", {})
+            subcategory_question = generic_info.get("follow_up_question", "")
+            if subcategory_question:
+                logger.info(f"[GENERIC CATEGORY OVERRIDE] Replacing response with subcategory question")
+                # Update the message content to ask for subcategory
+                message_schema = ChatMessageSchema(
+                    id=message_schema.id,
+                    type=message_schema.type,
+                    content=subcategory_question,
+                    timestamp=message_schema.timestamp,
+                    session_id=message_schema.session_id,
+                    products=None,  # No products until subcategory is chosen
+                    image_url=message_schema.image_url,
+                )
+                # Clear products - don't show until subcategory is chosen
+                products_by_category = None
+                selected_categories_response = None
 
         return ChatMessageResponse(
             message=message_schema,
