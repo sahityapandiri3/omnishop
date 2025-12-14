@@ -240,7 +240,11 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     "entire room", "full room", "whole room", "complete room", "the room", "my room",
                     "entire area", "full area", "whole area", "the area",
                     "entire space", "full space", "whole space", "the space",
-                    "everything", "all of it", "the whole thing"
+                    "everything", "all of it", "the whole thing",
+                    "give me recommendations", "show me recommendations", "show recommendations",
+                    "give me options", "show me options", "show options",
+                    "give me products", "show me products", "show products",
+                    "recommend", "suggestions", "what do you suggest", "what do you recommend"
                 ]
             ):
                 conversation_context_manager.update_omni_preferences(session_id, scope="full_room")
