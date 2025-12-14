@@ -1030,6 +1030,10 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 has_sufficient_info = direct_search_result.get("has_sufficient_info", False)
                 is_generic_category = direct_search_result.get("is_generic_category", False)
 
+                # For direct search, we only need style OR budget from context (not all three essentials)
+                # The scope is implicit in the specific category request itself
+                omni_has_context = bool(omni_prefs.overall_style or omni_prefs.budget_total)
+
                 # GENERIC CATEGORY CHECK: If user asks for generic category like "lighting",
                 # ALWAYS ask for subcategory preference, even if they have style/budget
                 # This ensures we ask "floor lamps, table lamps, or ceiling lights?" first
@@ -1038,12 +1042,13 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     logger.info(
                         f"[GENERIC CATEGORY] Detected generic category - will ask for subcategory preference before showing products"
                     )
-                # OMNI CONTEXT: If Omni already has style + budget, treat direct search as having sufficient info
-                # This allows "show me sofas" to work when user already provided style/budget earlier
-                elif not has_sufficient_info and omni_has_essentials:
+                # OMNI CONTEXT: If Omni already has style OR budget, treat direct search as having sufficient info
+                # This allows "show me wall art" to work when user already provided style/budget earlier
+                # Direct searches don't need scope - the specific category IS the scope
+                elif not has_sufficient_info and omni_has_context:
                     has_sufficient_info = True
                     logger.info(
-                        f"[DIRECT SEARCH] Omni has essentials (style='{omni_prefs.overall_style}', budget=₹{omni_prefs.budget_total:,.0f}) - treating as sufficient info"
+                        f"[DIRECT SEARCH] Omni has context (style='{omni_prefs.overall_style}', budget='{omni_prefs.budget_total}') - treating as sufficient info"
                     )
 
                 if has_sufficient_info:

@@ -855,13 +855,14 @@ Based on room type and conversation, select 6-10 relevant categories:
 - Office: desks, office_chairs, bookshelves, table_lamps, storage_cabinets
 - Study: study_tables, study_chairs, desks, office_chairs, bookshelves, table_lamps
 
-**⛔ MANDATORY Generic Categories (MUST ALWAYS INCLUDE ALL 4 for EVERY room type):**
+**⛔ MANDATORY Generic Categories (MUST ALWAYS INCLUDE ALL 5 for EVERY room type):**
 - planters (plants add life to any room)
 - wall_art (artwork completes a space)
 - decor (decorative objects add personality)
 - rugs (define areas and add warmth)
+- lighting (at least ONE lighting type: floor_lamps, table_lamps, ceiling_lights, or pendant_lamps)
 
-These 4 generic categories MUST be included in EVERY selected_categories response, regardless of room type!
+These 5 generic categories MUST be included in EVERY selected_categories response, regardless of room type! For lighting, choose the type most appropriate for the room.
 
 ### Budget Allocation (CRITICAL)
 When the user provides a total budget, you MUST include budget_allocation for EACH category.
