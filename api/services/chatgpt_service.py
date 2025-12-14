@@ -223,9 +223,12 @@ The scope question is about HOW MUCH FURNITURE to recommend:
 - "Do you have a specific room in mind, or are you looking to style the entire area?" ❌❌❌
 - "Which room would you like to focus on?" ❌
 - "Is there a particular area you'd like to work on?" ❌
+- "Are you looking for furniture, decor, or both?" ❌❌❌ (This is NOT a scope question!)
+- "Would you like suggestions for specific furniture pieces, decor items, or both?" ❌
 
 **CORRECT SCOPE QUESTION:**
-- "Would you like me to help furnish the entire room, or are you looking for something specific like a sofa or coffee table?" ✅
+- "Would you like me to help style the entire room, or are you looking for something specific like a sofa or coffee table?" ✅
+- "Should I help furnish the whole space, or do you have a specific piece in mind?" ✅
 
 ### AFTER USER ANSWERS SCOPE - SHOW RECOMMENDATIONS IMMEDIATELY:
 
