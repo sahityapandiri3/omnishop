@@ -34,6 +34,6 @@ ENV PYTHONUNBUFFERED=1
 # Expose port for potential API
 EXPOSE 8000
 
-# Start the API server (same as Procfile: web: cd api && bash start.sh)
-WORKDIR /app/api
+# Start the API server
+# Note: When Railway root is /api, files are already in /app (not /app/api)
 CMD ["bash", "start.sh"]
