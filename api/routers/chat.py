@@ -237,14 +237,36 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             if any(
                 phrase in message_lower
                 for phrase in [
-                    "entire room", "full room", "whole room", "complete room", "the room", "my room",
-                    "entire area", "full area", "whole area", "the area",
-                    "entire space", "full space", "whole space", "the space",
-                    "everything", "all of it", "the whole thing",
-                    "give me recommendations", "show me recommendations", "show recommendations",
-                    "give me options", "show me options", "show options",
-                    "give me products", "show me products", "show products",
-                    "recommend", "suggestions", "what do you suggest", "what do you recommend"
+                    "entire room",
+                    "full room",
+                    "whole room",
+                    "complete room",
+                    "the room",
+                    "my room",
+                    "entire area",
+                    "full area",
+                    "whole area",
+                    "the area",
+                    "entire space",
+                    "full space",
+                    "whole space",
+                    "the space",
+                    "everything",
+                    "all of it",
+                    "the whole thing",
+                    "give me recommendations",
+                    "show me recommendations",
+                    "show recommendations",
+                    "give me options",
+                    "show me options",
+                    "show options",
+                    "give me products",
+                    "show me products",
+                    "show products",
+                    "recommend",
+                    "suggestions",
+                    "what do you suggest",
+                    "what do you recommend",
                 ]
             ):
                 conversation_context_manager.update_omni_preferences(session_id, scope="full_room")
@@ -1079,6 +1101,19 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     f"[OMNI SMART FLOW] Style '{omni_prefs.overall_style}' + budget '₹{omni_prefs.budget_total:,.0f}' known - skipping gathering, going to READY_TO_RECOMMEND"
                 )
             # =================================================================
+            # GPT READY_TO_RECOMMEND TRUST: If GPT says ready with categories, trust it
+            # This handles cases like user saying "both" after scope question
+            # GPT understands the context better than keyword matching
+            # =================================================================
+            elif gpt_ready_to_recommend and raw_categories and len(raw_categories) > 0:
+                # GPT understood the user wants products - trust it and set scope if missing
+                if not omni_prefs.scope:
+                    conversation_context_manager.update_omni_preferences(session_id, scope="full_room")
+                    logger.info(f"[GPT TRUST] GPT returned READY_TO_RECOMMEND with categories - setting scope to 'full_room'")
+                conversation_state = "READY_TO_RECOMMEND"
+                follow_up_question = None
+                logger.info(f"[GPT TRUST] Trusting GPT's READY_TO_RECOMMEND state with {len(raw_categories)} categories")
+            # =================================================================
             # OMNI NATURAL FLOW: Let GPT's warm responses come through
             # We track state for internal logic, but DON'T override GPT's follow_up_question
             # GPT's Omni persona generates context-aware, friendly questions naturally
@@ -1548,9 +1583,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             if is_generic and follow_up_question:
                 # Use the follow-up question as the main response for generic categories
                 conversational_response = follow_up_question
-                logger.info(
-                    f"[GENERIC CATEGORY] Using subcategory question: {follow_up_question[:80]}..."
-                )
+                logger.info(f"[GENERIC CATEGORY] Using subcategory question: {follow_up_question[:80]}...")
                 follow_up_question = None  # Clear so frontend doesn't duplicate
             else:
                 # Normal gathering flow - use GPT's warm response
