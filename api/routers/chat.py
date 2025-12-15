@@ -1441,10 +1441,25 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     logger.info(f"[GUIDED FLOW] Parsed {len(selected_categories_response)} categories")
 
                     # MANDATORY: Ensure generic categories (planters, wall_art, rugs) are ALWAYS included
-                    # BUT ONLY for READY_TO_RECOMMEND - NOT for DIRECT_SEARCH or GATHERING states
-                    # Direct search should ONLY show what the user asked for (e.g., "sofas" -> only sofas)
-                    # Gathering states should NOT show categories yet (we're still collecting preferences)
-                    if conversation_state == "READY_TO_RECOMMEND":
+                    # BUT ONLY for READY_TO_RECOMMEND with FULL ROOM styling
+                    # NOT for: DIRECT_SEARCH, BROWSING, or when user requests specific categories
+                    #
+                    # DETECT SPECIFIC CATEGORY REQUEST:
+                    # If GPT returned only 1-2 categories, user is asking for something specific
+                    # e.g., "show me decor items" → only show decor, don't add sofas, tables, etc.
+                    is_specific_category_request = len(selected_categories_response) <= 2
+
+                    # Also detect from message if user is asking for specific items
+                    message_lower = request.message.lower()
+                    specific_category_phrases = [
+                        "show me decor", "show me rugs", "show me lamps", "show me planters",
+                        "decor items", "decor for", "just decor", "only decor",
+                        "show me sofas", "show me tables", "show me chairs",
+                        "just show", "only show", "looking for decor", "need decor",
+                    ]
+                    user_asking_specific = any(phrase in message_lower for phrase in specific_category_phrases)
+
+                    if conversation_state == "READY_TO_RECOMMEND" and not is_specific_category_request and not user_asking_specific:
                         existing_cat_ids = {cat.category_id for cat in selected_categories_response}
                         mandatory_generic = [
                             ("planters", "Planters", 100),
@@ -1463,7 +1478,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                                 )
                                 logger.info(f"[GUIDED FLOW] Added missing mandatory category: {cat_id}")
                     else:
-                        logger.info(f"[DIRECT SEARCH] Skipping mandatory categories - showing only user-requested categories")
+                        logger.info(f"[SPECIFIC REQUEST] Skipping mandatory categories - user requested specific category (is_specific={is_specific_category_request}, user_asking={user_asking_specific})")
 
                     # =================================================================
                     # BUDGET VALIDATION: Ensure budget allocations sum to total budget
@@ -1489,8 +1504,9 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                             category_id_field="category_id",
                         )
 
-                    # If we're in READY_TO_RECOMMEND or DIRECT_SEARCH state, fetch products by category
-                    if conversation_state in ["READY_TO_RECOMMEND", "DIRECT_SEARCH"] and selected_categories_response:
+                    # If we're in READY_TO_RECOMMEND, DIRECT_SEARCH, or BROWSING state, fetch products by category
+                    # BROWSING: User is filtering to specific category mid-conversation (e.g., "show me decor items")
+                    if conversation_state in ["READY_TO_RECOMMEND", "DIRECT_SEARCH", "BROWSING"] and selected_categories_response:
                         # Extract size keywords for category-specific filtering
                         size_keywords_for_search = []
 
@@ -1533,8 +1549,9 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                             if cat.category_id in products_by_category:
                                 cat.product_count = len(products_by_category[cat.category_id])
 
+                        state_label = "DIRECT SEARCH" if conversation_state == "DIRECT_SEARCH" else ("BROWSING" if conversation_state == "BROWSING" else "GUIDED FLOW")
                         logger.info(
-                            f"[{'DIRECT SEARCH' if conversation_state == 'DIRECT_SEARCH' else 'GUIDED FLOW'}] Fetched products for {len(products_by_category)} categories"
+                            f"[{state_label}] Fetched products for {len(products_by_category)} categories"
                         )
 
                         # For direct search, use GPT's warm response if available
