@@ -197,35 +197,28 @@ app.add_middleware(
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+# Request logging middleware with correlation IDs
+try:
+    from middleware.logging_middleware import RequestLoggingMiddleware
+    app.add_middleware(RequestLoggingMiddleware)
+    logger.info("✅ Request logging middleware enabled with correlation IDs")
+except ImportError as e:
+    logger.warning(f"Could not import RequestLoggingMiddleware: {e}")
 
-# Request logging middleware
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    """Log all requests for monitoring and debugging"""
-    start_time = time.time()
-
-    # Get client IP
-    client_ip = request.headers.get("x-forwarded-for", request.client.host)
-
-    response = await call_next(request)
-
-    process_time = time.time() - start_time
-
-    logger.info(
-        "Request completed",
-        extra={
-            "method": request.method,
-            "url": str(request.url),
-            "status_code": response.status_code,
-            "process_time": f"{process_time:.3f}s",
-            "client_ip": client_ip,
-        },
-    )
-
-    # Add timing header
-    response.headers["X-Process-Time"] = str(process_time)
-
-    return response
+    # Fallback to basic logging middleware
+    @app.middleware("http")
+    async def log_requests(request: Request, call_next):
+        """Fallback: Log all requests for monitoring and debugging"""
+        start_time = time.time()
+        client_ip = request.headers.get("x-forwarded-for", request.client.host)
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        logger.info(
+            f"Request: {request.method} {request.url.path} -> {response.status_code} ({process_time:.3f}s)",
+            extra={"method": request.method, "status_code": response.status_code, "client_ip": client_ip},
+        )
+        response.headers["X-Process-Time"] = str(process_time)
+        return response
 
 
 # Health check endpoint
