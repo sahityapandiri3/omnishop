@@ -23,8 +23,13 @@ class ConversationState(str, Enum):
     GATHERING_USAGE = "GATHERING_USAGE"  # Asking about room usage
     GATHERING_STYLE = "GATHERING_STYLE"  # Asking about style preferences
     GATHERING_BUDGET = "GATHERING_BUDGET"  # Asking about budget
+    GATHERING_SCOPE = "GATHERING_SCOPE"  # Asking about scope (full room vs specific)
+    GATHERING_PREFERENCE_MODE = "GATHERING_PREFERENCE_MODE"  # Asking if user wants to provide preferences or stylist chooses
+    GATHERING_ATTRIBUTES = "GATHERING_ATTRIBUTES"  # Gathering category-specific attributes
     READY_TO_RECOMMEND = "READY_TO_RECOMMEND"  # All info gathered, showing categories
     BROWSING = "BROWSING"  # User is browsing products
+    DIRECT_SEARCH = "DIRECT_SEARCH"  # Direct category search (simple categories - show immediately)
+    DIRECT_SEARCH_GATHERING = "DIRECT_SEARCH_GATHERING"  # Direct category search but need to gather attributes
 
 
 class BudgetAllocation(BaseModel):
@@ -85,12 +90,34 @@ class DesignAnalysisSchema(BaseModel):
     # NEW: Guided conversation flow fields
     conversation_state: Optional[str] = Field(
         default="INITIAL",
-        description="Current conversation state: INITIAL, GATHERING_USAGE, GATHERING_STYLE, GATHERING_BUDGET, READY_TO_RECOMMEND, BROWSING",
+        description="Current conversation state: INITIAL, GATHERING_USAGE, GATHERING_STYLE, GATHERING_BUDGET, GATHERING_SCOPE, GATHERING_PREFERENCE_MODE, GATHERING_ATTRIBUTES, READY_TO_RECOMMEND, BROWSING, DIRECT_SEARCH, DIRECT_SEARCH_GATHERING",
     )
     follow_up_question: Optional[str] = Field(default=None, description="Follow-up question to ask user if more info needed")
     total_budget: Optional[int] = Field(default=None, description="User's overall budget in INR")
     selected_categories: Optional[List[Dict[str, Any]]] = Field(
         default=None, description="AI-selected categories with budget allocations"
+    )
+
+    # NEW: Intent detection fields (GPT as single source of truth)
+    is_direct_search: bool = Field(
+        default=False,
+        description="True if user is searching for a specific category (e.g., 'show me sofas'), False for generic styling requests",
+    )
+    detected_category: Optional[str] = Field(
+        default=None,
+        description="The primary category detected from user's request (e.g., 'sofa', 'decor_accents'). Only set when is_direct_search=True",
+    )
+    preference_mode: Optional[str] = Field(
+        default=None,
+        description="User's preference mode: 'user_chooses' (user provides preferences) or 'stylist_chooses' (Omni suggests based on room)",
+    )
+    category_attributes: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Category-specific attributes gathered from user (e.g., {'seating_type': '3-seater', 'style': 'modern'})",
+    )
+    attributes_complete: bool = Field(
+        default=False,
+        description="True when all required attributes for the category have been gathered or user said 'you choose'",
     )
 
     class Config:

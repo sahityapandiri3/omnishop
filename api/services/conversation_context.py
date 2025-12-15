@@ -59,7 +59,7 @@ class UserPreferencesData:
 
     # Session context
     scope: Optional[str] = None  # "full_room" | "specific_category"
-    preference_mode: Optional[str] = None  # "omni_decides" | "user_provides"
+    preference_mode: Optional[str] = None  # "omni_decides" | "user_provides" | "user_chooses" | "stylist_chooses"
     target_category: Optional[str] = None  # If scope = specific_category
 
     # Room-level preferences
@@ -73,6 +73,12 @@ class UserPreferencesData:
 
     # Category-specific preferences
     category_preferences: Dict[str, CategoryPreference] = field(default_factory=dict)
+
+    # NEW: Intent detection fields (GPT as single source of truth)
+    is_direct_search: bool = False  # True if user is searching for specific category
+    detected_category: Optional[str] = None  # Primary category from GPT (e.g., "sofa", "decor_accents")
+    category_attributes: Dict[str, Any] = field(default_factory=dict)  # Category-specific attributes gathered
+    attributes_complete: bool = False  # True when all attributes gathered or user said "you choose"
 
     # Metadata
     preferences_confirmed: bool = False
@@ -90,6 +96,12 @@ class UserPreferencesData:
             "budget_total": self.budget_total,
             "room_analysis_suggestions": self.room_analysis_suggestions.to_dict() if self.room_analysis_suggestions else None,
             "category_preferences": {k: v.to_dict() for k, v in self.category_preferences.items()},
+            # NEW: Intent detection fields
+            "is_direct_search": self.is_direct_search,
+            "detected_category": self.detected_category,
+            "category_attributes": self.category_attributes,
+            "attributes_complete": self.attributes_complete,
+            # Metadata
             "preferences_confirmed": self.preferences_confirmed,
             "last_updated": self.last_updated.isoformat() if self.last_updated else None,
         }
@@ -111,23 +123,62 @@ class UserPreferencesData:
             budget_total=data.get("budget_total"),
             room_analysis_suggestions=RoomAnalysisSuggestions.from_dict(room_suggestions) if room_suggestions else None,
             category_preferences={k: CategoryPreference.from_dict(v) for k, v in category_prefs.items()},
+            # NEW: Intent detection fields
+            is_direct_search=data.get("is_direct_search", False),
+            detected_category=data.get("detected_category"),
+            category_attributes=data.get("category_attributes", {}),
+            attributes_complete=data.get("attributes_complete", False),
+            # Metadata
             preferences_confirmed=data.get("preferences_confirmed", False),
             last_updated=datetime.fromisoformat(data["last_updated"]) if data.get("last_updated") else None,
         )
 
+    def reset_for_new_intent(self) -> None:
+        """
+        Reset intent-related fields when a new intent is detected.
+        Called when user changes from generic styling to category search or vice versa.
+        Preserves room-level preferences (style, budget, room_type) but clears category-specific state.
+        """
+        self.is_direct_search = False
+        self.detected_category = None
+        self.preference_mode = None
+        self.category_attributes = {}
+        self.attributes_complete = False
+        self.target_category = None
+        self.last_updated = datetime.now()
+
     def get_known_preferences(self) -> List[str]:
         """Get list of known preferences (do NOT ask about these again)"""
         known = []
+
+        # Intent detection info
+        if self.is_direct_search:
+            known.append(f"Search type: Direct category search")
+            if self.detected_category:
+                known.append(f"Detected category: {self.detected_category}")
 
         if self.scope:
             scope_display = "entire room" if self.scope == "full_room" else f"specific category: {self.target_category}"
             known.append(f"Scope: {scope_display}")
 
         if self.preference_mode:
-            mode_display = (
-                "Omni suggests based on room" if self.preference_mode == "omni_decides" else "User provides preferences"
-            )
+            mode_map = {
+                "omni_decides": "Omni suggests based on room",
+                "user_provides": "User provides preferences",
+                "user_chooses": "User provides preferences",
+                "stylist_chooses": "Omni suggests based on room",
+            }
+            mode_display = mode_map.get(self.preference_mode, self.preference_mode)
             known.append(f"Preference mode: {mode_display}")
+
+        # Category attributes gathered
+        if self.category_attributes:
+            attrs = [f"{k}: {v}" for k, v in self.category_attributes.items() if v]
+            if attrs:
+                known.append(f"Category preferences: {', '.join(attrs)}")
+
+        if self.attributes_complete:
+            known.append("Attributes: Complete (ready to show products)")
 
         if self.room_type:
             known.append(f"Room type: {self.room_type}")
@@ -752,6 +803,11 @@ class ConversationContextManager:
         overall_style: Optional[str] = None,
         budget_total: Optional[float] = None,
         room_analysis_suggestions: Optional[Dict[str, Any]] = None,
+        # NEW: Intent detection fields
+        is_direct_search: Optional[bool] = None,
+        detected_category: Optional[str] = None,
+        category_attributes: Optional[Dict[str, Any]] = None,
+        attributes_complete: Optional[bool] = None,
     ) -> UserPreferencesData:
         """Update Omni preferences with new values (only updates non-None fields)"""
         prefs = self.get_omni_preferences(session_id)
@@ -772,9 +828,29 @@ class ConversationContextManager:
             prefs.budget_total = budget_total
         if room_analysis_suggestions is not None:
             prefs.room_analysis_suggestions = RoomAnalysisSuggestions.from_dict(room_analysis_suggestions)
+        # NEW: Intent detection fields
+        if is_direct_search is not None:
+            prefs.is_direct_search = is_direct_search
+        if detected_category is not None:
+            prefs.detected_category = detected_category
+        if category_attributes is not None:
+            # Merge with existing attributes rather than replace
+            prefs.category_attributes.update(category_attributes)
+        if attributes_complete is not None:
+            prefs.attributes_complete = attributes_complete
 
         prefs.last_updated = datetime.now()
         logger.info(f"Updated Omni preferences for session {session_id}")
+        return prefs
+
+    def reset_omni_intent(self, session_id: str) -> UserPreferencesData:
+        """
+        Reset intent-related fields when a new intent is detected.
+        Preserves room-level preferences but clears category-specific state.
+        """
+        prefs = self.get_omni_preferences(session_id)
+        prefs.reset_for_new_intent()
+        logger.info(f"Reset Omni intent for session {session_id}")
         return prefs
 
     def update_omni_category_preference(
