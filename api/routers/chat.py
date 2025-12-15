@@ -267,6 +267,19 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     "suggestions",
                     "what do you suggest",
                     "what do you recommend",
+                    # Full room styling phrases
+                    "general styling",
+                    "general style",
+                    "styling plan",
+                    "style the room",
+                    "style my room",
+                    "style the space",
+                    "style my space",
+                    "broader selection",
+                    "full styling",
+                    "complete styling",
+                    "overall styling",
+                    "both",  # When asked "furniture or decor", "both" means full room
                 ]
             ):
                 conversation_context_manager.update_omni_preferences(session_id, scope="full_room")
