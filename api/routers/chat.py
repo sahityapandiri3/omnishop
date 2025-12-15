@@ -273,8 +273,19 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     "styling plan",
                     "style the room",
                     "style my room",
+                    "style this room",
                     "style the space",
                     "style my space",
+                    "style this space",
+                    "styling the room",
+                    "styling my room",
+                    "styling this room",
+                    "styling the space",
+                    "styling my space",
+                    "styling this space",
+                    "looking for styling",
+                    "furniture and decor",
+                    "furniture or decor",
                     "broader selection",
                     "full styling",
                     "complete styling",
@@ -1131,7 +1142,9 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     logger.info(f"[GPT TRUST] GPT returned READY_TO_RECOMMEND - setting scope to 'full_room'")
                 conversation_state = "READY_TO_RECOMMEND"
                 follow_up_question = None
-                logger.info(f"[GPT TRUST] Trusting GPT's READY_TO_RECOMMEND state (categories: {len(raw_categories) if raw_categories else 0})")
+                logger.info(
+                    f"[GPT TRUST] Trusting GPT's READY_TO_RECOMMEND state (categories: {len(raw_categories) if raw_categories else 0})"
+                )
             # =================================================================
             # OMNI NATURAL FLOW: Let GPT's warm responses come through
             # We track state for internal logic, but DON'T override GPT's follow_up_question
