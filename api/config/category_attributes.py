@@ -20,6 +20,7 @@ SIMPLE_CATEGORIES = [
     "trays",
     "baskets",
     "artificial_plants",
+    "benches",
 ]
 
 # Category attributes for complex categories
@@ -268,6 +269,7 @@ CATEGORY_NAME_MAPPING = {
     "throw": "throws",
     "curtain": "curtains",
     "mirror": "mirrors",
+    "bench": "benches",
     "clock": "clocks",
     "vase": "vases",
     "candle": "candles",

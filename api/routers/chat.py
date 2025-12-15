@@ -2989,6 +2989,7 @@ def _detect_direct_search_query(message: str) -> Dict[str, Any]:
         "mirrors": ["mirror", "wall mirror", "floor mirror", "vanity mirror"],
         "cushions": ["cushion", "pillow", "throw pillow", "decorative pillow"],
         "throws": ["throw", "blanket", "throw blanket"],
+        "benches": ["bench", "benches", "entryway bench", "storage bench", "bedroom bench"],
     }
 
     # Generic categories that expand to multiple subcategories
