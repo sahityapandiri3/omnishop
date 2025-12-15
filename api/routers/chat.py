@@ -301,6 +301,22 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 conversation_context_manager.update_omni_preferences(session_id, scope="specific_category")
                 logger.info(f"[Session {session_id}] Pre-extracted scope: specific_category from user message")
 
+            # Pre-extract room type from user message
+            room_type_keywords = {
+                "living room": ["living room", "living space", "living area", "lounge"],
+                "bedroom": ["bedroom", "master bedroom", "guest bedroom", "sleep room"],
+                "dining room": ["dining room", "dining area", "dining space"],
+                "office": ["office", "study", "home office", "workspace", "work space"],
+                "kitchen": ["kitchen", "cooking area"],
+                "bathroom": ["bathroom", "washroom", "restroom"],
+                "balcony": ["balcony", "patio", "terrace", "outdoor"],
+            }
+            for room_type, keywords in room_type_keywords.items():
+                if any(kw in message_lower for kw in keywords):
+                    conversation_context_manager.update_omni_preferences(session_id, room_type=room_type)
+                    logger.info(f"[Session {session_id}] Pre-extracted room_type: {room_type} from user message")
+                    break
+
         conversational_response, analysis = await chatgpt_service.analyze_user_input(
             user_message=request.message,
             session_id=session_id,
@@ -1305,8 +1321,20 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             # This runs for BOTH Omni smart flow and message-count-based flow
             # =================================================================
             if conversation_state == "READY_TO_RECOMMEND" and (not raw_categories or len(raw_categories) == 0):
-                # Determine room type from conversation context (simplified)
+                # Determine room type from: 1) current message, 2) stored Omni preferences, 3) conversation history
                 room_context = request.message.lower()
+
+                # If current message doesn't contain room info, check stored preferences
+                if not any(kw in room_context for kw in ["living", "bed", "sleep", "dining", "eat", "office", "study", "sofa"]):
+                    # Use stored room type from conversation context
+                    if omni_prefs.room_type:
+                        room_context = omni_prefs.room_type.lower()
+                        logger.info(f"[CATEGORY GEN] Using stored room_type from Omni preferences: {room_context}")
+                    else:
+                        # Default to living room if no room type is available
+                        room_context = "living room"
+                        logger.info(f"[CATEGORY GEN] No room type found, defaulting to: {room_context}")
+
                 if "living" in room_context or "sofa" in room_context:
                     raw_categories = [
                         {
