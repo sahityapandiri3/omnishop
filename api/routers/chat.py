@@ -1270,15 +1270,30 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     f"[OMNI SMART FLOW] Style '{omni_prefs.overall_style}' + budget '₹{omni_prefs.budget_total:,.0f}' known - skipping gathering, going to READY_TO_RECOMMEND"
                 )
             # =================================================================
-            # RESPONSE TEXT CHECK: If GPT says "here are some options" etc, force READY_TO_RECOMMEND
-            # This catches cases where GPT generates a recommendation response but doesn't set the state correctly
+            # STRUCTURED FIELD CHECK: If GPT detected a category, consider showing products
+            # Skip gathering if user already provided style OR budget (context is sufficient)
             # =================================================================
-            response_implies_products = any(
-                phrase in conversational_response.lower()
-                for phrase in ["here are some", "here are my", "here's what i", "i've found", "check out these", "options for you"]
+            gpt_has_category = bool(gpt_detected_category) or bool(
+                analysis and getattr(analysis, "detected_category", None)
             )
-            if response_implies_products and conversation_state not in ["READY_TO_RECOMMEND", "DIRECT_SEARCH", "BROWSING"]:
-                logger.info(f"[RESPONSE CHECK] GPT response implies products but state is {conversation_state} - forcing READY_TO_RECOMMEND")
+            gpt_signals_products = gpt_has_category or gpt_is_direct_search or (
+                analysis and getattr(analysis, "is_direct_search", False)
+            )
+            # Check if we have enough context to skip gathering
+            # For category requests, style OR budget is sufficient (don't need all three essentials)
+            omni_has_context = bool(omni_prefs.overall_style or omni_prefs.budget_total)
+
+            # Only respect gathering states if we DON'T have style/budget context
+            # If user already told us their style/budget, show products instead of asking more questions
+            gpt_wants_to_gather = conversation_state in [
+                "GATHERING_USAGE", "GATHERING_STYLE", "GATHERING_BUDGET",
+                "GATHERING_SCOPE", "GATHERING_PREFERENCE_MODE", "GATHERING_ATTRIBUTES",
+                "DIRECT_SEARCH_GATHERING"
+            ]
+            should_skip_gathering = omni_has_context and gpt_has_category
+
+            if gpt_signals_products and (not gpt_wants_to_gather or should_skip_gathering) and conversation_state not in ["READY_TO_RECOMMEND", "DIRECT_SEARCH", "BROWSING"]:
+                logger.info(f"[STRUCTURED CHECK] GPT detected category='{gpt_detected_category}', has_context={omni_has_context}, skip_gathering={should_skip_gathering} - forcing READY_TO_RECOMMEND")
                 conversation_state = "READY_TO_RECOMMEND"
                 follow_up_question = None
                 if not omni_prefs.scope:
