@@ -208,6 +208,12 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
         if not session:
             raise HTTPException(status_code=404, detail="Chat session not found")
 
+        # Load user preferences from DB if not in memory (handles server restarts)
+        # This ensures context is preserved even if in-memory cache was cleared
+        if session.user_id and not conversation_context_manager.is_returning_user(session_id):
+            await load_user_preferences_from_db(session.user_id, session_id, db)
+            logger.info(f"[Context Reload] Loaded preferences from DB for session {session_id}")
+
         # Store image in conversation context if provided
         if request.image:
             conversation_context_manager.store_image(session_id, request.image)
