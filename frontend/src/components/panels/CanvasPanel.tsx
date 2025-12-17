@@ -4,7 +4,8 @@ import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import { FurniturePosition } from '../DraggableFurnitureCanvas';
-import { furniturePositionAPI } from '@/utils/api';
+import { furniturePositionAPI, generateAngleView } from '@/utils/api';
+import { AngleSelector, ViewingAngle } from '../AngleSelector';
 
 const DraggableFurnitureCanvas = dynamic(
   () => import('../DraggableFurnitureCanvas').then(mod => ({ default: mod.DraggableFurnitureCanvas })),
@@ -74,6 +75,7 @@ interface CanvasPanelProps {
   initialVisualizationHistory?: any[];  // Pre-loaded history from saved project
   onVisualizationHistoryChange?: (history: any[]) => void;  // Callback when history changes
   onVisualizationImageChange?: (image: string | null) => void;  // Callback when visualization image changes
+  isProcessingFurniture?: boolean;  // Show furniture removal overlay on room image
 }
 
 /**
@@ -93,6 +95,7 @@ export default function CanvasPanel({
   initialVisualizationHistory,
   onVisualizationHistoryChange,
   onVisualizationImageChange,
+  isProcessingFurniture = false,
 }: CanvasPanelProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isVisualizing, setIsVisualizing] = useState(false);
@@ -126,6 +129,13 @@ export default function CanvasPanel({
   const [baseRoomLayer, setBaseRoomLayer] = useState<string | null>(null);
   const [furnitureLayers, setFurnitureLayers] = useState<any[]>([]);
   const [isExtractingLayers, setIsExtractingLayers] = useState(false);
+
+  // Multi-angle viewing state
+  const [currentAngle, setCurrentAngle] = useState<ViewingAngle>('front');
+  const [angleImages, setAngleImages] = useState<Record<ViewingAngle, string | null>>({
+    front: null, left: null, right: null, back: null
+  });
+  const [loadingAngle, setLoadingAngle] = useState<ViewingAngle | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasProductsRef = useRef<HTMLDivElement>(null);
@@ -722,6 +732,59 @@ export default function CanvasPanel({
     console.log('[CanvasPanel] Redo successful. Remaining redo stack size:', newRedoStack.length);
   };
 
+  // Handle angle selection for multi-angle viewing
+  const handleAngleSelect = async (angle: ViewingAngle) => {
+    // If front, just switch to it (front is always the main visualization)
+    if (angle === 'front') {
+      setCurrentAngle('front');
+      return;
+    }
+
+    // Check if we already have this angle cached
+    if (angleImages[angle]) {
+      setCurrentAngle(angle);
+      return;
+    }
+
+    // Generate the angle on-demand
+    const sessionId = sessionStorage.getItem('design_session_id');
+    if (!sessionId || !visualizationResult) {
+      console.error('[CanvasPanel] Cannot generate angle: no session or visualization');
+      return;
+    }
+
+    setLoadingAngle(angle);
+    try {
+      const result = await generateAngleView(sessionId, {
+        visualization_image: visualizationResult,
+        target_angle: angle,
+        products_description: products.map(p => p.name).join(', ')
+      });
+
+      // Cache the generated angle image
+      const formattedImage = result.image.startsWith('data:')
+        ? result.image
+        : `data:image/png;base64,${result.image}`;
+
+      setAngleImages(prev => ({ ...prev, [angle]: formattedImage }));
+      setCurrentAngle(angle);
+    } catch (error) {
+      console.error('[CanvasPanel] Failed to generate angle view:', error);
+      alert('Failed to generate angle view. Please try again.');
+    } finally {
+      setLoadingAngle(null);
+    }
+  };
+
+  // Reset angle state when visualization changes (sync front angle with main visualization)
+  useEffect(() => {
+    if (visualizationResult) {
+      // When visualization changes, reset to front view and clear cached angles
+      setCurrentAngle('front');
+      setAngleImages({ front: visualizationResult, left: null, right: null, back: null });
+    }
+  }, [visualizationResult]);
+
   // Position editing handlers
   const handleEnterEditMode = async () => {
     const sessionId = sessionStorage.getItem('design_session_id');
@@ -1098,6 +1161,13 @@ export default function CanvasPanel({
                       className="object-cover"
                     />
                   )}
+                  {/* Image Processing Loading Overlay */}
+                  {isProcessingFurniture && (
+                    <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-10">
+                      <div className="animate-spin rounded-full h-8 w-8 border-4 border-purple-200 border-t-purple-500 mb-2"></div>
+                      <span className="text-white font-medium text-sm">Processing Image...</span>
+                    </div>
+                  )}
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     className="absolute bottom-2 right-2 px-3 py-1.5 bg-gradient-to-r from-primary-600 to-secondary-600 hover:from-primary-700 hover:to-secondary-700 backdrop-blur text-xs font-medium text-white rounded-lg transition-all shadow-md hover:shadow-lg flex items-center gap-1.5"
@@ -1452,6 +1522,21 @@ export default function CanvasPanel({
               </div>
             </div>
 
+            {/* Multi-Angle Viewer */}
+            {!isEditingPositions && (
+              <div className="mb-3">
+                <AngleSelector
+                  currentAngle={currentAngle}
+                  loadingAngle={loadingAngle}
+                  availableAngles={Object.entries(angleImages)
+                    .filter(([_, img]) => img !== null)
+                    .map(([angle]) => angle as ViewingAngle)}
+                  onAngleSelect={handleAngleSelect}
+                  disabled={isVisualizing || needsRevisualization}
+                />
+              </div>
+            )}
+
             {/* Outdated Warning Banner */}
             {needsRevisualization && (
               <div className="mb-2 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg flex items-center gap-2">
@@ -1479,20 +1564,32 @@ export default function CanvasPanel({
                 />
               ) : (
                 <>
-                  {isBase64Image(visualizationResult) ? (
-                    <img
-                      src={formatImageSrc(visualizationResult)}
-                      alt="Visualization result"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <Image
-                      src={visualizationResult}
-                      alt="Visualization result"
-                      fill
-                      className="object-cover"
-                      unoptimized
-                    />
+                  {/* Display current angle image (front = main visualization, others = generated on-demand) */}
+                  {(() => {
+                    const displayImage = currentAngle === 'front'
+                      ? visualizationResult
+                      : (angleImages[currentAngle] || visualizationResult);
+                    return isBase64Image(displayImage) ? (
+                      <img
+                        src={formatImageSrc(displayImage)}
+                        alt={`Visualization result - ${currentAngle} view`}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <Image
+                        src={displayImage!}
+                        alt={`Visualization result - ${currentAngle} view`}
+                        fill
+                        className="object-cover"
+                        unoptimized
+                      />
+                    );
+                  })()}
+                  {/* Angle indicator badge */}
+                  {currentAngle !== 'front' && (
+                    <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 text-white text-xs font-medium rounded-md">
+                      {currentAngle.charAt(0).toUpperCase() + currentAngle.slice(1)} View
+                    </div>
                   )}
                 </>
               )}

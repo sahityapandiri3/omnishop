@@ -36,19 +36,55 @@ class FurnitureStatusResponse(BaseModel):
 
 async def process_furniture_removal(job_id: str, image: str) -> None:
     """
-    Background task for furniture removal processing
-    Retries 5 times with exponential backoff for production reliability
+    Background task for furniture removal and perspective transformation.
+
+    Process order:
+    1. Analyze ORIGINAL image for perspective (original has clear furniture cues)
+    2. Transform to front view if needed (before furniture removal)
+    3. Remove furniture from the (possibly transformed) image
     """
     try:
-        logger.info(f"Starting furniture removal processing for job {job_id}")
+        logger.info(f"Starting image processing for job {job_id}")
         furniture_removal_service.update_job(job_id, "processing")
 
-        # Call Google AI service with retry logic (max 5 attempts for production reliability)
-        processed_image = await google_ai_service.remove_furniture(image, max_retries=5)
+        image_to_process = image
+
+        # Step 1: Analyze ORIGINAL image for perspective (before furniture removal)
+        # Original image has furniture which provides better perspective cues
+        try:
+            logger.info(f"Step 1: Analyzing original image perspective for job {job_id}...")
+            room_analysis = await google_ai_service.analyze_room_image(image)
+
+            # Check viewing angle from room analysis
+            camera_view = getattr(room_analysis, "camera_view_analysis", {}) or {}
+            viewing_angle = camera_view.get("viewing_angle", "straight_on")
+
+            # Log the full camera_view_analysis for debugging
+            logger.info(f"Room analysis camera_view for job {job_id}: {camera_view}")
+            logger.info(f"Detected viewing_angle for job {job_id}: '{viewing_angle}'")
+
+            # Step 2: Transform perspective if not straight-on
+            if viewing_angle and viewing_angle != "straight_on":
+                logger.info(f"Step 2: Detected {viewing_angle} angle - transforming to front view for job {job_id}")
+                transformed_image = await google_ai_service.transform_perspective_to_front(image, viewing_angle)
+                if transformed_image and transformed_image != image:
+                    image_to_process = transformed_image
+                    logger.info(f"Successfully transformed perspective to front view for job {job_id}")
+                else:
+                    logger.info(f"Perspective transformation returned same image for job {job_id}")
+            else:
+                logger.info(f"Image already has straight-on perspective for job {job_id}")
+        except Exception as perspective_error:
+            # Don't fail the whole job if perspective transformation fails
+            logger.warning(f"Perspective analysis/transformation failed for job {job_id}, continuing: {perspective_error}")
+
+        # Step 3: Remove furniture from the (possibly transformed) image
+        logger.info(f"Step 3: Removing furniture for job {job_id}...")
+        processed_image = await google_ai_service.remove_furniture(image_to_process, max_retries=5)
 
         if processed_image:
             # Success - cache and update job
-            logger.info(f"Furniture removal completed successfully for job {job_id}")
+            logger.info(f"Image processing completed successfully for job {job_id}")
             furniture_removal_service.update_job(job_id, "completed", processed_image)
             furniture_removal_service.cache_result(image, processed_image)
         else:
@@ -57,7 +93,7 @@ async def process_furniture_removal(job_id: str, image: str) -> None:
             furniture_removal_service.update_job(job_id, "failed")
 
     except Exception as e:
-        logger.error(f"Error in furniture removal background task for job {job_id}: {e}", exc_info=True)
+        logger.error(f"Error in image processing background task for job {job_id}: {e}", exc_info=True)
         furniture_removal_service.update_job(job_id, "failed")
 
 

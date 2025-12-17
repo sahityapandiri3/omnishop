@@ -206,9 +206,17 @@ class GoogleAIStudioService:
                     {
                         "parts": [
                             {
-                                "text": """Analyze this interior space image and provide detailed analysis in JSON format:
+                                "text": """Analyze this interior space image. CRITICAL: You MUST include camera_view_analysis as the FIRST field.
+
+Return JSON in this EXACT format (camera_view_analysis MUST be first):
 
 {
+  "camera_view_analysis": {
+    "viewing_angle": "straight_on OR diagonal_left OR diagonal_right OR corner",
+    "primary_wall": "back/left/right/none_visible",
+    "floor_center_location": "image_center/left_of_center/right_of_center/corner_area",
+    "recommended_furniture_zone": "against_back_wall/against_left_wall/against_right_wall/center_floor"
+  },
   "room_type": "living_room/bedroom/kitchen/etc",
   "dimensions": {
     "estimated_width_ft": 12.0,
@@ -218,84 +226,30 @@ class GoogleAIStudioService:
   },
   "lighting_conditions": "natural/artificial/mixed",
   "color_palette": ["primary_color", "secondary_color", "accent_color"],
-  "existing_furniture": [
-    {
-      "type": "sofa",
-      "position": "center-left",
-      "style": "modern",
-      "color": "gray",
-      "condition": "good"
-    }
-  ],
-  "architectural_features": ["windows", "fireplace", "built_ins", "etc"],
-  "style_assessment": "modern/traditional/transitional/etc",
-  "layout_analysis": {
-    "traffic_flow": "open/restricted/balanced",
-    "focal_points": ["fireplace", "tv_wall", "window"],
-    "available_floor_space": "adequate/limited/spacious"
-  },
-  "recommendations": {
-    "lighting_improvements": ["add_table_lamps", "increase_natural_light"],
-    "layout_suggestions": ["create_conversation_area", "improve_flow"],
-    "style_opportunities": ["add_color", "introduce_texture"]
-  },
+  "existing_furniture": [],
+  "architectural_features": ["windows", "etc"],
+  "style_assessment": "modern/traditional/etc",
   "scale_references": {
     "door_visible": true,
-    "door_position": "left_wall/back_wall/right_wall/not_visible",
-    "door_apparent_height_percent": 25.0,
     "window_visible": true,
-    "window_positions": ["back_wall_center", "left_wall"],
-    "standard_furniture_visible": ["dining_chair", "bed", "desk"],
     "camera_perspective": {
-      "angle": "eye_level/high_angle/low_angle",
-      "estimated_focal_length": "wide_angle/normal/telephoto",
-      "estimated_distance_to_back_wall_ft": 15.0
+      "angle": "eye_level/high_angle/low_angle"
     }
-  },
-  "camera_view_analysis": {
-    "viewing_angle": "straight_on/diagonal_left/diagonal_right/corner",
-    "primary_wall": "back/left/right/none_visible",
-    "primary_wall_description": "Brief description of the main wall (must be a SOLID wall, not a window/glass door)",
-    "wall_orientations": [
-      {"wall": "back", "visibility": "full/partial/not_visible", "has_large_window_or_glass_door": false, "suitable_for_furniture": true},
-      {"wall": "left", "visibility": "partial", "has_large_window_or_glass_door": false, "suitable_for_furniture": true},
-      {"wall": "right", "visibility": "full", "has_large_window_or_glass_door": true, "suitable_for_furniture": false}
-    ],
-    "walls_to_avoid": ["List walls with large windows, glass doors, or sliding doors - furniture should NOT be placed against these"],
-    "floor_center_location": "image_center/left_of_center/right_of_center/corner_area",
-    "recommended_furniture_zone": "against_back_wall/against_left_wall/against_right_wall/center_floor"
   }
 }
 
-IMPORTANT for scale_references:
-- door_visible: Is a standard interior door (80 inches / 6.67 feet tall) visible?
-- door_apparent_height_percent: What percentage of the IMAGE HEIGHT does the door occupy? (e.g., if door takes up 1/4 of image height = 25%)
-- window_visible: Are windows visible that could serve as scale references?
-- standard_furniture_visible: List any furniture with known standard sizes (dining chair seat ~18", bed ~54-80" wide)
-- camera_perspective.angle: Is the camera at standing eye level (~5.5ft), looking down, or looking up?
-- camera_perspective.estimated_focal_length: Wide angle lenses make rooms look larger; telephoto compresses depth
-- camera_perspective.estimated_distance_to_back_wall_ft: How far from camera to the back wall?
+🚨 CRITICAL - VIEWING ANGLE DETECTION (camera_view_analysis.viewing_angle):
 
-IMPORTANT for camera_view_analysis (CRITICAL for furniture placement):
-- viewing_angle: Determine the camera's viewing direction:
-  * "straight_on" - Camera faces a wall directly, walls appear parallel to image edges
-  * "diagonal_left" - Camera is angled left (~30-60°), right wall is more prominent
-  * "diagonal_right" - Camera is angled right (~30-60°), left wall is more prominent
-  * "corner" - Camera is in a corner, two walls are equally visible at angles
+Look at how many walls you can see and their angles:
+- "corner" = You can see TWO walls meeting at a corner. Both walls are visible at angles. THIS IMAGE IS LIKELY A CORNER VIEW.
+- "diagonal_left" = Camera points toward the left-back corner. The RIGHT wall is prominently visible.
+- "diagonal_right" = Camera points toward the right-back corner. The LEFT wall is prominently visible.
+- "straight_on" = RARE. Only if: the back wall is perfectly parallel to the image edge AND you can barely see any side walls.
 
-🚨 CRITICAL - WINDOW/GLASS DOOR DETECTION:
-- has_large_window_or_glass_door: Set TRUE if wall has floor-to-ceiling windows, sliding glass doors, French doors, or large picture windows
-- suitable_for_furniture: Set FALSE for any wall with large windows/glass doors - sofas should NEVER block windows/glass doors
-- walls_to_avoid: List ALL walls that have large windows or glass doors - these are OFF-LIMITS for large furniture
-- primary_wall: MUST be a SOLID WALL without large windows/glass doors - NEVER choose a wall with floor-to-ceiling glass
+⚠️ If you can clearly see TWO walls (like a window wall AND a solid wall meeting at a corner), it's "corner" NOT "straight_on".
 
-- floor_center_location: Where is the actual room's floor center in the image?
-  * For diagonal views, the center of the image may NOT be the center of the floor
-- recommended_furniture_zone: Best zone for placing main seating (sofa):
-  * For straight_on: usually "against_back_wall" or "center_floor" (but NEVER against windows)
-  * For diagonal views: typically against the most visible SOLID wall (not windows/glass doors)
-
-Provide accurate measurements and detailed observations."""
+For primary_wall: Choose the SOLID wall without windows/glass doors.
+For recommended_furniture_zone: Place furniture against solid walls, NOT windows."""
                             },
                             {"inline_data": {"mime_type": "image/jpeg", "data": processed_image}},
                         ]
@@ -318,9 +272,32 @@ Provide accurate measurements and detailed observations."""
 
             try:
                 analysis_data = json.loads(text_response)
-            except json.JSONDecodeError:
-                logger.warning("Failed to parse JSON response, using fallback")
-                analysis_data = self._create_fallback_room_analysis()
+                # Log what keys the AI actually returned
+                logger.info(f"Room analysis response keys from AI: {list(analysis_data.keys())}")
+                # Log the camera_view_analysis from the AI response
+                logger.info(
+                    f"Room analysis raw camera_view_analysis from AI: {analysis_data.get('camera_view_analysis', 'NOT FOUND IN RESPONSE')}"
+                )
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse JSON response: {e}")
+                logger.warning(f"Raw response text (first 500 chars): {text_response[:500]}")
+                # Use a fallback DICT (not RoomAnalysis) since we call .get() on it below
+                analysis_data = {
+                    "room_type": "unknown",
+                    "dimensions": {},
+                    "lighting_conditions": "mixed",
+                    "color_palette": [],
+                    "existing_furniture": [],
+                    "architectural_features": [],
+                    "style_assessment": "unknown",
+                    "scale_references": {},
+                    "camera_view_analysis": {
+                        "viewing_angle": "straight_on",
+                        "primary_wall": "back",
+                        "floor_center_location": "image_center",
+                        "recommended_furniture_zone": "center_floor",
+                    },
+                }
 
             return RoomAnalysis(
                 room_type=analysis_data.get("room_type", "unknown"),
@@ -1108,7 +1085,7 @@ This is an ACCENT ITEM. Critical rules:
             # Planter-specific placement hints are added below
             planter_placement_hint = ""
             if is_planter:
-                planter_placement_hint = f"""
+                planter_placement_hint = """
 🌿 PLANTER PLACEMENT GUIDE:
 - Place on the floor in an appropriate corner or beside existing furniture
 - The planter should be filled with appropriate green foliage
@@ -1175,10 +1152,16 @@ ALL EXISTING FURNITURE MUST REMAIN THE EXACT SAME SIZE AND SCALE:
 5. NATURAL PLACEMENT: Place the product naturally where it would logically fit in this room layout
 6. ROOM SIZE UNCHANGED: The room must look the EXACT same size - not bigger, not smaller
 
+🖼️ WALL ART / PAINTINGS RULE:
+- If adding wall art and room ALREADY has paintings → Place new art on a DIFFERENT wall or different position
+- DO NOT replace existing paintings - ADD alongside them (gallery-style)
+- Existing artwork must REMAIN VISIBLE
+
 🚫 FURNITURE YOU MUST NEVER REMOVE:
 - Sofas/couches (main seating)
 - Beds
 - Existing accent chairs
+- Existing wall art/paintings
 - Any furniture that was in the input image
 
 ✅ YOUR TASK:
@@ -1624,6 +1607,14 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 4. PRESERVE THE ROOM: Keep the same walls, windows, floors, ceiling, lighting
 5. NATURAL PLACEMENT: Place products naturally where they would logically fit
 6. ROOM SIZE UNCHANGED: The room must look the EXACT same size
+
+🖼️ WALL ART / PAINTINGS - CRITICAL:
+- If the room ALREADY has wall art/paintings hanging → DO NOT REPLACE them
+- ADD new wall art on a DIFFERENT wall or DIFFERENT position on the same wall
+- Multiple paintings CAN and SHOULD coexist - this is a GALLERY-style arrangement
+- The existing artwork must REMAIN VISIBLE in its original position
+- New artwork should be placed on empty wall space AWAY from existing art
+- Result: Room has MULTIPLE artworks visible (not one replacing another)
 
 ⚠️ ADDING MORE OF THE SAME PRODUCT:
 If the room ALREADY has a chair/cushion/table and you're asked to add ANOTHER one:
@@ -2098,7 +2089,7 @@ DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
                 multiple_instance_instruction = ""
                 if has_multiple_instances:
                     # Count how many instances of each product
-                    instance_counts = {}
+                    instance_counts: Dict[str, int] = {}
                     for name in product_names:
                         if "#" in name:
                             base_name = name.rsplit(" #", 1)[0]
@@ -3263,41 +3254,43 @@ QUALITY REQUIREMENTS:
             if pil_image.mode != "RGB":
                 pil_image = pil_image.convert("RGB")
 
-            logger.info(f"Transforming perspective from {current_viewing_angle} to front view ({pil_image.width}x{pil_image.height})")
+            logger.info(
+                f"Transforming perspective from {current_viewing_angle} to front view ({pil_image.width}x{pil_image.height})"
+            )
 
             # Build perspective transformation prompt
             angle_descriptions = {
                 "diagonal_left": "a diagonal left angle (camera positioned to the right, looking left)",
                 "diagonal_right": "a diagonal right angle (camera positioned to the left, looking right)",
-                "corner": "a corner angle (camera in the corner, looking diagonally across the room)"
+                "corner": "a corner angle (camera in the corner, looking diagonally across the room)",
             }
             angle_desc = angle_descriptions.get(current_viewing_angle, f"a {current_viewing_angle} angle")
 
-            prompt = f"""🎥 PERSPECTIVE TRANSFORMATION TASK
+            prompt = f"""🎥 CRITICAL: CHANGE THE CAMERA ANGLE
 
-You are viewing a room from {angle_desc}.
-Generate a NEW image showing this EXACT SAME room from a STRAIGHT-ON FRONT VIEW.
+Current view: {angle_desc} (you can see TWO walls meeting at a corner).
 
-📐 TRANSFORMATION REQUIREMENTS:
-1. SAME ROOM: This is the same physical room - keep all furniture, walls, floor, ceiling, windows, doors in their correct positions
-2. FRONT VIEW: Camera should now face the primary/back wall DIRECTLY
-   - Walls should appear parallel to image edges (not angled)
-   - The room should look like a head-on photograph
-3. PRESERVE EVERYTHING:
-   - All furniture in the room (same items, same arrangement)
-   - Room dimensions and proportions
-   - Colors, textures, and materials
-   - Lighting conditions and shadows
-   - Architectural features (windows, doors, moldings)
-4. NATURAL RESULT: The output should look like a real photograph taken from the front
+YOUR TASK: Generate this room from a COMPLETELY DIFFERENT angle - a STRAIGHT-ON FRONT VIEW.
 
-🚫 DO NOT:
-- Add or remove any furniture
-- Change the room's style, colors, or decor
-- Create a different room
-- Change the time of day or lighting dramatically
+📸 WHAT A FRONT VIEW LOOKS LIKE:
+- The main wall (solid wall, NOT windows) fills the CENTER of the image
+- This wall is PARALLEL to the image edges (perfectly horizontal at top and bottom)
+- Side walls are barely visible - just thin slivers on left and right edges
+- You should NOT see a corner clearly anymore
+- Floor stretches out in front of the camera
 
-✅ The goal is to show the SAME room as if the photographer moved to stand directly in front of the main wall."""
+📐 WHAT MUST CHANGE:
+- The angled walls in the current image must become straight/parallel
+- The corner that's currently visible should now be at the far left or right edge (barely visible)
+- The perspective lines should converge toward a single vanishing point in the center
+
+🏠 KEEP THE SAME:
+- Same room, same size, same colors
+- Same floor material and color
+- Same window positions (but viewed from a different angle)
+- Same ceiling and lighting style
+
+⚠️ IMPORTANT: The resulting image should look VISIBLY DIFFERENT from the input - the angle is completely different!"""
 
             # Generate transformed image
             def _run_transform():
@@ -3337,9 +3330,7 @@ Generate a NEW image showing this EXACT SAME room from a STRAIGHT-ON FRONT VIEW.
                 return result_image
 
             loop = asyncio.get_event_loop()
-            transformed_image = await asyncio.wait_for(
-                loop.run_in_executor(None, _run_transform), timeout=90
-            )
+            transformed_image = await asyncio.wait_for(loop.run_in_executor(None, _run_transform), timeout=90)
 
             if transformed_image:
                 logger.info(f"Successfully transformed perspective from {current_viewing_angle} to front view")
@@ -3356,10 +3347,7 @@ Generate a NEW image showing this EXACT SAME room from a STRAIGHT-ON FRONT VIEW.
             return f"data:image/jpeg;base64,{image_data}" if not image_data.startswith("data:") else image_data
 
     async def generate_alternate_view(
-        self,
-        visualization_image: str,
-        target_angle: str,
-        products_description: Optional[str] = None
+        self, visualization_image: str, target_angle: str, products_description: Optional[str] = None
     ) -> str:
         """
         Generate an alternate viewing angle of a room visualization.
@@ -3386,64 +3374,84 @@ Generate a NEW image showing this EXACT SAME room from a STRAIGHT-ON FRONT VIEW.
 
             logger.info(f"Generating {target_angle} view of visualization ({pil_image.width}x{pil_image.height})")
 
-            # Build angle-specific prompts
+            # Build angle-specific prompts - emphasize CAMERA POSITION not just rotation
             angle_prompts = {
-                "left": """🎥 GENERATE LEFT SIDE VIEW
+                "left": """🎥 CAMERA POSITION: LEFT SIDE OF THE ROOM
 
-You are looking at a front-facing view of a room. Generate a NEW image showing this SAME room from the LEFT SIDE.
+CRITICAL: The camera is now PHYSICALLY LOCATED on the LEFT WALL of the room, looking ACROSS the room towards the RIGHT WALL.
 
-📐 CAMERA ROTATION: 90 degrees counterclockwise
-- The left wall (from the front view) becomes the new back wall you're facing
-- The original back wall is now on your right
-- The original right wall is now behind the camera
-- Show all furniture from their LEFT sides
+📍 CAMERA LOCATION:
+- Camera is AGAINST the LEFT WALL (or where the left wall would be)
+- Camera is pointing TOWARDS the RIGHT WALL
+- You are standing on the left side, looking right
 
-🛋️ FURNITURE ORIENTATION:
-- Sofas: Show the left armrest and side profile
-- Chairs: Show from the left side
-- Tables: Show from the left edge
-- Lamps: Show from the left angle
-- All furniture positions remain the same relative to walls""",
+📐 WHAT YOU NOW SEE:
+- The RIGHT WALL is now directly in front of you (your new "back wall")
+- The ORIGINAL BACK WALL is now on your LEFT side
+- The ORIGINAL FRONT WALL (where camera was before) is now on your RIGHT side
+- The LEFT WALL is BEHIND YOU (behind the camera)
 
-                "right": """🎥 GENERATE RIGHT SIDE VIEW
+🛋️ FURNITURE FROM THIS NEW POSITION:
+- A sofa that was "facing you" in front view is now seen from its LEFT SIDE (armrest, side profile)
+- A chair that was facing front is now seen from its LEFT SIDE
+- Tables are seen from their LEFT EDGE
+- You see the LEFT SIDES of all furniture items
+- Furniture stays in the SAME FLOOR POSITIONS - only your viewing angle changes
 
-You are looking at a front-facing view of a room. Generate a NEW image showing this SAME room from the RIGHT SIDE.
+⚠️ THIS IS NOT a slight shift - the camera has MOVED to a completely different wall of the room.""",
+                "right": """🎥 CAMERA POSITION: RIGHT SIDE OF THE ROOM
 
-📐 CAMERA ROTATION: 90 degrees clockwise
-- The right wall (from the front view) becomes the new back wall you're facing
-- The original back wall is now on your left
-- The original left wall is now behind the camera
-- Show all furniture from their RIGHT sides
+CRITICAL: The camera is now PHYSICALLY LOCATED on the RIGHT WALL of the room, looking ACROSS the room towards the LEFT WALL.
 
-🛋️ FURNITURE ORIENTATION:
-- Sofas: Show the right armrest and side profile
-- Chairs: Show from the right side
-- Tables: Show from the right edge
-- Lamps: Show from the right angle
-- All furniture positions remain the same relative to walls""",
+📍 CAMERA LOCATION:
+- Camera is AGAINST the RIGHT WALL (or where the right wall would be)
+- Camera is pointing TOWARDS the LEFT WALL
+- You are standing on the right side, looking left
 
-                "back": """🎥 GENERATE BACK VIEW
+📐 WHAT YOU NOW SEE:
+- The LEFT WALL is now directly in front of you (your new "back wall")
+- The ORIGINAL BACK WALL is now on your RIGHT side
+- The ORIGINAL FRONT WALL (where camera was before) is now on your LEFT side
+- The RIGHT WALL is BEHIND YOU (behind the camera)
 
-You are looking at a front-facing view of a room. Generate a NEW image showing this SAME room from the BACK (opposite direction).
+🛋️ FURNITURE FROM THIS NEW POSITION:
+- A sofa that was "facing you" in front view is now seen from its RIGHT SIDE (armrest, side profile)
+- A chair that was facing front is now seen from its RIGHT SIDE
+- Tables are seen from their RIGHT EDGE
+- You see the RIGHT SIDES of all furniture items
+- Furniture stays in the SAME FLOOR POSITIONS - only your viewing angle changes
 
-📐 CAMERA ROTATION: 180 degrees
-- You are now facing what was the front wall (where the camera originally was)
-- The original back wall is now behind the camera
-- Left and right walls swap positions
+⚠️ THIS IS NOT a slight shift - the camera has MOVED to a completely different wall of the room.""",
+                "back": """🎥 EXACT 180° OPPOSITE VIEW - CAMERA FLIPPED TO OTHER END OF ROOM
 
-🛋️ FURNITURE BACKS - IMAGINE WHAT THEY LOOK LIKE:
-- Sofas: Show the back cushions, back fabric/leather, any exposed frame
-- Chairs: Show the chair backs, backrest details
-- Tables: Show from the opposite side
-- Armchairs: Show the back of the backrest
-- Beds: Show the back of headboard (if visible from this angle)
-- Lamps: Show the back of lampshades
-- TV units: Show the back panel/cables area
+This is the EXACT OPPOSITE of the front view. Imagine picking up the camera and moving it to the opposite end of the room, then turning it around 180°.
 
-⚠️ IMPORTANT: Since you cannot see furniture backs in the front view, you must IMAGINE realistic backs:
-- Use appropriate materials matching the front (fabric, leather, wood, metal)
-- Add realistic details (seams, stitching, support structures)
-- Maintain consistent style and color"""
+📍 CAMERA POSITION:
+- In the FRONT VIEW: Camera was near the FRONT WALL, pointing at the BACK WALL
+- In the BACK VIEW: Camera is now near the BACK WALL, pointing at the FRONT WALL
+- This is a straight 180° flip - NOT a side angle
+
+📐 COMPOSITION (mirror opposite of front view):
+- The FRONT WALL with windows/glass doors is now the BACKGROUND (where the back wall was in front view)
+- Furniture that was IN FRONT of the camera is now BEHIND the camera (not visible)
+- Furniture that was FAR from the camera is now CLOSE to the camera
+- The coffee table that was between camera and sofa is now between camera and front wall
+
+🖼️ WHAT THE FRAME SHOWS:
+- CENTER/BACKGROUND: The front wall - large windows, glass doors, curtains, natural light, outdoor view
+- The same WIDTH of room is visible (left wall on left, right wall on right)
+- The same HEIGHT of room is visible (floor to ceiling)
+- Any furniture in the middle of the room (coffee table) appears in the foreground
+
+🚫 NOT VISIBLE:
+- The back wall and its art/paintings (now BEHIND the camera)
+- The sofa (if it was against the back wall, it's now behind/beside the camera)
+
+⚠️ KEY REQUIREMENT:
+- This must look like the EXACT SAME ROOM viewed from the opposite end
+- Same room dimensions, same floor, same ceiling, same side walls
+- Just looking at the OTHER END of the room (front wall instead of back wall)
+- Do NOT create a side-angle view - this is straight-on, just flipped 180°""",
             }
 
             if target_angle not in angle_prompts:
@@ -3503,9 +3511,7 @@ You are looking at a front-facing view of a room. Generate a NEW image showing t
                 return result_image
 
             loop = asyncio.get_event_loop()
-            alternate_image = await asyncio.wait_for(
-                loop.run_in_executor(None, _run_generate), timeout=90
-            )
+            alternate_image = await asyncio.wait_for(loop.run_in_executor(None, _run_generate), timeout=90)
 
             if alternate_image:
                 logger.info(f"Successfully generated {target_angle} view")
@@ -3669,10 +3675,10 @@ Instead of guessing sizes, use these RELATIVE measurements for each product:
             # Determine placement depth based on position
             placement_depth = "midground"  # default
             if positions_dict and i in positions_dict:
-                pos = positions_dict[i].lower()
-                if "back" in pos or "far" in pos:
+                pos_str = positions_dict[i].lower()
+                if "back" in pos_str or "far" in pos_str:
                     placement_depth = "background"
-                elif "front" in pos or "foreground" in pos:
+                elif "front" in pos_str or "foreground" in pos_str:
                     placement_depth = "foreground"
 
             relative = self._calculate_relative_scale(dims, room_dims, placement_depth)
@@ -3692,7 +3698,7 @@ Instead of guessing sizes, use these RELATIVE measurements for each product:
                 instruction += f"""   - Placement depth: {placement_depth.upper()} (scale factor: {relative['perspective_factor']})
 """
             else:
-                instruction += f"""   - No dimensions provided - estimate from product reference image
+                instruction += """   - No dimensions provided - estimate from product reference image
    - Use room context and other products for relative sizing
 """
 
@@ -3827,7 +3833,7 @@ Objects appear smaller as they recede into the scene due to perspective:
 
         # FLOOR RUGS - place flat on floor
         elif is_floor_rug:
-            return f"Place FLAT ON THE FLOOR under the seating arrangement. The rug should be centered in the room's floor space, under or in front of the sofa/seating area. Do NOT hang on wall - rugs go ON floors."
+            return "Place FLAT ON THE FLOOR under the seating arrangement. The rug should be centered in the room's floor space, under or in front of the sofa/seating area. Do NOT hang on wall - rugs go ON floors."
 
         elif is_wall_furniture:
             if viewing_angle == "diagonal_left":

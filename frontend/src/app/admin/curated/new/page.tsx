@@ -458,8 +458,27 @@ export default function CreateCuratedLookPage() {
             setIsRemovingFurniture(false);
             setError('Failed to remove furniture from image. Using original image.');
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error('Error polling furniture removal status:', err);
+
+          // Check if it's a 404 error (job not found - server may have restarted)
+          const is404 = err?.response?.status === 404 ||
+                        err?.status === 404 ||
+                        err?.message?.includes('404') ||
+                        err?.message?.includes('not found') ||
+                        err?.response?.data?.detail?.includes('not found');
+
+          if (is404) {
+            console.log('Furniture removal job not found (404) - server may have restarted, stopping polling');
+            isCompleted = true;
+            if (furnitureRemovalIntervalRef.current) {
+              clearInterval(furnitureRemovalIntervalRef.current);
+              furnitureRemovalIntervalRef.current = null;
+            }
+            setIsRemovingFurniture(false);
+            setFurnitureRemovalJobId(null);
+            // Don't show error - just silently stop polling since the job is gone
+          }
         }
       }, 2000);
 
@@ -1807,11 +1826,11 @@ export default function CreateCuratedLookPage() {
                         className="w-full h-full object-cover"
                         onLoad={() => console.log('Room image loaded successfully')}
                       />
-                      {/* Furniture Removal Loading Overlay */}
+                      {/* Image Processing Loading Overlay */}
                       {isRemovingFurniture && (
                         <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-10">
                           <div className="animate-spin rounded-full h-8 w-8 border-4 border-purple-200 border-t-purple-500 mb-2"></div>
-                          <span className="text-white font-medium text-sm">Removing Furniture...</span>
+                          <span className="text-white font-medium text-sm">Processing Image...</span>
                         </div>
                       )}
                       <button
