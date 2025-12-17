@@ -910,7 +910,6 @@ FAILURE IS NOT ACCEPTABLE: Every single piece of furniture MUST be removed. Do n
                             config=types.GenerateContentConfig(
                                 response_modalities=["IMAGE"],
                                 temperature=0.2,  # Lower temperature for more consistent removal
-                                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
                             ),
                         )
 
