@@ -5,8 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
-import { adminCuratedAPI, getAvailableStores, visualizeRoom, startChatSession, startFurnitureRemoval, checkFurnitureRemovalStatus, furniturePositionAPI } from '@/utils/api';
+import { adminCuratedAPI, getAvailableStores, visualizeRoom, startChatSession, startFurnitureRemoval, checkFurnitureRemovalStatus, furniturePositionAPI, generateAngleView } from '@/utils/api';
 import { FurniturePosition } from '@/components/DraggableFurnitureCanvas';
+import { AngleSelector, ViewingAngle } from '@/components/AngleSelector';
 
 const DraggableFurnitureCanvas = dynamic(
   () => import('@/components/DraggableFurnitureCanvas').then(mod => ({ default: mod.DraggableFurnitureCanvas })),
@@ -72,6 +73,13 @@ export default function CreateCuratedLookPage() {
   const [roomImage, setRoomImage] = useState<string | null>(null);
   const [visualizationImage, setVisualizationImage] = useState<string | null>(null);
   const [isVisualizing, setIsVisualizing] = useState(false);
+
+  // Multi-angle viewing state
+  const [currentAngle, setCurrentAngle] = useState<ViewingAngle>('front');
+  const [angleImages, setAngleImages] = useState<Record<ViewingAngle, string | null>>({
+    front: null, left: null, right: null, back: null
+  });
+  const [loadingAngle, setLoadingAngle] = useState<ViewingAngle | null>(null);
 
   // Furniture removal state
   const [isRemovingFurniture, setIsRemovingFurniture] = useState(false);
@@ -583,12 +591,54 @@ export default function CreateCuratedLookPage() {
           ? result.visualization
           : `data:image/png;base64,${result.visualization}`;
         setVisualizationImage(vizImage);
+        // Reset angle cache - new visualization starts from front view
+        setAngleImages({ front: vizImage, left: null, right: null, back: null });
+        setCurrentAngle('front');
       }
     } catch (err) {
       console.error('Error visualizing:', err);
       setError('Failed to generate visualization. Please try again.');
     } finally {
       setIsVisualizing(false);
+    }
+  };
+
+  // Handle angle selection for multi-angle viewing
+  const handleAngleSelect = async (angle: ViewingAngle) => {
+    // Front view is always the original visualization
+    if (angle === 'front') {
+      setCurrentAngle('front');
+      return;
+    }
+
+    // If angle is already cached, just switch to it
+    if (angleImages[angle]) {
+      setCurrentAngle(angle);
+      return;
+    }
+
+    // Generate the angle on-demand
+    if (!sessionId || !visualizationImage) return;
+
+    setLoadingAngle(angle);
+    try {
+      const result = await generateAngleView(sessionId, {
+        visualization_image: visualizationImage,
+        target_angle: angle,
+        products_description: selectedProducts.map(p => p.name).join(', ')
+      });
+
+      // Cache the generated image
+      const angleImage = result.image.startsWith('data:')
+        ? result.image
+        : `data:image/png;base64,${result.image}`;
+      setAngleImages(prev => ({ ...prev, [angle]: angleImage }));
+      setCurrentAngle(angle);
+    } catch (err) {
+      console.error(`Error generating ${angle} view:`, err);
+      setError(`Failed to generate ${angle} view. Please try again.`);
+    } finally {
+      setLoadingAngle(null);
     }
   };
 
@@ -1999,6 +2049,9 @@ export default function CreateCuratedLookPage() {
                         setVisualizationImage(null);
                         setVisualizedProductIds(new Set());
                         setNeedsRevisualization(false);
+                        // Reset angle state
+                        setCurrentAngle('front');
+                        setAngleImages({ front: null, left: null, right: null, back: null });
                       }}
                       disabled={isEditingPositions}
                       className="text-xs text-red-600 hover:text-red-700 font-medium disabled:opacity-40 disabled:cursor-not-allowed"
@@ -2007,6 +2060,21 @@ export default function CreateCuratedLookPage() {
                     </button>
                   </div>
                 </div>
+
+                {/* Angle Selector - Multi-angle viewing */}
+                {!isEditingPositions && (
+                  <div className="mt-2 mb-2">
+                    <AngleSelector
+                      currentAngle={currentAngle}
+                      loadingAngle={loadingAngle}
+                      availableAngles={Object.entries(angleImages)
+                        .filter(([_, img]) => img !== null)
+                        .map(([angle]) => angle as ViewingAngle)}
+                      onAngleSelect={handleAngleSelect}
+                      disabled={isVisualizing || isExtractingLayers}
+                    />
+                  </div>
+                )}
 
                 {/* Outdated Warning Banner */}
                 {needsRevisualization && (
@@ -2034,13 +2102,31 @@ export default function CreateCuratedLookPage() {
                   ) : (
                     <>
                       <img
-                        src={visualizationImage}
-                        alt="Visualization result"
+                        src={angleImages[currentAngle] || visualizationImage}
+                        alt={`Visualization result - ${currentAngle} view`}
                         className="w-full h-full object-cover"
                       />
-                      <div className="absolute bottom-2 left-2 bg-green-500 text-white px-2 py-0.5 rounded-full text-xs font-medium">
-                        AI Visualization
+                      <div className="absolute bottom-2 left-2 flex items-center gap-2">
+                        <span className="bg-green-500 text-white px-2 py-0.5 rounded-full text-xs font-medium">
+                          AI Visualization
+                        </span>
+                        {currentAngle !== 'front' && (
+                          <span className="bg-purple-500 text-white px-2 py-0.5 rounded-full text-xs font-medium capitalize">
+                            {currentAngle} View
+                          </span>
+                        )}
                       </div>
+                      {loadingAngle && (
+                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                          <div className="bg-white rounded-lg px-4 py-3 flex items-center gap-3 shadow-lg">
+                            <svg className="animate-spin h-5 w-5 text-purple-600" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            <span className="text-sm font-medium text-gray-700">Generating {loadingAngle} view...</span>
+                          </div>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

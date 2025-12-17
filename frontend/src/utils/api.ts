@@ -354,6 +354,23 @@ export const visualizeRoom = async (sessionId: string, data: {
   }
 };
 
+export const generateAngleView = async (
+  sessionId: string,
+  data: {
+    visualization_image: string;
+    target_angle: 'left' | 'right' | 'back';
+    products_description?: string;
+  }
+): Promise<{ angle: string; image: string; message: string }> => {
+  try {
+    const response = await api.post(`/api/chat/sessions/${sessionId}/visualize/angle`, data);
+    return response.data;
+  } catch (error) {
+    console.error('Error generating angle view:', error);
+    throw error;
+  }
+};
+
 export const undoVisualization = async (sessionId: string) => {
   try {
     const response = await api.post(`/api/chat/sessions/${sessionId}/visualization/undo`);

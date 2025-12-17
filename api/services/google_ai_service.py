@@ -3232,6 +3232,294 @@ QUALITY REQUIREMENTS:
             logger.error(f"Error preprocessing image for editing: {e}")
             return image_data
 
+    async def transform_perspective_to_front(self, image_data: str, current_viewing_angle: str) -> str:
+        """
+        Transform a side-angle room photo to a front-angle (straight-on) view.
+        Uses Gemini to regenerate the room from a straight-on perspective.
+
+        Args:
+            image_data: Base64 encoded room image
+            current_viewing_angle: "diagonal_left", "diagonal_right", "corner", or "straight_on"
+
+        Returns:
+            Base64 encoded transformed image with front-angle perspective
+        """
+        # If already front-facing, return as-is
+        if current_viewing_angle == "straight_on":
+            logger.info("Image already has straight-on perspective, skipping transformation")
+            return image_data
+
+        try:
+            # Convert base64 to PIL Image
+            if image_data.startswith("data:image"):
+                image_data = image_data.split(",")[1]
+
+            image_bytes = base64.b64decode(image_data)
+            pil_image = Image.open(io.BytesIO(image_bytes))
+
+            # Apply EXIF orientation correction
+            pil_image = ImageOps.exif_transpose(pil_image)
+
+            if pil_image.mode != "RGB":
+                pil_image = pil_image.convert("RGB")
+
+            logger.info(f"Transforming perspective from {current_viewing_angle} to front view ({pil_image.width}x{pil_image.height})")
+
+            # Build perspective transformation prompt
+            angle_descriptions = {
+                "diagonal_left": "a diagonal left angle (camera positioned to the right, looking left)",
+                "diagonal_right": "a diagonal right angle (camera positioned to the left, looking right)",
+                "corner": "a corner angle (camera in the corner, looking diagonally across the room)"
+            }
+            angle_desc = angle_descriptions.get(current_viewing_angle, f"a {current_viewing_angle} angle")
+
+            prompt = f"""🎥 PERSPECTIVE TRANSFORMATION TASK
+
+You are viewing a room from {angle_desc}.
+Generate a NEW image showing this EXACT SAME room from a STRAIGHT-ON FRONT VIEW.
+
+📐 TRANSFORMATION REQUIREMENTS:
+1. SAME ROOM: This is the same physical room - keep all furniture, walls, floor, ceiling, windows, doors in their correct positions
+2. FRONT VIEW: Camera should now face the primary/back wall DIRECTLY
+   - Walls should appear parallel to image edges (not angled)
+   - The room should look like a head-on photograph
+3. PRESERVE EVERYTHING:
+   - All furniture in the room (same items, same arrangement)
+   - Room dimensions and proportions
+   - Colors, textures, and materials
+   - Lighting conditions and shadows
+   - Architectural features (windows, doors, moldings)
+4. NATURAL RESULT: The output should look like a real photograph taken from the front
+
+🚫 DO NOT:
+- Add or remove any furniture
+- Change the room's style, colors, or decor
+- Create a different room
+- Change the time of day or lighting dramatically
+
+✅ The goal is to show the SAME room as if the photographer moved to stand directly in front of the main wall."""
+
+            # Generate transformed image
+            def _run_transform():
+                response = self.genai_client.models.generate_content(
+                    model="gemini-3-pro-image-preview",
+                    contents=[prompt, pil_image],
+                    config=types.GenerateContentConfig(
+                        response_modalities=["IMAGE"],
+                        temperature=0.3,
+                    ),
+                )
+
+                result_image = None
+                parts = None
+                if hasattr(response, "parts") and response.parts:
+                    parts = response.parts
+                elif hasattr(response, "candidates") and response.candidates:
+                    candidate = response.candidates[0]
+                    if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
+                        parts = candidate.content.parts
+
+                if parts:
+                    for part in parts:
+                        if hasattr(part, "inline_data") and part.inline_data is not None:
+                            image_bytes_result = part.inline_data.data
+                            mime_type = getattr(part.inline_data, "mime_type", None) or "image/png"
+
+                            if isinstance(image_bytes_result, bytes):
+                                first_hex = image_bytes_result[:4].hex()
+                                if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                    image_base64_result = base64.b64encode(image_bytes_result).decode("utf-8")
+                                else:
+                                    image_base64_result = image_bytes_result.decode("utf-8")
+                                result_image = f"data:{mime_type};base64,{image_base64_result}"
+                                break
+
+                return result_image
+
+            loop = asyncio.get_event_loop()
+            transformed_image = await asyncio.wait_for(
+                loop.run_in_executor(None, _run_transform), timeout=90
+            )
+
+            if transformed_image:
+                logger.info(f"Successfully transformed perspective from {current_viewing_angle} to front view")
+                return transformed_image
+            else:
+                logger.warning("Perspective transformation produced no image, returning original")
+                return f"data:image/jpeg;base64,{image_data}" if not image_data.startswith("data:") else image_data
+
+        except asyncio.TimeoutError:
+            logger.error("Perspective transformation timed out after 90 seconds")
+            return f"data:image/jpeg;base64,{image_data}" if not image_data.startswith("data:") else image_data
+        except Exception as e:
+            logger.error(f"Error transforming perspective: {e}")
+            return f"data:image/jpeg;base64,{image_data}" if not image_data.startswith("data:") else image_data
+
+    async def generate_alternate_view(
+        self,
+        visualization_image: str,
+        target_angle: str,
+        products_description: Optional[str] = None
+    ) -> str:
+        """
+        Generate an alternate viewing angle of a room visualization.
+
+        Args:
+            visualization_image: The front-view visualization (base64)
+            target_angle: "left", "right", or "back"
+            products_description: Description of products in the room
+
+        Returns:
+            Base64 encoded image from the requested angle
+        """
+        try:
+            # Convert base64 to PIL Image
+            image_data = visualization_image
+            if image_data.startswith("data:image"):
+                image_data = image_data.split(",")[1]
+
+            image_bytes = base64.b64decode(image_data)
+            pil_image = Image.open(io.BytesIO(image_bytes))
+
+            if pil_image.mode != "RGB":
+                pil_image = pil_image.convert("RGB")
+
+            logger.info(f"Generating {target_angle} view of visualization ({pil_image.width}x{pil_image.height})")
+
+            # Build angle-specific prompts
+            angle_prompts = {
+                "left": """🎥 GENERATE LEFT SIDE VIEW
+
+You are looking at a front-facing view of a room. Generate a NEW image showing this SAME room from the LEFT SIDE.
+
+📐 CAMERA ROTATION: 90 degrees counterclockwise
+- The left wall (from the front view) becomes the new back wall you're facing
+- The original back wall is now on your right
+- The original right wall is now behind the camera
+- Show all furniture from their LEFT sides
+
+🛋️ FURNITURE ORIENTATION:
+- Sofas: Show the left armrest and side profile
+- Chairs: Show from the left side
+- Tables: Show from the left edge
+- Lamps: Show from the left angle
+- All furniture positions remain the same relative to walls""",
+
+                "right": """🎥 GENERATE RIGHT SIDE VIEW
+
+You are looking at a front-facing view of a room. Generate a NEW image showing this SAME room from the RIGHT SIDE.
+
+📐 CAMERA ROTATION: 90 degrees clockwise
+- The right wall (from the front view) becomes the new back wall you're facing
+- The original back wall is now on your left
+- The original left wall is now behind the camera
+- Show all furniture from their RIGHT sides
+
+🛋️ FURNITURE ORIENTATION:
+- Sofas: Show the right armrest and side profile
+- Chairs: Show from the right side
+- Tables: Show from the right edge
+- Lamps: Show from the right angle
+- All furniture positions remain the same relative to walls""",
+
+                "back": """🎥 GENERATE BACK VIEW
+
+You are looking at a front-facing view of a room. Generate a NEW image showing this SAME room from the BACK (opposite direction).
+
+📐 CAMERA ROTATION: 180 degrees
+- You are now facing what was the front wall (where the camera originally was)
+- The original back wall is now behind the camera
+- Left and right walls swap positions
+
+🛋️ FURNITURE BACKS - IMAGINE WHAT THEY LOOK LIKE:
+- Sofas: Show the back cushions, back fabric/leather, any exposed frame
+- Chairs: Show the chair backs, backrest details
+- Tables: Show from the opposite side
+- Armchairs: Show the back of the backrest
+- Beds: Show the back of headboard (if visible from this angle)
+- Lamps: Show the back of lampshades
+- TV units: Show the back panel/cables area
+
+⚠️ IMPORTANT: Since you cannot see furniture backs in the front view, you must IMAGINE realistic backs:
+- Use appropriate materials matching the front (fabric, leather, wood, metal)
+- Add realistic details (seams, stitching, support structures)
+- Maintain consistent style and color"""
+            }
+
+            if target_angle not in angle_prompts:
+                raise ValueError(f"Invalid target angle: {target_angle}. Must be 'left', 'right', or 'back'")
+
+            products_info = f"\n\n📦 PRODUCTS IN ROOM: {products_description}" if products_description else ""
+
+            prompt = f"""{angle_prompts[target_angle]}
+{products_info}
+
+✅ REQUIREMENTS:
+1. SAME ROOM: Maintain exact room dimensions, colors, and style
+2. SAME FURNITURE: All items in the same positions (just viewed from different angle)
+3. CONSISTENT LIGHTING: Same light sources and shadow directions (adjusted for new viewpoint)
+4. REALISTIC: The result should look like a real photograph from this angle
+
+🚫 DO NOT:
+- Add or remove furniture
+- Change room style or colors
+- Create completely different furniture appearances"""
+
+            # Generate alternate view
+            def _run_generate():
+                response = self.genai_client.models.generate_content(
+                    model="gemini-3-pro-image-preview",
+                    contents=[prompt, pil_image],
+                    config=types.GenerateContentConfig(
+                        response_modalities=["IMAGE"],
+                        temperature=0.4,
+                    ),
+                )
+
+                result_image = None
+                parts = None
+                if hasattr(response, "parts") and response.parts:
+                    parts = response.parts
+                elif hasattr(response, "candidates") and response.candidates:
+                    candidate = response.candidates[0]
+                    if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
+                        parts = candidate.content.parts
+
+                if parts:
+                    for part in parts:
+                        if hasattr(part, "inline_data") and part.inline_data is not None:
+                            image_bytes_result = part.inline_data.data
+                            mime_type = getattr(part.inline_data, "mime_type", None) or "image/png"
+
+                            if isinstance(image_bytes_result, bytes):
+                                first_hex = image_bytes_result[:4].hex()
+                                if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                    image_base64_result = base64.b64encode(image_bytes_result).decode("utf-8")
+                                else:
+                                    image_base64_result = image_bytes_result.decode("utf-8")
+                                result_image = f"data:{mime_type};base64,{image_base64_result}"
+                                break
+
+                return result_image
+
+            loop = asyncio.get_event_loop()
+            alternate_image = await asyncio.wait_for(
+                loop.run_in_executor(None, _run_generate), timeout=90
+            )
+
+            if alternate_image:
+                logger.info(f"Successfully generated {target_angle} view")
+                return alternate_image
+            else:
+                raise ValueError(f"Failed to generate {target_angle} view - no image produced")
+
+        except asyncio.TimeoutError:
+            logger.error(f"Alternate view generation ({target_angle}) timed out after 90 seconds")
+            raise ValueError(f"Timeout generating {target_angle} view")
+        except Exception as e:
+            logger.error(f"Error generating alternate view ({target_angle}): {e}")
+            raise
+
     def _calculate_relative_scale(
         self, product_dimensions: Dict[str, Any], room_dimensions: Dict[str, float], placement_depth: str = "midground"
     ) -> Dict[str, Any]:

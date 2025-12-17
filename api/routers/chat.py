@@ -2624,6 +2624,61 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         raise HTTPException(status_code=500, detail=detail)
 
 
+@router.post("/sessions/{session_id}/visualize/angle")
+async def generate_angle_view(session_id: str, request: dict, db: AsyncSession = Depends(get_db)):
+    """
+    Generate a visualization from a specific viewing angle (on-demand).
+
+    Request body:
+    - visualization_image: Base64 encoded front-view visualization
+    - target_angle: "left", "right", or "back"
+    - products_description: Optional description of products in the room
+    """
+    try:
+        # Verify session exists
+        session_query = select(ChatSession).where(ChatSession.id == session_id)
+        session_result = await db.execute(session_query)
+        session = session_result.scalar_one_or_none()
+
+        if not session:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+
+        # Extract request data
+        visualization_image = request.get("visualization_image")
+        target_angle = request.get("target_angle")
+        products_description = request.get("products_description")
+
+        if not visualization_image:
+            raise HTTPException(status_code=400, detail="Visualization image is required")
+
+        if target_angle not in ["left", "right", "back"]:
+            raise HTTPException(status_code=400, detail="Invalid target angle. Must be 'left', 'right', or 'back'")
+
+        logger.info(f"Generating {target_angle} view for session {session_id}")
+
+        # Generate alternate view using Google AI service
+        result_image = await google_ai_service.generate_alternate_view(
+            visualization_image=visualization_image,
+            target_angle=target_angle,
+            products_description=products_description
+        )
+
+        return {
+            "angle": target_angle,
+            "image": result_image,
+            "message": f"Successfully generated {target_angle} view"
+        }
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logger.error(f"Error generating angle view: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error generating angle view: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error generating {target_angle} view: {str(e)}")
+
+
 @router.post("/sessions/{session_id}/visualization/undo")
 async def undo_visualization(session_id: str):
     """Undo last visualization and return previous state"""
