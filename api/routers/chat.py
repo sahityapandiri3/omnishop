@@ -2075,6 +2075,35 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             is_incremental = False
             logger.info("Force reset: Disabled incremental mode to ensure clean visualization")
 
+        # Perspective transformation: Convert side-angle photos to front view
+        # Only applies to fresh visualizations (force_reset or first time)
+        normalize_perspective = request.get("normalize_perspective", True)
+        if normalize_perspective and (force_reset or not is_incremental):
+            try:
+                # Quick room analysis to detect viewing angle
+                logger.info("Analyzing room image for perspective transformation...")
+                room_analysis = await google_ai_service.analyze_room_image(base_image)
+
+                # Check if viewing angle needs transformation
+                camera_view = getattr(room_analysis, 'camera_view_analysis', {}) or {}
+                viewing_angle = camera_view.get('viewing_angle', 'straight_on')
+
+                if viewing_angle and viewing_angle != 'straight_on':
+                    logger.info(f"Detected {viewing_angle} camera angle - transforming to front view")
+                    transformed_image = await google_ai_service.transform_perspective_to_front(
+                        base_image, viewing_angle
+                    )
+                    if transformed_image and transformed_image != base_image:
+                        base_image = transformed_image
+                        logger.info("Successfully transformed perspective to front view")
+                    else:
+                        logger.info("Perspective transformation returned original image")
+                else:
+                    logger.info("Room already has straight-on perspective, no transformation needed")
+            except Exception as e:
+                logger.warning(f"Perspective transformation failed, using original image: {e}")
+                # Continue with original image if transformation fails
+
         # Check product count and enforce incremental visualization for larger sets
         # The Gemini API has input size limitations and fails with 500 errors when
         # processing 5+ products simultaneously. Use incremental mode as workaround.
