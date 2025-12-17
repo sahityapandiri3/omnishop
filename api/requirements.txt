@@ -31,7 +31,8 @@ pydantic-settings==2.0.3
 openai>=1.3.5
 
 # Google Generative AI (for image generation with gemini-2.5-flash-image)
-google-genai==1.41.0
+# Version 1.47.0 required for MediaResolution.MEDIA_RESOLUTION_HIGH support
+google-genai>=1.47.0
 
 # Image processing
 Pillow==10.0.1
