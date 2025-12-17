@@ -844,25 +844,28 @@ The output MUST be a COMPLETELY EMPTY room with ZERO furniture remaining.
 4. ALL LAMPS: Floor lamps, tripod lamps, standing lamps, table lamps, any lamp with a base on the floor
 5. ALL MIRRORS: Standing mirrors, floor mirrors, full-length mirrors, leaning mirrors against walls
 6. ALL PLANTS: Potted plants, planters, indoor trees
-7. ALL DECOR: Vases, sculptures, frames, artwork, cushions, throws, rugs
+7. ALL DECOR: Vases, sculptures, frames, artwork, cushions, throws on furniture
+8. 🚨 ALL FLOOR COVERINGS: Carpets, rugs, area rugs, floor mats, dhurries, runners - the BARE FLOOR must be visible
 
 🔴 IMPORTANT: If you see ANY of these in the image, they MUST be removed:
 - A curved or L-shaped sofa → REMOVE IT
 - A lamp with wooden tripod legs → REMOVE IT
 - A tall standing mirror leaning against wall → REMOVE IT
 - Any potted plant → REMOVE IT
+- ANY carpet or rug on the floor → REMOVE IT (show bare floor)
+- ANY floor covering of any color/pattern → REMOVE IT
 
 ✅ KEEP ONLY (do not modify these):
-- Walls, ceiling, floor (the room structure)
+- Walls, ceiling, floor (the BARE room floor - no carpets/rugs)
 - Windows, doors, built-in closets
 - Curtains/drapes on windows
 - AC units mounted on walls
 - Electrical outlets and switches
 - Archways and architectural features
 
-OUTPUT: Generate an image of the SAME room but COMPLETELY EMPTY - no furniture, no lamps, no mirrors, no plants. The room should look vacant and ready for new furniture to be added.
+OUTPUT: Generate an image of the SAME room but COMPLETELY EMPTY - no furniture, no lamps, no mirrors, no plants, NO CARPETS OR RUGS. The bare floor must be visible. The room should look vacant and ready for new furniture to be added.
 
-FAILURE IS NOT ACCEPTABLE: Every single piece of furniture MUST be removed. Do not leave any sofa, lamp, or mirror in the output."""
+FAILURE IS NOT ACCEPTABLE: Every single piece of furniture AND floor covering MUST be removed. Do not leave any sofa, lamp, mirror, or carpet in the output."""
 
             # Retry loop with exponential backoff
             for attempt in range(max_retries):
@@ -3376,52 +3379,70 @@ YOUR TASK: Generate this room from a COMPLETELY DIFFERENT angle - a STRAIGHT-ON 
 
             # Build angle-specific prompts - emphasize CAMERA POSITION not just rotation
             angle_prompts = {
-                "left": """🎥 CAMERA POSITION: LEFT SIDE OF THE ROOM
+                "left": """🎥 CAMERA REPOSITIONED TO LEFT SIDE OF ROOM - 90° SCENE ROTATION
 
-CRITICAL: The camera is now PHYSICALLY LOCATED on the LEFT WALL of the room, looking ACROSS the room towards the RIGHT WALL.
+🚨🚨🚨 CRITICAL - THIS IS A FULL SCENE ROTATION, NOT FURNITURE ROTATION 🚨🚨🚨
 
-📍 CAMERA LOCATION:
-- Camera is AGAINST the LEFT WALL (or where the left wall would be)
-- Camera is pointing TOWARDS the RIGHT WALL
-- You are standing on the left side, looking right
+The camera has PHYSICALLY MOVED to the LEFT WALL and is now pointing at the RIGHT WALL.
+The ENTIRE SCENE rotates 90° counterclockwise - including walls, floor, ceiling, EVERYTHING.
 
-📐 WHAT YOU NOW SEE:
-- The RIGHT WALL is now directly in front of you (your new "back wall")
-- The ORIGINAL BACK WALL is now on your LEFT side
-- The ORIGINAL FRONT WALL (where camera was before) is now on your RIGHT side
-- The LEFT WALL is BEHIND YOU (behind the camera)
+📍 CAMERA TRANSFORMATION:
+- Camera WAS at the front of the room, looking at the back wall
+- Camera is NOW at the left side of the room, looking at the right wall
+- This is equivalent to walking 90° around the room and taking a new photo
 
-🛋️ FURNITURE FROM THIS NEW POSITION:
-- A sofa that was "facing you" in front view is now seen from its LEFT SIDE (armrest, side profile)
-- A chair that was facing front is now seen from its LEFT SIDE
-- Tables are seen from their LEFT EDGE
-- You see the LEFT SIDES of all furniture items
-- Furniture stays in the SAME FLOOR POSITIONS - only your viewing angle changes
+📐 HOW THE BACKGROUND CHANGES (NOT just furniture):
+- The RIGHT WALL → NOW CENTER/BACKGROUND of image (what camera points at)
+- The BACK WALL → NOW on LEFT edge of image
+- The FRONT/ORIGINAL CAMERA POSITION → NOW on RIGHT edge of image
+- The LEFT WALL with curtains → NOW BEHIND CAMERA (NOT VISIBLE AT ALL)
 
-⚠️ THIS IS NOT a slight shift - the camera has MOVED to a completely different wall of the room.""",
-                "right": """🎥 CAMERA POSITION: RIGHT SIDE OF THE ROOM
+🚫🚫🚫 COMMON MISTAKE - DO NOT DO THIS:
+- ❌ WRONG: Rotating ONLY the furniture while keeping same walls/background
+- ❌ WRONG: Curtains still visible in same position with furniture turned
+- ❌ WRONG: Same background with furniture rotated in place
+- ❌ WRONG: Sofa turned around but room background unchanged
 
-CRITICAL: The camera is now PHYSICALLY LOCATED on the RIGHT WALL of the room, looking ACROSS the room towards the LEFT WALL.
+✅ CORRECT RESULT:
+- ✅ The entire room appears rotated 90°
+- ✅ Curtains/windows that were on LEFT are NO LONGER VISIBLE (behind camera)
+- ✅ The white/right wall is now the CENTER BACKGROUND
+- ✅ Sofa is seen from its SIDE PROFILE (narrow view, armrest visible)
+- ✅ The floor pattern and ceiling rotate with the rest of the scene
 
-📍 CAMERA LOCATION:
-- Camera is AGAINST the RIGHT WALL (or where the right wall would be)
-- Camera is pointing TOWARDS the LEFT WALL
-- You are standing on the right side, looking left
+Think of it like the viewer WALKED to the left wall and took a NEW PHOTO from there.""",
+                "right": """🎥 CAMERA REPOSITIONED TO RIGHT SIDE OF ROOM - 90° SCENE ROTATION
 
-📐 WHAT YOU NOW SEE:
-- The LEFT WALL is now directly in front of you (your new "back wall")
-- The ORIGINAL BACK WALL is now on your RIGHT side
-- The ORIGINAL FRONT WALL (where camera was before) is now on your LEFT side
-- The RIGHT WALL is BEHIND YOU (behind the camera)
+🚨🚨🚨 CRITICAL - THIS IS A FULL SCENE ROTATION, NOT FURNITURE ROTATION 🚨🚨🚨
 
-🛋️ FURNITURE FROM THIS NEW POSITION:
-- A sofa that was "facing you" in front view is now seen from its RIGHT SIDE (armrest, side profile)
-- A chair that was facing front is now seen from its RIGHT SIDE
-- Tables are seen from their RIGHT EDGE
-- You see the RIGHT SIDES of all furniture items
-- Furniture stays in the SAME FLOOR POSITIONS - only your viewing angle changes
+The camera has PHYSICALLY MOVED to the RIGHT WALL and is now pointing at the LEFT WALL.
+The ENTIRE SCENE rotates 90° clockwise - including walls, floor, ceiling, EVERYTHING.
 
-⚠️ THIS IS NOT a slight shift - the camera has MOVED to a completely different wall of the room.""",
+📍 CAMERA TRANSFORMATION:
+- Camera WAS at the front of the room, looking at the back wall
+- Camera is NOW at the right side of the room, looking at the left wall
+- This is equivalent to walking 90° around the room and taking a new photo
+
+📐 HOW THE BACKGROUND CHANGES (NOT just furniture):
+- The LEFT WALL with curtains/windows → NOW CENTER/BACKGROUND of image
+- The BACK WALL → NOW on RIGHT edge of image
+- The FRONT/ORIGINAL CAMERA POSITION → NOW on LEFT edge of image
+- The RIGHT WALL → NOW BEHIND CAMERA (NOT VISIBLE AT ALL)
+
+🚫🚫🚫 COMMON MISTAKE - DO NOT DO THIS:
+- ❌ WRONG: Rotating ONLY the furniture while keeping same walls/background
+- ❌ WRONG: Same background with furniture rotated in place
+- ❌ WRONG: Sofa turned around but room background unchanged
+- ❌ WRONG: Keeping the white right wall visible in same position
+
+✅ CORRECT RESULT:
+- ✅ The entire room appears rotated 90°
+- ✅ The curtained/windowed wall is now the CENTER BACKGROUND
+- ✅ The white wall that was on RIGHT is NO LONGER VISIBLE (behind camera)
+- ✅ Sofa is seen from its SIDE PROFILE (narrow view, armrest visible)
+- ✅ The floor pattern and ceiling rotate with the rest of the scene
+
+Think of it like the viewer WALKED to the right wall and took a NEW PHOTO from there.""",
                 "back": """🎥 EXACT 180° OPPOSITE VIEW - CAMERA FLIPPED TO OTHER END OF ROOM
 
 This is the EXACT OPPOSITE of the front view. Imagine picking up the camera and moving it to the opposite end of the room, then turning it around 180°.

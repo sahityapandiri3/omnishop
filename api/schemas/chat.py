@@ -1,11 +1,11 @@
 """
 Pydantic schemas for chat-related API endpoints
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 class MessageType(str, Enum):
@@ -60,6 +60,14 @@ class ChatMessageSchema(BaseModel):
     products: Optional[List[Dict[str, Any]]] = None
     image_url: Optional[str] = None
 
+    @field_serializer("timestamp")
+    def serialize_timestamp(self, value: datetime) -> str:
+        """Serialize timestamp as ISO format with UTC indicator for correct JS parsing"""
+        if value.tzinfo is None:
+            # Treat naive datetime as UTC
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+
     class Config:
         from_attributes = True
 
@@ -72,6 +80,14 @@ class ChatSessionSchema(BaseModel):
     updated_at: datetime
     message_count: int = 0
     user_id: Optional[str] = None
+
+    @field_serializer("created_at", "updated_at")
+    def serialize_timestamps(self, value: datetime) -> str:
+        """Serialize timestamps as ISO format with UTC indicator for correct JS parsing"""
+        if value.tzinfo is None:
+            # Treat naive datetime as UTC
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
 
     class Config:
         from_attributes = True
