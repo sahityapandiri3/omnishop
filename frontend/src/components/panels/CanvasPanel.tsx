@@ -30,6 +30,11 @@ const isBase64Image = (src: string | null | undefined): boolean => {
   return src.startsWith('data:') || src.startsWith('/9j/') || src.startsWith('iVBOR');
 };
 
+interface ProductAttribute {
+  attribute_name: string;
+  attribute_value: string;
+}
+
 interface Product {
   id: string;
   name: string;
@@ -45,6 +50,7 @@ interface Product {
   source?: string;
   description?: string;
   quantity?: number;  // Quantity for multiple of same product (default: 1)
+  attributes?: ProductAttribute[];  // Product attributes including dimensions (width, height, depth)
 }
 
 // Visualization history entry for local undo/redo tracking
@@ -490,6 +496,19 @@ export default function CanvasPanel({
         console.log(`[CanvasPanel] Initial visualization: visualizing all products (using ${cleanRoomImage ? 'clean room' : 'room image'})`);
       }
 
+      // Helper function to extract dimensions from product attributes
+      const extractDimensions = (attrs?: ProductAttribute[]) => {
+        if (!attrs) return undefined;
+        const dimensions: { width?: string; height?: string; depth?: string } = {};
+        for (const attr of attrs) {
+          if (attr.attribute_name === 'width') dimensions.width = attr.attribute_value;
+          else if (attr.attribute_name === 'height') dimensions.height = attr.attribute_value;
+          else if (attr.attribute_name === 'depth') dimensions.depth = attr.attribute_value;
+        }
+        // Only return if at least one dimension exists
+        return (dimensions.width || dimensions.height || dimensions.depth) ? dimensions : undefined;
+      };
+
       // Helper function to format product for API
       const formatProductForApi = (p: Product) => ({
         id: p.id,
@@ -500,7 +519,8 @@ export default function CanvasPanel({
         product_type: p.productType || 'furniture',
         style: 0.8,
         category: p.productType || 'furniture',
-        quantity: p.quantity || 1  // Include quantity for placing multiple of same product
+        quantity: p.quantity || 1,  // Include quantity for placing multiple of same product
+        dimensions: extractDimensions(p.attributes)  // Include actual dimensions (width, height, depth in inches)
       });
 
       // Prepare products for V1 API with complete context

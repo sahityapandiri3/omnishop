@@ -21,10 +21,12 @@ class ScrapingManager:
 
     def __init__(self):
         # Active spiders with configured scrapers
-        self.spiders = ['pelicanessentials', 'sageliving', 'objectry', 'josmo', 'magari', 'phantomhands']
+        self.spiders = ['pelicanessentials', 'sageliving', 'objectry', 'josmo', 'magari', 'phantomhands',
+                       'nicobar', 'ellementry', 'obeetee']
         # All sources (including legacy scraped data)
         self.all_sources = ['pelicanessentials', 'sageliving', 'objectry', 'josmo', 'magari', 'phantomhands',
-                           'thehouseofthings', 'modernquests', 'masonhome', 'palasa', 'fleck']
+                           'thehouseofthings', 'modernquests', 'masonhome', 'palasa', 'fleck',
+                           'nicobar', 'ellementry', 'obeetee']
         self.project_root = Path(__file__).parent.parent
 
     def run_spider(self, spider_name: str, **kwargs) -> Dict:

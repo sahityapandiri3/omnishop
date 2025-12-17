@@ -28,6 +28,25 @@ api.interceptors.request.use(
 // Session recovery storage key
 const SESSION_RECOVERY_KEY = 'omnishop_session_recovery';
 
+// Flag to prevent multiple 401 redirect attempts
+// This prevents infinite loop when navigation guard blocks the redirect
+let isRedirectingToLogin = false;
+let redirectResetTimeout: NodeJS.Timeout | null = null;
+
+// Function to reset redirect flag (allows retry after user cancels navigation)
+const resetRedirectFlag = () => {
+  isRedirectingToLogin = false;
+  if (redirectResetTimeout) {
+    clearTimeout(redirectResetTimeout);
+    redirectResetTimeout = null;
+  }
+};
+
+// Export for use by auth components after successful login
+export const clearRedirectState = () => {
+  resetRedirectFlag();
+};
+
 // Function to save design state before 401 redirect
 export const saveDesignStateForRecovery = () => {
   if (typeof window === 'undefined') return;
@@ -163,8 +182,23 @@ api.interceptors.response.use(
       if (typeof window !== 'undefined') {
         const currentPath = window.location.pathname;
         // Only clear token and redirect if not already on auth pages
-        if (!currentPath.startsWith('/login') && !currentPath.startsWith('/register')) {
+        // AND if we haven't already started a redirect (prevents infinite loop when navigation guard blocks)
+        if (!currentPath.startsWith('/login') && !currentPath.startsWith('/register') && !isRedirectingToLogin) {
           console.warn('[API] 401 Unauthorized - Session expired. Redirecting to login...');
+
+          // Set flag to prevent multiple redirect attempts
+          isRedirectingToLogin = true;
+
+          // Reset the flag after 10 seconds in case user cancels navigation
+          // This allows a retry if user wants to navigate after dealing with unsaved work
+          if (redirectResetTimeout) {
+            clearTimeout(redirectResetTimeout);
+          }
+          redirectResetTimeout = setTimeout(() => {
+            console.log('[API] Redirect flag reset after timeout');
+            isRedirectingToLogin = false;
+            redirectResetTimeout = null;
+          }, 10000);
 
           // Save design state before redirecting (if on design page)
           if (currentPath.startsWith('/design')) {
@@ -174,6 +208,8 @@ api.interceptors.response.use(
           localStorage.removeItem('auth_token');
           // Force page reload to trigger auth check and redirect
           window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`;
+        } else if (isRedirectingToLogin) {
+          console.log('[API] 401 received but redirect already in progress, ignoring...');
         }
       }
     }
@@ -648,6 +684,7 @@ export interface AdminCuratedLookProduct {
   source_url: string | null;
   product_type: string | null;
   description: string | null;
+  quantity?: number;
 }
 
 export interface AdminCuratedLook {
@@ -877,6 +914,7 @@ export const getCuratedLookById = async (lookId: string | number): Promise<Curat
 export interface Project {
   id: string;
   name: string;
+  status: 'draft' | 'published';  // Project status for draft mode
   room_image: string | null;
   clean_room_image: string | null;
   visualization_image: string | null;
@@ -890,6 +928,7 @@ export interface Project {
 export interface ProjectListItem {
   id: string;
   name: string;
+  status: 'draft' | 'published';  // Project status for draft mode
   has_room_image: boolean;
   has_visualization: boolean;
   created_at: string;
@@ -907,6 +946,7 @@ export interface CreateProjectData {
 
 export interface UpdateProjectData {
   name?: string;
+  status?: 'draft' | 'published';  // Project status for draft mode
   room_image?: string;
   clean_room_image?: string;
   visualization_image?: string;

@@ -157,15 +157,15 @@ export default function AdminCuratedLooksPage() {
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {looks.map((look) => (
               <div
                 key={look.id}
-                className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow"
+                className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow"
               >
-                {/* Clickable Image - Larger aspect ratio */}
+                {/* Clickable Image */}
                 <Link href={`/admin/curated/${look.id}`} className="block">
-                  <div className="aspect-[4/3] relative bg-gray-100 cursor-pointer group">
+                  <div className="aspect-[16/10] relative bg-gray-100 cursor-pointer group">
                     {look.visualization_image ? (
                       <Image
                         src={look.visualization_image.startsWith('data:') ? look.visualization_image : `data:image/png;base64,${look.visualization_image}`}
@@ -191,8 +191,8 @@ export default function AdminCuratedLooksPage() {
                     </div>
 
                     {/* Status Badge */}
-                    <div className="absolute top-4 left-4">
-                      <span className={`px-3 py-1.5 rounded-full text-sm font-medium ${
+                    <div className="absolute top-3 left-3">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                         look.is_published
                           ? 'bg-green-100 text-green-700'
                           : 'bg-yellow-100 text-yellow-700'
@@ -202,8 +202,8 @@ export default function AdminCuratedLooksPage() {
                     </div>
 
                     {/* Room Type Badge */}
-                    <div className="absolute top-4 right-4">
-                      <span className="px-3 py-1.5 bg-black/60 text-white rounded-full text-sm font-medium capitalize">
+                    <div className="absolute top-3 right-3">
+                      <span className="px-2 py-1 bg-black/60 text-white rounded-full text-xs font-medium capitalize">
                         {look.room_type.replace('_', ' ')}
                       </span>
                     </div>
@@ -211,49 +211,45 @@ export default function AdminCuratedLooksPage() {
                 </Link>
 
                 {/* Content */}
-                <div className="p-5">
+                <div className="p-4">
                   <Link href={`/admin/curated/${look.id}`} className="block hover:text-purple-600 transition-colors">
-                    <h3 className="font-semibold text-gray-900 text-lg mb-1">{look.title}</h3>
+                    <h3 className="font-semibold text-gray-900 text-base mb-0.5 line-clamp-1">{look.title}</h3>
                   </Link>
-                  <p className="text-sm text-gray-600 mb-3">{look.style_theme}</p>
+                  <p className="text-xs text-gray-600 mb-2 line-clamp-1">{look.style_theme}</p>
 
-                  <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
+                  <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
                     <span>{look.product_count} products</span>
-                    <span className="text-lg font-semibold text-gray-900">{formatPrice(look.total_price)}</span>
-                  </div>
-
-                  <div className="text-xs text-gray-400 mb-4">
-                    Created {formatDate(look.created_at)}
+                    <span className="text-base font-semibold text-gray-900">{formatPrice(look.total_price)}</span>
                   </div>
 
                   {/* Actions */}
-                  <div className="flex gap-2">
+                  <div className="flex gap-1.5">
                     <Link
                       href={`/admin/curated/${look.id}`}
-                      className="flex-1 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg text-center transition-colors"
+                      className="flex-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg text-center transition-colors"
                     >
-                      View Details
+                      View
                     </Link>
                     {look.is_published ? (
                       <button
                         onClick={() => handleUnpublish(look.id)}
-                        className="px-4 py-2.5 bg-yellow-100 hover:bg-yellow-200 text-yellow-700 text-sm font-medium rounded-lg transition-colors"
+                        className="px-3 py-2 bg-yellow-100 hover:bg-yellow-200 text-yellow-700 text-xs font-medium rounded-lg transition-colors"
                       >
                         Unpublish
                       </button>
                     ) : (
                       <button
                         onClick={() => handlePublish(look.id)}
-                        className="px-4 py-2.5 bg-green-100 hover:bg-green-200 text-green-700 text-sm font-medium rounded-lg transition-colors"
+                        className="px-3 py-2 bg-green-100 hover:bg-green-200 text-green-700 text-xs font-medium rounded-lg transition-colors"
                       >
                         Publish
                       </button>
                     )}
                     <button
                       onClick={() => handleDelete(look.id)}
-                      className="px-3 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 text-sm font-medium rounded-lg transition-colors"
+                      className="px-2 py-2 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-medium rounded-lg transition-colors"
                     >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                       </svg>
                     </button>

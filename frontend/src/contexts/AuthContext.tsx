@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
 import { api } from '@/utils/api';
 
 // Types
@@ -18,6 +18,8 @@ interface AuthState {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  // Indicates if session was invalidated by another tab (e.g., logout in another tab)
+  sessionInvalidatedExternally: boolean;
 }
 
 interface AuthContextType extends AuthState {
@@ -26,6 +28,8 @@ interface AuthContextType extends AuthState {
   loginWithGoogle: (googleToken: string) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
+  // Clear the external invalidation flag (after user acknowledges)
+  clearExternalInvalidation: () => void;
 }
 
 // Create context
@@ -40,7 +44,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user: null,
     isLoading: true,
     isAuthenticated: false,
+    sessionInvalidatedExternally: false,
   });
+
+  // Track the current user ID to detect user changes across tabs
+  const currentUserIdRef = useRef<string | null>(null);
 
   // Get stored token
   const getToken = useCallback(() => {
@@ -58,31 +66,87 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Clear external invalidation flag
+  const clearExternalInvalidation = useCallback(() => {
+    setState(prev => ({ ...prev, sessionInvalidatedExternally: false }));
+  }, []);
+
   // Fetch current user
-  const refreshUser = useCallback(async () => {
+  const refreshUser = useCallback(async (isExternalChange = false) => {
     const token = getToken();
     if (!token) {
-      setState({ user: null, isLoading: false, isAuthenticated: false });
+      // If we had a user before and now there's no token, mark as externally invalidated
+      const wasAuthenticated = currentUserIdRef.current !== null;
+      currentUserIdRef.current = null;
+      setState({
+        user: null,
+        isLoading: false,
+        isAuthenticated: false,
+        sessionInvalidatedExternally: wasAuthenticated && isExternalChange,
+      });
       return;
     }
 
     try {
       const response = await api.get('/api/auth/me');
+      const newUser = response.data;
+
+      // Check if user changed (different user logged in from another tab)
+      const userChanged = currentUserIdRef.current !== null &&
+                          currentUserIdRef.current !== newUser.id;
+      currentUserIdRef.current = newUser.id;
+
       setState({
-        user: response.data,
+        user: newUser,
         isLoading: false,
         isAuthenticated: true,
+        // If a different user logged in externally, flag it
+        sessionInvalidatedExternally: userChanged && isExternalChange,
       });
     } catch (error) {
       // Token invalid or expired
+      const wasAuthenticated = currentUserIdRef.current !== null;
+      currentUserIdRef.current = null;
       setToken(null);
-      setState({ user: null, isLoading: false, isAuthenticated: false });
+      setState({
+        user: null,
+        isLoading: false,
+        isAuthenticated: false,
+        sessionInvalidatedExternally: wasAuthenticated && isExternalChange,
+      });
     }
   }, [getToken, setToken]);
 
   // Check auth status on mount
   useEffect(() => {
     refreshUser();
+  }, [refreshUser]);
+
+  // Listen for storage events (token changes from other tabs)
+  useEffect(() => {
+    const handleStorageChange = (event: StorageEvent) => {
+      // Only react to auth_token changes
+      if (event.key !== TOKEN_KEY) return;
+
+      console.log('[AuthContext] Token changed in another tab:', {
+        oldValue: event.oldValue ? 'present' : 'none',
+        newValue: event.newValue ? 'present' : 'none',
+      });
+
+      // Token was cleared in another tab (logout)
+      if (!event.newValue && event.oldValue) {
+        console.log('[AuthContext] Session invalidated by another tab (logout)');
+        refreshUser(true); // true = external change
+      }
+      // Token was set/changed in another tab (login or user switch)
+      else if (event.newValue && event.newValue !== event.oldValue) {
+        console.log('[AuthContext] Token changed in another tab, refreshing user');
+        refreshUser(true); // true = external change
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, [refreshUser]);
 
   // Login with email/password
@@ -92,10 +156,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await api.post('/api/auth/login', { email, password });
       const { access_token, user } = response.data;
       setToken(access_token);
+      currentUserIdRef.current = user.id;
       setState({
         user,
         isLoading: false,
         isAuthenticated: true,
+        sessionInvalidatedExternally: false,
       });
     } catch (error: any) {
       setState(prev => ({ ...prev, isLoading: false }));
@@ -110,10 +176,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await api.post('/api/auth/register', { email, password, name });
       const { access_token, user } = response.data;
       setToken(access_token);
+      currentUserIdRef.current = user.id;
       setState({
         user,
         isLoading: false,
         isAuthenticated: true,
+        sessionInvalidatedExternally: false,
       });
     } catch (error: any) {
       setState(prev => ({ ...prev, isLoading: false }));
@@ -128,10 +196,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await api.post('/api/auth/google', { token: googleToken });
       const { access_token, user } = response.data;
       setToken(access_token);
+      currentUserIdRef.current = user.id;
       setState({
         user,
         isLoading: false,
         isAuthenticated: true,
+        sessionInvalidatedExternally: false,
       });
     } catch (error: any) {
       setState(prev => ({ ...prev, isLoading: false }));
@@ -142,10 +212,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Logout
   const logout = useCallback(() => {
     setToken(null);
+    currentUserIdRef.current = null;
     setState({
       user: null,
       isLoading: false,
       isAuthenticated: false,
+      sessionInvalidatedExternally: false,
     });
     // Optionally call logout endpoint (not strictly necessary with JWT)
     api.post('/api/auth/logout').catch(() => {});
@@ -158,6 +230,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loginWithGoogle,
     logout,
     refreshUser,
+    clearExternalInvalidation,
   };
 
   return (

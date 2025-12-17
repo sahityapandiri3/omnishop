@@ -204,7 +204,8 @@ class BaseProductSpider(scrapy.Spider):
             'Outdoor': 'Outdoor',
             'Storage': 'Storage',
             'Lighting': 'Lighting',
-            'Rugs': 'Rugs & Textiles',
+            'Rugs': 'Rugs',
+            'Rug': 'Rugs',  # Handle singular form
             'Decor': 'Decor & Accessories',
             'Furniture': 'Furniture'
         }
@@ -388,7 +389,7 @@ class BaseProductSpider(scrapy.Spider):
 
         # Rug / Carpet detection
         if 'rug' in name_lower or 'carpet' in name_lower:
-            return 'Rug'
+            return 'Rugs'
 
         # Planter detection
         if 'planter' in name_lower or 'plant pot' in name_lower or 'flower pot' in name_lower:

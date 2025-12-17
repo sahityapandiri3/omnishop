@@ -48,7 +48,7 @@ function DesignPageContent() {
   // Project state (for logged-in users)
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, sessionInvalidatedExternally, clearExternalInvalidation } = useAuth();
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>('');
   const [isEditingName, setIsEditingName] = useState(false);
@@ -67,8 +67,9 @@ function DesignPageContent() {
   const hasUnsavedChanges = saveStatus === 'unsaved' || saveStatus === 'saving';
 
   // Enable navigation guard when there are unsaved changes
+  // BUT disable it if session was invalidated by another tab (allow user to navigate to login)
   useNavigationGuard({
-    enabled: hasUnsavedChanges,
+    enabled: hasUnsavedChanges && !sessionInvalidatedExternally,
     message: 'You have unsaved changes. Are you sure you want to leave?',
     onNavigationAttempt: () => {
       console.log('[DesignPage] Navigation blocked due to unsaved changes');
@@ -186,6 +187,7 @@ function DesignPageContent() {
           source: p.source_website,
           source_url: p.source_url,  // Preserve source URL
           description: p.description,  // Preserve description for AI context
+          attributes: p.attributes,  // Preserve attributes for dimensions (width, height, depth)
         }));
         setCanvasProducts(formattedProducts);
         console.log('[DesignPage] Loaded', formattedProducts.length, 'preselected products from curated look with full context');
@@ -482,7 +484,16 @@ function DesignPageContent() {
 
   // Manual save function
   const saveProject = useCallback(async () => {
-    if (!isAuthenticated || !projectId) return;
+    console.log('[DesignPage] Save button clicked', { isAuthenticated, projectId, saveStatus });
+
+    if (!isAuthenticated) {
+      console.warn('[DesignPage] Cannot save: Not authenticated');
+      return;
+    }
+    if (!projectId) {
+      console.warn('[DesignPage] Cannot save: No projectId');
+      return;
+    }
 
     // Get current state
     const currentData = {
@@ -536,11 +547,16 @@ function DesignPageContent() {
       setSaveStatus('saved');
       setLastSavedAt(new Date());
       console.log('[DesignPage] Project saved');
-    } catch (error) {
+    } catch (error: any) {
       console.error('[DesignPage] Save failed:', error);
+      console.error('[DesignPage] Error details:', {
+        message: error?.message,
+        status: error?.response?.status,
+        data: error?.response?.data,
+      });
       setSaveStatus('unsaved');
     }
-  }, [isAuthenticated, projectId, projectName, roomImage, cleanRoomImage, initialVisualizationImage, canvasProducts, visualizationHistory, chatSessionId]);
+  }, [isAuthenticated, projectId, projectName, roomImage, cleanRoomImage, initialVisualizationImage, canvasProducts, visualizationHistory, chatSessionId, saveStatus]);
 
   // Track unsaved changes - SIMPLE APPROACH
   // Use a ref to track when the project was last saved, and compare against current state
@@ -1049,6 +1065,42 @@ function DesignPageContent() {
 
   return (
     <div className="h-screen flex flex-col bg-neutral-50 dark:bg-neutral-900">
+      {/* Session Invalidated Banner - shows when logged out from another tab */}
+      {sessionInvalidatedExternally && (
+        <div className="bg-amber-50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-700 px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <svg className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div>
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                Your session changed in another tab
+              </p>
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                You were logged out or logged in as a different user. Please save your work locally if needed.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => router.push('/login')}
+              className="px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-200 bg-amber-100 dark:bg-amber-800/50 hover:bg-amber-200 dark:hover:bg-amber-800 rounded-md transition-colors"
+            >
+              Go to Login
+            </button>
+            <button
+              onClick={clearExternalInvalidation}
+              className="p-1.5 text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200 transition-colors"
+              title="Dismiss"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="bg-white dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">

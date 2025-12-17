@@ -16,9 +16,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Whitelist of allowed email addresses (set to None to allow all)
-ALLOWED_EMAILS = [
-    "sahityapandiri3@gmail.com",
-]
+ALLOWED_EMAILS = None  # Disabled for customer testing
 
 
 def check_email_allowed(email: str) -> bool:

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
@@ -44,6 +44,11 @@ interface VisualizationHistoryEntry {
 
 export default function CreateCuratedLookPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const styleFromId = searchParams?.get('style_from');
+
+  // Loading state for style_from
+  const [loadingStyleFrom, setLoadingStyleFrom] = useState(false);
 
   // Session for visualization
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -79,6 +84,7 @@ export default function CreateCuratedLookPage() {
   const [styleDescription, setStyleDescription] = useState('');
   const [roomType, setRoomType] = useState<'living_room' | 'bedroom'>('living_room');
   const [saving, setSaving] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Furniture quantity rules - same as user experience
@@ -164,6 +170,96 @@ export default function CreateCuratedLookPage() {
     loadCategories();
     loadStores();
   }, []);
+
+  // Load existing curated look if style_from parameter is present
+  useEffect(() => {
+    if (styleFromId && sessionId) {
+      loadExistingLook(parseInt(styleFromId));
+    }
+  }, [styleFromId, sessionId]);
+
+  const loadExistingLook = async (lookId: number) => {
+    try {
+      setLoadingStyleFrom(true);
+      console.log('[StyleFrom] Loading existing look:', lookId);
+
+      const look = await adminCuratedAPI.get(lookId);
+      console.log('[StyleFrom] Loaded look:', look.title, 'with', look.products.length, 'products');
+
+      // Pre-populate metadata (including title for editing the same item)
+      setTitle(look.title || '');
+      setStyleTheme(look.style_theme || '');
+      setStyleDescription(look.style_description || '');
+      setRoomType(look.room_type as 'living_room' | 'bedroom');
+
+      // Pre-populate room image
+      if (look.room_image) {
+        const roomImg = look.room_image.startsWith('data:')
+          ? look.room_image
+          : `data:image/png;base64,${look.room_image}`;
+        setRoomImage(roomImg);
+      }
+
+      // Pre-populate visualization image
+      if (look.visualization_image) {
+        const vizImg = look.visualization_image.startsWith('data:')
+          ? look.visualization_image
+          : `data:image/png;base64,${look.visualization_image}`;
+        setVisualizationImage(vizImg);
+      }
+
+      // Pre-populate products with quantities from the API
+      const productsWithQuantity = look.products.map(p => ({
+        ...p,
+        quantity: p.quantity || 1, // Use actual quantity from API
+        product_type: p.product_type || ''
+      }));
+      setSelectedProducts(productsWithQuantity);
+
+      // Set visualized state - assume the saved visualization matches database quantities
+      // This prevents false "quantity changed" detection on initial load
+      // Only when user ACTUALLY changes quantities should it trigger re-visualization
+      const productIds = new Set(look.products.map(p => String(p.id)));
+      setVisualizedProductIds(productIds);
+
+      // Set visualized products with ACTUAL quantities from database
+      // This assumes the saved visualization was created with these quantities
+      setVisualizedProducts(productsWithQuantity);
+
+      // IMPORTANT: Explicitly set needsRevisualization to false AFTER all state updates
+      // This prevents the change detection useEffect from incorrectly flagging changes
+      // due to timing issues between state updates
+      setNeedsRevisualization(false);
+
+      // CRITICAL: Save the initial state to visualization history
+      // This allows undo to go back to the loaded state instead of null
+      if (look.visualization_image) {
+        const vizImg = look.visualization_image.startsWith('data:')
+          ? look.visualization_image
+          : `data:image/png;base64,${look.visualization_image}`;
+        const initialHistoryEntry = {
+          image: vizImg,
+          products: productsWithQuantity,
+          productIds: productIds
+        };
+        setVisualizationHistory([initialHistoryEntry]);
+        setCanUndo(false); // Can't undo past the initial loaded state
+        setRedoStack([]); // Clear any redo stack
+        console.log('[StyleFrom] Added initial state to visualization history');
+      }
+
+      console.log('[StyleFrom] Pre-populated canvas with', productsWithQuantity.length, 'products');
+      console.log('[StyleFrom] Product IDs (string):', Array.from(productIds));
+      console.log('[StyleFrom] Selected products (actual qty):', productsWithQuantity.map(p => ({ id: p.id, name: p.name, qty: p.quantity })));
+      console.log('[StyleFrom] Visualized products set to match selected (no false quantity changes)');
+      console.log('[StyleFrom] needsRevisualization explicitly set to FALSE');
+    } catch (err) {
+      console.error('[StyleFrom] Error loading look:', err);
+      setError('Failed to load existing look');
+    } finally {
+      setLoadingStyleFrom(false);
+    }
+  };
 
   const initSession = async () => {
     try {
@@ -376,62 +472,73 @@ export default function CreateCuratedLookPage() {
     }
   };
 
-  // Add product to canvas with smart replacement logic
+  // Add product to canvas - curator mode uses quantity tracking
   const addProduct = (product: any) => {
-    // Skip if exact same product is already in canvas
-    if (selectedProducts.find(p => p.id === product.id)) return;
-
     // Extract and set product type if not already set
     const productType = product.product_type || extractProductType(product.name || '');
-    const productWithType = { ...product, product_type: productType };
 
-    console.log('[AdminCurated] Adding product to canvas:', product.name);
-    console.log('[AdminCurated] Product type:', productType);
+    // Check if product already exists in canvas
+    const existingIndex = selectedProducts.findIndex(p => p.id === product.id);
 
-    // Check if this product type has quantity restrictions
-    const isSingleInstance = FURNITURE_QUANTITY_RULES.SINGLE_INSTANCE.includes(productType);
-    const isUnlimited = FURNITURE_QUANTITY_RULES.UNLIMITED.includes(productType);
-
-    if (isSingleInstance) {
-      // SINGLE INSTANCE: Replace existing product of same type
-      const existingIndex = selectedProducts.findIndex((p) =>
-        (p.product_type || extractProductType(p.name || '')) === productType
-      );
-
-      if (existingIndex >= 0) {
-        console.log('[AdminCurated] Replacing existing single-instance product at index', existingIndex);
-        const updated = [...selectedProducts];
-        updated[existingIndex] = productWithType;
-        setSelectedProducts(updated);
-      } else {
-        console.log('[AdminCurated] Adding new single-instance product');
-        setSelectedProducts([...selectedProducts, productWithType]);
-      }
-    } else if (isUnlimited) {
-      // UNLIMITED: Always add (no replacement)
-      console.log('[AdminCurated] Adding unlimited product (no replacement)');
-      setSelectedProducts([...selectedProducts, productWithType]);
+    if (existingIndex !== -1) {
+      // Increment quantity if product exists
+      const updatedProducts = [...selectedProducts];
+      updatedProducts[existingIndex] = {
+        ...updatedProducts[existingIndex],
+        quantity: (updatedProducts[existingIndex].quantity || 1) + 1
+      };
+      setSelectedProducts(updatedProducts);
+      console.log('[AdminCurated] Incrementing quantity for:', product.name, 'New quantity:', updatedProducts[existingIndex].quantity);
     } else {
-      // DEFAULT: For unclassified items, use the old replacement behavior
-      const existingIndex = selectedProducts.findIndex((p) =>
-        (p.product_type || extractProductType(p.name || '')) === productType
-      );
+      // Add new product with quantity 1
+      const productWithType = {
+        ...product,
+        product_type: productType,
+        quantity: 1
+      };
+      setSelectedProducts([...selectedProducts, productWithType]);
+      console.log('[AdminCurated] Adding product to canvas:', product.name);
+    }
+  };
 
-      if (existingIndex >= 0) {
-        console.log('[AdminCurated] Replacing existing product at index', existingIndex);
-        const updated = [...selectedProducts];
-        updated[existingIndex] = productWithType;
-        setSelectedProducts(updated);
-      } else {
-        console.log('[AdminCurated] Adding new product');
-        setSelectedProducts([...selectedProducts, productWithType]);
-      }
+  // Update product quantity
+  const updateProductQuantity = (productId: number, newQuantity: number) => {
+    if (newQuantity <= 0) {
+      // Remove product if quantity is 0 or negative
+      setSelectedProducts(selectedProducts.filter(p => p.id !== productId));
+    } else {
+      const updatedProducts = selectedProducts.map(p =>
+        p.id === productId ? { ...p, quantity: newQuantity } : p
+      );
+      setSelectedProducts(updatedProducts);
+    }
+  };
+
+  // Increment product quantity
+  const incrementQuantity = (productId: number) => {
+    const product = selectedProducts.find(p => p.id === productId);
+    if (product) {
+      updateProductQuantity(productId, (product.quantity || 1) + 1);
+    }
+  };
+
+  // Decrement product quantity
+  const decrementQuantity = (productId: number) => {
+    const product = selectedProducts.find(p => p.id === productId);
+    if (product) {
+      updateProductQuantity(productId, (product.quantity || 1) - 1);
     }
   };
 
   // Remove product from canvas
   const removeProduct = (productId: number) => {
     setSelectedProducts(selectedProducts.filter(p => p.id !== productId));
+  };
+
+  // Get quantity for a product (for display in discovery panel)
+  const getProductQuantity = (productId: number): number => {
+    const product = selectedProducts.find(p => p.id === productId);
+    return product?.quantity || 0;
   };
 
   // Visualize
@@ -558,7 +665,7 @@ export default function CreateCuratedLookPage() {
       const roomSizeMB = roomImageData ? (roomImageData.length * 0.75 / 1024 / 1024).toFixed(2) : '0';
       console.log(`[Publish] Sending curated look - viz: ${vizSizeMB}MB, room: ${roomSizeMB}MB, products: ${selectedProducts.length}`);
 
-      const result = await adminCuratedAPI.create({
+      const lookData = {
         title,
         style_theme: styleTheme || title,
         style_description: styleDescription,
@@ -568,9 +675,15 @@ export default function CreateCuratedLookPage() {
         is_published: true,
         product_ids: selectedProducts.map(p => p.id),
         product_types: selectedProducts.map(p => p.product_type || ''),
-      });
+        product_quantities: selectedProducts.map(p => p.quantity || 1),
+      };
 
-      console.log('[Publish] Success:', result);
+      // Update existing look if style_from is present, otherwise create new
+      const result = styleFromId
+        ? await adminCuratedAPI.update(parseInt(styleFromId), lookData)
+        : await adminCuratedAPI.create(lookData);
+
+      console.log('[Publish] Success:', result, styleFromId ? '(updated existing)' : '(created new)');
       router.push('/admin/curated');
     } catch (err: any) {
       console.error('Error saving look:', err);
@@ -581,23 +694,98 @@ export default function CreateCuratedLookPage() {
     }
   };
 
+  // Save as Draft - saves without publishing
+  const handleSaveAsDraft = async () => {
+    if (!title.trim()) {
+      setError('Please enter a title for the curated look');
+      return;
+    }
+
+    // Allow saving draft even without visualization (curators can save work-in-progress)
+    try {
+      setSavingDraft(true);
+      setError(null);
+
+      const vizImageData = visualizationImage?.includes('base64,')
+        ? visualizationImage.split('base64,')[1]
+        : visualizationImage;
+
+      const roomImageData = roomImage?.includes('base64,')
+        ? roomImage.split('base64,')[1]
+        : roomImage;
+
+      console.log(`[SaveDraft] Saving curated look as draft - products: ${selectedProducts.length}, styleFromId: ${styleFromId || 'none'}`);
+      console.log('[SaveDraft] Product quantities:', selectedProducts.map(p => ({ name: p.name, qty: p.quantity || 1 })));
+
+      const lookData = {
+        title,
+        style_theme: styleTheme || title,
+        style_description: styleDescription,
+        room_type: roomType,
+        room_image: roomImageData || undefined,
+        visualization_image: vizImageData || undefined,
+        is_published: false,  // Key difference: saved as draft
+        product_ids: selectedProducts.map(p => p.id),
+        product_types: selectedProducts.map(p => p.product_type || ''),
+        product_quantities: selectedProducts.map(p => p.quantity || 1),
+      };
+
+      // Update existing look if style_from is present, otherwise create new
+      const result = styleFromId
+        ? await adminCuratedAPI.update(parseInt(styleFromId), lookData)
+        : await adminCuratedAPI.create(lookData);
+
+      console.log('[SaveDraft] Success:', result, styleFromId ? '(updated existing)' : '(created new)');
+      router.push('/admin/curated');
+    } catch (err: any) {
+      console.error('Error saving draft:', err);
+      console.error('Error details:', err.response?.data || err.message);
+      setError(`Failed to save draft: ${err.response?.data?.detail || err.message || 'Unknown error'}`);
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
   // ============================================
   // CANVAS PANEL HANDLERS (Lifted from CanvasPanel.tsx)
   // ============================================
 
-  // Check if canvas has changed since last visualization
+  // Check if canvas has changed since last visualization (including quantity changes)
   useEffect(() => {
+    console.log('[ChangeDetect] Running change detection...');
+    console.log('[ChangeDetect] visualizedProductIds.size:', visualizedProductIds.size);
+    console.log('[ChangeDetect] visualizationImage exists:', !!visualizationImage);
+    console.log('[ChangeDetect] selectedProducts.length:', selectedProducts.length);
+
     if (visualizedProductIds.size === 0 && !visualizationImage) {
+      console.log('[ChangeDetect] Early return - no visualized products and no image');
       return;
     }
     const currentIds = new Set(selectedProducts.map(p => String(p.id)));
-    const productsChanged =
+
+    // Check if product IDs changed
+    const idsChanged =
       selectedProducts.length !== visualizedProductIds.size ||
       selectedProducts.some(p => !visualizedProductIds.has(String(p.id)));
-    if (productsChanged) {
+
+    // Check if quantities changed (even if product IDs are the same)
+    const quantitiesChanged = selectedProducts.some(currentProduct => {
+      const visualizedProduct = visualizedProducts.find(vp => vp.id === currentProduct.id);
+      if (!visualizedProduct) return false; // Product wasn't visualized, will be caught by idsChanged
+      return (currentProduct.quantity || 1) !== (visualizedProduct.quantity || 1);
+    });
+
+    console.log('[ChangeDetect] idsChanged:', idsChanged, 'quantitiesChanged:', quantitiesChanged);
+    console.log('[ChangeDetect] visualizedProductIds:', Array.from(visualizedProductIds));
+    console.log('[ChangeDetect] selectedProducts ids:', selectedProducts.map(p => p.id));
+
+    if (idsChanged || quantitiesChanged) {
+      console.log('[ChangeDetect] Setting needsRevisualization to TRUE');
       setNeedsRevisualization(true);
+    } else {
+      console.log('[ChangeDetect] No changes detected');
     }
-  }, [selectedProducts, visualizedProductIds, visualizationImage]);
+  }, [selectedProducts, visualizedProductIds, visualizedProducts, visualizationImage]);
 
   // Auto-scroll to canvas products when a product is added
   useEffect(() => {
@@ -617,24 +805,95 @@ export default function CreateCuratedLookPage() {
 
   // Detect visualization change type
   const detectChangeType = () => {
+    console.log('[DetectChangeType] ========== STARTING DETECTION ==========');
+    console.log('[DetectChangeType] selectedProducts:', selectedProducts.map(p => ({ id: p.id, name: p.name, qty: p.quantity })));
+    console.log('[DetectChangeType] visualizedProducts:', visualizedProducts.map(p => ({ id: p.id, name: p.name, qty: p.quantity })));
+    console.log('[DetectChangeType] visualizedProductIds:', Array.from(visualizedProductIds));
+
     const currentIds = new Set(selectedProducts.map(p => String(p.id)));
     const removedProducts = Array.from(visualizedProductIds).filter(id => !currentIds.has(id));
+    console.log('[DetectChangeType] removedProducts:', removedProducts);
+
     if (removedProducts.length > 0) {
+      console.log('[DetectChangeType] => RESET: Products removed');
       return { type: 'reset', reason: 'products_removed' };
     }
+
+    // Check for quantity changes
+    // - Quantity INCREASE: additive (just add more instances to existing visualization)
+    // - Quantity DECREASE: reset (need to re-render without the removed instances)
+    let hasQuantityIncrease = false;
+    let hasQuantityDecrease = false;
+    const additionalInstances: any[] = [];
+
+    selectedProducts.forEach(currentProduct => {
+      const visualizedProduct = visualizedProducts.find(vp => vp.id === currentProduct.id);
+      if (!visualizedProduct) {
+        console.log(`[DetectChangeType] Product ${currentProduct.name} (${currentProduct.id}) not in visualizedProducts - will be caught as new product`);
+        return;
+      }
+
+      const currentQty = currentProduct.quantity || 1;
+      const visualizedQty = visualizedProduct.quantity || 1;
+      console.log(`[DetectChangeType] Comparing ${currentProduct.name}: current=${currentQty}, visualized=${visualizedQty}`);
+
+      if (currentQty > visualizedQty) {
+        // Quantity increased - we need to add (currentQty - visualizedQty) more copies
+        const additionalCount = currentQty - visualizedQty;
+        console.log(`[DetectChangeType] => QUANTITY INCREASE for ${currentProduct.name}: ${visualizedQty} -> ${currentQty} (add ${additionalCount} more)`);
+        hasQuantityIncrease = true;
+        // Instead of creating individual instances, create ONE entry with the count to add
+        additionalInstances.push({
+          ...currentProduct,
+          quantity: additionalCount, // How many MORE to add
+          _isQuantityIncrease: true // Flag to indicate this is additional copies
+        });
+      } else if (currentQty < visualizedQty) {
+        // Quantity decreased - need full reset to remove items
+        console.log(`[DetectChangeType] => QUANTITY DECREASE for ${currentProduct.name}: ${visualizedQty} -> ${currentQty}`);
+        hasQuantityDecrease = true;
+      }
+    });
+
+    // Quantity decrease requires full reset
+    if (hasQuantityDecrease) {
+      console.log('[DetectChangeType] => FINAL RESULT: RESET (quantities decreased)');
+      return { type: 'reset', reason: 'quantities_decreased' };
+    }
+
+    // Check for new products (not in visualized set)
     const newProducts = selectedProducts.filter(p => !visualizedProductIds.has(String(p.id)));
-    if (newProducts.length > 0 && visualizedProductIds.size > 0) {
-      return { type: 'additive', newProducts };
+    console.log('[DetectChangeType] newProducts (not in visualized):', newProducts.map(p => ({ id: p.id, name: p.name })));
+
+    // Combine quantity increases AND new products into one additive operation
+    const allNewItems = [...additionalInstances, ...newProducts];
+
+    if (allNewItems.length > 0 && visualizedProductIds.size > 0) {
+      const reasons = [];
+      if (additionalInstances.length > 0) reasons.push(`${additionalInstances.length} quantity increases`);
+      if (newProducts.length > 0) reasons.push(`${newProducts.length} new products`);
+      console.log('[DetectChangeType] => FINAL RESULT: ADDITIVE - adding', allNewItems.length, 'items:', reasons.join(' + '));
+      return { type: 'additive', newProducts: allNewItems, reason: reasons.join('_and_') };
     }
     if (visualizedProductIds.size === 0) {
+      console.log('[DetectChangeType] => FINAL RESULT: INITIAL (no products visualized yet)');
       return { type: 'initial' };
     }
+    console.log('[DetectChangeType] => FINAL RESULT: NO_CHANGE');
     return { type: 'no_change' };
   };
 
   // Smart Visualization with incremental support (from CanvasPanel)
   const handleSmartVisualize = async () => {
-    if (!roomImage || selectedProducts.length === 0) return;
+    console.log('[Visualize] handleSmartVisualize called');
+    console.log('[Visualize] roomImage exists:', !!roomImage);
+    console.log('[Visualize] selectedProducts.length:', selectedProducts.length);
+    console.log('[Visualize] sessionId:', sessionId);
+
+    if (!roomImage || selectedProducts.length === 0) {
+      console.log('[Visualize] Early return - no room image or products');
+      return;
+    }
     if (!sessionId) {
       setError('Session not initialized. Please refresh the page.');
       return;
@@ -645,6 +904,10 @@ export default function CreateCuratedLookPage() {
 
     try {
       const changeInfo = detectChangeType();
+      console.log('[Visualize] Change detection result:', changeInfo);
+      console.log('[Visualize] Selected products quantities:', selectedProducts.map(p => ({ name: p.name, qty: p.quantity || 1 })));
+      console.log('[Visualize] Visualized products quantities:', visualizedProducts.map(p => ({ name: p.name, qty: p.quantity || 1 })));
+
       if (changeInfo.type === 'no_change') {
         setIsVisualizing(false);
         return;
@@ -668,13 +931,23 @@ export default function CreateCuratedLookPage() {
         productsToVisualize = selectedProducts;
       }
 
-      const productDetails = productsToVisualize.map(p => ({
-        id: p.id,
-        name: p.name,
-        full_name: p.name,
-        style: 0.8,
-        category: 'furniture'
-      }));
+      const productDetails = productsToVisualize.map(p => {
+        // If this is an additional instance from quantity increase, append the instance label
+        const instanceLabel = p._instanceLabel || '';
+        const displayName = instanceLabel ? `${p.name} ${instanceLabel}` : p.name;
+
+        return {
+          id: p.id,
+          name: displayName,
+          full_name: displayName,
+          style: 0.8,
+          category: 'furniture',
+          quantity: p.quantity || 1  // Pass quantity for multiple instances
+        };
+      });
+
+      console.log('[Visualize] Sending products:', productDetails.map(p => ({ name: p.name, qty: p.quantity })));
+      console.log('[Visualize] forceReset:', forceReset, 'isIncremental:', isIncremental, 'reason:', changeInfo.reason || 'none');
 
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`, {
         method: 'POST',
@@ -805,7 +1078,9 @@ export default function CreateCuratedLookPage() {
     }
 
     setVisualizationHistory(newHistory);
-    setCanUndo(newHistory.length > 0);
+    // Use > 1 because we want to preserve the initial loaded state (entry 0)
+    // and not allow undoing past it on "Style this further" pages
+    setCanUndo(newHistory.length > 1);
     setCanRedo(true);
     console.log(`Undo: history now has ${newHistory.length} items, redo stack has ${redoStack.length + 1} items`);
   };
@@ -968,6 +1243,15 @@ export default function CreateCuratedLookPage() {
   const isUpToDate = canVisualize && !needsRevisualization && visualizationImage !== null;
   const isReady = canVisualize && (needsRevisualization || visualizationImage === null);
 
+  // Debug: Log button state
+  useEffect(() => {
+    console.log('[ButtonState] canVisualize:', canVisualize);
+    console.log('[ButtonState] needsRevisualization:', needsRevisualization);
+    console.log('[ButtonState] visualizationImage exists:', !!visualizationImage);
+    console.log('[ButtonState] isUpToDate:', isUpToDate);
+    console.log('[ButtonState] isReady:', isReady);
+  }, [canVisualize, needsRevisualization, visualizationImage, isUpToDate, isReady]);
+
   // ============================================
   // END CANVAS PANEL HANDLERS
   // ============================================
@@ -980,7 +1264,7 @@ export default function CreateCuratedLookPage() {
     }).format(price);
   };
 
-  const totalPrice = selectedProducts.reduce((sum, p) => sum + (p.price || 0), 0);
+  const totalPrice = selectedProducts.reduce((sum, p) => sum + (p.price || 0) * (p.quantity || 1), 0);
 
   const getProductImage = (product: any) => {
     return product.image_url || product.primary_image?.url || null;
@@ -1000,7 +1284,23 @@ export default function CreateCuratedLookPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </Link>
-          <h1 className="text-lg font-bold text-gray-900">Create Curated Look</h1>
+          <h1 className="text-lg font-bold text-gray-900">
+            {styleFromId ? 'Edit Curated Look' : 'Create Curated Look'}
+          </h1>
+          {styleFromId && !loadingStyleFrom && (
+            <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded">
+              Editing #{styleFromId}
+            </span>
+          )}
+          {loadingStyleFrom && (
+            <span className="text-sm text-purple-600 flex items-center gap-1">
+              <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Loading existing look...
+            </span>
+          )}
         </div>
 
         {/* Status indicators */}
@@ -1230,14 +1530,15 @@ export default function CreateCuratedLookPage() {
             ) : discoveredProducts.length > 0 ? (
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
                 {discoveredProducts.map((product) => {
-                  const isSelected = selectedProducts.find(p => p.id === product.id);
+                  const quantity = getProductQuantity(product.id);
+                  const isInCanvas = quantity > 0;
                   const imageUrl = getProductImage(product);
                   return (
                     <div
                       key={product.id}
                       className={`group rounded-lg border-2 overflow-hidden transition-all ${
-                        isSelected
-                          ? 'border-green-500 bg-green-50 opacity-60'
+                        isInCanvas
+                          ? 'border-green-500 bg-green-50'
                           : 'border-gray-200 hover:border-purple-400 hover:shadow-md'
                       }`}
                     >
@@ -1257,44 +1558,80 @@ export default function CreateCuratedLookPage() {
                             </svg>
                           </div>
                         )}
-                        {isSelected && (
-                          <div className="absolute inset-0 bg-green-500/30 flex items-center justify-center">
-                            <div className="bg-green-500 text-white rounded-full p-1.5">
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                            </div>
+                        {/* Quantity badge when in canvas */}
+                        {isInCanvas && (
+                          <div className="absolute top-1 left-1 bg-purple-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                            {quantity}x
                           </div>
                         )}
-                        {/* Hover Action Buttons */}
-                        {!isSelected && (
-                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                addProduct(product);
-                              }}
-                              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg flex items-center gap-1"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                              </svg>
-                              Add to Canvas
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDetailProduct(product);
-                              }}
-                              className="px-3 py-1.5 bg-white/90 hover:bg-white text-gray-800 text-xs font-medium rounded-lg flex items-center gap-1"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              View Details
-                            </button>
-                          </div>
-                        )}
+                        {/* Hover Action Buttons - Show for all products */}
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
+                          {isInCanvas ? (
+                            <>
+                              {/* Quantity controls for products in canvas */}
+                              <div className="flex items-center gap-1.5 bg-white rounded-lg px-2 py-1">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    decrementQuantity(product.id);
+                                  }}
+                                  className="w-6 h-6 bg-gray-200 hover:bg-gray-300 rounded text-sm font-bold flex items-center justify-center"
+                                >
+                                  -
+                                </button>
+                                <span className="w-5 text-center font-semibold text-sm">{quantity}</span>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    incrementQuantity(product.id);
+                                  }}
+                                  className="w-6 h-6 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-bold flex items-center justify-center"
+                                >
+                                  +
+                                </button>
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeProduct(product.id);
+                                }}
+                                className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium rounded-lg flex items-center gap-1"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                Remove
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  addProduct(product);
+                                }}
+                                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg flex items-center gap-1"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                </svg>
+                                Add to Canvas
+                              </button>
+                            </>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDetailProduct(product);
+                            }}
+                            className="px-3 py-1.5 bg-white/90 hover:bg-white text-gray-800 text-xs font-medium rounded-lg flex items-center gap-1"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            View Details
+                          </button>
+                        </div>
                       </div>
                       <div className="p-2">
                         <p className="font-medium text-gray-900 text-xs line-clamp-2">{product.name}</p>
@@ -1470,6 +1807,12 @@ export default function CreateCuratedLookPage() {
                             </svg>
                           </div>
                         )}
+                        {/* Quantity badge */}
+                        {(product.quantity || 1) > 1 && (
+                          <div className="absolute top-0.5 left-0.5 w-5 h-5 bg-purple-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                            {product.quantity}
+                          </div>
+                        )}
                         <button
                           onClick={() => removeProduct(product.id)}
                           className="absolute top-0.5 right-0.5 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
@@ -1481,7 +1824,25 @@ export default function CreateCuratedLookPage() {
                       </div>
                       <div className="p-1">
                         <p className="text-[10px] font-medium text-gray-900 line-clamp-1">{product.name}</p>
-                        <p className="text-[10px] text-purple-600 font-semibold">{formatPrice(product.price || 0)}</p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] text-purple-600 font-semibold">{formatPrice((product.price || 0) * (product.quantity || 1))}</p>
+                          {/* Quantity controls */}
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              onClick={() => decrementQuantity(product.id)}
+                              className="w-4 h-4 bg-gray-200 hover:bg-gray-300 rounded text-[10px] font-bold flex items-center justify-center"
+                            >
+                              -
+                            </button>
+                            <span className="w-4 text-[10px] text-center font-medium">{product.quantity || 1}</span>
+                            <button
+                              onClick={() => incrementQuantity(product.id)}
+                              className="w-4 h-4 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded text-[10px] font-bold flex items-center justify-center"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1500,11 +1861,33 @@ export default function CreateCuratedLookPage() {
                             </svg>
                           </div>
                         )}
+                        {/* Quantity badge */}
+                        {(product.quantity || 1) > 1 && (
+                          <div className="absolute -top-1 -right-1 w-5 h-5 bg-purple-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                            {product.quantity}
+                          </div>
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-gray-900 truncate">{product.name}</p>
                         <p className="text-[10px] text-gray-500 capitalize">{product.source_website || product.source}</p>
-                        <p className="text-xs font-semibold text-purple-600">{formatPrice(product.price || 0)}</p>
+                        <p className="text-xs font-semibold text-purple-600">{formatPrice((product.price || 0) * (product.quantity || 1))}</p>
+                      </div>
+                      {/* Quantity controls */}
+                      <div className="flex items-center gap-1 mr-2">
+                        <button
+                          onClick={() => decrementQuantity(product.id)}
+                          className="w-6 h-6 bg-gray-200 hover:bg-gray-300 rounded text-sm font-bold flex items-center justify-center"
+                        >
+                          -
+                        </button>
+                        <span className="w-6 text-sm text-center font-medium">{product.quantity || 1}</span>
+                        <button
+                          onClick={() => incrementQuantity(product.id)}
+                          className="w-6 h-6 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded text-sm font-bold flex items-center justify-center"
+                        >
+                          +
+                        </button>
                       </div>
                       <button
                         onClick={() => removeProduct(product.id)}
@@ -1771,29 +2154,56 @@ export default function CreateCuratedLookPage() {
               </button>
             )}
 
-            {/* Publish Button */}
-            <button
-              onClick={handlePublish}
-              disabled={saving || !visualizationImage || selectedProducts.length === 0 || !title.trim()}
-              className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
-            >
-              {saving ? (
-                <>
-                  <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Publishing...
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Publish Curated Look
-                </>
-              )}
-            </button>
+            {/* Save & Publish Buttons */}
+            <div className="flex gap-2">
+              {/* Save as Draft Button */}
+              <button
+                onClick={handleSaveAsDraft}
+                disabled={savingDraft || saving || !title.trim()}
+                className="flex-1 py-3 px-4 bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 disabled:cursor-not-allowed text-gray-700 disabled:text-gray-400 font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 border border-gray-300"
+              >
+                {savingDraft ? (
+                  <>
+                    <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                    </svg>
+                    Save Draft
+                  </>
+                )}
+              </button>
+
+              {/* Publish Button */}
+              <button
+                onClick={handlePublish}
+                disabled={saving || savingDraft || !visualizationImage || selectedProducts.length === 0 || !title.trim()}
+                className="flex-1 py-3 px-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                {saving ? (
+                  <>
+                    <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Publishing...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Publish
+                  </>
+                )}
+              </button>
+            </div>
 
             {/* Helper Messages */}
             {!roomImage && (

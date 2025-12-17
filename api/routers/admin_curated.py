@@ -26,6 +26,56 @@ from database.models import Category, CuratedLook, CuratedLookProduct, Product
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/curated", tags=["admin-curated"])
 
+
+# Simple singular/plural normalization
+def normalize_singular_plural(word: str) -> list:
+    """
+    Returns both singular and plural forms of a word.
+    Handles common English patterns.
+    """
+    word = word.lower().strip()
+    forms = [word]
+
+    # Common irregular plurals
+    irregulars = {
+        "furniture": "furniture",  # Uncountable
+        "decor": "decor",
+        "seating": "seating",
+    }
+
+    if word in irregulars:
+        return [word]
+
+    # If word ends in 's', try to get singular
+    if word.endswith("ies"):
+        # categories -> category
+        forms.append(word[:-3] + "y")
+    elif word.endswith("es"):
+        # boxes -> box, dishes -> dish
+        if word.endswith("sses") or word.endswith("shes") or word.endswith("ches") or word.endswith("xes"):
+            forms.append(word[:-2])
+        else:
+            forms.append(word[:-1])  # tables -> table (via 'es' -> 'e')
+            forms.append(word[:-2])  # boxes -> box
+    elif word.endswith("s") and not word.endswith("ss"):
+        # sculptures -> sculpture
+        forms.append(word[:-1])
+
+    # If word doesn't end in 's', try to get plural
+    if not word.endswith("s"):
+        if word.endswith("y") and len(word) > 2 and word[-2] not in "aeiou":
+            # category -> categories
+            forms.append(word[:-1] + "ies")
+        elif word.endswith(("s", "sh", "ch", "x", "z")):
+            # box -> boxes
+            forms.append(word + "es")
+        else:
+            # sculpture -> sculptures
+            forms.append(word + "s")
+
+    return list(set(forms))  # Remove duplicates
+
+
 # Synonym dictionary for search terms - maps search term to list of synonyms
 SEARCH_SYNONYMS = {
     "carpet": ["rug", "carpet", "runner", "mat", "floor covering"],
@@ -66,18 +116,37 @@ SEARCH_SYNONYMS = {
     "planters": ["planter", "pot", "plant pot", "flower pot"],
     "pot": ["pot", "planter", "plant pot", "flower pot"],
     "pots": ["pot", "planter", "plant pot", "flower pot"],
+    # Wall art and paintings
+    "painting": ["painting", "wall art", "artwork", "canvas art", "art print"],
+    "paintings": ["painting", "wall art", "artwork", "canvas art", "art print"],
+    "wall art": ["wall art", "painting", "artwork", "canvas art", "art print"],
+    "artwork": ["artwork", "wall art", "painting", "canvas art", "art print"],
+    "art": ["art", "wall art", "painting", "artwork", "art print"],
 }
 
 
 def expand_search_query(query: str) -> list:
-    """Expand a search query to include synonyms"""
+    """Expand a search query to include synonyms and singular/plural forms"""
     query_lower = query.lower().strip()
-    # Check if the query matches any synonym key
+
+    # First, check if the query matches any synonym key directly
     for key, synonyms in SEARCH_SYNONYMS.items():
         if key in query_lower or query_lower in key:
             return synonyms
-    # Return original query if no synonyms found
-    return [query]
+
+    # If not found in synonyms, try singular/plural forms
+    word_forms = normalize_singular_plural(query_lower)
+
+    # Check if any form matches synonyms
+    for form in word_forms:
+        for key, synonyms in SEARCH_SYNONYMS.items():
+            if key == form or form == key:
+                return synonyms
+
+    # No synonym match - return all singular/plural forms for direct search
+    # This ensures "sculpture" and "sculptures" both match products with either form
+    logger.info(f"No synonym match for '{query}', using singular/plural forms: {word_forms}")
+    return word_forms
 
 
 def get_primary_image_url(product: Product) -> Optional[str]:
@@ -174,15 +243,23 @@ async def search_products_for_look(
             if color_conditions:
                 search_query = search_query.where(or_(*color_conditions))
 
-        # Order by: exact match priority (if searching), then price
-        # This ensures "bedside table" shows bedside tables first, not random matches
+        # Order by: match priority (name > brand > description), then price
+        # This ensures "paintings" shows actual paintings first, not rugs that mention paintings
         if query:
             escaped_query = re.escape(query)
-            # Case expression to prioritize exact matches in name
-            exact_match_priority = case(
-                (Product.name.op("~*")(rf"\y{escaped_query}\y"), 0), else_=1  # Exact query match first
+            # Build name match condition for ALL expanded search terms
+            # e.g., for "paintings" -> check "painting", "wall art", "artwork", etc in name
+            name_match_conditions = [Product.name.op("~*")(rf"\y{re.escape(term)}\y") for term in search_terms]
+            # Case expression to prioritize matches by field:
+            # - Priority 0: Name matches ANY synonym (most relevant - actual paintings/wall art)
+            # - Priority 1: Brand matches
+            # - Priority 2: Description matches (least relevant - rugs mentioning paintings)
+            match_priority = case(
+                (or_(*name_match_conditions), 0),  # Name matches any synonym - highest priority
+                (Product.brand.op("~*")(rf"\y{escaped_query}\y"), 1),  # Brand match - medium priority
+                else_=2,  # Description only match - lowest priority
             )
-            search_query = search_query.order_by(exact_match_priority, Product.price.desc().nullslast())
+            search_query = search_query.order_by(match_priority, Product.price.desc().nullslast())
         else:
             search_query = search_query.order_by(Product.price.desc().nullslast())
 
@@ -316,6 +393,7 @@ async def get_curated_look(look_id: int, db: AsyncSession = Depends(get_db)):
                         source_website=product.source_website,
                         source_url=product.source_url,
                         product_type=lp.product_type,
+                        quantity=lp.quantity or 1,
                         description=product.description,
                     )
                 )
@@ -375,6 +453,7 @@ async def create_curated_look(look_data: CuratedLookCreate, db: AsyncSession = D
         # Add products if provided
         total_price = 0
         product_types = look_data.product_types or []
+        product_quantities = look_data.product_quantities or []
 
         for i, product_id in enumerate(look_data.product_ids):
             # Verify product exists and get price
@@ -384,16 +463,18 @@ async def create_curated_look(look_data: CuratedLookCreate, db: AsyncSession = D
 
             if product:
                 product_type = product_types[i] if i < len(product_types) else None
+                quantity = product_quantities[i] if i < len(product_quantities) else 1
                 look_product = CuratedLookProduct(
                     curated_look_id=look.id,
                     product_id=product_id,
                     product_type=product_type,
+                    quantity=quantity,
                     display_order=i,
                     created_at=datetime.utcnow(),
                 )
                 db.add(look_product)
                 if product.price:
-                    total_price += product.price
+                    total_price += product.price * quantity
 
         # Update total price
         look.total_price = total_price
@@ -411,7 +492,7 @@ async def create_curated_look(look_data: CuratedLookCreate, db: AsyncSession = D
 
 @router.put("/{look_id}", response_model=CuratedLookSchema)
 async def update_curated_look(look_id: int, look_data: CuratedLookUpdate, db: AsyncSession = Depends(get_db)):
-    """Update a curated look's details"""
+    """Update a curated look's details and optionally its products"""
     try:
         query = select(CuratedLook).where(CuratedLook.id == look_id)
         result = await db.execute(query)
@@ -420,7 +501,7 @@ async def update_curated_look(look_id: int, look_data: CuratedLookUpdate, db: As
         if not look:
             raise HTTPException(status_code=404, detail="Curated look not found")
 
-        # Update fields if provided
+        # Update metadata fields if provided
         if look_data.title is not None:
             look.title = look_data.title
         if look_data.style_theme is not None:
@@ -437,6 +518,45 @@ async def update_curated_look(look_id: int, look_data: CuratedLookUpdate, db: As
             look.is_published = look_data.is_published
         if look_data.display_order is not None:
             look.display_order = look_data.display_order
+
+        # Update products if provided
+        if look_data.product_ids is not None:
+            logger.info(f"Updating products for look {look_id}: {len(look_data.product_ids)} products")
+
+            # Delete existing products
+            await db.execute(delete(CuratedLookProduct).where(CuratedLookProduct.curated_look_id == look_id))
+
+            # Add new products with quantities
+            total_price = 0
+            product_types = look_data.product_types or []
+            product_quantities = look_data.product_quantities or []
+
+            for i, product_id in enumerate(look_data.product_ids):
+                # Verify product exists and get price
+                product_query = select(Product).where(Product.id == product_id)
+                product_result = await db.execute(product_query)
+                product = product_result.scalar_one_or_none()
+
+                if product:
+                    product_type = product_types[i] if i < len(product_types) else None
+                    quantity = product_quantities[i] if i < len(product_quantities) else 1
+
+                    logger.info(f"  Product {product_id}: type={product_type}, quantity={quantity}")
+
+                    look_product = CuratedLookProduct(
+                        curated_look_id=look_id,
+                        product_id=product_id,
+                        product_type=product_type,
+                        quantity=quantity,
+                        display_order=i,
+                        created_at=datetime.utcnow(),
+                    )
+                    db.add(look_product)
+                    if product.price:
+                        total_price += product.price * quantity
+
+            # Update total price
+            look.total_price = total_price
 
         look.updated_at = datetime.utcnow()
         await db.commit()

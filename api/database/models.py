@@ -279,6 +279,11 @@ class UserPreferences(Base):
         return f"<UserPreferences(id={self.id}, user_id={self.user_id}, style='{self.overall_style}')>"
 
 
+class ProjectStatus(enum.Enum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+
+
 class Project(Base):
     """User design projects for saving and resuming work"""
 
@@ -287,6 +292,9 @@ class Project(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String(200), nullable=False)
+
+    # Project status - draft or published
+    status = Column(Enum(ProjectStatus), default=ProjectStatus.DRAFT, nullable=False, index=True)
 
     # Room data
     room_image = Column(Text, nullable=True)  # Base64 of original room
@@ -434,6 +442,7 @@ class CuratedLookProduct(Base):
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
 
     product_type = Column(String(50), nullable=True)  # "sofa", "coffee_table", "lamp", etc.
+    quantity = Column(Integer, default=1, nullable=False)  # Number of this product in the look
     display_order = Column(Integer, default=0)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

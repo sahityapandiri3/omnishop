@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user
 from core.database import get_db
-from database.models import Project, User
+from database.models import Project, ProjectStatus, User
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -41,6 +41,7 @@ async def list_projects(
         ProjectListItem(
             id=p.id,
             name=p.name,
+            status=p.status.value if p.status else "draft",  # Convert enum to string
             has_room_image=bool(p.room_image),
             has_visualization=bool(p.visualization_image),
             created_at=p.created_at,
@@ -50,6 +51,23 @@ async def list_projects(
     ]
 
     return ProjectsListResponse(projects=project_items, total=total)
+
+
+def _project_to_response(project: Project) -> ProjectResponse:
+    """Convert a Project ORM object to a ProjectResponse, handling enum conversion."""
+    return ProjectResponse(
+        id=project.id,
+        name=project.name,
+        status=project.status.value if project.status else "draft",
+        room_image=project.room_image,
+        clean_room_image=project.clean_room_image,
+        visualization_image=project.visualization_image,
+        canvas_products=project.canvas_products,
+        visualization_history=project.visualization_history,
+        chat_session_id=project.chat_session_id,
+        created_at=project.created_at,
+        updated_at=project.updated_at,
+    )
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -72,7 +90,7 @@ async def create_project(
 
     logger.info(f"Created project {project.id} for user {current_user.id}")
 
-    return ProjectResponse.model_validate(project)
+    return _project_to_response(project)
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
@@ -98,7 +116,7 @@ async def get_project(
             detail="Project not found",
         )
 
-    return ProjectResponse.model_validate(project)
+    return _project_to_response(project)
 
 
 @router.put("/{project_id}", response_model=ProjectResponse)
@@ -128,6 +146,9 @@ async def update_project(
     # Update only provided fields
     update_data = project_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
+        # Handle status enum conversion
+        if field == "status" and value is not None:
+            value = ProjectStatus(value.upper()) if isinstance(value, str) else value
         setattr(project, field, value)
 
     # Always update the timestamp
@@ -138,7 +159,7 @@ async def update_project(
 
     logger.debug(f"Updated project {project_id} (fields: {list(update_data.keys())})")
 
-    return ProjectResponse.model_validate(project)
+    return _project_to_response(project)
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)

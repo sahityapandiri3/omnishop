@@ -271,6 +271,14 @@ export default function ProjectsPage() {
 
                   {/* Status Badges */}
                   <div className="absolute bottom-2 left-2 flex gap-1">
+                    {/* Draft/Published Badge */}
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                      project.status === 'published'
+                        ? 'bg-purple-100 text-purple-700'
+                        : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {project.status === 'published' ? 'Published' : 'Draft'}
+                    </span>
                     {project.has_room_image && (
                       <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
                         Room

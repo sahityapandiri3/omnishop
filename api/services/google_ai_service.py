@@ -8,7 +8,7 @@ import json
 import logging
 import random
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -34,6 +34,10 @@ class RoomAnalysis:
     architectural_features: List[str]
     style_assessment: str
     confidence_score: float
+    # Scale reference fields for perspective-aware visualization
+    scale_references: Dict[str, Any] = field(default_factory=dict)
+    # Camera view analysis for room-aware furniture placement
+    camera_view_analysis: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -234,8 +238,62 @@ class GoogleAIStudioService:
     "lighting_improvements": ["add_table_lamps", "increase_natural_light"],
     "layout_suggestions": ["create_conversation_area", "improve_flow"],
     "style_opportunities": ["add_color", "introduce_texture"]
+  },
+  "scale_references": {
+    "door_visible": true,
+    "door_position": "left_wall/back_wall/right_wall/not_visible",
+    "door_apparent_height_percent": 25.0,
+    "window_visible": true,
+    "window_positions": ["back_wall_center", "left_wall"],
+    "standard_furniture_visible": ["dining_chair", "bed", "desk"],
+    "camera_perspective": {
+      "angle": "eye_level/high_angle/low_angle",
+      "estimated_focal_length": "wide_angle/normal/telephoto",
+      "estimated_distance_to_back_wall_ft": 15.0
+    }
+  },
+  "camera_view_analysis": {
+    "viewing_angle": "straight_on/diagonal_left/diagonal_right/corner",
+    "primary_wall": "back/left/right/none_visible",
+    "primary_wall_description": "Brief description of the main wall (must be a SOLID wall, not a window/glass door)",
+    "wall_orientations": [
+      {"wall": "back", "visibility": "full/partial/not_visible", "has_large_window_or_glass_door": false, "suitable_for_furniture": true},
+      {"wall": "left", "visibility": "partial", "has_large_window_or_glass_door": false, "suitable_for_furniture": true},
+      {"wall": "right", "visibility": "full", "has_large_window_or_glass_door": true, "suitable_for_furniture": false}
+    ],
+    "walls_to_avoid": ["List walls with large windows, glass doors, or sliding doors - furniture should NOT be placed against these"],
+    "floor_center_location": "image_center/left_of_center/right_of_center/corner_area",
+    "recommended_furniture_zone": "against_back_wall/against_left_wall/against_right_wall/center_floor"
   }
 }
+
+IMPORTANT for scale_references:
+- door_visible: Is a standard interior door (80 inches / 6.67 feet tall) visible?
+- door_apparent_height_percent: What percentage of the IMAGE HEIGHT does the door occupy? (e.g., if door takes up 1/4 of image height = 25%)
+- window_visible: Are windows visible that could serve as scale references?
+- standard_furniture_visible: List any furniture with known standard sizes (dining chair seat ~18", bed ~54-80" wide)
+- camera_perspective.angle: Is the camera at standing eye level (~5.5ft), looking down, or looking up?
+- camera_perspective.estimated_focal_length: Wide angle lenses make rooms look larger; telephoto compresses depth
+- camera_perspective.estimated_distance_to_back_wall_ft: How far from camera to the back wall?
+
+IMPORTANT for camera_view_analysis (CRITICAL for furniture placement):
+- viewing_angle: Determine the camera's viewing direction:
+  * "straight_on" - Camera faces a wall directly, walls appear parallel to image edges
+  * "diagonal_left" - Camera is angled left (~30-60°), right wall is more prominent
+  * "diagonal_right" - Camera is angled right (~30-60°), left wall is more prominent
+  * "corner" - Camera is in a corner, two walls are equally visible at angles
+
+🚨 CRITICAL - WINDOW/GLASS DOOR DETECTION:
+- has_large_window_or_glass_door: Set TRUE if wall has floor-to-ceiling windows, sliding glass doors, French doors, or large picture windows
+- suitable_for_furniture: Set FALSE for any wall with large windows/glass doors - sofas should NEVER block windows/glass doors
+- walls_to_avoid: List ALL walls that have large windows or glass doors - these are OFF-LIMITS for large furniture
+- primary_wall: MUST be a SOLID WALL without large windows/glass doors - NEVER choose a wall with floor-to-ceiling glass
+
+- floor_center_location: Where is the actual room's floor center in the image?
+  * For diagonal views, the center of the image may NOT be the center of the floor
+- recommended_furniture_zone: Best zone for placing main seating (sofa):
+  * For straight_on: usually "against_back_wall" or "center_floor" (but NEVER against windows)
+  * For diagonal views: typically against the most visible SOLID wall (not windows/glass doors)
 
 Provide accurate measurements and detailed observations."""
                             },
@@ -273,6 +331,16 @@ Provide accurate measurements and detailed observations."""
                 architectural_features=analysis_data.get("architectural_features", []),
                 style_assessment=analysis_data.get("style_assessment", "unknown"),
                 confidence_score=0.85,  # High confidence for Google AI analysis
+                scale_references=analysis_data.get("scale_references", {}),
+                camera_view_analysis=analysis_data.get(
+                    "camera_view_analysis",
+                    {
+                        "viewing_angle": "straight_on",
+                        "primary_wall": "back",
+                        "floor_center_location": "image_center",
+                        "recommended_furniture_zone": "center_floor",
+                    },
+                ),
             )
 
         except Exception as e:
@@ -842,6 +910,7 @@ FAILURE IS NOT ACCEPTABLE: Every single piece of furniture MUST be removed. Do n
                             config=types.GenerateContentConfig(
                                 response_modalities=["IMAGE"],
                                 temperature=0.2,  # Lower temperature for more consistent removal
+                                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
                             ),
                         )
 
@@ -1268,9 +1337,11 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 contents.append(prod_pil_image)
 
             # Generate visualization with Gemini 3 Pro Image (Nano Banana Pro)
+            # Use HIGH media resolution for better quality output
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 temperature=0.3,
+                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
             )
 
             # Retry configuration with timeout protection
@@ -1388,10 +1459,15 @@ The room structure, walls, and camera angle MUST be identical to the input image
 
             # Download all product images
             product_images_data = []
-            product_names = []
+            product_entries = []  # List of (name, quantity) tuples
+            total_items_to_add = 0
+
             for product in products:
                 name = product.get("full_name") or product.get("name")
-                product_names.append(name)
+                quantity = product.get("quantity", 1)
+                total_items_to_add += quantity
+                product_entries.append((name, quantity))
+
                 image_url = product.get("image_url")
                 image_data = None
                 if image_url:
@@ -1401,26 +1477,69 @@ The room structure, walls, and camera angle MUST be identical to the input image
                         logger.warning(f"Failed to download product image for {name}: {e}")
                 product_images_data.append(image_data)
 
-            # Build product list for prompt
-            product_list = "\n".join([f"  {i+1}. {name}" for i, name in enumerate(product_names)])
+            # Build product list for prompt with quantities - VERY EXPLICIT about counts
+            product_list_items = []
+            item_number = 1
+            for name, qty in product_entries:
+                if qty > 1:
+                    # List each copy as a separate numbered item to make it crystal clear
+                    for copy_num in range(1, qty + 1):
+                        product_list_items.append(f"  {item_number}. {name} (copy {copy_num} of {qty})")
+                        item_number += 1
+                else:
+                    product_list_items.append(f"  {item_number}. {name}")
+                    item_number += 1
+            product_list = "\n".join(product_list_items)
 
-            # Check if we have multiple instances of the same product (e.g., "Dining Chair #1", "Dining Chair #2")
-            # These should be placed in different but coordinated positions
-            has_multiple_instances = any("#" in name for name in product_names)
+            # Also build a summary showing counts per product type
+            product_summary = []
+            for name, qty in product_entries:
+                product_summary.append(f"   • {name}: {qty} {'copies' if qty > 1 else 'copy'}")
+            product_summary_str = "\n".join(product_summary)
+
+            logger.info(f"Product list for prompt ({total_items_to_add} items):\n{product_list}")
+
+            # Build product names list for legacy compatibility
+            product_names = [entry[0] for entry in product_entries]
+
+            # Check if any product has quantity > 1
+            has_multiple_copies = any(qty > 1 for _, qty in product_entries)
             multiple_instance_instruction = ""
-            if has_multiple_instances:
-                multiple_instance_instruction = """
-🪑🪑 MULTIPLE INSTANCES OF SAME PRODUCT 🪑🪑
-═══════════════════════════════════════════════════════════════
-Products with numbered names (e.g., "Dining Chair #1", "Dining Chair #2") are MULTIPLE COPIES of the SAME item.
-- Place each instance in a DIFFERENT but RELATED position
-- For chairs: arrange around a table or in a conversational grouping
-- For dining chairs: place around the dining table at regular intervals
-- For accent chairs: place in complementary positions (e.g., flanking a fireplace or sofa)
-- For side tables: place at opposite ends of a sofa or beside different seating
-- Maintain consistent spacing and alignment between instances
-- All instances should face logical directions (not backs to the room)
-═══════════════════════════════════════════════════════════════
+            if has_multiple_copies:
+                logger.info(f"🪑 MULTIPLE COPIES REQUESTED: {total_items_to_add} total items from {len(products)} products")
+                # Build instruction for multiple copies - use the summary we already built
+                multiple_instance_instruction = f"""
+🚨🚨🚨 CRITICAL: YOU MUST ADD MULTIPLE COPIES OF SOME PRODUCTS 🚨🚨🚨
+═══════════════════════════════════════════════════════════════════════
+
+⚠️ QUANTITY REQUIREMENTS - READ CAREFULLY:
+{product_summary_str}
+
+🎯 TOTAL ITEMS YOU MUST PLACE: {total_items_to_add}
+
+⛔ FAILURE CONDITIONS (DO NOT DO THIS):
+- Adding only 1 item when 2+ copies are required
+- Ignoring the quantity requirements
+- Placing fewer items than specified
+
+✅ SUCCESS CONDITIONS (DO THIS):
+- Count EXACTLY {total_items_to_add} separate items in your output
+- For chairs with qty=2: Place BOTH chairs SIDE BY SIDE (next to each other, facing the same direction)
+- For cushions with qty=2+: Place ALL cushions on the sofa or seating
+- Each copy should be in a DIFFERENT location but same style/color
+
+🪑 CHAIR PLACEMENT FOR MULTIPLE COPIES:
+- 2 accent chairs → Place SIDE BY SIDE (next to each other, facing the same direction)
+- 2+ dining chairs → Arrange evenly around the dining table
+
+🪑 BENCH PLACEMENT:
+- ⚠️ DO NOT REMOVE existing furniture - find available empty space first
+- Place PERPENDICULAR to sofa OR ACROSS from sofa (facing it) WHERE THERE IS SPACE
+- If one side has existing furniture (chair, table), place bench on the OTHER side
+- Maintain 3-4 feet distance from sofa
+- 🚫 NEVER place directly in front of sofa or remove existing chairs/furniture
+- ✅ CORRECT: Find empty space, then place perpendicular or across at conversation distance
+═══════════════════════════════════════════════════════════════════════
 
 """
 
@@ -1448,9 +1567,16 @@ DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
 """
 
             # Build prompt for ADD MULTIPLE action
-            prompt = f"""{multiple_instance_instruction}{planter_instruction}ADD the following {len(products)} products to this room in appropriate locations WITHOUT removing any existing furniture:
+            # Use total_items_to_add which accounts for quantities (e.g., 2 products with qty=3 each = 6 items)
+            prompt = f"""{multiple_instance_instruction}{planter_instruction}ADD the following items to this room in appropriate locations WITHOUT removing any existing furniture.
 
-PRODUCTS TO ADD:
+📦 ITEM COUNT SUMMARY (YOU MUST ADD EXACTLY THIS MANY):
+{product_summary_str}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 TOTAL ITEMS TO PLACE: {total_items_to_add}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DETAILED LIST - ADD EACH OF THESE {total_items_to_add} ITEMS:
 {product_list}
 
 🚨🚨🚨 ABSOLUTE REQUIREMENT - ROOM DIMENSIONS 🚨🚨🚨
@@ -1472,12 +1598,25 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 5. NATURAL PLACEMENT: Place products naturally where they would logically fit
 6. ROOM SIZE UNCHANGED: The room must look the EXACT same size
 
-🔴 EXACT PRODUCT REPLICATION:
+⚠️ ADDING MORE OF THE SAME PRODUCT:
+If the room ALREADY has a chair/cushion/table and you're asked to add ANOTHER one:
+- The original item MUST REMAIN in its current position
+- ADD the new item in a DIFFERENT location (next to it, across from it, etc.)
+- Result: 2 items of the same type in the room (NOT replacing the original)
+- Example: If there's already 1 accent chair and you add 1 more → room should have 2 chairs
+
+🔴 EXACT PRODUCT REPLICATION - CRITICAL FOR COLORS:
 For each product with a reference image provided:
-- EXACT COLOR matching
+- EXACT COLOR matching - if the reference shows ORANGE, output MUST be ORANGE
 - EXACT MATERIAL & TEXTURE
 - EXACT SHAPE & DESIGN
 - The products in output MUST look like the SAME EXACT products from reference images
+
+⚠️ COLOR MATCHING IS MANDATORY:
+- If you're adding 2 copies of "Orange Cushion", BOTH must be ORANGE (same as reference)
+- If you're adding 2 copies of "Red Cushion", BOTH must be RED (same as reference)
+- DO NOT substitute colors or mix up which product gets which color
+- Each product reference image shows the EXACT color you must replicate
 
 PLACEMENT GUIDELINES:
 - Space products appropriately - don't cluster them all in one spot
@@ -1488,11 +1627,20 @@ PLACEMENT GUIDELINES:
 - Lamps go on tables or as floor lamps
 - Decor items go on table surfaces
 
+🔄 BALANCED DISTRIBUTION - VERY IMPORTANT:
+- Distribute items on BOTH SIDES of the sofa for visual balance
+- If adding a floor lamp AND a planter: put one on each side of the sofa
+- If adding 2 side tables: put one on each end of the sofa
+- If adding multiple floor items (lamps, planters, side tables): spread them across the room
+- DON'T cluster all floor items on one side - this looks cramped and unbalanced
+- Example: Floor lamp on LEFT side of sofa, planter on RIGHT side of sofa
+
 🔦 LIGHTING:
 - All products must match the room's lighting direction and color temperature
 - Products must look naturally integrated, not "pasted on"
 
-OUTPUT: One photorealistic image showing THE ENTIRE ROOM with ALL {len(products)} products added naturally.
+OUTPUT: One photorealistic image showing THE ENTIRE ROOM with ALL {total_items_to_add} ITEMS added naturally.
+⚠️ You MUST place EXACTLY {total_items_to_add} new items in the room (some products have multiple copies).
 The room structure, walls, and camera angle MUST be identical to the input image."""
 
             # Build contents list with PIL Images (same approach as furniture removal)
@@ -1514,8 +1662,15 @@ The room structure, walls, and camera angle MUST be identical to the input image
 
             # Add all product reference images as PIL Images
             for i, (name, image_data) in enumerate(zip(product_names, product_images_data)):
+                # Get the quantity for this product
+                qty_for_product = next((qty for n, qty in product_entries if n == name), 1)
                 if image_data:
-                    contents.append(f"\nProduct {i+1} reference image ({name}):")
+                    if qty_for_product > 1:
+                        contents.append(
+                            f"\n🎨 Product {i+1} reference image ({name}) - ADD {qty_for_product} COPIES, ALL must match THIS EXACT COLOR:"
+                        )
+                    else:
+                        contents.append(f"\n🎨 Product {i+1} reference image ({name}) - must match THIS EXACT COLOR:")
                     prod_image_bytes = base64.b64decode(image_data)
                     prod_pil_image = Image.open(io.BytesIO(prod_image_bytes))
                     if prod_pil_image.mode != "RGB":
@@ -1523,9 +1678,11 @@ The room structure, walls, and camera angle MUST be identical to the input image
                     contents.append(prod_pil_image)
 
             # Generate visualization with Gemini 3 Pro Image
+            # Use HIGH media resolution for better quality output
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 temperature=0.3,
+                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
             )
 
             # Retry configuration with timeout protection
@@ -1712,9 +1869,11 @@ Generate a photorealistic image of the room with the {product_name} replacing th
 
             # Generate visualization with Gemini 3 Pro Image (Nano Banana Pro)
             # Use temperature 0.4 to match Google AI Studio's default
+            # Use HIGH media resolution for better quality output
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 temperature=0.4,
+                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
             )
 
             # Retry configuration with timeout protection
@@ -1805,12 +1964,19 @@ Generate a photorealistic image of the room with the {product_name} replacing th
             logger.error(f"Error generating REPLACE visualization: {e}")
             raise ValueError(f"Visualization generation failed: {e}")
 
-    async def generate_room_visualization(self, visualization_request: VisualizationRequest) -> VisualizationResult:
+    async def generate_room_visualization(
+        self, visualization_request: VisualizationRequest, room_analysis: Optional[Dict[str, Any]] = None
+    ) -> VisualizationResult:
         """
         Generate photorealistic room visualization using a HYBRID approach:
         1. Use AI to understand the room and identify placement locations
         2. Use AI to generate masked products
         3. Composite products onto the ORIGINAL room image (preserving 100% of original)
+
+        Args:
+            visualization_request: The visualization request with products and base image
+            room_analysis: Optional room analysis dict containing dimensions and scale_references
+                          for perspective-aware product scaling
         """
         try:
             start_time = time.time()
@@ -1844,12 +2010,27 @@ Generate a photorealistic image of the room with the {product_name} replacing th
                 for idx, product in enumerate(visualization_request.products_to_place):
                     product_name = product.get("full_name") or product.get("name", "furniture item")
                     product_desc = product.get("description", "No description available")
+
+                    # Extract actual dimensions from product data (from product_attributes)
+                    dimensions = product.get("dimensions", {})
+                    dimension_str = ""
+                    if dimensions:
+                        parts = []
+                        if dimensions.get("width"):
+                            parts.append(f"Width: {dimensions['width']} inches")
+                        if dimensions.get("depth"):
+                            parts.append(f"Depth: {dimensions['depth']} inches")
+                        if dimensions.get("height"):
+                            parts.append(f"Height: {dimensions['height']} inches")
+                        if parts:
+                            dimension_str = f"- 📐 ACTUAL DIMENSIONS: {', '.join(parts)}\n"
+
                     detailed_products.append(
                         f"""
 Product {idx + 1}:
 - Name: {product_name}
 - Description: {product_desc}
-- Placement: {user_request if user_request else 'Place naturally in appropriate location based on product type'}
+{dimension_str}- Placement: {user_request if user_request else 'Place naturally in appropriate location based on product type'}
 - Reference Image: Provided below"""
                     )
 
@@ -1891,29 +2072,54 @@ DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
                 has_multiple_instances = any("#" in name for name in product_names)
                 multiple_instance_instruction = ""
                 if has_multiple_instances:
-                    multiple_instance_instruction = """
-🪑🪑 MULTIPLE INSTANCES OF SAME PRODUCT 🪑🪑
+                    # Count how many instances of each product
+                    instance_counts = {}
+                    for name in product_names:
+                        if "#" in name:
+                            base_name = name.rsplit(" #", 1)[0]
+                            instance_counts[base_name] = instance_counts.get(base_name, 0) + 1
+
+                    instance_details = "\n".join(
+                        [f"   - {name}: {count} copies (ALL {count} must appear)" for name, count in instance_counts.items()]
+                    )
+
+                    multiple_instance_instruction = f"""
+🪑🪑🪑 CRITICAL: MULTIPLE INSTANCES OF SAME PRODUCT 🪑🪑🪑
 ═══════════════════════════════════════════════════════════════
-Products with numbered names (e.g., "Dining Chair #1", "Dining Chair #2") are MULTIPLE COPIES of the SAME item.
+⚠️⚠️⚠️ YOU MUST PLACE ALL NUMBERED INSTANCES - DO NOT SKIP ANY ⚠️⚠️⚠️
+
+Products with numbered names (e.g., "Cushion Cover #1", "Cushion Cover #2", "Cushion Cover #3") are MULTIPLE COPIES of the SAME item that ALL must be placed:
+
+{instance_details}
+
+🚨 PLACEMENT RULES FOR MULTIPLE INSTANCES:
+- EVERY numbered instance (#1, #2, #3, etc.) MUST appear in the final image
 - Place each instance in a DIFFERENT but RELATED position
+- For cushions/pillows: arrange on the sofa - one on each seat, or clustered decoratively
 - For chairs: arrange around a table or in a conversational grouping
 - For dining chairs: place around the dining table at regular intervals
 - For accent chairs: place in complementary positions (e.g., flanking a fireplace or sofa)
 - For side tables: place at opposite ends of a sofa or beside different seating
 - Maintain consistent spacing and alignment between instances
 - All instances should face logical directions (not backs to the room)
+
+❌ WRONG: Placing only 1 cushion when 3 are requested
+✅ CORRECT: Placing all 3 cushions (#1, #2, #3) on the sofa
 ═══════════════════════════════════════════════════════════════
 
 """
 
                 # Create explicit product count instruction
                 product_count_instruction = ""
-                if product_count == 1:
+                if has_multiple_instances:
+                    # When we have multiple instances (e.g., Cushion Cover #1, #2, #3), we need ALL of them
+                    product_count_instruction = f"⚠️ PLACE EXACTLY {product_count} ITEMS TOTAL - This includes multiple copies of some products (numbered #1, #2, #3, etc.). Each numbered item MUST appear in the image."
+                elif product_count == 1:
                     product_count_instruction = "⚠️ PLACE EXACTLY 1 (ONE) PRODUCT - Do NOT place multiple copies. Place only ONE instance of the product."
                 elif product_count == 2:
-                    product_count_instruction = "⚠️ PLACE EXACTLY 2 (TWO) DIFFERENT PRODUCTS - One of each product provided, not multiple copies of the same product."
+                    product_count_instruction = "⚠️ PLACE EXACTLY 2 (TWO) DIFFERENT PRODUCTS - One of each product provided."
                 else:
-                    product_count_instruction = f"⚠️ PLACE EXACTLY {product_count} DIFFERENT PRODUCTS - One of each product provided, not multiple copies of any single product."
+                    product_count_instruction = f"⚠️ PLACE EXACTLY {product_count} ITEMS - One of each product listed below."
 
                 # Create existing furniture instruction - conditional on exclusive_products mode
                 # When exclusive_products=True, we ONLY want the specified products, remove any others
@@ -2015,6 +2221,10 @@ For EACH product reference image provided, you MUST render the EXACT SAME produc
    - If reference sofa has L-shaped sectional, render L-SHAPED SECTIONAL
    - If reference table has sleek rectangular design, render SLEEK RECTANGULAR
    - If reference has round legs, render ROUND LEGS (not square)
+   - 🚨 UNIQUE/UNCONVENTIONAL SHAPES: If product has a unique shape (sphere, planet-like, sculptural, asymmetric),
+     you MUST preserve that EXACT shape - do NOT simplify to a generic version
+   - Example: A Saturn-shaped side table (sphere with ring) must remain a SPHERE with RING, not a generic round table
+   - Example: A sculptural organic coffee table must keep its exact curves, not become a standard rectangle
 
 4. 🏷️ EXACT STYLE - Match the product's style character
    - Modern minimalist → Keep modern minimalist
@@ -2031,28 +2241,30 @@ For EACH product reference image provided, you MUST render the EXACT SAME produc
 REFERENCE IMAGE MATCHING CHECKLIST (for each product):
 □ Same exact color/shade
 □ Same exact material appearance
-□ Same exact shape/silhouette
+□ Same exact shape/silhouette (ESPECIALLY important for unique designs!)
 □ Same exact style characteristics
 □ Same exact proportions
+□ Same distinctive features (spheres stay spheres, rings stay rings, curves stay curves)
+
+🚨 UNIQUE PRODUCT DESIGNS - SPECIAL ATTENTION:
+Side tables, lamps, and decor often have UNCONVENTIONAL shapes (spheres, planets, sculptural forms).
+You MUST preserve these unique shapes - do NOT convert them to generic furniture.
+If you see a product that looks like a planet with a ring → RENDER a planet with a ring
+If you see a product with an organic sculptural shape → RENDER that exact sculptural shape
 
 ═══════════════════════════════════════════════════════════════
 
-📏 CRITICAL SIZING INSTRUCTION:
-Each product has its own real-world dimensions. You MUST honor these dimensions exactly:
-1. Look at the product reference images provided - these show the actual product proportions
-2. Estimate the room dimensions from the input image (walls, existing furniture, doorways)
-3. Scale each product proportionally to fit the room, maintaining the product's ACTUAL aspect ratio and proportions
-4. DO NOT invent or change product dimensions - use what you see in the product reference images
-5. If a coffee table is 36" wide in reality, it should appear 36" wide in the room (scaled to perspective)
-6. If a sofa is 84" long in reality, it should appear 84" long in the room (scaled to perspective)
+{self._build_perspective_scaling_instructions(visualization_request.products_to_place, room_analysis, visualization_request.placement_positions)}
+
+{self._build_room_geometry_instructions(room_analysis.get("camera_view_analysis", {}) if isinstance(room_analysis, dict) else getattr(room_analysis, "camera_view_analysis", {}), visualization_request.products_to_place)}
 
 PLACEMENT STRATEGY:
 1. Look at the EXACT room in the input image
-2. Estimate room dimensions from visual cues (walls, existing furniture, doorways, standard door height ~80")
+2. Use the room dimensions and scale references provided above
 3. Identify appropriate floor space for each product
 4. Place products ON THE FLOOR of THIS room (not floating)
-5. Scale products proportionally based on estimated room size AND product's actual dimensions from reference image
-6. Maintain realistic proportions - a 36" coffee table should look appropriate in a 12x15 ft room
+5. Scale products using the RELATIVE sizing instructions above (% of room width, % of door height)
+6. Products at the BACK of the room should appear SMALLER due to perspective
 7. Arrange products according to type-specific placement rules (see below)
 8. Ensure products don't block doorways or windows
 9. Keep proper spacing between products (18-30 inches walking space)
@@ -2084,19 +2296,44 @@ SPECIFIC BLOCKING PREVENTION RULES:
 ✅ CORRECT: Side table on opposite side of sofa → both planter and table fully visible
 ═══════════════════════════════════════════════════════════════
 
-📍 TYPE-SPECIFIC PLACEMENT RULES:
+📍 TYPE-SPECIFIC PLACEMENT RULES (ROOM-GEOMETRY AWARE):
 
-🪑 SOFAS:
-- Place along a wall or centered in the room as the main seating piece
+🛋️ SOFAS & SECTIONALS (CRITICAL - READ CAREFULLY):
+- ALWAYS place AGAINST a SOLID wall - NEVER floating in the middle of the room
+- 🚨 NEVER place against WINDOWS, GLASS DOORS, or SLIDING DOORS - only solid walls!
+- For STRAIGHT-ON camera views: place against the back wall (if solid), centered
+- For DIAGONAL camera views: place against the PRIMARY SOLID WALL (not windows/glass)
+- For CORNER camera views: place against one of the visible SOLID walls, NOT in the corner intersection
+- Orientation: Sofa should be PARALLEL to the wall it's against
+- Distance from wall: 0-6 inches (touching or nearly touching)
+- 🚫 NEVER place sofas diagonally across room corners
+- 🚫 NEVER float a sofa in the geometric center of a diagonal shot
+- 🚫 NEVER place sofas in front of floor-to-ceiling windows or glass doors
+- ✅ Place where a real interior designer would place it based on room layout
+- ✅ Position sofas to FACE windows (for the view), not AGAINST windows
 
 🪑 CHAIRS (accent chair, side chair, armchair):
 - Position on ONE OF THE SIDES of existing sofa (if sofa exists)
 - Angle towards sofa for conversation area
 - Maintain 18-30 inches spacing from sofa
+- For diagonal views, position relative to where the sofa is (against the primary wall)
+
+🪑 BENCHES (bench, ottoman bench, entryway bench, storage bench):
+- ⚠️ CRITICAL: DO NOT REMOVE any existing furniture (chairs, tables, etc.) when adding a bench
+- First, SCAN the room for available empty space (perpendicular to sofa OR across from sofa)
+- Place bench WHERE THERE IS SPACE - if one side has a chair, place on the other side
+- Maintain appropriate distance from sofa (3-4 feet) - NOT directly in front of sofa
+- Can be placed at the foot of a bed in bedroom settings
+- Can be positioned near entryways or windows as accent seating
+- 🚫 NEVER place bench directly in front of sofa blocking the coffee table area
+- 🚫 NEVER remove or replace existing chairs/furniture to make room for the bench
+- ✅ CORRECT: Find empty space perpendicular to sofa OR across from sofa
+- ✅ CORRECT: Place at conversation distance (3-4 feet away) in available space
 
 🔲 CENTER TABLE / COFFEE TABLE:
 - Place DIRECTLY IN FRONT OF the sofa or seating area
-- Centered between sofa and opposite wall
+- For diagonal/corner views: position relative to where the sofa is placed (against primary wall)
+- The table should be centered on the seating arrangement, not the image center
 - Perpendicular to sofa's front face
 - Distance: 14-18 inches from sofa's front
 
@@ -2121,13 +2358,47 @@ SPECIFIC BLOCKING PREVENTION RULES:
 - Near seating areas for task lighting
 
 🛏️ BEDS:
-- Place against longest wall
+- Place AGAINST a wall - the headboard should touch a wall
+- For diagonal/corner views: place against the primary wall, not floating
 - Leave walkway space on at least one side
+- 🚫 NEVER place beds diagonally or floating in the room center
 
 🌿 PLANTERS (tall floor-standing plants):
 - Place on floor next to sofa, chair, or in corners
 - ⚖️ BALANCE: If placing next to sofa, position on one side; if side table is needed, place it on the OPPOSITE side
 - 🚫 BLOCKING CHECK: Ensure planters do not block existing side tables or other furniture
+
+🖼️ WALL ART / WALL HANGINGS / TAPESTRY / PAINTINGS:
+🚨🚨🚨 CRITICAL - MOUNT ON WALL, NOT ON FLOOR 🚨🚨🚨
+- ⚠️ Wall art MUST be hung ON THE WALL - NEVER placed on the floor as a rug/carpet
+- ⚠️ Position on a wall, typically above a sofa, console, bed headboard, or as a focal point
+- ⚠️ Height: Center of artwork should be at eye level (~57-60 inches from floor) or slightly above furniture
+- ⚠️ If above sofa: bottom of art should be 6-12 inches above sofa back
+- ⚠️ For tapestries with tassels/fringe: these are WALL HANGINGS, not rugs - hang on wall
+- 🚫 NEVER place wall art flat on the floor - it is NOT a rug or carpet
+- 🚫 NEVER confuse wall tapestries with floor rugs - check product name/type carefully
+- ✅ CORRECT: Wall art hanging vertically on a wall surface
+- ❌ WRONG: Wall art laid flat on the floor as a carpet
+
+🧶 RUGS / CARPETS / AREA RUGS:
+- Place FLAT ON THE FLOOR under furniture arrangements
+- Rugs go UNDER coffee tables, seating areas, or dining tables
+- For living rooms: rug should be large enough for front legs of sofa/chairs to rest on it
+- 🚫 Do NOT confuse wall art/tapestries with rugs - check product name/description
+- Wall art has "wall", "painting", "art", "tapestry", "hanging" in name → goes on WALL
+- Rugs have "rug", "carpet", "floor mat", "area rug" in name → goes on FLOOR
+
+🛋️ CUSHION COVERS / THROW PILLOWS (CRITICAL FOR MULTIPLE QUANTITIES):
+- Place ON THE SOFA or chairs - cushions go ON seating, not on the floor
+- When multiple cushion covers are requested (e.g., #1, #2, #3), ALL must be visible
+- Arrange cushions decoratively on the sofa: corners, along the back, or clustered
+- For 2 cushions: place one at each end of the sofa
+- For 3 cushions: two at corners + one in the middle, or all three clustered to one side
+- For 4+ cushions: distribute evenly across the sofa back
+- Each numbered cushion (#1, #2, #3) is a SEPARATE item that MUST appear
+- 🚨 If "Cushion Cover #1", "#2", "#3" are listed, you MUST show 3 cushions on the sofa
+- ❌ WRONG: Showing only 1 cushion when 3 are requested
+- ✅ CORRECT: Showing all 3 cushions arranged on the sofa
 
 💐 TABLETOP DECOR (vases, flower bunches, sculptures, decorative objects, small decor pieces):
 - ⚠️ CRITICAL: These are SMALL items that go ON TABLE SURFACES, not on the floor!
@@ -2285,9 +2556,11 @@ Create a photorealistic interior design visualization that addresses the user's 
                         contents.append(prod_pil_image)
 
                     # Use response modalities for image and text generation
+                    # Use HIGH media resolution for better quality output
                     generate_content_config = types.GenerateContentConfig(
                         response_modalities=["IMAGE", "TEXT"],
                         temperature=0.25,  # Lower temperature for better room preservation consistency
+                        media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
                     )
 
                     # Stream response with timeout protection
@@ -2466,7 +2739,12 @@ QUALITY REQUIREMENTS:
             ]
 
             contents = [types.Content(role="user", parts=parts)]
-            generate_content_config = types.GenerateContentConfig(response_modalities=["IMAGE", "TEXT"], temperature=0.4)
+            # Use HIGH media resolution for better quality output
+            generate_content_config = types.GenerateContentConfig(
+                response_modalities=["IMAGE", "TEXT"],
+                temperature=0.4,
+                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
+            )
 
             transformed_image = None
             transformation_description = ""
@@ -2621,8 +2899,11 @@ QUALITY REQUIREMENTS:
             ]
 
             contents = [types.Content(role="user", parts=parts)]
+            # Use HIGH media resolution for better quality output
             generate_content_config = types.GenerateContentConfig(
-                response_modalities=["IMAGE", "TEXT"], temperature=0.3  # Lower temperature for more consistent modifications
+                response_modalities=["IMAGE", "TEXT"],
+                temperature=0.3,  # Lower temperature for more consistent modifications
+                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
             )
 
             transformed_image = None
@@ -2911,18 +3192,453 @@ QUALITY REQUIREMENTS:
             logger.error(f"Error preprocessing image for editing: {e}")
             return image_data
 
+    def _calculate_relative_scale(
+        self, product_dimensions: Dict[str, Any], room_dimensions: Dict[str, float], placement_depth: str = "midground"
+    ) -> Dict[str, Any]:
+        """
+        Convert absolute product dimensions to relative room percentages
+        with perspective adjustment for realistic visualization.
+
+        Args:
+            product_dimensions: Dict with width, depth, height in inches
+            room_dimensions: Dict with estimated_width_ft, estimated_length_ft, etc.
+            placement_depth: "foreground", "midground", or "background"
+
+        Returns:
+            Dict with relative percentages and perspective factors
+        """
+        room_width_inches = room_dimensions.get("estimated_width_ft", 12) * 12
+        room_depth_inches = room_dimensions.get("estimated_length_ft", 15) * 12
+        room_height_inches = room_dimensions.get("estimated_height_ft", 9) * 12
+
+        # Parse product dimensions (handle both float and string values)
+        def parse_dim(val):
+            if val is None:
+                return 0
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return 0
+
+        product_width = parse_dim(product_dimensions.get("width"))
+        product_depth = parse_dim(product_dimensions.get("depth"))
+        product_height = parse_dim(product_dimensions.get("height"))
+
+        # Calculate room percentages
+        width_percent = (product_width / room_width_inches) * 100 if product_width and room_width_inches else None
+        depth_percent = (product_depth / room_depth_inches) * 100 if product_depth and room_depth_inches else None
+        height_percent = (product_height / room_height_inches) * 100 if product_height and room_height_inches else None
+
+        # Perspective adjustment factor based on depth
+        # Objects in background appear smaller due to perspective foreshortening
+        perspective_factors = {"foreground": 1.0, "midground": 0.75, "background": 0.55}
+        perspective_factor = perspective_factors.get(placement_depth, 0.75)
+
+        # Door reference (standard door is 80 inches / 6.67 feet)
+        door_height_reference = 80  # inches
+        height_vs_door = (product_height / door_height_reference) * 100 if product_height else None
+
+        return {
+            "width_percent": round(width_percent, 1) if width_percent else None,
+            "depth_percent": round(depth_percent, 1) if depth_percent else None,
+            "height_percent": round(height_percent, 1) if height_percent else None,
+            "perspective_factor": perspective_factor,
+            "apparent_width_percent": round(width_percent * perspective_factor, 1) if width_percent else None,
+            "height_vs_door_percent": round(height_vs_door, 1) if height_vs_door else None,
+            "raw_dimensions": {"width": product_width, "depth": product_depth, "height": product_height},
+        }
+
+    def _build_perspective_scaling_instructions(
+        self,
+        products: List[Dict[str, Any]],
+        room_analysis: Optional[Dict[str, Any]] = None,
+        placement_positions: Optional[List[Dict[str, Any]]] = None,
+    ) -> str:
+        """
+        Build perspective-aware scaling instructions for the visualization prompt.
+
+        Args:
+            products: List of products to place (with dimensions in product data)
+            room_analysis: Dict containing room dimensions and scale_references
+            placement_positions: Optional list of position dicts from VisualizationRequest
+
+        Returns:
+            Formatted instruction string for the visualization prompt
+        """
+        # Convert placement_positions list to dict for easier lookup
+        positions_dict: Dict[int, str] = {}
+        if placement_positions:
+            for pos in placement_positions:
+                if isinstance(pos, dict) and "product_index" in pos and "position" in pos:
+                    positions_dict[pos["product_index"]] = pos["position"]
+        if room_analysis is None:
+            room_analysis = {}
+
+        room_dims = room_analysis.get(
+            "dimensions", {"estimated_width_ft": 12, "estimated_length_ft": 15, "estimated_height_ft": 9}
+        )
+        scale_refs = room_analysis.get("scale_references", {})
+        camera_perspective = scale_refs.get("camera_perspective", {})
+
+        instruction = """
+📐 PERSPECTIVE-AWARE SCALING SYSTEM
+═══════════════════════════════════════════════════════════════
+
+🎯 ROOM CONTEXT (from analysis):
+"""
+        # Add room dimension context
+        room_width_ft = room_dims.get("estimated_width_ft", 12)
+        room_depth_ft = room_dims.get("estimated_length_ft", 15)
+        room_height_ft = room_dims.get("estimated_height_ft", 9)
+
+        instruction += f"""- Estimated room size: ~{room_width_ft}ft W × {room_depth_ft}ft D × {room_height_ft}ft H
+- Room width in inches: ~{room_width_ft * 12} inches
+- Room depth in inches: ~{room_depth_ft * 12} inches
+"""
+
+        # Add camera perspective context
+        camera_angle = camera_perspective.get("angle", "eye_level")
+        focal_length = camera_perspective.get("estimated_focal_length", "normal")
+        instruction += f"""- Camera perspective: {camera_angle} angle, {focal_length} lens
+"""
+
+        # Add reference object anchors
+        instruction += """
+🚪 SCALE ANCHORS (use these to calibrate product sizes):
+- Standard interior door: 80 inches tall (6.67 feet)
+- Standard window: 36-48 inches wide
+- Standard ceiling: 8-9 feet (96-108 inches)
+- Dining chair seat height: 18 inches from floor
+- Standard sofa depth: 32-40 inches
+- Coffee table height: 16-18 inches
+"""
+
+        if scale_refs.get("door_visible"):
+            door_percent = scale_refs.get("door_apparent_height_percent", 25)
+            instruction += f"""
+🚪 DOOR DETECTED: A door is visible in this image occupying ~{door_percent}% of image height.
+   Use this as your PRIMARY scale reference! Scale all products relative to this door.
+"""
+
+        # Add per-product relative scaling
+        instruction += """
+📏 PRODUCT RELATIVE SIZING:
+Instead of guessing sizes, use these RELATIVE measurements for each product:
+"""
+
+        for i, product in enumerate(products):
+            # Get product dimensions from various possible locations
+            dims = product.get("dimensions", {})
+            if not dims:
+                # Try to get from product attributes
+                dims = {}
+                for attr in ["width", "depth", "height"]:
+                    if attr in product:
+                        dims[attr] = product[attr]
+
+            product_name = product.get("name", f"Product {i+1}")
+
+            # Determine placement depth based on position
+            placement_depth = "midground"  # default
+            if positions_dict and i in positions_dict:
+                pos = positions_dict[i].lower()
+                if "back" in pos or "far" in pos:
+                    placement_depth = "background"
+                elif "front" in pos or "foreground" in pos:
+                    placement_depth = "foreground"
+
+            relative = self._calculate_relative_scale(dims, room_dims, placement_depth)
+
+            instruction += f"""
+{i+1}. {product_name}:
+"""
+            if relative["raw_dimensions"]["width"] or relative["raw_dimensions"]["height"]:
+                instruction += f"""   - Absolute dimensions: {relative['raw_dimensions']['width'] or 'N/A'}" W × {relative['raw_dimensions']['depth'] or 'N/A'}" D × {relative['raw_dimensions']['height'] or 'N/A'}" H
+"""
+                if relative["width_percent"]:
+                    instruction += f"""   - Should occupy ~{relative['width_percent']}% of room width
+"""
+                if relative["height_vs_door_percent"]:
+                    instruction += f"""   - Height should be ~{relative['height_vs_door_percent']}% of a standard door height (80")
+"""
+                instruction += f"""   - Placement depth: {placement_depth.upper()} (scale factor: {relative['perspective_factor']})
+"""
+            else:
+                instruction += f"""   - No dimensions provided - estimate from product reference image
+   - Use room context and other products for relative sizing
+"""
+
+        instruction += """
+🔭 PERSPECTIVE DEPTH RULES:
+Objects appear smaller as they recede into the scene due to perspective:
+
+| Position    | Apparent Scale | Description                        |
+|-------------|----------------|------------------------------------|
+| FOREGROUND  | 100%           | Front of image, closest to camera  |
+| MIDGROUND   | 70-80%         | Center of room                     |
+| BACKGROUND  | 50-60%         | Near back wall, furthest from cam  |
+
+⚠️ CRITICAL SCALING CHECKS:
+1. If a door is visible, compare product heights to the door (80" standard)
+2. A sofa (typical 84-96" wide) should occupy ~40-55% of a 12-15ft wide room
+3. Products placed at the BACK of room should appear SMALLER than same product in FOREGROUND
+4. A coffee table should be ~1/2 to 2/3 the width of the sofa in front of it
+5. Side tables should be roughly the same height as sofa armrests (~25-30")
+
+❌ WRONG: All products same apparent size regardless of where they're placed
+❌ WRONG: Sofa at back wall appears same size as if it were in foreground
+❌ WRONG: Product appears larger than the door when it should be smaller
+✅ CORRECT: Products scale naturally with perspective (farther = smaller apparent size)
+✅ CORRECT: Product occupies correct % of room width based on actual dimensions
+✅ CORRECT: Products in background appear appropriately smaller than foreground
+"""
+
+        return instruction
+
     def _create_fallback_room_analysis(self) -> RoomAnalysis:
         """Create fallback room analysis"""
         return RoomAnalysis(
             room_type="living_room",
-            dimensions={"estimated_width_ft": 12, "estimated_length_ft": 15, "square_footage": 180},
+            dimensions={"estimated_width_ft": 12, "estimated_length_ft": 15, "estimated_height_ft": 9, "square_footage": 180},
             lighting_conditions="mixed",
             color_palette=["neutral", "warm_gray", "white"],
             existing_furniture=[],
             architectural_features=["windows"],
             style_assessment="contemporary",
             confidence_score=0.3,
+            scale_references={
+                "door_visible": False,
+                "window_visible": True,
+                "camera_perspective": {
+                    "angle": "eye_level",
+                    "estimated_focal_length": "normal",
+                    "estimated_distance_to_back_wall_ft": 15.0,
+                },
+            },
+            camera_view_analysis={
+                "viewing_angle": "straight_on",
+                "primary_wall": "back",
+                "floor_center_location": "image_center",
+                "recommended_furniture_zone": "center_floor",
+            },
         )
+
+    def _map_position_to_room_geometry(
+        self, grid_position: str, camera_view_analysis: Dict[str, Any], furniture_type: str
+    ) -> str:
+        """
+        Convert grid-based position to room-aware placement instruction.
+
+        For diagonal camera angles, "CENTER" might map to "against the primary wall"
+        rather than literally in the middle of the image.
+
+        Args:
+            grid_position: Grid cell like "CENTER", "TOP-LEFT", "MID-RIGHT"
+            camera_view_analysis: Camera view analysis from room analysis
+            furniture_type: Type of furniture being placed (sofa, coffee_table, etc.)
+
+        Returns:
+            String instruction for room-aware placement
+        """
+        viewing_angle = camera_view_analysis.get("viewing_angle", "straight_on")
+        primary_wall = camera_view_analysis.get("primary_wall", "back")
+        recommended_zone = camera_view_analysis.get("recommended_furniture_zone", "center_floor")
+
+        # Normalize furniture type for matching
+        furniture_lower = furniture_type.lower() if furniture_type else ""
+
+        # Wall-MOUNTED items (hang ON wall, not against wall)
+        wall_mounted_keywords = [
+            "wall art",
+            "wall hanging",
+            "painting",
+            "tapestry",
+            "artwork",
+            "wall decor",
+            "canvas",
+            "poster",
+            "frame",
+            "mirror",
+        ]
+
+        # Large furniture that should go against walls (on floor, backed to wall)
+        wall_furniture_keywords = [
+            "sofa",
+            "couch",
+            "sectional",
+            "bed",
+            "console",
+            "tv_unit",
+            "tv stand",
+            "bookshelf",
+            "dresser",
+            "cabinet",
+            "sideboard",
+        ]
+
+        # Center furniture that can be in open floor
+        center_furniture_keywords = ["coffee_table", "coffee table", "ottoman", "pouf", "center table"]
+
+        # Floor rugs/carpets (explicitly on floor, NOT wall art)
+        floor_rug_keywords = ["rug", "carpet", "area rug", "floor mat", "dhurrie", "kilim"]
+
+        # Beside-furniture items (side tables, lamps)
+        beside_furniture_keywords = ["side_table", "side table", "end table", "lamp", "floor lamp", "plant", "planter"]
+
+        is_wall_mounted = any(kw in furniture_lower for kw in wall_mounted_keywords)
+        is_wall_furniture = any(kw in furniture_lower for kw in wall_furniture_keywords)
+        is_center_furniture = any(kw in furniture_lower for kw in center_furniture_keywords)
+        is_floor_rug = any(kw in furniture_lower for kw in floor_rug_keywords)
+        is_beside_furniture = any(kw in furniture_lower for kw in beside_furniture_keywords)
+
+        # Build placement instruction based on furniture type and camera angle
+
+        # WALL-MOUNTED items (art, paintings, tapestries) - hang ON the wall
+        if is_wall_mounted:
+            return f"HANG ON THE WALL - this is wall art/decor, NOT a rug. Mount vertically on the {primary_wall} wall surface, typically above furniture (sofa, console, bed). Position at eye level or 6-12 inches above furniture back. Do NOT place on the floor - wall art goes ON walls, not ON floors."
+
+        # FLOOR RUGS - place flat on floor
+        elif is_floor_rug:
+            return f"Place FLAT ON THE FLOOR under the seating arrangement. The rug should be centered in the room's floor space, under or in front of the sofa/seating area. Do NOT hang on wall - rugs go ON floors."
+
+        elif is_wall_furniture:
+            if viewing_angle == "diagonal_left":
+                return f"Place AGAINST the {primary_wall} wall (the main visible wall, which appears on the RIGHT side of this diagonal view). Do NOT place floating in the center or in the corner where walls meet."
+            elif viewing_angle == "diagonal_right":
+                return f"Place AGAINST the {primary_wall} wall (the main visible wall, which appears on the LEFT side of this diagonal view). Do NOT place floating in the center or in the corner where walls meet."
+            elif viewing_angle == "corner":
+                return f"Place AGAINST the {primary_wall} wall, NOT in the corner where the two walls meet. Position parallel to the wall, not diagonally."
+            else:  # straight_on
+                return f"Place against the back wall or in the {recommended_zone}, centered in the room's floor space."
+
+        elif is_center_furniture:
+            if viewing_angle in ["diagonal_left", "diagonal_right", "corner"]:
+                return f"Place on the floor in the actual room center (which may be {camera_view_analysis.get('floor_center_location', 'slightly off from image center')}). Position in front of the main seating area, maintaining 14-18 inches clearance from the sofa."
+            else:
+                return f"Place centered on the floor in the {recommended_zone}, in front of the main seating arrangement."
+
+        elif is_beside_furniture:
+            return f"Place adjacent to the main seating (at the arm/end of a sofa), within arm's reach. For diagonal camera views, position relative to where the sofa would be placed against the {primary_wall} wall."
+
+        else:
+            # Default: use the recommended zone
+            return f"Place appropriately in the {recommended_zone} area, following the natural room layout."
+
+    def _build_room_geometry_instructions(self, camera_view_analysis: Dict[str, Any], products: List[Dict[str, Any]]) -> str:
+        """
+        Build room geometry awareness instructions for visualization prompt.
+
+        Args:
+            camera_view_analysis: Camera view analysis from room analysis
+            products: List of products being placed
+
+        Returns:
+            String with room geometry instructions for Gemini
+        """
+        viewing_angle = camera_view_analysis.get("viewing_angle", "straight_on")
+        primary_wall = camera_view_analysis.get("primary_wall", "back")
+        floor_center = camera_view_analysis.get("floor_center_location", "image_center")
+        recommended_zone = camera_view_analysis.get("recommended_furniture_zone", "center_floor")
+        walls_to_avoid = camera_view_analysis.get("walls_to_avoid", [])
+
+        # Build walls to avoid warning
+        if walls_to_avoid:
+            walls_avoid_warning = f"""
+🚨🚨🚨 CRITICAL - WALLS TO AVOID (WINDOWS/GLASS DOORS) 🚨🚨🚨
+DO NOT place large furniture (sofas, beds, consoles) against these walls:
+{', '.join(walls_to_avoid).upper()}
+
+These walls have large windows, glass doors, or sliding doors.
+Placing furniture against them would BLOCK the windows/doors - this is WRONG.
+"""
+        else:
+            walls_avoid_warning = ""
+
+        # Build angle-specific explanation
+        if viewing_angle == "straight_on":
+            angle_explanation = """This photo is taken STRAIGHT-ON - the camera faces a wall directly.
+   - Walls appear parallel to image edges
+   - The center of the image is approximately the center of the floor
+   - Standard grid-based positioning works well"""
+        elif viewing_angle == "diagonal_left":
+            angle_explanation = f"""This photo is taken from a DIAGONAL-LEFT angle (~30-60° from straight).
+   - The RIGHT side of the image shows the primary wall ({primary_wall} wall)
+   - The floor center is {floor_center} (NOT necessarily at image center)
+   - Large furniture should be placed against the {primary_wall} wall on the RIGHT
+   - Do NOT place sofas/beds in the image center - that may be a corner"""
+        elif viewing_angle == "diagonal_right":
+            angle_explanation = f"""This photo is taken from a DIAGONAL-RIGHT angle (~30-60° from straight).
+   - The LEFT side of the image shows the primary wall ({primary_wall} wall)
+   - The floor center is {floor_center} (NOT necessarily at image center)
+   - Large furniture should be placed against the {primary_wall} wall on the LEFT
+   - Do NOT place sofas/beds in the image center - that may be a corner"""
+        elif viewing_angle == "corner":
+            angle_explanation = f"""This photo is taken from a CORNER of the room.
+   - Two walls are visible at angles on left and right
+   - The primary wall for furniture is: {primary_wall}
+   - The floor center is {floor_center}
+   - AVOID placing large furniture in the corner where walls meet
+   - Place sofas/beds PARALLEL to walls, not diagonal"""
+        else:
+            angle_explanation = "Standard placement applies."
+
+        # Generate per-product room-aware instructions
+        product_instructions = []
+        for i, product in enumerate(products):
+            product_name = product.get("name", f"Product {i+1}")
+            # Try to infer furniture type from name or category
+            furniture_type = product_name.lower()
+            if product.get("category"):
+                furniture_type = f"{furniture_type} {product.get('category', '').lower()}"
+
+            room_aware_instruction = self._map_position_to_room_geometry(
+                "CENTER",  # Default position, actual position handled by custom instructions
+                camera_view_analysis,
+                furniture_type,
+            )
+            product_instructions.append(f"   {i+1}. {product_name}: {room_aware_instruction}")
+
+        products_section = "\n".join(product_instructions) if product_instructions else "   (Follow general placement rules)"
+
+        return f"""
+📐 ROOM GEOMETRY AWARENESS (CRITICAL FOR SIDE-ANGLE PHOTOS)
+═══════════════════════════════════════════════════════════════
+{walls_avoid_warning}
+🎥 CAMERA VIEWING ANGLE: {viewing_angle.upper().replace('_', ' ')}
+{angle_explanation}
+
+🏠 ROOM LAYOUT:
+- Primary Wall (best for large furniture): {primary_wall.upper()} wall
+- Actual Floor Center: {floor_center.replace('_', ' ')}
+- Recommended Furniture Zone: {recommended_zone.replace('_', ' ')}
+
+📍 ROOM-AWARE PLACEMENT FOR EACH PRODUCT:
+{products_section}
+
+⚠️ CRITICAL RULES FOR DIAGONAL/CORNER CAMERA VIEWS:
+1. SOFAS & LARGE SEATING: Place AGAINST SOLID walls (NOT windows/glass doors), not floating in the image center
+2. The "center" of the IMAGE may NOT be the "center" of the ROOM floor
+3. For diagonal views, one wall is more prominent - that's where sofas go (if it's a solid wall)
+4. NEVER place sofas diagonally across corners unless explicitly requested
+5. Coffee tables go in front of seating, relative to where the seating actually is
+6. NEVER place furniture against floor-to-ceiling windows or glass doors
+
+🚫 DO NOT:
+- Place a sofa in the geometric center of the image if this is a diagonal shot
+- Float large furniture in what appears to be a corner in the room
+- Place sofas/beds/large furniture AGAINST WINDOWS or GLASS DOORS
+- Block natural light by putting furniture in front of windows
+- Ignore the room's actual layout in favor of image pixel coordinates
+
+✅ DO:
+- Place furniture where a real interior designer would place it
+- Put sofas against the primary SOLID wall ({primary_wall}) - never against windows
+- Center coffee tables relative to the seating arrangement
+- Keep windows/glass doors unobstructed
+- Consider the actual room geometry, not just the camera's view
+
+═══════════════════════════════════════════════════════════════
+"""
 
     def _create_fallback_spatial_analysis(self) -> SpatialAnalysis:
         """Create fallback spatial analysis"""

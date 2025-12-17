@@ -1325,7 +1325,9 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 room_context = request.message.lower()
 
                 # If current message doesn't contain room info, check stored preferences
-                if not any(kw in room_context for kw in ["living", "bed", "sleep", "dining", "eat", "office", "study", "sofa"]):
+                if not any(
+                    kw in room_context for kw in ["living", "bed", "sleep", "dining", "eat", "office", "study", "sofa"]
+                ):
                     # Use stored room type from conversation context
                     if omni_prefs.room_type:
                         room_context = omni_prefs.room_type.lower()
@@ -2076,15 +2078,29 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         # Check product count and enforce incremental visualization for larger sets
         # The Gemini API has input size limitations and fails with 500 errors when
         # processing 5+ products simultaneously. Use incremental mode as workaround.
-        # IMPORTANT: Only force incremental if NOT doing a force_reset
         MAX_PRODUCTS_BATCH = 4
         forced_incremental = False
-        if len(products) > MAX_PRODUCTS_BATCH and not is_incremental and not force_reset:
-            logger.info(
-                f"Product count ({len(products)}) exceeds batch limit ({MAX_PRODUCTS_BATCH}). Forcing incremental visualization."
-            )
-            is_incremental = True
-            forced_incremental = True
+
+        # Check expanded product count (after quantity expansion) for batch limit
+        # We need to check this BEFORE deciding on incremental mode
+        expanded_count_estimate = sum(p.get("quantity", 1) for p in products)
+
+        if expanded_count_estimate > MAX_PRODUCTS_BATCH and not is_incremental:
+            if force_reset:
+                # For force_reset with many products, we need a special approach:
+                # Start fresh with first batch, then incrementally add the rest
+                logger.info(
+                    f"Force reset with {expanded_count_estimate} expanded products exceeds batch limit ({MAX_PRODUCTS_BATCH}). "
+                    f"Will process first {MAX_PRODUCTS_BATCH} products initially, then add rest incrementally."
+                )
+                forced_incremental = True
+                # Keep force_reset True for first batch to use clean base image
+            else:
+                logger.info(
+                    f"Product count ({expanded_count_estimate} expanded) exceeds batch limit ({MAX_PRODUCTS_BATCH}). Forcing incremental visualization."
+                )
+                is_incremental = True
+                forced_incremental = True
 
         # Note: force_reset handling was moved above to take priority over incremental mode
 
@@ -2202,41 +2218,18 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     matching_existing.append(obj)
                     break
 
-        # If we found matching furniture and user hasn't specified action yet, ask for clarification
-        # IMPORTANT: Skip clarification if custom_positions are provided (user explicitly positioned items)
+        # DISABLED: Same-category clarification prompt
+        # Users can now add multiple products of the same category without being asked
+        # The system defaults to "add" behavior - keeping existing furniture and adding new ones
         if matching_existing and not user_action and not custom_positions:
             product_type_display = list(selected_product_types)[0].replace("_", " ")
             count = len(matching_existing)
             plural = "s" if count > 1 else ""
-            logger.info(f"Requesting clarification: found {count} matching {product_type_display}{plural} in room")
-
-            clarification_message = f"I see there {'are' if count > 1 else 'is'} {count} {product_type_display}{plural} in your room. Would you like me to:\n\n"
-
-            if count == 1:
-                clarification_message += (
-                    f"a) Replace the existing {product_type_display} with the selected {product_type_display}\n"
-                )
-                clarification_message += (
-                    f"b) Add the selected {product_type_display} to the room (keep existing {product_type_display})\n"
-                )
-            else:
-                clarification_message += (
-                    f"a) Replace one of the existing {product_type_display}{plural} with the selected {product_type_display}\n"
-                )
-                clarification_message += (
-                    f"b) Replace all {count} {product_type_display}{plural} with the selected {product_type_display}\n"
-                )
-                clarification_message += f"c) Add the selected {product_type_display} to the room (keep all existing {product_type_display}{plural})\n"
-
-            clarification_message += "\nPlease respond with your choice (a, b, or c)."
-
-            return {
-                "needs_clarification": True,
-                "message": clarification_message,
-                "existing_furniture": existing_furniture,
-                "matching_count": count,
-                "product_type": product_type_display,
-            }
+            logger.info(
+                f"Found {count} matching {product_type_display}{plural} in room - defaulting to ADD (no clarification)"
+            )
+            # Default to add behavior - set user_action so the visualization instruction is generated
+            user_action = "add"
         elif matching_existing and custom_positions:
             # Skip clarification when custom positions are provided
             logger.info(
@@ -2276,8 +2269,22 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 if db_product:
                     # Add price and other essential fields
                     product["price"] = float(db_product.price) if db_product.price else 0.0
-                    product["name"] = db_product.name
-                    product["full_name"] = db_product.name
+
+                    # Preserve instance labels from frontend (e.g., "Prakrit Cushion Cover #2")
+                    # Only overwrite if frontend didn't send an instance-labeled name
+                    frontend_name = product.get("name", "")
+                    frontend_full_name = product.get("full_name", "")
+                    if "#" in frontend_name and db_product.name in frontend_name:
+                        # Frontend sent an instance-labeled name like "Product Name #2" - preserve it
+                        logger.info(f"Preserving instance-labeled name: {frontend_name}")
+                        # Also ensure full_name is set if not already
+                        if not frontend_full_name:
+                            product["full_name"] = frontend_name
+                    else:
+                        # Use database name
+                        product["name"] = db_product.name
+                        product["full_name"] = db_product.name
+
                     product["source"] = db_product.source_website
 
                     # Add image URLs
@@ -2406,30 +2413,32 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                         expanded.append(expanded_product)
             return expanded
 
-        # Expand products for visualization (handles quantity > 1)
-        expanded_products = expand_products_by_quantity(products)
-        expanded_new_products = (
-            expand_products_by_quantity(new_products_to_visualize)
-            if new_products_to_visualize != products
-            else expanded_products
-        )
+        # Log quantity information for debugging
+        total_items = 0
+        for p in products:
+            qty = p.get("quantity", 1)
+            total_items += qty
+            logger.info(f"[Quantity Debug] Product: {p.get('name')}, quantity: {qty}")
 
-        if len(expanded_products) != len(products):
-            logger.info(f"Expanded {len(products)} products to {len(expanded_products)} items based on quantities")
+        if total_items != len(products):
+            logger.info(f"Products contain quantities totaling {total_items} items (from {len(products)} product entries)")
+
+        # Expand products based on quantity for full visualization (non-incremental path)
+        expanded_products = expand_products_by_quantity(products)
+        logger.info(f"Expanded {len(products)} products to {len(expanded_products)} items for visualization")
 
         # Handle incremental visualization (add ONLY NEW products to existing visualization)
         if is_incremental:
             logger.info(
-                f"Incremental visualization: Adding {len(new_products_to_visualize)} NEW products (out of {len(products)} total)"
+                f"Incremental visualization: Adding {len(new_products_to_visualize)} product entries (out of {len(products)} total)"
             )
 
             # Use BATCH add visualization for all new products in a SINGLE API call
-            # This is much faster than calling generate_add_visualization one product at a time
+            # Products now include quantity field - the AI service handles rendering multiple copies
             try:
-                # Use expanded products (handles quantity > 1)
-                products_for_viz = expanded_new_products
-                product_names = [p.get("full_name") or p.get("name") for p in products_for_viz]
-                logger.info(f"  Batch adding products: {', '.join(product_names)}")
+                products_for_viz = new_products_to_visualize
+                product_details = [f"{p.get('name')} (qty={p.get('quantity', 1)})" for p in products_for_viz]
+                logger.info(f"  Batch adding products: {', '.join(product_details)}")
 
                 current_image = await google_ai_service.generate_add_multiple_visualization(
                     room_image=base_image,  # Start with previous visualization (already has old products)
@@ -2453,26 +2462,72 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             )
         else:
             # Standard visualization (all products at once)
-            # Create visualization request
-            # When force_reset is True, use exclusive_products mode to ONLY show specified products
-            # and remove any existing furniture from the base image
-            viz_request = VisualizationRequest(
-                base_image=base_image,
-                products_to_place=expanded_products,  # Use expanded products for quantity support
-                placement_positions=custom_positions if custom_positions else [],
-                lighting_conditions=lighting_conditions,
-                render_quality="high",
-                style_consistency=True,
-                user_style_description=user_style_description,
-                exclusive_products=force_reset,  # When True, ONLY show specified products
-            )
+            # BUT if we have too many products and forced_incremental is True, process in batches
+            if forced_incremental and force_reset and len(expanded_products) > MAX_PRODUCTS_BATCH:
+                logger.info(f"Processing {len(expanded_products)} products in batches due to API limits")
 
-            # Log if using custom positions
-            if custom_positions:
-                logger.info(f"Using {len(custom_positions)} custom furniture positions from edit mode")
+                # Phase 1: Visualize first batch on clean base image
+                first_batch = expanded_products[:MAX_PRODUCTS_BATCH]
+                logger.info(f"Phase 1: Visualizing first {len(first_batch)} products on clean base")
 
-            # Generate visualization using Google AI Studio
-            viz_result = await google_ai_service.generate_room_visualization(viz_request)
+                viz_request = VisualizationRequest(
+                    base_image=base_image,
+                    products_to_place=first_batch,
+                    placement_positions=[],
+                    lighting_conditions=lighting_conditions,
+                    render_quality="high",
+                    style_consistency=True,
+                    user_style_description=user_style_description,
+                    exclusive_products=True,
+                )
+                viz_result = await google_ai_service.generate_room_visualization(viz_request)
+                current_image = viz_result.rendered_image
+
+                # Phase 2+: Incrementally add remaining products in batches
+                remaining_products = expanded_products[MAX_PRODUCTS_BATCH:]
+                batch_num = 2
+                while remaining_products:
+                    batch = remaining_products[:MAX_PRODUCTS_BATCH]
+                    remaining_products = remaining_products[MAX_PRODUCTS_BATCH:]
+                    logger.info(f"Phase {batch_num}: Adding {len(batch)} more products incrementally")
+
+                    current_image = await google_ai_service.generate_add_multiple_visualization(
+                        room_image=current_image,
+                        products=batch,
+                    )
+                    batch_num += 1
+
+                # Final result
+                viz_result = VisualizationResult(
+                    rendered_image=current_image,
+                    processing_time=0.0,
+                    quality_score=0.85,
+                    placement_accuracy=0.90,
+                    lighting_realism=0.85,
+                    confidence_score=0.87,
+                )
+            else:
+                # Normal single-batch visualization
+                # Create visualization request
+                # When force_reset is True, use exclusive_products mode to ONLY show specified products
+                # and remove any existing furniture from the base image
+                viz_request = VisualizationRequest(
+                    base_image=base_image,
+                    products_to_place=expanded_products,  # Use expanded products for quantity support
+                    placement_positions=custom_positions if custom_positions else [],
+                    lighting_conditions=lighting_conditions,
+                    render_quality="high",
+                    style_consistency=True,
+                    user_style_description=user_style_description,
+                    exclusive_products=force_reset,  # When True, ONLY show specified products
+                )
+
+                # Log if using custom positions
+                if custom_positions:
+                    logger.info(f"Using {len(custom_positions)} custom furniture positions from edit mode")
+
+                # Generate visualization using Google AI Studio
+                viz_result = await google_ai_service.generate_room_visualization(viz_request)
 
         # Note: Due to AI model limitations, the visualization shows a design concept
         # The room structure may vary from the original as generative models create new images
@@ -3107,6 +3162,7 @@ def _detect_direct_search_query(message: str) -> Dict[str, Any]:
 
         # Check if we have SUFFICIENT info to search directly
         # We need: category + at least one qualifier (color, material, style, size, or budget)
+        # EXCEPTION: Simple categories don't need qualifiers - show immediately!
         has_qualifiers = (
             len(result["extracted_colors"]) > 0
             or len(result["extracted_materials"]) > 0
@@ -3115,13 +3171,26 @@ def _detect_direct_search_query(message: str) -> Dict[str, Any]:
             or result["extracted_budget_max"] is not None
         )
 
-        result["has_sufficient_info"] = has_qualifiers
+        # Import simple category check
+        from config.category_attributes import is_simple_category
+
+        # Check if ANY detected category is a simple category (wall_art, planters, etc.)
+        # Simple categories should show products immediately without qualifiers
+        is_any_simple = any(is_simple_category(cat["category_id"]) for cat in detected_cats)
+
+        # Mark simple categories as having sufficient info (no follow-up needed)
+        result["has_sufficient_info"] = has_qualifiers or is_any_simple
+
+        # Also mark each category with is_simple flag
+        for cat in detected_cats:
+            cat["is_simple"] = is_simple_category(cat["category_id"])
 
         logger.info(
             f"[DIRECT SEARCH] Detected direct search: categories={[c['category_id'] for c in detected_cats]}, "
             f"colors={result['extracted_colors']}, materials={result['extracted_materials']}, "
             f"styles={result['extracted_styles']}, sizes={result['extracted_sizes']}, "
-            f"budget_max={result['extracted_budget_max']}, has_sufficient_info={has_qualifiers}"
+            f"budget_max={result['extracted_budget_max']}, is_any_simple={is_any_simple}, "
+            f"has_sufficient_info={result['has_sufficient_info']}"
         )
     else:
         result["has_sufficient_info"] = False
@@ -4593,12 +4662,20 @@ async def _get_category_based_recommendations(
                     "source_url": product.source_url,
                     "is_on_sale": product.is_on_sale,
                     "style_score": style_score,  # Include score for debugging
+                    "description": product.description,  # Include for AI visualization context
                     "primary_image": {
                         "url": primary_image.original_url if primary_image else None,
                         "alt_text": primary_image.alt_text if primary_image else product.name,
                     }
                     if primary_image
                     else None,
+                    # Include attributes for visualization (especially dimensions: width, height, depth)
+                    "attributes": [
+                        {"attribute_name": attr.attribute_name, "attribute_value": attr.attribute_value}
+                        for attr in product.attributes
+                    ]
+                    if product.attributes
+                    else [],
                 }
                 product_list.append(product_dict)
 

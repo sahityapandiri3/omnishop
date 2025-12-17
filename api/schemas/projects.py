@@ -2,9 +2,17 @@
 Pydantic schemas for projects
 """
 from datetime import datetime
+from enum import Enum
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
+
+
+class ProjectStatusEnum(str, Enum):
+    """Project status enum for draft/published state"""
+
+    DRAFT = "draft"
+    PUBLISHED = "published"
 
 
 # Request schemas
@@ -12,12 +20,14 @@ class ProjectCreate(BaseModel):
     """Schema for creating a project"""
 
     name: str = Field(..., min_length=1, max_length=200)
+    status: Optional[ProjectStatusEnum] = ProjectStatusEnum.DRAFT
 
 
 class ProjectUpdate(BaseModel):
     """Schema for updating a project (manual save)"""
 
     name: Optional[str] = Field(None, max_length=200)
+    status: Optional[ProjectStatusEnum] = None  # draft or published
     room_image: Optional[str] = None  # Base64
     clean_room_image: Optional[str] = None  # Base64
     visualization_image: Optional[str] = None  # Base64
@@ -32,6 +42,7 @@ class ProjectListItem(BaseModel):
 
     id: str
     name: str
+    status: str  # "draft" or "published"
     has_room_image: bool
     has_visualization: bool
     created_at: datetime
@@ -46,6 +57,7 @@ class ProjectResponse(BaseModel):
 
     id: str
     name: str
+    status: str  # "draft" or "published"
     room_image: Optional[str] = None
     clean_room_image: Optional[str] = None
     visualization_image: Optional[str] = None

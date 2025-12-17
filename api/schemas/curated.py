@@ -30,6 +30,7 @@ class CuratedLookProductBase(BaseModel):
 
     product_id: int
     product_type: Optional[str] = None
+    quantity: int = 1
     display_order: int = 0
 
 
@@ -49,6 +50,7 @@ class CuratedLookProductSchema(BaseModel):
     source_website: str
     source_url: Optional[str] = None
     product_type: Optional[str] = None
+    quantity: int = 1
     description: Optional[str] = None
 
     class Config:
@@ -74,6 +76,7 @@ class CuratedLookCreate(CuratedLookBase):
     display_order: int = 0
     product_ids: List[int] = []  # Products to include with types
     product_types: Optional[List[str]] = None  # Types for each product
+    product_quantities: Optional[List[int]] = None  # Quantities for each product
 
 
 class CuratedLookUpdate(BaseModel):
@@ -87,6 +90,10 @@ class CuratedLookUpdate(BaseModel):
     visualization_image: Optional[str] = None
     is_published: Optional[bool] = None
     display_order: Optional[int] = None
+    # Product updates (optional - if provided, replaces all products)
+    product_ids: Optional[List[int]] = None
+    product_types: Optional[List[str]] = None
+    product_quantities: Optional[List[int]] = None
 
 
 class CuratedLookProductUpdate(BaseModel):
@@ -94,6 +101,7 @@ class CuratedLookProductUpdate(BaseModel):
 
     product_ids: List[int]
     product_types: Optional[List[str]] = None
+    product_quantities: Optional[List[int]] = None
 
 
 class CuratedLookSchema(BaseModel):
