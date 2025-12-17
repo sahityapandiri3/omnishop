@@ -1135,19 +1135,44 @@ export default function CreateCuratedLookPage() {
       setBaseRoomLayer(cleanRoom);
 
       const productsToEdit = visualizedProducts.length > 0 ? visualizedProducts : selectedProducts;
-      const numProducts = productsToEdit.length;
+
+      // Expand products by quantity - each instance gets its own draggable position
+      const expandedProducts: Array<{product: any, instanceIndex: number, totalInstances: number}> = [];
+      productsToEdit.forEach(product => {
+        const qty = product.quantity || 1;
+        for (let i = 1; i <= qty; i++) {
+          expandedProducts.push({
+            product,
+            instanceIndex: i,
+            totalInstances: qty
+          });
+        }
+      });
+
+      const numProducts = expandedProducts.length;
       const cols = Math.ceil(Math.sqrt(numProducts));
 
-      const initialPositions: FurniturePosition[] = productsToEdit.map((product, index) => {
+      const initialPositions: FurniturePosition[] = expandedProducts.map((item, index) => {
         const row = Math.floor(index / cols);
         const col = index % cols;
         const spacingX = 0.6 / (cols + 1);
         const spacingY = 0.6 / (Math.ceil(numProducts / cols) + 1);
+
+        // Create unique instance ID: "productId-instanceIndex"
+        const instanceId = item.totalInstances > 1
+          ? `${item.product.id}-${item.instanceIndex}`
+          : String(item.product.id);
+
+        // Label shows instance number if qty > 1
+        const label = item.totalInstances > 1
+          ? `${item.product.name} (${item.instanceIndex} of ${item.totalInstances})`
+          : item.product.name;
+
         return {
-          productId: String(product.id),
+          productId: instanceId,
           x: 0.2 + (col + 1) * spacingX,
           y: 0.2 + (row + 1) * spacingY,
-          label: product.name,
+          label: label,
           width: 0.15,
           height: 0.15,
         };
@@ -1188,13 +1213,24 @@ export default function CreateCuratedLookPage() {
     try {
       await furniturePositionAPI.savePositions(sessionId, furniturePositions);
 
-      const productDetails = selectedProducts.map(p => ({
-        id: p.id,
-        name: p.name,
-        full_name: p.name,
-        style: 0.8,
-        category: 'furniture'
-      }));
+      // Expand products by quantity to match the positions
+      // Each instance ID in furniturePositions (e.g., "123-1", "123-2") needs a matching product entry
+      const productDetails: Array<{id: string, name: string, full_name: string, style: number, category: string, image_url?: string}> = [];
+      selectedProducts.forEach(p => {
+        const qty = p.quantity || 1;
+        for (let i = 1; i <= qty; i++) {
+          const instanceId = qty > 1 ? `${p.id}-${i}` : String(p.id);
+          const instanceName = qty > 1 ? `${p.name} (${i} of ${qty})` : p.name;
+          productDetails.push({
+            id: instanceId,
+            name: instanceName,
+            full_name: instanceName,
+            style: 0.8,
+            category: 'furniture',
+            image_url: p.image_url || p.images?.[0]?.original_url
+          });
+        }
+      });
 
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`,

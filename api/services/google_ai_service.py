@@ -3016,12 +3016,25 @@ QUALITY REQUIREMENTS:
 
         for pos in positions:
             # Find the corresponding product
+            # Handle instance IDs like "123-1" or "123-2" for products with quantity > 1
             product_id = pos.get("productId") or pos.get("product_id")
             matching_product = None
+
+            # First try exact match (for instance IDs like "123-1")
             for idx, product in enumerate(products):
                 if str(product.get("id")) == str(product_id):
                     matching_product = (idx + 1, product.get("full_name") or product.get("name", "unknown"))
                     break
+
+            # If no exact match, try base ID match (extract "123" from "123-1")
+            if not matching_product and "-" in str(product_id):
+                base_id = str(product_id).rsplit("-", 1)[0]
+                for idx, product in enumerate(products):
+                    if str(product.get("id")) == base_id:
+                        # Use the label from position if available (includes instance info)
+                        label = pos.get("label") or product.get("full_name") or product.get("name", "unknown")
+                        matching_product = (idx + 1, label)
+                        break
 
             if matching_product:
                 product_num, product_name = matching_product
