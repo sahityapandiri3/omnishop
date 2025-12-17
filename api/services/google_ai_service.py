@@ -1558,11 +1558,14 @@ COUNT CHECK: Your output should have exactly 1 new {single_item_name} added.
 
 🪑 BENCH PLACEMENT:
 - ⚠️ DO NOT REMOVE existing furniture - find available empty space first
-- Place PERPENDICULAR to sofa OR ACROSS from sofa (facing it) WHERE THERE IS SPACE
-- If one side has existing furniture (chair, table), place bench on the OTHER side
-- Maintain 3-4 feet distance from sofa
-- 🚫 NEVER place directly in front of sofa or remove existing chairs/furniture
-- ✅ CORRECT: Find empty space, then place perpendicular or across at conversation distance
+- 🛋️ LIVING ROOM: Place bench ACROSS from the sofa (on the OPPOSITE side, facing the sofa)
+  - Position bench so it faces the sofa, creating a conversation area
+  - Maintain 3-4 feet distance from sofa
+- 🛏️ BEDROOM: Place bench at the FOOT OF THE BED (next to the footrest area)
+  - Position parallel to the foot of the bed
+  - Can also be placed at the end of the bed facing outward
+- 🚫 NEVER place directly in front of sofa blocking the coffee table area
+- 🚫 NEVER remove or replace existing chairs/furniture to make room for the bench
 ═══════════════════════════════════════════════════════════════════════
 
 """
@@ -2342,15 +2345,20 @@ SPECIFIC BLOCKING PREVENTION RULES:
 
 🪑 BENCHES (bench, ottoman bench, entryway bench, storage bench):
 - ⚠️ CRITICAL: DO NOT REMOVE any existing furniture (chairs, tables, etc.) when adding a bench
-- First, SCAN the room for available empty space (perpendicular to sofa OR across from sofa)
-- Place bench WHERE THERE IS SPACE - if one side has a chair, place on the other side
-- Maintain appropriate distance from sofa (3-4 feet) - NOT directly in front of sofa
-- Can be placed at the foot of a bed in bedroom settings
-- Can be positioned near entryways or windows as accent seating
+- 🛋️ LIVING ROOM PLACEMENT:
+  - Place bench ACROSS from the sofa (on the OPPOSITE side, facing the sofa)
+  - Position so the bench faces the sofa, creating a conversation area
+  - Maintain 3-4 feet distance from sofa
+  - The bench should be on the far side of the room relative to the sofa
+- 🛏️ BEDROOM PLACEMENT:
+  - Place bench at the FOOT OF THE BED (next to the footrest area)
+  - Position parallel to the foot of the bed
+  - Can be placed at the end of the bed facing outward
+- Can also be positioned near entryways or windows as accent seating (if not living room/bedroom)
 - 🚫 NEVER place bench directly in front of sofa blocking the coffee table area
 - 🚫 NEVER remove or replace existing chairs/furniture to make room for the bench
-- ✅ CORRECT: Find empty space perpendicular to sofa OR across from sofa
-- ✅ CORRECT: Place at conversation distance (3-4 feet away) in available space
+- ✅ CORRECT (Living Room): Bench across from sofa, facing it at conversation distance
+- ✅ CORRECT (Bedroom): Bench at foot of bed, parallel to the bed frame
 
 🔲 CENTER TABLE / COFFEE TABLE:
 - Place DIRECTLY IN FRONT OF the sofa or seating area
