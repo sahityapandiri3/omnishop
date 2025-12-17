@@ -569,6 +569,7 @@ export default function CreateCuratedLookPage() {
         brand: p.brand || p.source_website,
         image_url: p.image_url || p.primary_image?.url,
         description: p.description || '',
+        quantity: p.quantity || 1,
       }));
 
       const result = await visualizeRoom(sessionId, {
