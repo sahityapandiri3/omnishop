@@ -1264,6 +1264,21 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     f"[OMNI SMART FLOW] Style '{omni_prefs.overall_style}' + budget '₹{omni_prefs.budget_total:,.0f}' known - skipping gathering, going to READY_TO_RECOMMEND"
                 )
             # =================================================================
+            # RESPONSE TEXT CHECK: If GPT says "here are some options" etc, force READY_TO_RECOMMEND
+            # This catches cases where GPT generates a recommendation response but doesn't set the state correctly
+            # =================================================================
+            response_implies_products = any(
+                phrase in conversational_response.lower()
+                for phrase in ["here are some", "here are my", "here's what i", "i've found", "check out these", "options for you"]
+            )
+            if response_implies_products and conversation_state not in ["READY_TO_RECOMMEND", "DIRECT_SEARCH", "BROWSING"]:
+                logger.info(f"[RESPONSE CHECK] GPT response implies products but state is {conversation_state} - forcing READY_TO_RECOMMEND")
+                conversation_state = "READY_TO_RECOMMEND"
+                follow_up_question = None
+                if not omni_prefs.scope:
+                    conversation_context_manager.update_omni_preferences(session_id, scope="full_room")
+
+            # =================================================================
             # GPT READY_TO_RECOMMEND TRUST: If GPT says ready, trust it
             # This handles cases like user saying "both" after scope question
             # GPT understands the context better than keyword matching
