@@ -1104,17 +1104,20 @@ This is an ACCENT ITEM. Critical rules:
 
 """
 
-            # For planters, use a SIMPLIFIED prompt similar to what works on Gemini website
-            # Instead of all the complex warnings, use a direct natural language description
+            # Build prompt with zoom warnings (planters and other small items all use the same structure)
+            # Planter-specific placement hints are added below
+            planter_placement_hint = ""
             if is_planter:
-                # Build a simplified prompt like the one that works on Gemini website
-                prompt = f"""Based on the input image, add the {product_name} to the room. Place it on the floor in an appropriate corner or beside existing furniture. The planter should be filled with appropriate green foliage. Realistic shadows should be cast by the planter onto the floor. The existing furniture, wall decor, and overall lighting should remain exactly as shown in the input image."""
+                planter_placement_hint = f"""
+🌿 PLANTER PLACEMENT GUIDE:
+- Place on the floor in an appropriate corner or beside existing furniture
+- The planter should be filled with appropriate green foliage
+- Add realistic shadows cast by the planter onto the floor
+- Planter should be a SMALL accent piece - NOT the focus of the image
 
-                logger.info(f"Using simplified planter prompt for: {product_name}")
+"""
 
-            else:
-                # For non-planters, use the complex prompt with all warnings
-                prompt = f"""{zoom_warning}{small_item_warning}ADD the following product to this room in an appropriate location WITHOUT removing any existing furniture:
+            prompt = f"""{zoom_warning}{small_item_warning}{planter_placement_hint}ADD the following product to this room in an appropriate location WITHOUT removing any existing furniture:
 
 Product to add: {product_name}
 
