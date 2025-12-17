@@ -25,8 +25,9 @@ aiohttp>=3.8.6
 anyio>=4.8.0,<5.0.0
 
 # Data validation and serialization
-pydantic==2.4.2
-pydantic-settings==2.0.3
+# pydantic>=2.9.0 required for google-genai compatibility
+pydantic>=2.9.0,<3.0.0
+pydantic-settings>=2.0.3
 
 # OpenAI integration
 # Need version that supports anyio>=4.8.0 for google-genai compatibility
