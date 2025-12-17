@@ -1340,7 +1340,6 @@ The room structure, walls, and camera angle MUST be identical to the input image
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 temperature=0.3,
-                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
             )
 
             # Retry configuration with timeout protection
@@ -1681,7 +1680,6 @@ The room structure, walls, and camera angle MUST be identical to the input image
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 temperature=0.3,
-                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
             )
 
             # Retry configuration with timeout protection
@@ -1872,7 +1870,6 @@ Generate a photorealistic image of the room with the {product_name} replacing th
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 temperature=0.4,
-                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
             )
 
             # Retry configuration with timeout protection
@@ -2559,7 +2556,6 @@ Create a photorealistic interior design visualization that addresses the user's 
                     generate_content_config = types.GenerateContentConfig(
                         response_modalities=["IMAGE", "TEXT"],
                         temperature=0.25,  # Lower temperature for better room preservation consistency
-                        media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
                     )
 
                     # Stream response with timeout protection
@@ -2742,7 +2738,6 @@ QUALITY REQUIREMENTS:
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE", "TEXT"],
                 temperature=0.4,
-                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
             )
 
             transformed_image = None
@@ -2902,7 +2897,6 @@ QUALITY REQUIREMENTS:
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE", "TEXT"],
                 temperature=0.3,  # Lower temperature for more consistent modifications
-                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
             )
 
             transformed_image = None
