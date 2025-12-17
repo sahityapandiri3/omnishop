@@ -1503,7 +1503,30 @@ The room structure, walls, and camera angle MUST be identical to the input image
             # Check if any product has quantity > 1
             has_multiple_copies = any(qty > 1 for _, qty in product_entries)
             multiple_instance_instruction = ""
-            if has_multiple_copies:
+
+            # For single items, add explicit instruction NOT to add extras
+            if total_items_to_add == 1 and not has_multiple_copies:
+                single_item_name = product_entries[0][0] if product_entries else "item"
+                multiple_instance_instruction = f"""
+⚠️⚠️⚠️ CRITICAL: ADD EXACTLY 1 ITEM - NO MORE, NO LESS ⚠️⚠️⚠️
+═══════════════════════════════════════════════════════════════════════
+
+🎯 YOU MUST ADD EXACTLY 1 (ONE) {single_item_name.upper()}
+
+⛔ DO NOT:
+- Add 2 or more of this item
+- Create duplicates or similar-looking items
+- Add any matching/complementary pieces
+
+✅ DO:
+- Add ONLY 1 (ONE) single item
+- Place it in ONE appropriate location
+
+COUNT CHECK: Your output should have exactly 1 new {single_item_name} added.
+═══════════════════════════════════════════════════════════════════════
+
+"""
+            elif has_multiple_copies:
                 logger.info(f"🪑 MULTIPLE COPIES REQUESTED: {total_items_to_add} total items from {len(products)} products")
                 # Build instruction for multiple copies - use the summary we already built
                 multiple_instance_instruction = f"""
