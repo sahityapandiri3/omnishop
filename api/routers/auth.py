@@ -215,6 +215,18 @@ def verify_admin_secret(x_admin_secret: str = Header(..., alias="X-Admin-Secret"
     return True
 
 
+@router.get("/admin/users/count")
+async def get_user_count(
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(verify_admin_secret),
+):
+    """Get total user count in database."""
+    from sqlalchemy import func
+    result = await db.execute(select(func.count()).select_from(User))
+    count = result.scalar()
+    return {"total_users": count}
+
+
 @router.get("/admin/users/recent", response_model=UserActivityResponse)
 async def get_recent_users(
     days: int = Query(default=3, ge=1, le=30, description="Number of days to look back"),
