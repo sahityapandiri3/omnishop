@@ -652,14 +652,14 @@ function DesignPageContent() {
     setProcessingStatus('Removing existing furniture from your room...');
 
     let pollAttempts = 0;
-    const MAX_POLL_ATTEMPTS = 90; // 90 attempts * 2 seconds = 3 minutes max (perspective transform + furniture removal)
+    const MAX_POLL_ATTEMPTS = 150; // 150 attempts * 2 seconds = 5 minutes max (room analysis + perspective transform + furniture removal)
 
     const pollInterval = setInterval(async () => {
       pollAttempts++;
 
       // Timeout after max attempts
       if (pollAttempts > MAX_POLL_ATTEMPTS) {
-        console.error('[DesignPage] Furniture removal timed out after 3 minutes');
+        console.error('[DesignPage] Furniture removal timed out after 5 minutes');
         sessionStorage.removeItem('furnitureRemovalJobId');
         setIsProcessingFurniture(false);
         setProcessingStatus('');
@@ -972,13 +972,13 @@ function DesignPageContent() {
       // Start polling for furniture removal completion without page reload
       const pollForCompletion = async () => {
         let pollAttempts = 0;
-        const MAX_POLL_ATTEMPTS = 90; // 90 attempts * 2 seconds = 3 minutes max
+        const MAX_POLL_ATTEMPTS = 150; // 150 attempts * 2 seconds = 5 minutes max (room analysis + perspective transform + furniture removal)
 
         const poll = async () => {
           pollAttempts++;
 
           if (pollAttempts > MAX_POLL_ATTEMPTS) {
-            console.error('[DesignPage] Furniture removal timed out after 3 minutes');
+            console.error('[DesignPage] Furniture removal timed out after 5 minutes');
             setIsProcessingFurniture(false);
             setProcessingStatus('');
             sessionStorage.removeItem('furnitureRemovalJobId');
