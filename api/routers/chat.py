@@ -824,7 +824,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                         analysis,
                         db,
                         user_message=request.message,
-                        limit=50,
+                        limit=100,
                         user_id=session.user_id,
                         session_id=session_id,
                         selected_stores=request.selected_stores,
@@ -852,7 +852,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                             fallback_analysis,
                             db,
                             user_message=request.message,
-                            limit=50,
+                            limit=100,
                             user_id=session.user_id,
                             session_id=session_id,
                             selected_stores=request.selected_stores,
@@ -860,7 +860,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     else:
                         # No keywords found, fall back to random products
                         logger.warning("No keywords extracted, using basic random recommendations")
-                        recommended_products = await _get_basic_product_recommendations(fallback_analysis, db, limit=50)
+                        recommended_products = await _get_basic_product_recommendations(fallback_analysis, db, limit=100)
             else:
                 logger.info(f"[GUIDED FLOW] In {early_conversation_state} state - skipping product fetch (gathering info)")
 
@@ -1127,7 +1127,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     analysis,
                     db,
                     user_message=request.message,
-                    limit=50,
+                    limit=100,
                     user_id=session.user_id,
                     session_id=session_id,
                     selected_stores=request.selected_stores,
@@ -1705,6 +1705,16 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                             category_id_field="category_id",
                         )
 
+                    # =================================================================
+                    # NO BUDGET? REMOVE BUDGET FILTER
+                    # If user hasn't specified any budget, clear budget_allocation from
+                    # all categories to show products across all price ranges
+                    # =================================================================
+                    if not user_total_budget and not omni_prefs.budget_total:
+                        logger.info("[NO BUDGET] User hasn't specified budget - removing budget filters from all categories")
+                        for cat in selected_categories_response:
+                            cat.budget_allocation = None
+
                     # If we're in READY_TO_RECOMMEND, DIRECT_SEARCH, or BROWSING state, fetch products by category
                     # BROWSING: User is filtering to specific category mid-conversation (e.g., "show me decor items")
                     if (
@@ -1739,11 +1749,27 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                             style_attributes = _extract_style_attributes_from_analysis(analysis)
                             logger.info(f"[GUIDED FLOW] Extracted style attributes: {style_attributes}")
 
+                        # =================================================================
+                        # AUTO-CHOOSE STYLE: If user hasn't specified style, use room analysis
+                        # If room image was analyzed, use detected_style as the style preference
+                        # =================================================================
+                        if not omni_prefs.overall_style and omni_prefs.room_analysis_suggestions:
+                            detected_style = omni_prefs.room_analysis_suggestions.detected_style
+                            if detected_style:
+                                logger.info(f"[AUTO-STYLE] User didn't specify style - using room analysis detected style: '{detected_style}'")
+                                # Set the detected style as the user's style preference
+                                conversation_context_manager.update_omni_preferences(session_id, overall_style=detected_style)
+                                omni_prefs.overall_style = detected_style  # Update local reference too
+                                # Add to style keywords for product matching
+                                if detected_style.lower() not in [s.lower() for s in style_attributes.get("style_keywords", [])]:
+                                    style_attributes["style_keywords"].insert(0, detected_style.lower())
+                                logger.info(f"[AUTO-STYLE] Updated style_attributes: {style_attributes}")
+
                         products_by_category = await _get_category_based_recommendations(
                             selected_categories_response,
                             db,
                             selected_stores=request.selected_stores,
-                            limit_per_category=50,  # Increased from 20 to provide more variety
+                            limit_per_category=100,  # Increased to provide more variety
                             style_attributes=style_attributes,
                             size_keywords=size_keywords_for_search,
                         )
@@ -1991,7 +2017,7 @@ async def get_task_status(task_id: str, db: AsyncSession = Depends(get_db)):
                         analysis,
                         db,
                         user_message=result.get("user_message", ""),
-                        limit=50,
+                        limit=100,
                         selected_stores=None,  # No store filtering in this context
                     )
                     response["result"]["recommended_products"] = recommended_products
@@ -4434,7 +4460,7 @@ async def _get_category_based_recommendations(
     selected_categories: List[CategoryRecommendation],
     db: AsyncSession,
     selected_stores: Optional[List[str]] = None,
-    limit_per_category: int = 50,
+    limit_per_category: int = 100,
     style_attributes: Optional[Dict[str, Any]] = None,
     size_keywords: Optional[List[str]] = None,
 ) -> Dict[str, List[dict]]:
@@ -4451,7 +4477,7 @@ async def _get_category_based_recommendations(
         selected_categories: List of CategoryRecommendation from ChatGPT analysis
         db: Database session
         selected_stores: Optional list of store names to filter by
-        limit_per_category: Max products per category (default 50)
+        limit_per_category: Max products per category (default 100)
         style_attributes: Optional dict with style preferences from ChatGPT analysis
             - style_keywords: List of style terms (e.g., ["modern", "minimalist"])
             - colors: List of color preferences (e.g., ["beige", "gray", "neutral"])
