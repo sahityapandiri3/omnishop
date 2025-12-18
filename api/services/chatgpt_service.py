@@ -1775,6 +1775,26 @@ At the START of conversation or when intent changes:
             response_data.setdefault("color_palette", None)
             response_data.setdefault("styling_tips", None)
 
+            # Normalize selected_categories: GPT sometimes returns strings instead of dicts
+            # e.g., ["lounge_chairs"] instead of [{"category_id": "lounge_chairs", ...}]
+            if "selected_categories" in response_data and isinstance(response_data["selected_categories"], list):
+                normalized_categories = []
+                for cat in response_data["selected_categories"]:
+                    if isinstance(cat, str):
+                        # Convert string to dict format
+                        normalized_categories.append(
+                            {
+                                "category_id": cat,
+                                "display_name": cat.replace("_", " ").title(),
+                                "budget_allocation": None,
+                                "priority": len(normalized_categories) + 1,
+                            }
+                        )
+                    elif isinstance(cat, dict):
+                        normalized_categories.append(cat)
+                response_data["selected_categories"] = normalized_categories
+                print(f"[DEBUG] Normalized selected_categories: {len(normalized_categories)} categories")
+
             print(f"[DEBUG] Normalized response_data keys: {list(response_data.keys())}")
 
             # Create design analysis schema

@@ -466,13 +466,19 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             "extracted_budget_max": None,
         }
 
-        # If GPT detected a category, use it
+        # If GPT detected a category, use it AND treat as direct search
+        # GPT detecting a category means user is searching for something specific
         if gpt_detected_category:
             # Import simple categories check
             from config.category_attributes import is_simple_category, normalize_category_name
 
             normalized_cat = normalize_category_name(gpt_detected_category)
             is_simple = is_simple_category(normalized_cat)
+
+            # IMPORTANT: GPT detecting a category implies direct search intent
+            # Even if GPT returned is_direct_search=false, the user IS searching for a specific category
+            is_direct_search = True
+            direct_search_result["is_direct_search"] = True
 
             direct_search_result["detected_categories"] = [
                 {
@@ -487,7 +493,9 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 direct_search_result["has_sufficient_info"] = True
                 logger.info(f"[GPT INTENT] Simple category detected: {normalized_cat} - showing products immediately")
 
-            logger.info(f"[GPT INTENT] Using GPT detected category: {normalized_cat}, is_simple={is_simple}")
+            logger.info(
+                f"[GPT INTENT] GPT detected category: {normalized_cat}, is_simple={is_simple}, forcing is_direct_search=True"
+            )
 
         # Fallback: If GPT didn't detect direct search, use keyword detection
         if not is_direct_search and not gpt_detected_category:
@@ -763,22 +771,9 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
         if analysis:
             gpt_conversation_state = getattr(analysis, "conversation_state", None)
 
-        if gpt_conversation_state and gpt_conversation_state in [
-            "INITIAL",
-            "GATHERING_USAGE",
-            "GATHERING_STYLE",
-            "GATHERING_BUDGET",
-            "GATHERING_SCOPE",
-            "GATHERING_PREFERENCE_MODE",
-            "GATHERING_ATTRIBUTES",
-            "READY_TO_RECOMMEND",
-            "BROWSING",
-            "DIRECT_SEARCH",
-            "DIRECT_SEARCH_GATHERING",
-        ]:
-            early_conversation_state = gpt_conversation_state
-            logger.info(f"[GPT STATE] Using GPT's conversation_state: {gpt_conversation_state}")
-        elif is_direct_search:
+        # PRIORITY: Check for direct search FIRST, before accepting GPT's conversation state
+        # This ensures "suggest lounge chairs" triggers DIRECT_SEARCH even if GPT returns "INITIAL"
+        if is_direct_search:
             # Check if we have sufficient info or it's a simple category
             has_sufficient = direct_search_result.get("has_sufficient_info", False)
             detected_cats = direct_search_result.get("detected_categories", [])
@@ -790,6 +785,15 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             else:
                 early_conversation_state = "DIRECT_SEARCH_GATHERING"
                 logger.info(f"[DIRECT SEARCH] Complex category - need to gather preferences")
+        elif gpt_conversation_state and gpt_conversation_state in [
+            "READY_TO_RECOMMEND",
+            "BROWSING",
+            "DIRECT_SEARCH",
+            "DIRECT_SEARCH_GATHERING",
+        ]:
+            # GPT explicitly returned a product-showing state - use it
+            early_conversation_state = gpt_conversation_state
+            logger.info(f"[GPT STATE] Using GPT's conversation_state: {gpt_conversation_state}")
         elif user_message_count == 1:
             early_conversation_state = "GATHERING_USAGE"
         elif user_message_count == 2:
@@ -1245,6 +1249,21 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     # User mentioned a category but no qualifiers - ask follow-up
                     conversation_state = "DIRECT_SEARCH_GATHERING"
 
+                    # IMPORTANT: Still populate raw_categories so frontend knows the target category
+                    # This allows the category to be displayed even while gathering preferences
+                    raw_categories = []
+                    for idx, cat_data in enumerate(direct_search_result["detected_categories"]):
+                        # Use default budget until user provides one
+                        raw_categories.append(
+                            {
+                                "category_id": cat_data["category_id"],
+                                "display_name": cat_data["display_name"],
+                                "priority": idx + 1,
+                                "budget_allocation": {"min": 0, "max": 999999},  # No budget filter yet
+                            }
+                        )
+                    logger.info(f"[DIRECT SEARCH GATHERING] Built {len(raw_categories)} categories for gathering state")
+
                     # Check if this is a generic category (like "lighting" → needs "what kind?" question)
                     if direct_search_result.get("is_generic_category"):
                         generic_info = direct_search_result.get("generic_category_info", {})
@@ -1370,7 +1389,13 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             # OMNI NATURAL FLOW: Let GPT's warm responses come through
             # We track state for internal logic, but DON'T override GPT's follow_up_question
             # GPT's Omni persona generates context-aware, friendly questions naturally
+            # IMPORTANT: Skip this if we already have a direct search state set above!
             # =================================================================
+            elif conversation_state in ["DIRECT_SEARCH", "DIRECT_SEARCH_GATHERING"]:
+                # Direct search state was already set - preserve it, don't override with message-count logic
+                logger.info(
+                    f"[DIRECT SEARCH PRESERVED] Keeping conversation_state={conversation_state} (not overriding with message-count logic)"
+                )
             elif user_message_count == 1:
                 conversation_state = "GATHERING_USAGE"
                 # DON'T override follow_up_question - let GPT's Omni response come through
@@ -1420,19 +1445,42 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
 
                     # Map product types to category IDs
                     product_type_to_category = {
-                        "sofa": "sofas", "sofas": "sofas", "l-shaped sofa": "sofas", "sectional": "sofas",
-                        "chair": "accent_chairs", "chairs": "accent_chairs", "lounge chair": "accent_chairs",
-                        "accent chair": "accent_chairs", "armchair": "accent_chairs",
-                        "table": "coffee_tables", "coffee table": "coffee_tables", "side table": "side_tables",
-                        "dining table": "dining_tables", "console table": "console_tables",
-                        "bed": "beds", "beds": "beds",
-                        "lamp": "floor_lamps", "floor lamp": "floor_lamps", "table lamp": "table_lamps",
-                        "rug": "rugs", "rugs": "rugs", "carpet": "rugs",
-                        "decor": "decor_objects", "vase": "decor_objects", "planter": "planters",
-                        "wall art": "wall_art", "painting": "wall_art", "artwork": "wall_art",
-                        "mirror": "mirrors", "mirrors": "mirrors",
-                        "curtain": "curtains", "curtains": "curtains", "drapes": "curtains",
-                        "bookshelf": "bookcases", "shelf": "bookcases", "storage": "bookcases",
+                        "sofa": "sofas",
+                        "sofas": "sofas",
+                        "l-shaped sofa": "sofas",
+                        "sectional": "sofas",
+                        "chair": "accent_chairs",
+                        "chairs": "accent_chairs",
+                        "lounge chair": "accent_chairs",
+                        "accent chair": "accent_chairs",
+                        "armchair": "accent_chairs",
+                        "table": "coffee_tables",
+                        "coffee table": "coffee_tables",
+                        "side table": "side_tables",
+                        "dining table": "dining_tables",
+                        "console table": "console_tables",
+                        "bed": "beds",
+                        "beds": "beds",
+                        "lamp": "floor_lamps",
+                        "floor lamp": "floor_lamps",
+                        "table lamp": "table_lamps",
+                        "rug": "rugs",
+                        "rugs": "rugs",
+                        "carpet": "rugs",
+                        "decor": "decor_objects",
+                        "vase": "decor_objects",
+                        "planter": "planters",
+                        "wall art": "wall_art",
+                        "painting": "wall_art",
+                        "artwork": "wall_art",
+                        "mirror": "mirrors",
+                        "mirrors": "mirrors",
+                        "curtain": "curtains",
+                        "curtains": "curtains",
+                        "drapes": "curtains",
+                        "bookshelf": "bookcases",
+                        "shelf": "bookcases",
+                        "storage": "bookcases",
                     }
 
                     seen_categories = set()
@@ -1449,15 +1497,19 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
 
                         if cat_id and cat_id not in seen_categories:
                             seen_categories.add(cat_id)
-                            raw_categories.append({
-                                "category_id": cat_id,
-                                "display_name": ptype.title(),  # Use original name for display
-                                "priority": idx + 1,
-                                "budget_allocation": None,  # No budget filter
-                            })
+                            raw_categories.append(
+                                {
+                                    "category_id": cat_id,
+                                    "display_name": ptype.title(),  # Use original name for display
+                                    "priority": idx + 1,
+                                    "budget_allocation": None,  # No budget filter
+                                }
+                            )
 
                     if raw_categories:
-                        logger.info(f"[CATEGORY GEN] Generated {len(raw_categories)} categories from accumulated product_types")
+                        logger.info(
+                            f"[CATEGORY GEN] Generated {len(raw_categories)} categories from accumulated product_types"
+                        )
 
                 # Fall back to room-based defaults if no accumulated product types
                 if not raw_categories:
@@ -1488,55 +1540,55 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                                 "priority": 1,
                                 "budget_allocation": {"min": 20000, "max": 50000},
                             },
-                        {
-                            "category_id": "coffee_tables",
-                            "display_name": "Coffee Tables",
-                            "priority": 2,
-                            "budget_allocation": {"min": 5000, "max": 15000},
-                        },
-                        {
-                            "category_id": "side_tables",
-                            "display_name": "Side Tables",
-                            "priority": 3,
-                            "budget_allocation": {"min": 3000, "max": 10000},
-                        },
-                        {
-                            "category_id": "floor_lamps",
-                            "display_name": "Floor Lamps",
-                            "priority": 4,
-                            "budget_allocation": {"min": 2000, "max": 8000},
-                        },
-                        {
-                            "category_id": "table_lamps",
-                            "display_name": "Table Lamps",
-                            "priority": 5,
-                            "budget_allocation": {"min": 2000, "max": 8000},
-                        },
-                        {
-                            "category_id": "ceiling_lights",
-                            "display_name": "Ceiling & Pendant Lights",
-                            "priority": 6,
-                            "budget_allocation": {"min": 3000, "max": 15000},
-                        },
-                        {
-                            "category_id": "rugs",
-                            "display_name": "Rugs & Carpets",
-                            "priority": 7,
-                            "budget_allocation": {"min": 5000, "max": 20000},
-                        },
-                        {
-                            "category_id": "planters",
-                            "display_name": "Planters",
-                            "priority": 8,
-                            "budget_allocation": {"min": 1000, "max": 5000},
-                        },
-                        {
-                            "category_id": "wall_art",
-                            "display_name": "Wall Art",
-                            "priority": 9,
-                            "budget_allocation": {"min": 2000, "max": 7000},
-                        },
-                    ]
+                            {
+                                "category_id": "coffee_tables",
+                                "display_name": "Coffee Tables",
+                                "priority": 2,
+                                "budget_allocation": {"min": 5000, "max": 15000},
+                            },
+                            {
+                                "category_id": "side_tables",
+                                "display_name": "Side Tables",
+                                "priority": 3,
+                                "budget_allocation": {"min": 3000, "max": 10000},
+                            },
+                            {
+                                "category_id": "floor_lamps",
+                                "display_name": "Floor Lamps",
+                                "priority": 4,
+                                "budget_allocation": {"min": 2000, "max": 8000},
+                            },
+                            {
+                                "category_id": "table_lamps",
+                                "display_name": "Table Lamps",
+                                "priority": 5,
+                                "budget_allocation": {"min": 2000, "max": 8000},
+                            },
+                            {
+                                "category_id": "ceiling_lights",
+                                "display_name": "Ceiling & Pendant Lights",
+                                "priority": 6,
+                                "budget_allocation": {"min": 3000, "max": 15000},
+                            },
+                            {
+                                "category_id": "rugs",
+                                "display_name": "Rugs & Carpets",
+                                "priority": 7,
+                                "budget_allocation": {"min": 5000, "max": 20000},
+                            },
+                            {
+                                "category_id": "planters",
+                                "display_name": "Planters",
+                                "priority": 8,
+                                "budget_allocation": {"min": 1000, "max": 5000},
+                            },
+                            {
+                                "category_id": "wall_art",
+                                "display_name": "Wall Art",
+                                "priority": 9,
+                                "budget_allocation": {"min": 2000, "max": 7000},
+                            },
+                        ]
                 elif "bed" in room_context or "sleep" in room_context:
                     raw_categories = [
                         {
@@ -1948,7 +2000,9 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
         # =================================================================
         omni_prefs = conversation_context_manager.get_omni_preferences(session_id)
         user_declined_prefs = omni_prefs.preference_mode == "omni_decides"
-        omni_has_essentials = bool(omni_prefs.overall_style and omni_prefs.budget_total and omni_prefs.scope) or user_declined_prefs
+        omni_has_essentials = (
+            bool(omni_prefs.overall_style and omni_prefs.budget_total and omni_prefs.scope) or user_declined_prefs
+        )
 
         if omni_has_essentials:
             if user_declined_prefs:
@@ -1971,9 +2025,16 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             # Omni doesn't have essentials yet - enforce clean gathering flow
             logger.info(f"[OMNI FLOW] State is {conversation_state} - gathering, clearing products")
             recommended_products = None
-            # CRITICAL: Clear category-based products - no products during gathering!
+            # CRITICAL: Clear products during gathering - but for DIRECT_SEARCH_GATHERING, keep categories!
+            # DIRECT_SEARCH_GATHERING means user asked for a specific category, we just need more details
+            # Keeping categories lets the frontend know what category the user is interested in
             products_by_category = None
-            selected_categories_response = None
+            if conversation_state != "DIRECT_SEARCH_GATHERING":
+                selected_categories_response = None
+            else:
+                logger.info(
+                    f"[DIRECT SEARCH GATHERING] Keeping selected_categories ({len(selected_categories_response) if selected_categories_response else 0} categories)"
+                )
 
             # For GENERIC CATEGORIES (like "lighting"), use our specific subcategory question
             # This ensures Omni asks "What kind of lighting? Floor lamps, table lamps, etc."
