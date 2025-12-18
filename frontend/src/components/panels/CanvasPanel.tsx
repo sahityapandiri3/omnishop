@@ -99,6 +99,8 @@ export default function CanvasPanel({
 }: CanvasPanelProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isVisualizing, setIsVisualizing] = useState(false);
+  const [visualizationProgress, setVisualizationProgress] = useState<string>('');
+  const [visualizationStartTime, setVisualizationStartTime] = useState<number | null>(null);
   const [visualizationResult, setVisualizationResult] = useState<string | null>(null);
   // Start expanded if user needs to upload their room image (no roomImage but has curated visualization)
   const [isRoomImageCollapsed, setIsRoomImageCollapsed] = useState(false);
@@ -149,6 +151,30 @@ export default function CanvasPanel({
 
   // Calculate total items (accounting for quantity)
   const totalItems = products.reduce((sum, product) => sum + (product.quantity || 1), 0);
+
+  // Update visualization progress with elapsed time
+  useEffect(() => {
+    if (!isVisualizing || !visualizationStartTime) return;
+
+    const updateProgress = () => {
+      const elapsed = Math.floor((Date.now() - visualizationStartTime) / 1000);
+      if (elapsed < 10) {
+        setVisualizationProgress('Preparing visualization...');
+      } else if (elapsed < 30) {
+        setVisualizationProgress(`Generating visualization (${elapsed}s)...`);
+      } else if (elapsed < 60) {
+        setVisualizationProgress(`Placing furniture in your space (${elapsed}s)...`);
+      } else if (elapsed < 90) {
+        setVisualizationProgress(`Still working - this is taking longer than usual (${elapsed}s)...`);
+      } else {
+        setVisualizationProgress(`Almost there - finalizing details (${elapsed}s)...`);
+      }
+    };
+
+    updateProgress(); // Initial update
+    const interval = setInterval(updateProgress, 1000);
+    return () => clearInterval(interval);
+  }, [isVisualizing, visualizationStartTime]);
 
   // Check if canvas has changed since last visualization
   useEffect(() => {
@@ -431,6 +457,8 @@ export default function CanvasPanel({
     if ((!roomImage && !cleanRoomImage) || products.length === 0) return;
 
     setIsVisualizing(true);
+    setVisualizationStartTime(Date.now());
+    setVisualizationProgress('Preparing visualization...');
 
     try {
       // Detect change type
@@ -439,6 +467,8 @@ export default function CanvasPanel({
       if (changeInfo.type === 'no_change') {
         console.log('[CanvasPanel] No changes detected, skipping visualization');
         setIsVisualizing(false);
+        setVisualizationStartTime(null);
+        setVisualizationProgress('');
         return;
       }
 
@@ -635,6 +665,8 @@ export default function CanvasPanel({
       alert(errorMessage);
     } finally {
       setIsVisualizing(false);
+      setVisualizationStartTime(null);
+      setVisualizationProgress('');
     }
   };
 
@@ -824,26 +856,51 @@ export default function CanvasPanel({
       // Initialize default positions for ALL visualized products (not just newly added ones)
       // ISSUE #2 FIX: Use visualizedProducts instead of products to include all visualized items
       const productsToEdit = visualizedProducts.length > 0 ? visualizedProducts : products;
-      const numProducts = productsToEdit.length;
+
+      // Expand products by quantity - each instance gets its own draggable position
+      // This matches the curated page behavior for consistent UX
+      const expandedProducts: Array<{product: typeof productsToEdit[0], instanceIndex: number, totalInstances: number}> = [];
+      productsToEdit.forEach(product => {
+        const qty = product.quantity || 1;
+        for (let i = 1; i <= qty; i++) {
+          expandedProducts.push({
+            product,
+            instanceIndex: i,
+            totalInstances: qty
+          });
+        }
+      });
+
+      const numProducts = expandedProducts.length;
       const cols = Math.ceil(Math.sqrt(numProducts));
 
-      const initialPositions: FurniturePosition[] = productsToEdit.map((product, index) => {
+      const initialPositions: FurniturePosition[] = expandedProducts.map((item, index) => {
         const row = Math.floor(index / cols);
         const col = index % cols;
         const spacingX = 0.6 / (cols + 1);
         const spacingY = 0.6 / (Math.ceil(numProducts / cols) + 1);
 
+        // Create unique instance ID: "productId-instanceIndex" for items with qty > 1
+        const instanceId = item.totalInstances > 1
+          ? `${item.product.id}-${item.instanceIndex}`
+          : String(item.product.id);
+
+        // Label shows instance number if qty > 1
+        const label = item.totalInstances > 1
+          ? `${item.product.name} (${item.instanceIndex} of ${item.totalInstances})`
+          : item.product.name;
+
         return {
-          productId: String(product.id),
+          productId: instanceId,
           x: 0.2 + (col + 1) * spacingX,
           y: 0.2 + (row + 1) * spacingY,
-          label: product.name,
+          label: label,
           width: 0.15,
           height: 0.15,
         };
       });
 
-      console.log(`[CanvasPanel] Initialized default positions for ${numProducts} visualized products:`, initialPositions);
+      console.log(`[CanvasPanel] Initialized default positions for ${numProducts} items (from ${productsToEdit.length} products, expanded by quantity):`, initialPositions);
       setFurniturePositions(initialPositions);
       setFurnitureLayers([]); // No layers needed with simplified approach
       setIsEditingPositions(true);
@@ -1652,7 +1709,7 @@ export default function CanvasPanel({
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   ></path>
                 </svg>
-                Re-visualizing...
+                <span className="text-sm">{visualizationProgress || 'Re-visualizing...'}</span>
               </>
             ) : (
               <>
@@ -1698,7 +1755,7 @@ export default function CanvasPanel({
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   ></path>
                 </svg>
-                Visualizing...
+                <span className="text-sm">{visualizationProgress || 'Visualizing...'}</span>
               </>
             ) : (
               <>

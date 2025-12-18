@@ -276,15 +276,24 @@ CATEGORY_NAME_MAPPING = {
     "planter": "planters",
     "bookshelf": "bookshelves",
     # Alternative names
-    "couch": "sofa",
-    "settee": "sofa",
-    "loveseat": "sofa",
-    "sectional": "sofa",
-    "divan": "sofa",
-    "accent_chair": "chair",
-    "armchair": "chair",
-    "lounge_chair": "chair",
-    "recliner": "chair",
+    "couch": "sofas",
+    "couches": "sofas",
+    "sofa": "sofas",
+    "settee": "sofas",
+    "loveseat": "sofas",
+    "sectional": "sofas",
+    "sectionals": "sofas",
+    "divan": "sofas",
+    "l_shaped_sofa": "sofas",
+    "l_shaped_sofas": "sofas",
+    "accent_chair": "accent_chairs",
+    "accent_chairs": "accent_chairs",
+    "armchair": "accent_chairs",
+    "armchairs": "accent_chairs",
+    "lounge_chair": "accent_chairs",
+    "lounge_chairs": "accent_chairs",
+    "recliner": "accent_chairs",
+    "recliners": "accent_chairs",
     "end_table": "side_table",
     "accent_table": "side_table",
     "nightstand": "side_table",
@@ -351,9 +360,28 @@ def normalize_category_name(category: str) -> str:
     # Convert to lowercase and replace spaces/hyphens with underscores
     normalized = category.lower().strip().replace(" ", "_").replace("-", "_")
 
-    # Check mapping
+    # Check mapping first
     if normalized in CATEGORY_NAME_MAPPING:
         return CATEGORY_NAME_MAPPING[normalized]
+
+    # Strip material prefixes (e.g., "wooden_accent_chairs" -> "accent_chairs")
+    # This handles cases where GPT prepends material to category name
+    material_prefixes = [
+        "wooden_", "wood_", "leather_", "velvet_", "fabric_", "metal_",
+        "marble_", "glass_", "rattan_", "wicker_", "brass_", "iron_",
+        "steel_", "chrome_", "cotton_", "linen_", "silk_", "wool_",
+        "jute_", "cane_", "bamboo_", "ceramic_", "plastic_", "acrylic_",
+        "upholstered_", "teak_", "sheesham_", "oak_", "walnut_", "mahogany_",
+    ]
+
+    for prefix in material_prefixes:
+        if normalized.startswith(prefix):
+            stripped = normalized[len(prefix):]
+            # Check if the stripped version is in mapping
+            if stripped in CATEGORY_NAME_MAPPING:
+                return CATEGORY_NAME_MAPPING[stripped]
+            # Return the stripped version (may still need mapping elsewhere)
+            return stripped
 
     return normalized
 

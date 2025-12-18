@@ -138,6 +138,14 @@ class RecommendationRequest(BaseModel):
     exclude_products: Optional[List[str]] = None
     max_recommendations: int = Field(default=20, ge=1, le=100)
 
+    # AI stylist extracted attributes (used for ranking)
+    color_palette: Optional[List[str]] = None
+    styling_tips: Optional[List[str]] = None
+    ai_product_types: Optional[List[str]] = None
+    user_colors: Optional[List[str]] = None
+    user_materials: Optional[List[str]] = None
+    user_textures: Optional[List[str]] = None
+
     class Config:
         json_schema_extra = {
             "example": {

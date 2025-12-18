@@ -1406,32 +1406,88 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             # =================================================================
             # CATEGORY GENERATION: Generate defaults for READY_TO_RECOMMEND
             # This runs for BOTH Omni smart flow and message-count-based flow
+            # Priority: 1) Accumulated product_types from conversation, 2) Default room categories
             # =================================================================
             if conversation_state == "READY_TO_RECOMMEND" and (not raw_categories or len(raw_categories) == 0):
-                # Determine room type from: 1) current message, 2) stored Omni preferences, 3) conversation history
-                room_context = request.message.lower()
+                # First check if we have accumulated product_types from earlier in conversation
+                acc_filters = conversation_context_manager.get_accumulated_filters(session_id)
+                accumulated_product_types = acc_filters.get("product_types", []) if acc_filters else []
 
-                # If current message doesn't contain room info, check stored preferences
-                if not any(
-                    kw in room_context for kw in ["living", "bed", "sleep", "dining", "eat", "office", "study", "sofa"]
-                ):
-                    # Use stored room type from conversation context
-                    if omni_prefs.room_type:
-                        room_context = omni_prefs.room_type.lower()
-                        logger.info(f"[CATEGORY GEN] Using stored room_type from Omni preferences: {room_context}")
-                    else:
-                        # Default to living room if no room type is available
-                        room_context = "living room"
-                        logger.info(f"[CATEGORY GEN] No room type found, defaulting to: {room_context}")
+                if accumulated_product_types:
+                    # Use accumulated product types to generate specific categories
+                    logger.info(f"[CATEGORY GEN] Using accumulated product_types: {accumulated_product_types}")
+                    raw_categories = []
 
-                if "living" in room_context or "sofa" in room_context:
-                    raw_categories = [
-                        {
-                            "category_id": "sofas",
-                            "display_name": "Sofas",
-                            "priority": 1,
-                            "budget_allocation": {"min": 20000, "max": 50000},
-                        },
+                    # Map product types to category IDs
+                    product_type_to_category = {
+                        "sofa": "sofas", "sofas": "sofas", "l-shaped sofa": "sofas", "sectional": "sofas",
+                        "chair": "accent_chairs", "chairs": "accent_chairs", "lounge chair": "accent_chairs",
+                        "accent chair": "accent_chairs", "armchair": "accent_chairs",
+                        "table": "coffee_tables", "coffee table": "coffee_tables", "side table": "side_tables",
+                        "dining table": "dining_tables", "console table": "console_tables",
+                        "bed": "beds", "beds": "beds",
+                        "lamp": "floor_lamps", "floor lamp": "floor_lamps", "table lamp": "table_lamps",
+                        "rug": "rugs", "rugs": "rugs", "carpet": "rugs",
+                        "decor": "decor_objects", "vase": "decor_objects", "planter": "planters",
+                        "wall art": "wall_art", "painting": "wall_art", "artwork": "wall_art",
+                        "mirror": "mirrors", "mirrors": "mirrors",
+                        "curtain": "curtains", "curtains": "curtains", "drapes": "curtains",
+                        "bookshelf": "bookcases", "shelf": "bookcases", "storage": "bookcases",
+                    }
+
+                    seen_categories = set()
+                    for idx, ptype in enumerate(accumulated_product_types):
+                        ptype_lower = ptype.lower()
+                        # Try exact match first, then partial match
+                        cat_id = product_type_to_category.get(ptype_lower)
+                        if not cat_id:
+                            # Try partial matching
+                            for key, value in product_type_to_category.items():
+                                if key in ptype_lower or ptype_lower in key:
+                                    cat_id = value
+                                    break
+
+                        if cat_id and cat_id not in seen_categories:
+                            seen_categories.add(cat_id)
+                            raw_categories.append({
+                                "category_id": cat_id,
+                                "display_name": ptype.title(),  # Use original name for display
+                                "priority": idx + 1,
+                                "budget_allocation": None,  # No budget filter
+                            })
+
+                    if raw_categories:
+                        logger.info(f"[CATEGORY GEN] Generated {len(raw_categories)} categories from accumulated product_types")
+
+                # Fall back to room-based defaults if no accumulated product types
+                if not raw_categories:
+                    # Determine room type from: 1) current message, 2) stored Omni preferences, 3) conversation history
+                    room_context = request.message.lower()
+
+                    # If current message doesn't contain room info, check stored preferences
+                    if not any(
+                        kw in room_context for kw in ["living", "bed", "sleep", "dining", "eat", "office", "study", "sofa"]
+                    ):
+                        # Use stored room type from conversation context
+                        if omni_prefs.room_type:
+                            room_context = omni_prefs.room_type.lower()
+                            logger.info(f"[CATEGORY GEN] Using stored room_type from Omni preferences: {room_context}")
+                        else:
+                            # Default to living room if no room type is available
+                            room_context = "living room"
+                            logger.info(f"[CATEGORY GEN] No room type found, defaulting to: {room_context}")
+
+                    # Only generate room-based defaults if we didn't get categories from accumulated product_types
+                    if raw_categories:
+                        pass  # Already have categories from accumulated product types
+                    elif "living" in room_context or "sofa" in room_context:
+                        raw_categories = [
+                            {
+                                "category_id": "sofas",
+                                "display_name": "Sofas",
+                                "priority": 1,
+                                "budget_allocation": {"min": 20000, "max": 50000},
+                            },
                         {
                             "category_id": "coffee_tables",
                             "display_name": "Coffee Tables",
@@ -1888,14 +1944,21 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
         # =================================================================
         # OMNI DYNAMIC FLOW: Check if style, budget, AND scope are already known
         # If Omni has all three, let the AI response through (don't force gathering questions)
+        # Also skip gathering if user declined preferences (omni_decides mode)
         # =================================================================
         omni_prefs = conversation_context_manager.get_omni_preferences(session_id)
-        omni_has_essentials = bool(omni_prefs.overall_style and omni_prefs.budget_total and omni_prefs.scope)
+        user_declined_prefs = omni_prefs.preference_mode == "omni_decides"
+        omni_has_essentials = bool(omni_prefs.overall_style and omni_prefs.budget_total and omni_prefs.scope) or user_declined_prefs
 
         if omni_has_essentials:
-            logger.info(
-                f"[OMNI FLOW] Style '{omni_prefs.overall_style}', budget '{omni_prefs.budget_total}', scope '{omni_prefs.scope}' known - letting Omni response through"
-            )
+            if user_declined_prefs:
+                logger.info(
+                    f"[OMNI FLOW] User declined preferences (omni_decides mode) - skipping gathering, showing products"
+                )
+            else:
+                logger.info(
+                    f"[OMNI FLOW] Style '{omni_prefs.overall_style}', budget '{omni_prefs.budget_total}', scope '{omni_prefs.scope}' known - letting Omni response through"
+                )
             # Omni has the essentials, don't force gathering flow
             # Let GPT's dynamic response through unchanged
         elif conversation_state in [

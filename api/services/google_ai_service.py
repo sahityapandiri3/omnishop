@@ -1433,13 +1433,19 @@ The room structure, walls, and camera angle MUST be identical to the input image
         if not products:
             return room_image
 
-        # If only one product, use the single product method
-        if len(products) == 1:
+        # Calculate total items considering quantity
+        total_items = sum(p.get("quantity", 1) for p in products)
+
+        # If only one item total (single product with quantity=1), use the single product method
+        # But if quantity > 1, we need the multiple method to handle placing multiple copies
+        if len(products) == 1 and total_items == 1:
             return await self.generate_add_visualization(
                 room_image=room_image,
                 product_name=products[0].get("full_name") or products[0].get("name"),
                 product_image=products[0].get("image_url"),
             )
+
+        logger.info(f"🛒 ADD MULTIPLE: {len(products)} products, {total_items} total items to place")
 
         try:
             processed_room = self._preprocess_image(room_image)
@@ -2588,7 +2594,7 @@ Create a photorealistic interior design visualization that addresses the user's 
 
                     # Stream response with timeout protection
                     # Use a helper to wrap the streaming loop with asyncio timeout
-                    visualization_timeout = 150  # 2.5 minutes max for visualization
+                    visualization_timeout = 90  # 1.5 minutes max per attempt (with retries)
                     stream_start_time = time.time()
 
                     for chunk in self.genai_client.models.generate_content_stream(
@@ -2645,16 +2651,25 @@ Create a photorealistic interior design visualization that addresses the user's 
                     break
 
                 except asyncio.TimeoutError:
-                    logger.error(f"TIMEOUT: Google Gemini API timed out after {time.time() - start_time:.2f}s")
-                    # Return original image on timeout with clear error message
-                    return VisualizationResult(
-                        rendered_image=visualization_request.base_image,
-                        processing_time=time.time() - start_time,
-                        quality_score=0.0,
-                        placement_accuracy=0.0,
-                        lighting_realism=0.0,
-                        confidence_score=0.0,
-                    )
+                    elapsed = time.time() - start_time
+                    logger.warning(f"TIMEOUT: Google Gemini API timed out after {elapsed:.2f}s (attempt {attempt + 1}/{max_retries})")
+                    # Retry on timeout with exponential backoff
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2**attempt)  # Exponential backoff: 2, 4 seconds
+                        logger.info(f"Retrying visualization in {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        logger.error(f"Visualization failed after {max_retries} attempts due to timeouts")
+                        # Return original image on final timeout
+                        return VisualizationResult(
+                            rendered_image=visualization_request.base_image,
+                            processing_time=elapsed,
+                            quality_score=0.0,
+                            placement_accuracy=0.0,
+                            lighting_realism=0.0,
+                            confidence_score=0.0,
+                        )
                 except Exception as model_error:
                     error_str = str(model_error)
                     # Check if it's a 503 (overloaded) error - retry these
@@ -3379,70 +3394,71 @@ YOUR TASK: Generate this room from a COMPLETELY DIFFERENT angle - a STRAIGHT-ON 
 
             # Build angle-specific prompts - emphasize CAMERA POSITION not just rotation
             angle_prompts = {
-                "left": """🎥 CAMERA REPOSITIONED TO LEFT SIDE OF ROOM - 90° SCENE ROTATION
+                "left": """🎥 CAMERA REPOSITIONED TO LEFT SIDE OF ROOM - TRUE 90° PERSPECTIVE SHIFT
 
-🚨🚨🚨 CRITICAL - THIS IS A FULL SCENE ROTATION, NOT FURNITURE ROTATION 🚨🚨🚨
+🚨🚨🚨 CRITICAL WARNING - DO NOT MIRROR/FLIP THE IMAGE 🚨🚨🚨
 
-The camera has PHYSICALLY MOVED to the LEFT WALL and is now pointing at the RIGHT WALL.
-The ENTIRE SCENE rotates 90° counterclockwise - including walls, floor, ceiling, EVERYTHING.
+A mirror/flip is WRONG. This must be a NEW PERSPECTIVE where the camera physically moved.
 
-📍 CAMERA TRANSFORMATION:
-- Camera WAS at the front of the room, looking at the back wall
-- Camera is NOW at the left side of the room, looking at the right wall
-- This is equivalent to walking 90° around the room and taking a new photo
+📍 CAMERA HAS MOVED:
+- Camera WAS at the FRONT of the room, looking at the BACK wall (windows behind furniture)
+- Camera is NOW standing at the LEFT SIDE of the room, looking ACROSS toward the RIGHT wall
+- You are now seeing the room from a 90° different angle
 
-📐 HOW THE BACKGROUND CHANGES (NOT just furniture):
-- The RIGHT WALL → NOW CENTER/BACKGROUND of image (what camera points at)
-- The BACK WALL → NOW on LEFT edge of image
-- The FRONT/ORIGINAL CAMERA POSITION → NOW on RIGHT edge of image
-- The LEFT WALL with curtains → NOW BEHIND CAMERA (NOT VISIBLE AT ALL)
+🖼️ WHAT THE NEW VIEW SHOULD SHOW:
+- BACKGROUND: The RIGHT WALL is now CENTER of image (what camera points at)
+- The furniture (sofa, chairs) are seen from their SIDE PROFILE
+- You see the NARROW END of the sofa (armrest), not the wide front cushions
+- The large windows that were BEHIND the furniture are now to your RIGHT (edge of frame or not visible)
+- Any fireplace/feature on the left wall is now BEHIND the camera (not visible)
 
-🚫🚫🚫 COMMON MISTAKE - DO NOT DO THIS:
-- ❌ WRONG: Rotating ONLY the furniture while keeping same walls/background
-- ❌ WRONG: Curtains still visible in same position with furniture turned
-- ❌ WRONG: Same background with furniture rotated in place
-- ❌ WRONG: Sofa turned around but room background unchanged
+🚫🚫🚫 CRITICAL - DO NOT DO THESE:
+- ❌ WRONG: MIRROR/FLIP the image horizontally - this is NOT a perspective change
+- ❌ WRONG: Same background with furniture flipped to opposite positions
+- ❌ WRONG: Feature walls swap sides (that's just mirroring!)
+- ❌ WRONG: Sofa still shown from front view with cushions fully visible
+- ❌ WRONG: Any result that looks like Image 1 horizontally reversed
 
-✅ CORRECT RESULT:
-- ✅ The entire room appears rotated 90°
-- ✅ Curtains/windows that were on LEFT are NO LONGER VISIBLE (behind camera)
-- ✅ The white/right wall is now the CENTER BACKGROUND
-- ✅ Sofa is seen from its SIDE PROFILE (narrow view, armrest visible)
-- ✅ The floor pattern and ceiling rotate with the rest of the scene
+✅ CORRECT - The result must show:
+- ✅ Sofa seen from its SIDE (narrow profile, one armrest facing camera)
+- ✅ The right wall is now the main BACKGROUND (what camera points at)
+- ✅ Windows are to the side or not visible (NOT still in background)
+- ✅ Floor pattern perspective changes to match new camera position
+- ✅ Furniture appears in DIFFERENT positions in frame (NOT mirrored positions)
 
-Think of it like the viewer WALKED to the left wall and took a NEW PHOTO from there.""",
-                "right": """🎥 CAMERA REPOSITIONED TO RIGHT SIDE OF ROOM - 90° SCENE ROTATION
+Think of it like you WALKED to the left side of the room and took a completely NEW photo looking at the right wall.""",
+                "right": """🎥 CAMERA REPOSITIONED TO RIGHT SIDE OF ROOM - TRUE 90° PERSPECTIVE SHIFT
 
-🚨🚨🚨 CRITICAL - THIS IS A FULL SCENE ROTATION, NOT FURNITURE ROTATION 🚨🚨🚨
+🚨🚨🚨 CRITICAL WARNING - DO NOT MIRROR/FLIP THE IMAGE 🚨🚨🚨
 
-The camera has PHYSICALLY MOVED to the RIGHT WALL and is now pointing at the LEFT WALL.
-The ENTIRE SCENE rotates 90° clockwise - including walls, floor, ceiling, EVERYTHING.
+A mirror/flip is WRONG. This must be a NEW PERSPECTIVE where the camera physically moved.
 
-📍 CAMERA TRANSFORMATION:
-- Camera WAS at the front of the room, looking at the back wall
-- Camera is NOW at the right side of the room, looking at the left wall
-- This is equivalent to walking 90° around the room and taking a new photo
+📍 CAMERA HAS MOVED:
+- Camera WAS at the FRONT of the room, looking at the BACK wall (windows behind furniture)
+- Camera is NOW standing at the RIGHT SIDE of the room, looking ACROSS toward the LEFT wall
+- You are now seeing the room from a 90° different angle
 
-📐 HOW THE BACKGROUND CHANGES (NOT just furniture):
-- The LEFT WALL with curtains/windows → NOW CENTER/BACKGROUND of image
-- The BACK WALL → NOW on RIGHT edge of image
-- The FRONT/ORIGINAL CAMERA POSITION → NOW on LEFT edge of image
-- The RIGHT WALL → NOW BEHIND CAMERA (NOT VISIBLE AT ALL)
+🖼️ WHAT THE NEW VIEW SHOULD SHOW:
+- BACKGROUND: The LEFT WALL (brick fireplace/feature wall) is now CENTER of image
+- The furniture (sofa, chairs) are seen from their SIDE PROFILE
+- You see the NARROW END of the sofa (armrest), not the wide front cushions
+- The large windows that were BEHIND the furniture are now to your LEFT (edge of frame or not visible)
 
-🚫🚫🚫 COMMON MISTAKE - DO NOT DO THIS:
-- ❌ WRONG: Rotating ONLY the furniture while keeping same walls/background
-- ❌ WRONG: Same background with furniture rotated in place
-- ❌ WRONG: Sofa turned around but room background unchanged
-- ❌ WRONG: Keeping the white right wall visible in same position
+🚫🚫🚫 CRITICAL - DO NOT DO THESE:
+- ❌ WRONG: MIRROR/FLIP the image horizontally - this is NOT a perspective change
+- ❌ WRONG: Same background with furniture flipped to opposite positions
+- ❌ WRONG: Fireplace moves from left to right edge (that's just mirroring!)
+- ❌ WRONG: Sofa still shown from front view with cushions fully visible
+- ❌ WRONG: Any result that looks like Image 1 horizontally reversed
 
-✅ CORRECT RESULT:
-- ✅ The entire room appears rotated 90°
-- ✅ The curtained/windowed wall is now the CENTER BACKGROUND
-- ✅ The white wall that was on RIGHT is NO LONGER VISIBLE (behind camera)
-- ✅ Sofa is seen from its SIDE PROFILE (narrow view, armrest visible)
-- ✅ The floor pattern and ceiling rotate with the rest of the scene
+✅ CORRECT - The result must show:
+- ✅ Sofa seen from its SIDE (narrow profile, one armrest facing camera)
+- ✅ The fireplace/left wall is now the main BACKGROUND (what camera points at)
+- ✅ Windows are to the side or not visible (NOT still in background)
+- ✅ Floor pattern perspective changes to match new camera position
+- ✅ Furniture appears in DIFFERENT positions in frame (NOT mirrored positions)
 
-Think of it like the viewer WALKED to the right wall and took a NEW PHOTO from there.""",
+Think of it like you WALKED to the right side of the room and took a completely NEW photo looking at the left wall.""",
                 "back": """🎥 EXACT 180° OPPOSITE VIEW - CAMERA FLIPPED TO OTHER END OF ROOM
 
 This is the EXACT OPPOSITE of the front view. Imagine picking up the camera and moving it to the opposite end of the room, then turning it around 180°.

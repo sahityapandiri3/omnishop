@@ -37,7 +37,7 @@ export function CuratedLookCard({
                 <div className="animate-spin rounded-full h-10 w-10 border-t-3 border-primary-600 mx-auto absolute top-0 left-1/2 -translate-x-1/2"></div>
               </div>
               <p className="text-neutral-600 font-medium text-sm">Creating your look...</p>
-              <p className="text-neutral-400 text-xs mt-1">AI is designing your space</p>
+              <p className="text-neutral-400 text-xs mt-1">Designing your space</p>
             </div>
           </div>
         </div>

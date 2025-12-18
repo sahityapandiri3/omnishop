@@ -163,6 +163,43 @@ class RankingService:
         style_preferences = request.style_preferences or []
         user_prefs = request.user_preferences
 
+        # Get materials from either request.user_materials (new) or user_prefs["materials"] (legacy)
+        effective_materials = request.user_materials or user_prefs.get("materials", [])
+        effective_colors = request.user_colors or user_prefs.get("colors", [])
+
+        # Debug logging
+        if effective_materials:
+            logger.info(f"[RANKING] Using materials for ranking: {effective_materials}")
+        if effective_colors:
+            logger.info(f"[RANKING] Using colors for ranking: {effective_colors}")
+
+        # Determine weights based on what user specified
+        # If user explicitly asks for a material (e.g., "leather sofa"), material should be heavily weighted
+        has_materials = bool(effective_materials)
+        has_colors = bool(effective_colors)
+
+        # Dynamic weights: prioritize what user explicitly asked for
+        if has_materials and has_colors:
+            style_weight = 0.15
+            color_weight = 0.35
+            material_weight = 0.35
+            desc_weight = 0.15
+        elif has_materials:
+            style_weight = 0.2
+            color_weight = 0.1
+            material_weight = 0.5  # Heavy weight for material when explicitly specified
+            desc_weight = 0.2
+        elif has_colors:
+            style_weight = 0.2
+            color_weight = 0.5  # Heavy weight for color when explicitly specified
+            material_weight = 0.1
+            desc_weight = 0.2
+        else:
+            style_weight = 0.3
+            color_weight = 0.2
+            material_weight = 0.2
+            desc_weight = 0.3
+
         for product in candidates:
             score = 0.0
 
@@ -173,22 +210,25 @@ class RankingService:
                     self._calculate_style_similarity(style, product_style)
                     for style in style_preferences
                 ], default=0.0)
-                score += style_match * 0.3
+                score += style_match * style_weight
 
             # Color matching
-            if "colors" in user_prefs:
-                color_match = self._calculate_color_match(product, user_prefs["colors"])
-                score += color_match * 0.2
+            if has_colors:
+                color_match = self._calculate_color_match(product, effective_colors)
+                score += color_match * color_weight
 
-            # Material matching
-            if "materials" in user_prefs:
-                material_match = self._calculate_material_match(product, user_prefs["materials"])
-                score += material_match * 0.2
+            # Material matching - CRITICAL for queries like "leather sofa"
+            if has_materials:
+                material_match = self._calculate_material_match(product, effective_materials)
+                score += material_match * material_weight
+                # Boost products that match the material to ensure they rank at top
+                if material_match >= 0.75:
+                    score += 0.3  # Significant boost for good material matches
 
             # Description similarity
             if "description_keywords" in user_prefs:
                 desc_match = self._calculate_description_similarity(product, user_prefs["description_keywords"])
-                score += desc_match * 0.3
+                score += desc_match * desc_weight
 
             scores[product.id] = min(score, 1.0)
 
@@ -412,12 +452,82 @@ class RankingService:
         return self.style_compatibility_matrix.get(style1, {}).get(style2, 0.0)
 
     def _calculate_color_match(self, product: Product, preferred_colors: List[str]) -> float:
-        """Calculate color match score"""
-        return 0.7  # Placeholder
+        """Calculate color match score based on product name and description"""
+        if not preferred_colors:
+            return 0.5  # Neutral score if no preference
+
+        # Combine product name and description for matching
+        product_text = (product.name + " " + (product.description or "")).lower()
+
+        # Check for color matches
+        matches = 0
+        for color in preferred_colors:
+            color_lower = color.lower()
+            # Check for the color and common variants
+            color_variants = [color_lower]
+
+            # Add common color variants
+            if color_lower in ["grey", "gray"]:
+                color_variants = ["grey", "gray", "charcoal", "slate"]
+            elif color_lower == "brown":
+                color_variants.extend(["tan", "chocolate", "coffee", "walnut", "espresso"])
+            elif color_lower == "white":
+                color_variants.extend(["ivory", "cream", "off-white", "pearl"])
+            elif color_lower == "black":
+                color_variants.extend(["ebony", "noir", "jet"])
+            elif color_lower == "blue":
+                color_variants.extend(["navy", "teal", "turquoise", "aqua", "indigo"])
+            elif color_lower == "green":
+                color_variants.extend(["olive", "sage", "emerald", "forest", "mint"])
+            elif color_lower == "beige":
+                color_variants.extend(["cream", "ivory", "sand", "taupe", "khaki"])
+
+            for variant in color_variants:
+                if variant in product_text:
+                    matches += 1
+                    break  # Count each preferred color only once
+
+        # Calculate score: full match = 1.0, partial = proportional, no match = 0.0
+        if matches > 0:
+            return min(1.0, 0.5 + (matches / len(preferred_colors)) * 0.5)
+        return 0.0  # No match = low score
 
     def _calculate_material_match(self, product: Product, preferred_materials: List[str]) -> float:
-        """Calculate material match score"""
-        return 0.6  # Placeholder
+        """Calculate material match score based on product name and description"""
+        if not preferred_materials:
+            return 0.5  # Neutral score if no preference
+
+        # Combine product name and description for matching
+        product_text = (product.name + " " + (product.description or "")).lower()
+
+        # Check for exact material matches
+        matches = 0
+        for material in preferred_materials:
+            material_lower = material.lower()
+            # Check for the material and common variants
+            material_variants = [material_lower]
+
+            # Add common material variants
+            if material_lower == "leather":
+                material_variants.extend(["leatherette", "faux leather", "genuine leather", "pu leather"])
+            elif material_lower == "wood":
+                material_variants.extend(["wooden", "teak", "sheesham", "oak", "walnut", "mahogany", "mango wood"])
+            elif material_lower == "fabric":
+                material_variants.extend(["upholstered", "cotton", "linen", "polyester"])
+            elif material_lower == "velvet":
+                material_variants.extend(["velour"])
+            elif material_lower == "metal":
+                material_variants.extend(["steel", "iron", "brass", "chrome", "metallic"])
+
+            for variant in material_variants:
+                if variant in product_text:
+                    matches += 1
+                    break  # Count each preferred material only once
+
+        # Calculate score: full match = 1.0, partial = proportional, no match = 0.0
+        if matches > 0:
+            return min(1.0, 0.5 + (matches / len(preferred_materials)) * 0.5)
+        return 0.0  # No match = low score
 
     def _calculate_description_similarity(self, product: Product, keywords: List[str]) -> float:
         """Calculate description similarity score"""

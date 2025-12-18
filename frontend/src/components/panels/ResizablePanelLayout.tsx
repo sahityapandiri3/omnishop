@@ -49,7 +49,7 @@ export function ResizablePanelLayout({
         minSize={MIN_SIZES.chat}
         className="bg-white dark:bg-neutral-800 overflow-hidden"
       >
-        <div className="h-full border-r border-neutral-200 dark:border-neutral-700">
+        <div className="h-full">
           {chatPanel}
         </div>
       </Panel>
@@ -62,7 +62,7 @@ export function ResizablePanelLayout({
         minSize={MIN_SIZES.products}
         className="bg-white dark:bg-neutral-800 overflow-hidden"
       >
-        <div className="h-full border-r border-neutral-200 dark:border-neutral-700">
+        <div className="h-full">
           {productsPanel}
         </div>
       </Panel>
