@@ -32,7 +32,7 @@ export interface FeatureFlags {
 const defaultFlags: FeatureFlags = {
   // UI Version
   useNewUI: true, // Set to false to use old UI by default
-  showUIToggle: true, // Show toggle for easy switching during development
+  showUIToggle: false, // Disabled - was blocking Visualize button on mobile
 
   // Phase 1
   enableThreePanelLayout: true,
