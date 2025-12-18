@@ -1273,27 +1273,78 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             # STRUCTURED FIELD CHECK: If GPT detected a category, consider showing products
             # Skip gathering if user already provided style OR budget (context is sufficient)
             # =================================================================
-            gpt_has_category = bool(gpt_detected_category) or bool(
-                analysis and getattr(analysis, "detected_category", None)
-            )
-            gpt_signals_products = gpt_has_category or gpt_is_direct_search or (
-                analysis and getattr(analysis, "is_direct_search", False)
+            gpt_has_category = bool(gpt_detected_category) or bool(analysis and getattr(analysis, "detected_category", None))
+            gpt_signals_products = (
+                gpt_has_category or gpt_is_direct_search or (analysis and getattr(analysis, "is_direct_search", False))
             )
             # Check if we have enough context to skip gathering
             # For category requests, style OR budget is sufficient (don't need all three essentials)
             omni_has_context = bool(omni_prefs.overall_style or omni_prefs.budget_total)
 
+            # =================================================================
+            # USER DECLINES PREFERENCES: Detect when user says they have no style/budget
+            # Patterns: "no style", "no budget", "any style", "don't have", "you choose", "surprise me"
+            # When detected, skip gathering and show products without filters
+            # =================================================================
+            message_lower = request.message.lower()
+            user_declines_preferences = any(
+                phrase in message_lower
+                for phrase in [
+                    "no style",
+                    "no budget",
+                    "any style",
+                    "any budget",
+                    "don't have",
+                    "dont have",
+                    "no preference",
+                    "no preferences",
+                    "you choose",
+                    "you decide",
+                    "surprise me",
+                    "anything",
+                    "whatever you",
+                    "up to you",
+                    "your choice",
+                    "omni choose",
+                    "no particular",
+                    "not particular",
+                    "open to",
+                    "flexible",
+                ]
+            )
+
+            if user_declines_preferences:
+                logger.info(
+                    f"[USER DECLINES] User declined to provide preferences: '{request.message[:50]}' - skipping gathering"
+                )
+                # Set preference_mode to "omni_decides" so Omni picks based on room analysis
+                conversation_context_manager.update_omni_preferences(
+                    session_id, preference_mode="omni_decides", scope="full_room"
+                )
+                conversation_state = "READY_TO_RECOMMEND"
+                follow_up_question = None
+
             # Only respect gathering states if we DON'T have style/budget context
             # If user already told us their style/budget, show products instead of asking more questions
             gpt_wants_to_gather = conversation_state in [
-                "GATHERING_USAGE", "GATHERING_STYLE", "GATHERING_BUDGET",
-                "GATHERING_SCOPE", "GATHERING_PREFERENCE_MODE", "GATHERING_ATTRIBUTES",
-                "DIRECT_SEARCH_GATHERING"
+                "GATHERING_USAGE",
+                "GATHERING_STYLE",
+                "GATHERING_BUDGET",
+                "GATHERING_SCOPE",
+                "GATHERING_PREFERENCE_MODE",
+                "GATHERING_ATTRIBUTES",
+                "DIRECT_SEARCH_GATHERING",
             ]
             should_skip_gathering = omni_has_context and gpt_has_category
 
-            if gpt_signals_products and (not gpt_wants_to_gather or should_skip_gathering) and conversation_state not in ["READY_TO_RECOMMEND", "DIRECT_SEARCH", "BROWSING"]:
-                logger.info(f"[STRUCTURED CHECK] GPT detected category='{gpt_detected_category}', has_context={omni_has_context}, skip_gathering={should_skip_gathering} - forcing READY_TO_RECOMMEND")
+            if (
+                gpt_signals_products
+                and (not gpt_wants_to_gather or should_skip_gathering)
+                and conversation_state not in ["READY_TO_RECOMMEND", "DIRECT_SEARCH", "BROWSING"]
+            ):
+                logger.info(
+                    f"[STRUCTURED CHECK] GPT detected category='{gpt_detected_category}', has_context={omni_has_context}, skip_gathering={should_skip_gathering} - forcing READY_TO_RECOMMEND"
+                )
                 conversation_state = "READY_TO_RECOMMEND"
                 follow_up_question = None
                 if not omni_prefs.scope:
@@ -1756,12 +1807,16 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                         if not omni_prefs.overall_style and omni_prefs.room_analysis_suggestions:
                             detected_style = omni_prefs.room_analysis_suggestions.detected_style
                             if detected_style:
-                                logger.info(f"[AUTO-STYLE] User didn't specify style - using room analysis detected style: '{detected_style}'")
+                                logger.info(
+                                    f"[AUTO-STYLE] User didn't specify style - using room analysis detected style: '{detected_style}'"
+                                )
                                 # Set the detected style as the user's style preference
                                 conversation_context_manager.update_omni_preferences(session_id, overall_style=detected_style)
                                 omni_prefs.overall_style = detected_style  # Update local reference too
                                 # Add to style keywords for product matching
-                                if detected_style.lower() not in [s.lower() for s in style_attributes.get("style_keywords", [])]:
+                                if detected_style.lower() not in [
+                                    s.lower() for s in style_attributes.get("style_keywords", [])
+                                ]:
                                     style_attributes["style_keywords"].insert(0, detected_style.lower())
                                 logger.info(f"[AUTO-STYLE] Updated style_attributes: {style_attributes}")
 
@@ -2147,14 +2202,12 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 room_analysis = await google_ai_service.analyze_room_image(base_image)
 
                 # Check if viewing angle needs transformation
-                camera_view = getattr(room_analysis, 'camera_view_analysis', {}) or {}
-                viewing_angle = camera_view.get('viewing_angle', 'straight_on')
+                camera_view = getattr(room_analysis, "camera_view_analysis", {}) or {}
+                viewing_angle = camera_view.get("viewing_angle", "straight_on")
 
-                if viewing_angle and viewing_angle != 'straight_on':
+                if viewing_angle and viewing_angle != "straight_on":
                     logger.info(f"Detected {viewing_angle} camera angle - transforming to front view")
-                    transformed_image = await google_ai_service.transform_perspective_to_front(
-                        base_image, viewing_angle
-                    )
+                    transformed_image = await google_ai_service.transform_perspective_to_front(base_image, viewing_angle)
                     if transformed_image and transformed_image != base_image:
                         base_image = transformed_image
                         logger.info("Successfully transformed perspective to front view")
@@ -2749,16 +2802,10 @@ async def generate_angle_view(session_id: str, request: dict, db: AsyncSession =
 
         # Generate alternate view using Google AI service
         result_image = await google_ai_service.generate_alternate_view(
-            visualization_image=visualization_image,
-            target_angle=target_angle,
-            products_description=products_description
+            visualization_image=visualization_image, target_angle=target_angle, products_description=products_description
         )
 
-        return {
-            "angle": target_angle,
-            "image": result_image,
-            "message": f"Successfully generated {target_angle} view"
-        }
+        return {"angle": target_angle, "image": result_image, "message": f"Successfully generated {target_angle} view"}
 
     except HTTPException:
         raise
