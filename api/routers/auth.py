@@ -2,10 +2,15 @@
 Authentication API routes
 """
 import logging
+import os
+from datetime import datetime, timedelta
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from pydantic import BaseModel
 from schemas.auth import AuthStatusResponse, GoogleAuthRequest, TokenResponse, UserLogin, UserRegister, UserResponse
 from services.auth_service import auth_service
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user, get_optional_user
@@ -14,6 +19,9 @@ from database.models import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Admin secret for protected endpoints
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "omnishop-admin-2024")
 
 # Whitelist of allowed email addresses (set to None to allow all)
 ALLOWED_EMAILS = None  # Disabled for customer testing
@@ -174,3 +182,81 @@ async def logout():
     by removing the token. This endpoint is provided for API completeness.
     """
     return {"message": "Logged out successfully"}
+
+
+# ============================================================================
+# Admin Endpoints (Protected by ADMIN_SECRET)
+# ============================================================================
+
+
+class UserActivity(BaseModel):
+    """User activity response model"""
+
+    id: str
+    email: Optional[str]
+    name: Optional[str]
+    auth_provider: Optional[str]
+    created_at: Optional[datetime]
+    last_login: Optional[datetime]
+
+
+class UserActivityResponse(BaseModel):
+    """Response for user activity endpoint"""
+
+    total_users: int
+    users: List[UserActivity]
+    query_days: int
+
+
+def verify_admin_secret(x_admin_secret: str = Header(..., alias="X-Admin-Secret")):
+    """Verify the admin secret header"""
+    if x_admin_secret != ADMIN_SECRET:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid admin secret")
+    return True
+
+
+@router.get("/admin/users/recent", response_model=UserActivityResponse)
+async def get_recent_users(
+    days: int = Query(default=3, ge=1, le=30, description="Number of days to look back"),
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(verify_admin_secret),
+):
+    """
+    Get users who logged in or registered in the last N days.
+
+    Requires X-Admin-Secret header for authentication.
+
+    Example:
+        curl -H "X-Admin-Secret: your-secret" "https://app.omni-shop.in/api/auth/admin/users/recent?days=3"
+    """
+    try:
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+        query = (
+            select(User)
+            .where(or_(User.last_login >= cutoff_date, User.created_at >= cutoff_date))
+            .order_by(User.last_login.desc().nullslast(), User.created_at.desc())
+        )
+
+        result = await db.execute(query)
+        users = result.scalars().all()
+
+        user_activities = [
+            UserActivity(
+                id=str(user.id),
+                email=user.email,
+                name=user.name,
+                auth_provider=user.auth_provider,
+                created_at=user.created_at,
+                last_login=user.last_login,
+            )
+            for user in users
+        ]
+
+        logger.info(f"Admin query: Found {len(user_activities)} users active in last {days} days")
+
+        return UserActivityResponse(total_users=len(user_activities), users=user_activities, query_days=days)
+
+    except Exception as e:
+        logger.error(f"Error fetching recent users: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error fetching user data: {str(e)}")
