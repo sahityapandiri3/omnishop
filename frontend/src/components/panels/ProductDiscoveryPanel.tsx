@@ -51,6 +51,59 @@ export default function ProductDiscoveryPanel({
   // NEW: State for "View All" mode - which category to show in full grid (null = carousel view)
   const [viewAllCategory, setViewAllCategory] = useState<string | null>(null);
 
+  // Store scroll positions for each view layer to persist scroll when navigating back
+  const scrollPositionsRef = useRef<Record<string, number>>({
+    carousel: 0,  // Main carousel/all-categories view
+    // category_id: scroll position for each category's view all mode
+  });
+
+  // Save current scroll position for the current view
+  const saveScrollPosition = (viewKey: string) => {
+    if (productsContainerRef.current) {
+      scrollPositionsRef.current[viewKey] = productsContainerRef.current.scrollTop;
+      console.log(`[ProductDiscoveryPanel] Saved scroll position for "${viewKey}":`, scrollPositionsRef.current[viewKey]);
+    }
+  };
+
+  // Restore scroll position for a view (called after render via useEffect)
+  const restoreScrollPosition = (viewKey: string) => {
+    if (productsContainerRef.current && scrollPositionsRef.current[viewKey] !== undefined) {
+      const savedPosition = scrollPositionsRef.current[viewKey];
+      productsContainerRef.current.scrollTop = savedPosition;
+      console.log(`[ProductDiscoveryPanel] Restored scroll position for "${viewKey}":`, savedPosition);
+    }
+  };
+
+  // Handle entering "View All" mode for a category
+  const handleViewAll = (categoryId: string) => {
+    // Save carousel scroll position before navigating
+    saveScrollPosition('carousel');
+    setViewAllCategory(categoryId);
+  };
+
+  // Handle going back to carousel view from category view
+  const handleBackToCarousel = () => {
+    // Save current category's scroll position (in case user returns)
+    if (viewAllCategory) {
+      saveScrollPosition(viewAllCategory);
+    }
+    setViewAllCategory(null);
+  };
+
+  // Restore scroll position when view changes
+  useEffect(() => {
+    // Use requestAnimationFrame to ensure DOM has updated
+    requestAnimationFrame(() => {
+      if (viewAllCategory) {
+        // Entering a category - restore that category's scroll position (or start at top)
+        restoreScrollPosition(viewAllCategory);
+      } else {
+        // Returning to carousel - restore carousel scroll position
+        restoreScrollPosition('carousel');
+      }
+    });
+  }, [viewAllCategory]);
+
   // Reset viewAllCategory when categories change (new search/recommendation)
   // This ensures we don't show an old category when new results come in
   useEffect(() => {
@@ -62,6 +115,9 @@ export default function ProductDiscoveryPanel({
         setViewAllCategory(null);
       }
       console.log('[ProductDiscoveryPanel] New categories received:', categoryIds);
+
+      // Reset all scroll positions when new categories arrive (fresh start)
+      scrollPositionsRef.current = { carousel: 0 };
 
       // Scroll to top when new categories arrive
       if (productsContainerRef.current) {
@@ -260,7 +316,7 @@ export default function ProductDiscoveryPanel({
           {/* Header with Back Button */}
           <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
             <button
-              onClick={() => setViewAllCategory(null)}
+              onClick={handleBackToCarousel}
               className="flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 mb-2"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -334,7 +390,7 @@ export default function ProductDiscoveryPanel({
               products={productsByCategory![category.category_id] || []}
               onAddToCanvas={onAddToCanvas}
               canvasProducts={canvasProducts}
-              onViewAll={() => setViewAllCategory(category.category_id)}
+              onViewAll={() => handleViewAll(category.category_id)}
             />
           ))}
         </div>
