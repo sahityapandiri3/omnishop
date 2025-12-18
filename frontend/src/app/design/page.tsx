@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import ChatPanel from '@/components/panels/ChatPanel';
 import ProductDiscoveryPanel from '@/components/panels/ProductDiscoveryPanel';
 import CanvasPanel from '@/components/panels/CanvasPanel';
+import { ResizablePanelLayout } from '@/components/panels/ResizablePanelLayout';
 import { checkFurnitureRemovalStatus, startFurnitureRemoval, getAvailableStores, projectsAPI, restoreDesignStateFromRecovery } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigationGuard } from '@/hooks/useNavigationGuard';
@@ -1300,55 +1301,52 @@ function DesignPageContent() {
 
       {/* Three-Panel Layout */}
       <div className="flex-1 overflow-hidden">
-        {/* Desktop: Three columns - 25%, 35%, 40% */}
-        <div className="hidden lg:flex h-full gap-0">
-          {/* Panel 1: Chat (25%) */}
-          <div className="w-[25%] border-r border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 overflow-hidden">
-            {projectLoaded ? (
-              <ChatPanel
-                onProductRecommendations={handleProductRecommendations}
-                roomImage={roomImage}
-                selectedStores={selectedStores}
-                initialSessionId={chatSessionId}
-                onSessionIdChange={setChatSessionId}
+        {/* Desktop: Resizable three-panel layout */}
+        <div className="hidden lg:block h-full">
+          <ResizablePanelLayout
+            chatPanel={
+              projectLoaded ? (
+                <ChatPanel
+                  onProductRecommendations={handleProductRecommendations}
+                  roomImage={roomImage}
+                  selectedStores={selectedStores}
+                  initialSessionId={chatSessionId}
+                  onSessionIdChange={setChatSessionId}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                </div>
+              )
+            }
+            productsPanel={
+              <ProductDiscoveryPanel
+                products={productRecommendations}
+                onAddToCanvas={handleAddToCanvas}
+                canvasProducts={canvasProducts}
+                selectedCategories={selectedCategories}
+                productsByCategory={productsByCategory}
+                totalBudget={totalBudget}
               />
-            ) : (
-              <div className="flex items-center justify-center h-full">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-              </div>
-            )}
-          </div>
-
-          {/* Panel 2: Products (35%) */}
-          <div className="w-[35%] border-r border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 overflow-hidden">
-            <ProductDiscoveryPanel
-              products={productRecommendations}
-              onAddToCanvas={handleAddToCanvas}
-              canvasProducts={canvasProducts}
-              selectedCategories={selectedCategories}
-              productsByCategory={productsByCategory}
-              totalBudget={totalBudget}
-            />
-          </div>
-
-          {/* Panel 3: Canvas (40%) */}
-          <div className="w-[40%] bg-white dark:bg-neutral-800 overflow-hidden">
-            <CanvasPanel
-              products={canvasProducts}
-              roomImage={roomImage}
-              cleanRoomImage={cleanRoomImage}
-              onRemoveProduct={handleRemoveFromCanvas}
-              onIncrementQuantity={handleIncrementQuantity}
-              onClearCanvas={handleClearCanvas}
-              onRoomImageUpload={handleRoomImageUpload}
-              onSetProducts={setCanvasProducts}
-              initialVisualizationImage={initialVisualizationImage}
-              initialVisualizationHistory={visualizationHistory}
-              onVisualizationHistoryChange={setVisualizationHistory}
-              onVisualizationImageChange={setInitialVisualizationImage}
-              isProcessingFurniture={isProcessingFurniture}
-            />
-          </div>
+            }
+            canvasPanel={
+              <CanvasPanel
+                products={canvasProducts}
+                roomImage={roomImage}
+                cleanRoomImage={cleanRoomImage}
+                onRemoveProduct={handleRemoveFromCanvas}
+                onIncrementQuantity={handleIncrementQuantity}
+                onClearCanvas={handleClearCanvas}
+                onRoomImageUpload={handleRoomImageUpload}
+                onSetProducts={setCanvasProducts}
+                initialVisualizationImage={initialVisualizationImage}
+                initialVisualizationHistory={visualizationHistory}
+                onVisualizationHistoryChange={setVisualizationHistory}
+                onVisualizationImageChange={setInitialVisualizationImage}
+                isProcessingFurniture={isProcessingFurniture}
+              />
+            }
+          />
         </div>
 
         {/* Mobile & Tablet: Single panel with tabs */}
