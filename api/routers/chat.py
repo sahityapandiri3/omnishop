@@ -516,6 +516,35 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             direct_search_result["extracted_sizes"] = keyword_search_result.get("extracted_sizes", [])
             direct_search_result["extracted_budget_max"] = keyword_search_result.get("extracted_budget_max")
 
+            # =================================================================
+            # PERSIST EXTRACTED ATTRIBUTES: Store sizes/types in category_attributes
+            # so they survive across messages (e.g., "sectional sofas" + "no preference")
+            # =================================================================
+            if direct_search_result.get("extracted_sizes"):
+                # Map size keywords to proper attribute names
+                size_attrs = {}
+                for size in direct_search_result["extracted_sizes"]:
+                    size_lower = size.lower()
+                    # Sofa types: sectional, L-shaped
+                    if size_lower in ["sectional", "l shaped", "l-shaped", "modular"]:
+                        size_attrs["seating_type"] = size_lower.replace("-", " ")
+                    # Seating capacity: 2 seater, 3 seater, etc.
+                    elif "seater" in size_lower or size_lower in ["single", "double"]:
+                        size_attrs["seating_capacity"] = size_lower
+                    # Bed sizes: king, queen, single, double
+                    elif size_lower in ["king", "queen", "twin", "single", "double"]:
+                        size_attrs["size"] = size_lower
+                    # General sizes: large, small, compact
+                    elif size_lower in ["large", "small", "big", "compact", "mini", "xl"]:
+                        size_attrs["size"] = size_lower
+
+                if size_attrs:
+                    conversation_context_manager.update_omni_preferences(
+                        session_id,
+                        category_attributes=size_attrs,
+                    )
+                    logger.info(f"[DIRECT SEARCH] Persisted size attributes: {size_attrs}")
+
         # =================================================================
         # DIRECT SEARCH FOLLOW-UP: Check if previous message was DIRECT_SEARCH_GATHERING
         # If user provided a follow-up (e.g., "abstract art" after "give me wall art"),
@@ -1297,8 +1326,8 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 gpt_has_category or gpt_is_direct_search or (analysis and getattr(analysis, "is_direct_search", False))
             )
             # Check if we have enough context to skip gathering
-            # For category requests, style OR budget is sufficient (don't need all three essentials)
-            omni_has_context = bool(omni_prefs.overall_style or omni_prefs.budget_total)
+            # Require BOTH style AND budget before skipping gathering
+            omni_has_context = bool(omni_prefs.overall_style and omni_prefs.budget_total)
 
             # =================================================================
             # USER DECLINES PREFERENCES: Detect when user says they have no style/budget
@@ -1329,6 +1358,21 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     "not particular",
                     "open to",
                     "flexible",
+                    # User asking for suggestions = delegating choice to Omni
+                    "suggest option",
+                    "suggest some",
+                    "show me option",
+                    "show me some",
+                    "just show",
+                    "recommend some",
+                    "recommend option",
+                    "go ahead",
+                    "yes please",
+                    "yes, please",
+                    "sure",
+                    "sounds good",
+                    "let's go",
+                    "lets go",
                 ]
             )
 
@@ -1342,6 +1386,34 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 )
                 conversation_state = "READY_TO_RECOMMEND"
                 follow_up_question = None
+
+                # Override GPT's response if it's asking a redundant question
+                # (products are being shown, so don't ask "would you like me to suggest...")
+                response_lower = conversational_response.lower() if conversational_response else ""
+                is_asking_redundant_question = conversational_response and (
+                    conversational_response.strip().endswith("?")
+                    or "would you like" in response_lower
+                    or "what type of room" in response_lower
+                    or "what room" in response_lower
+                    or "which room" in response_lower
+                    or "let me know if you" in response_lower
+                )
+                if is_asking_redundant_question:
+                    # Get room context for personalized response
+                    room_type = omni_prefs.room_type or "your space"
+                    conversational_response = f"No problem at all! Here are some versatile options that can work beautifully in {room_type}. Feel free to browse and let me know if you'd like me to narrow things down!"
+                    logger.info(f"[USER DECLINES] Overrode GPT question response with statement")
+                    # CRITICAL: Rebuild message_schema with the updated response
+                    # The original message_schema was created earlier with GPT's question
+                    message_schema = ChatMessageSchema(
+                        id=message_schema.id,
+                        type=message_schema.type,
+                        content=conversational_response,
+                        timestamp=message_schema.timestamp,
+                        session_id=message_schema.session_id,
+                        products=message_schema.products,
+                        image_url=message_schema.image_url,
+                    )
 
             # Only respect gathering states if we DON'T have style/budget context
             # If user already told us their style/budget, show products instead of asking more questions
@@ -1361,30 +1433,44 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 and (not gpt_wants_to_gather or should_skip_gathering)
                 and conversation_state not in ["READY_TO_RECOMMEND", "DIRECT_SEARCH", "BROWSING"]
             ):
-                logger.info(
-                    f"[STRUCTURED CHECK] GPT detected category='{gpt_detected_category}', has_context={omni_has_context}, skip_gathering={should_skip_gathering} - forcing READY_TO_RECOMMEND"
-                )
-                conversation_state = "READY_TO_RECOMMEND"
-                follow_up_question = None
-                if not omni_prefs.scope:
-                    conversation_context_manager.update_omni_preferences(session_id, scope="full_room")
+                # Only go to READY_TO_RECOMMEND if we have ALL essentials including scope
+                if omni_prefs.scope:
+                    logger.info(
+                        f"[STRUCTURED CHECK] GPT detected category='{gpt_detected_category}', has_context={omni_has_context}, has_scope='{omni_prefs.scope}' - forcing READY_TO_RECOMMEND"
+                    )
+                    conversation_state = "READY_TO_RECOMMEND"
+                    follow_up_question = None
+                else:
+                    # Missing scope - don't auto-set, let it fall through to GATHERING_SCOPE
+                    logger.info(
+                        f"[STRUCTURED CHECK] GPT detected category but scope is missing - NOT forcing READY_TO_RECOMMEND, will ask for scope"
+                    )
 
             # =================================================================
-            # GPT READY_TO_RECOMMEND TRUST: If GPT says ready, trust it
-            # This handles cases like user saying "both" after scope question
-            # GPT understands the context better than keyword matching
-            # Default category generation will provide categories if GPT didn't
+            # GPT READY_TO_RECOMMEND TRUST: Only trust GPT if ALL essentials are set
+            # GPT often returns READY_TO_RECOMMEND too early - we must verify
+            # that style, budget, AND scope are known before showing products
             # =================================================================
             elif gpt_ready_to_recommend:
-                # GPT understood the user wants products - trust it and set scope if missing
-                if not omni_prefs.scope:
-                    conversation_context_manager.update_omni_preferences(session_id, scope="full_room")
-                    logger.info(f"[GPT TRUST] GPT returned READY_TO_RECOMMEND - setting scope to 'full_room'")
-                conversation_state = "READY_TO_RECOMMEND"
-                follow_up_question = None
-                logger.info(
-                    f"[GPT TRUST] Trusting GPT's READY_TO_RECOMMEND state (categories: {len(raw_categories) if raw_categories else 0})"
-                )
+                # Check if we have ALL essentials (style AND budget AND scope)
+                has_style = bool(omni_prefs.overall_style)
+                has_budget = bool(omni_prefs.budget_total)
+                has_scope = bool(omni_prefs.scope)
+                user_declined = omni_prefs.preference_mode == "omni_decides"
+
+                if (has_style and has_budget and has_scope) or user_declined:
+                    # We have ALL essentials OR user declined to provide - trust GPT
+                    conversation_state = "READY_TO_RECOMMEND"
+                    follow_up_question = None
+                    logger.info(
+                        f"[GPT TRUST] Trusting GPT's READY_TO_RECOMMEND (style='{omni_prefs.overall_style}', budget='{omni_prefs.budget_total}', scope='{omni_prefs.scope}', declined={user_declined})"
+                    )
+                else:
+                    # GPT says ready but we don't have ALL essentials - DON'T trust, fall through to gathering
+                    logger.info(
+                        f"[GPT OVERRIDE] GPT returned READY_TO_RECOMMEND but missing essentials (style={has_style}, budget={has_budget}, scope={has_scope}) - falling through to gathering flow"
+                    )
+                    # Don't set conversation_state here - let it fall through to message-count logic below
             # =================================================================
             # OMNI NATURAL FLOW: Let GPT's warm responses come through
             # We track state for internal logic, but DON'T override GPT's follow_up_question
@@ -1914,6 +2000,22 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                             logger.info(f"[GUIDED FLOW] Extracted style attributes: {style_attributes}")
 
                         # =================================================================
+                        # RETRIEVE PERSISTED ATTRIBUTES: Get size/type from category_attributes
+                        # This ensures "sectional" persists from "find me sectional sofas"
+                        # even after user says "no preference"
+                        # =================================================================
+                        if not size_keywords_for_search and omni_prefs.category_attributes:
+                            # Convert persisted attributes back to size keywords
+                            cat_attrs = omni_prefs.category_attributes
+                            for attr_name, attr_value in cat_attrs.items():
+                                if attr_name in ["seating_type", "seating_capacity", "size"] and attr_value:
+                                    size_keywords_for_search.append(str(attr_value))
+                            if size_keywords_for_search:
+                                logger.info(
+                                    f"[PERSISTED ATTRS] Retrieved size keywords from category_attributes: {size_keywords_for_search}"
+                                )
+
+                        # =================================================================
                         # AUTO-CHOOSE STYLE: If user hasn't specified style, use room analysis
                         # If room image was analyzed, use detected_style as the style preference
                         # =================================================================
@@ -2011,9 +2113,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
 
         if omni_has_essentials:
             if user_declined_prefs:
-                logger.info(
-                    "[OMNI FLOW] User declined preferences (omni_decides mode) - skipping gathering, showing products"
-                )
+                logger.info("[OMNI FLOW] User declined preferences (omni_decides mode) - skipping gathering, showing products")
             else:
                 logger.info(
                     f"[OMNI FLOW] Style '{omni_prefs.overall_style}', budget '{omni_prefs.budget_total}', scope '{omni_prefs.scope}' known - letting Omni response through"
@@ -3455,9 +3555,32 @@ def _detect_direct_search_query(message: str) -> Dict[str, Any]:
         "rugs": ["rug", "carpet", "area rug", "dhurrie", "kilim", "floor rug"],
         "mats": ["mat", "floor mat", "door mat", "bath mat", "runner", "table runner"],
         "mirrors": ["mirror", "wall mirror", "floor mirror", "vanity mirror"],
+        "cushion_covers": ["cushion cover", "cushion covers", "pillow cover", "pillow covers"],
         "cushions": ["cushion", "pillow", "throw pillow", "decorative pillow"],
         "throws": ["throw", "blanket", "throw blanket"],
         "benches": ["bench", "benches", "entryway bench", "storage bench", "bedroom bench"],
+        # Decor categories - specific types first, then generic
+        "sculptures": ["sculpture", "sculptures", "statue", "statues", "statuette"],
+        "figurines": ["figurine", "figurines", "figure", "decorative figure"],
+        "vases": ["vase", "vases", "flower vase", "decorative vase"],
+        "ornaments": ["ornament", "ornaments", "decorative ornament"],
+        "artefacts": ["artefact", "artefacts", "artifact", "artifacts"],
+        "decorative_bowls": ["decorative bowl", "decorative bowls", "accent bowl"],
+        "decorative_boxes": ["decorative box", "decorative boxes", "trinket box"],
+        "candle_holders": ["candle holder", "candle holders", "candleholder", "candlestick"],
+        "clocks": ["clock", "clocks", "wall clock", "table clock", "mantel clock"],
+        # Generic decor - only for broad "decor" searches
+        "decor_accents": [
+            "decor",
+            "decor item",
+            "decor items",
+            "decoration",
+            "decorations",
+            "decorative",
+            "accent piece",
+            "accent pieces",
+            "home decor",
+        ],
     }
 
     # Generic categories that expand to multiple subcategories
@@ -4669,7 +4792,27 @@ CATEGORY_KEYWORDS = {
     ],
     "wall_art": ["wall art", "painting", "print", "poster", "canvas", "artwork", "wall decor"],
     "photo_frames": ["photo frame", "picture frame", "photo frames", "picture frames"],
-    "decor": ["decor", "sculpture", "figurine", "vase", "decorative", "ornament", "statue", "object"],
+    # Specific decor subcategories (more specific matches)
+    "sculptures": ["sculpture", "sculptures", "statue", "statues", "statuette"],
+    "figurines": ["figurine", "figurines", "figure", "decorative figure"],
+    "vases": ["vase", "vases", "flower vase", "decorative vase"],
+    "ornaments": ["ornament", "ornaments", "decorative ornament"],
+    "artefacts": ["artefact", "artefacts", "artifact", "artifacts"],
+    "decorative_bowls": ["decorative bowl", "decorative bowls", "accent bowl"],
+    "decorative_boxes": ["decorative box", "decorative boxes", "trinket box"],
+    "candle_holders": ["candle holder", "candle holders", "candleholder", "candlestick"],
+    "clocks": ["clock", "clocks", "wall clock", "table clock", "mantel clock"],
+    # Generic decor - for broad searches
+    "decor_accents": [
+        "decor",
+        "decor item",
+        "decor items",
+        "decoration",
+        "decorations",
+        "decorative",
+        "accent piece",
+        "home decor",
+    ],
     "rugs": ["rug", "carpet", "area rug", "dhurrie", "kilim", "floor rug"],
     "mats": [
         "mat",
@@ -4689,6 +4832,7 @@ CATEGORY_KEYWORDS = {
     ],  # Separate category for table runners (kept for backwards compatibility)
     # Additional generic
     "mirrors": ["mirror", "wall mirror", "floor mirror", "vanity mirror"],
+    "cushion_covers": ["cushion cover", "cushion covers", "pillow cover", "pillow covers"],
     "cushions": ["cushion", "pillow", "throw pillow", "decorative pillow"],
     "throws": ["throw", "blanket", "throw blanket"],
 }
@@ -4715,6 +4859,13 @@ CATEGORY_EXCLUSIONS = {
         "throw pillow",
     ],
     "decor": ["potpourri", "scented"],
+}
+
+# Special category handling - for categories where we need to search in a parent category
+# but filter by product name. Use this when products are miscategorized.
+# NOTE: Prefer fixing the data (moving products to correct category) over using this workaround.
+CATEGORY_SPECIAL_HANDLING = {
+    # cushion_covers no longer needs special handling - data was fixed (402 products moved to Cushion Cover category)
 }
 
 # Priority keywords - products matching these terms will be sorted first
@@ -4811,8 +4962,82 @@ async def _get_category_based_recommendations(
             keywords = CATEGORY_KEYWORDS.get(category_id, [category_id.replace("_", " ")])
             exclusions = CATEGORY_EXCLUSIONS.get(category_id, [])
             priority_keywords = CATEGORY_PRIORITY_KEYWORDS.get(category_id, [])
+            special_handling = CATEGORY_SPECIAL_HANDLING.get(category_id)
 
             logger.info(f"[CATEGORY RECS] Fetching {category_id} with keywords: {keywords}, exclusions: {exclusions}")
+
+            # =====================================================================
+            # SPECIAL HANDLING: For categories that need parent category + product name filter
+            # e.g., cushion_covers searches in "Cushion" category but filters to "cover" in name
+            # =====================================================================
+            if special_handling:
+                parent_keywords = special_handling.get("parent_category_keywords", [])
+                name_filters = special_handling.get("product_name_filters", [])
+
+                # Find parent category
+                parent_conditions = [Category.name.ilike(f"%{kw}%") for kw in parent_keywords]
+                parent_query = select(Category.id, Category.name).where(or_(*parent_conditions))
+                parent_result = await db.execute(parent_query)
+                parent_matches = [(row[0], row[1]) for row in parent_result.fetchall()]
+                parent_category_ids = [row[0] for row in parent_matches]
+
+                logger.info(f"[SPECIAL HANDLING] {category_id}: Found parent categories: {[row[1] for row in parent_matches]}")
+
+                if parent_category_ids and name_filters:
+                    # Build query with parent category + product name filter
+                    name_conditions = [Product.name.ilike(f"%{nf}%") for nf in name_filters]
+                    query = (
+                        select(Product)
+                        .join(Category, Product.category_id == Category.id, isouter=True)
+                        .options(selectinload(Product.images), selectinload(Product.attributes))
+                        .where(
+                            Product.is_available.is_(True),
+                            Product.category_id.in_(parent_category_ids),
+                            or_(*name_conditions),
+                        )
+                    )
+
+                    # Apply store filter if provided
+                    if selected_stores:
+                        query = query.where(Product.source_website.in_(selected_stores))
+
+                    # Apply budget filter if provided
+                    if category.budget_allocation:
+                        if category.budget_allocation.min > 0:
+                            query = query.where(Product.price >= category.budget_allocation.min)
+                        if category.budget_allocation.max < 999999:
+                            query = query.where(Product.price <= category.budget_allocation.max)
+
+                    # Execute query
+                    query = query.limit(100)
+                    result = await db.execute(query)
+                    products = result.scalars().all()
+
+                    logger.info(
+                        f"[SPECIAL HANDLING] {category_id}: Found {len(products)} products with name filters {name_filters}"
+                    )
+
+                    # Convert to dict format
+                    product_list = [
+                        {
+                            "id": p.id,
+                            "name": p.name,
+                            "price": float(p.price) if p.price else 0,
+                            "currency": p.currency or "INR",
+                            "brand": p.brand,
+                            "source_website": p.source_website,
+                            "source_url": p.source_url,
+                            "is_on_sale": p.is_on_sale or False,
+                            "style_score": 100.0,
+                            "description": p.description,
+                            "primary_image": (
+                                {"url": p.images[0].original_url, "alt_text": p.images[0].alt_text} if p.images else None
+                            ),
+                        }
+                        for p in products
+                    ]
+
+                    return category_id, product_list
 
             # =====================================================================
             # CATEGORY-FIRST FILTERING with SIZE-SPECIFIC PRIORITIZATION
@@ -4920,11 +5145,13 @@ async def _get_category_based_recommendations(
             # =================================================================
             # STYLE MATCHING: Score products based on style attributes
             # Matches against: name, description, and ProductAttributes
+            # Also prioritizes size/type keywords (sectional, l-shaped, etc.)
             # =================================================================
             def calculate_style_score(product) -> float:
                 """
                 Calculate a style match score for a product (lower = better match).
                 Checks name, description, and product attributes.
+                Priority order: category keyword match > type/size match > priority keywords > style > colors > materials
                 """
                 score = 100.0  # Base score (high = no match)
 
@@ -4932,11 +5159,26 @@ async def _get_category_based_recommendations(
                 name_lower = (product.name or "").lower()
                 desc_lower = (product.description or "").lower()
 
+                # HIGHEST PRIORITY: Category keyword match in product name
+                # If user searches "cushion covers" and product name contains "cushion cover", rank it higher
+                for idx, keyword in enumerate(keywords):
+                    keyword_lower = keyword.lower()
+                    if keyword_lower in name_lower:
+                        # Exact/near-exact match in name = best score
+                        score = min(score, -30 + idx * 0.5)
+                        break
+                    elif keyword_lower in desc_lower:
+                        # Match in description = good but not as good as name
+                        score = min(score, -25 + idx * 0.5)
+                        break
+
                 # Extract attribute values for matching
                 attr_style = ""
                 attr_colors = ""
                 attr_materials = ""
                 attr_texture = ""
+                attr_type = ""  # For seating type, furniture type, etc.
+                attr_capacity = ""  # For seating capacity
 
                 if product.attributes:
                     for attr in product.attributes:
@@ -4951,6 +5193,27 @@ async def _get_category_based_recommendations(
                             attr_materials += f" {attr_value}"
                         elif attr_name == "texture":
                             attr_texture = attr_value
+                        elif attr_name in ["type", "seating_type", "furniture_type", "sofa_type"]:
+                            attr_type += f" {attr_value}"
+                        elif attr_name in ["seating_capacity", "capacity", "size"]:
+                            attr_capacity += f" {attr_value}"
+
+                # HIGHEST PRIORITY: Check size/type keywords (sectional, l-shaped, 3-seater, etc.)
+                # These get the LOWEST scores (best matches)
+                if normalized_sizes:
+                    for idx, size in enumerate(normalized_sizes):
+                        size_lower = size.lower()
+                        # Check type attribute first (most accurate)
+                        if size_lower in attr_type:
+                            score = min(score, -20 + idx * 0.5)  # BEST match - negative score
+                        elif size_lower in attr_capacity:
+                            score = min(score, -15 + idx * 0.5)  # Very good match
+                        # Check product name
+                        elif size_lower in name_lower:
+                            score = min(score, -10 + idx * 0.5)  # Good match
+                        # Check description
+                        elif size_lower in desc_lower:
+                            score = min(score, -5 + idx * 0.5)  # Okay match
 
                 # Check category priority keywords first (highest priority)
                 for idx, pk in enumerate(priority_keywords):
@@ -5008,6 +5271,22 @@ async def _get_category_based_recommendations(
 
             # Sort by style score (lower is better), then by price
             scored_products.sort(key=lambda x: (x[1], x[0].price or 0))
+
+            # =================================================================
+            # TYPE/SIZE PRIORITIZATION (Not strict filter - just prioritize at top)
+            # Products matching type keywords (sectional, l-shaped, etc.) are scored
+            # higher and appear at the top, with non-matching products below
+            # =================================================================
+            if normalized_sizes:
+                # Count how many products match the type for logging
+                type_matched_count = 0
+                for product, score in scored_products:
+                    if score < 0:  # Negative scores = type match
+                        type_matched_count += 1
+
+                logger.info(
+                    f"[CATEGORY RECS] {category_id}: Type prioritization - {type_matched_count} products match types {normalized_sizes} (shown first)"
+                )
 
             # =================================================================
             # STRICT COLOR FILTER: If colors are specified, filter to only products

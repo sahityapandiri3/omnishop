@@ -1420,6 +1420,9 @@ At the START of conversation or when intent changes:
                         messages=messages,
                         max_tokens=max_tokens,
                         temperature=settings.openai_temperature,
+                        top_p=settings.openai_top_p,
+                        presence_penalty=settings.openai_presence_penalty,
+                        frequency_penalty=settings.openai_frequency_penalty,
                         response_format={"type": "json_object"},
                     )
                     print(f"[DEBUG] OpenAI API call [{mode_str}] succeeded!")
@@ -1556,7 +1559,13 @@ At the START of conversation or when intent changes:
 
             # Call OpenAI Vision API (use gpt-4o for vision - gpt-4-vision-preview was deprecated)
             response = await self.client.chat.completions.create(
-                model="gpt-4o", messages=messages, max_tokens=500, temperature=0.3
+                model="gpt-4o",
+                messages=messages,
+                max_tokens=500,
+                temperature=settings.openai_temperature,
+                top_p=settings.openai_top_p,
+                presence_penalty=settings.openai_presence_penalty,
+                frequency_penalty=settings.openai_frequency_penalty,
             )
 
             # Extract response content
@@ -2561,7 +2570,10 @@ GOOD (tight fit): {"x1": 0.05, "y1": 0.55, "x2": 0.48, "y2": 0.92}  ← Just the
                 model=settings.openai_model,
                 messages=messages,
                 max_tokens=2000,
-                temperature=0.2,  # Low temperature for factual detection
+                temperature=settings.openai_temperature,
+                top_p=settings.openai_top_p,
+                presence_penalty=settings.openai_presence_penalty,
+                frequency_penalty=settings.openai_frequency_penalty,
                 response_format={"type": "json_object"},
             )
 

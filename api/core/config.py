@@ -46,11 +46,14 @@ class Settings(BaseSettings):
 
     # OpenAI
     openai_api_key: str = ""
-    openai_model: str = "gpt-4o"  # Full model for image analysis
-    openai_model_fast: str = "gpt-4o-mini"  # Fast model for text-only follow-ups (3-5x faster)
+    openai_model: str = "gpt-4o"  # Full model for image analysis (stable, battle-tested)
+    openai_model_fast: str = "gpt-4o-mini"  # Fast model for text-only follow-ups
     openai_max_tokens: int = 4000
     openai_max_tokens_fast: int = 2000  # Reduced tokens for fast mode
-    openai_temperature: float = 0.7
+    openai_temperature: float = 0.3  # Low temperature (0.2-0.4) for consistent, factual responses
+    openai_top_p: float = 0.9  # Nucleus sampling threshold
+    openai_presence_penalty: float = 0.0  # No penalty for topic repetition
+    openai_frequency_penalty: float = 0.0  # No penalty for word repetition
     openai_timeout_fast: float = 30.0  # 30 second timeout for fast mode (vs 120s for full)
 
     # Google AI Studio
