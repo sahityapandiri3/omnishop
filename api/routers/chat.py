@@ -2007,12 +2007,103 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
         if omni_has_essentials:
             if user_declined_prefs:
                 logger.info(
-                    f"[OMNI FLOW] User declined preferences (omni_decides mode) - skipping gathering, showing products"
+                    "[OMNI FLOW] User declined preferences (omni_decides mode) - skipping gathering, showing products"
                 )
             else:
                 logger.info(
                     f"[OMNI FLOW] Style '{omni_prefs.overall_style}', budget '{omni_prefs.budget_total}', scope '{omni_prefs.scope}' known - letting Omni response through"
                 )
+
+            # =================================================================
+            # FALLBACK: If Omni has essentials but products weren't fetched (e.g., analysis=None),
+            # generate categories and fetch products now. This ensures products are shown
+            # even when GPT response parsing fails.
+            # =================================================================
+            if not products_by_category and not selected_categories_response:
+                logger.info(
+                    "[OMNI FALLBACK] Omni has essentials but no products - generating categories and fetching products"
+                )
+
+                # Generate default categories based on room type
+                room_context = omni_prefs.room_type.lower() if omni_prefs.room_type else "living room"
+                logger.info(f"[OMNI FALLBACK] Using room context: {room_context}")
+
+                # Generate room-based categories
+                if "living" in room_context or "sofa" in room_context:
+                    fallback_categories = [
+                        {"category_id": "sofas", "display_name": "Sofas", "priority": 1},
+                        {"category_id": "coffee_tables", "display_name": "Coffee Tables", "priority": 2},
+                        {"category_id": "side_tables", "display_name": "Side Tables", "priority": 3},
+                        {"category_id": "floor_lamps", "display_name": "Floor Lamps", "priority": 4},
+                        {"category_id": "rugs", "display_name": "Rugs", "priority": 5},
+                        {"category_id": "wall_art", "display_name": "Wall Art", "priority": 6},
+                        {"category_id": "planters", "display_name": "Planters", "priority": 7},
+                    ]
+                elif "bed" in room_context or "sleep" in room_context:
+                    fallback_categories = [
+                        {"category_id": "beds", "display_name": "Beds", "priority": 1},
+                        {"category_id": "nightstands", "display_name": "Nightstands", "priority": 2},
+                        {"category_id": "table_lamps", "display_name": "Table Lamps", "priority": 3},
+                        {"category_id": "rugs", "display_name": "Rugs", "priority": 4},
+                        {"category_id": "wall_art", "display_name": "Wall Art", "priority": 5},
+                    ]
+                elif "dining" in room_context:
+                    fallback_categories = [
+                        {"category_id": "dining_tables", "display_name": "Dining Tables", "priority": 1},
+                        {"category_id": "dining_chairs", "display_name": "Dining Chairs", "priority": 2},
+                        {"category_id": "ceiling_lights", "display_name": "Ceiling Lights", "priority": 3},
+                        {"category_id": "rugs", "display_name": "Rugs", "priority": 4},
+                    ]
+                else:
+                    # Default to living room categories
+                    fallback_categories = [
+                        {"category_id": "sofas", "display_name": "Sofas", "priority": 1},
+                        {"category_id": "coffee_tables", "display_name": "Coffee Tables", "priority": 2},
+                        {"category_id": "floor_lamps", "display_name": "Floor Lamps", "priority": 3},
+                        {"category_id": "rugs", "display_name": "Rugs", "priority": 4},
+                        {"category_id": "wall_art", "display_name": "Wall Art", "priority": 5},
+                    ]
+
+                # Convert to CategoryRecommendation objects
+                selected_categories_response = []
+                for cat_data in fallback_categories:
+                    selected_categories_response.append(
+                        CategoryRecommendation(
+                            category_id=cat_data["category_id"],
+                            display_name=cat_data["display_name"],
+                            budget_allocation=None,  # No budget filter for fallback
+                            priority=cat_data["priority"],
+                        )
+                    )
+
+                # Fetch products for these categories
+                style_attributes = {
+                    "style_keywords": [omni_prefs.overall_style.lower()] if omni_prefs.overall_style else [],
+                    "colors": [],
+                    "materials": [],
+                }
+
+                products_by_category = await _get_category_based_recommendations(
+                    selected_categories_response,
+                    db,
+                    selected_stores=request.selected_stores,
+                    limit_per_category=100,
+                    style_attributes=style_attributes,
+                    size_keywords=[],
+                )
+
+                # Update product counts
+                for cat in selected_categories_response:
+                    if cat.category_id in products_by_category:
+                        cat.product_count = len(products_by_category[cat.category_id])
+
+                # Set conversation state to READY_TO_RECOMMEND
+                conversation_state = "READY_TO_RECOMMEND"
+
+                logger.info(
+                    f"[OMNI FALLBACK] Generated {len(selected_categories_response)} categories with {sum(len(p) for p in products_by_category.values())} total products"
+                )
+
             # Omni has the essentials, don't force gathering flow
             # Let GPT's dynamic response through unchanged
         elif conversation_state in [
