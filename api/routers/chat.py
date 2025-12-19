@@ -1396,6 +1396,11 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 logger.info(
                     f"[DIRECT SEARCH PRESERVED] Keeping conversation_state={conversation_state} (not overriding with message-count logic)"
                 )
+            elif conversation_state == "READY_TO_RECOMMEND":
+                # State was already set to READY_TO_RECOMMEND (e.g., user declined preferences) - preserve it
+                logger.info(
+                    f"[READY_TO_RECOMMEND PRESERVED] Keeping conversation_state=READY_TO_RECOMMEND (not overriding with message-count logic)"
+                )
             elif user_message_count == 1:
                 conversation_state = "GATHERING_USAGE"
                 # DON'T override follow_up_question - let GPT's Omni response come through
