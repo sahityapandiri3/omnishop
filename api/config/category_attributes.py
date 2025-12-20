@@ -10,6 +10,7 @@ SIMPLE_CATEGORIES = [
     "decor_accents",
     "planters",
     "wall_art",
+    "wallpapers",
     "vases",
     "candles",
     "photo_frames",

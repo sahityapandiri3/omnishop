@@ -255,7 +255,23 @@ export default function ChatPanel({
       const hasProducts = products && products.length > 0;
       const hasCategoryData = response.selected_categories && response.products_by_category;
 
+      console.log('[ChatPanel] Product check:', {
+        hasProducts,
+        hasCategoryData,
+        productsLength: products?.length,
+        hasSelectedCategories: !!response.selected_categories,
+        hasProductsByCategory: !!response.products_by_category,
+        productsByCategoryKeys: response.products_by_category ? Object.keys(response.products_by_category) : [],
+        productsByCategoryTotal: response.products_by_category
+          ? (Object.values(response.products_by_category) as any[][]).reduce((sum: number, prods: any[]) => sum + (prods?.length || 0), 0)
+          : 0,
+      });
+
       if (hasProducts || hasCategoryData) {
+        console.log('[ChatPanel] Calling onProductRecommendations with:', {
+          categoriesCount: response.selected_categories?.length,
+          productsByCategory: response.products_by_category ? Object.keys(response.products_by_category) : null,
+        });
         onProductRecommendations({
           // Legacy format
           products: products,
@@ -267,6 +283,8 @@ export default function ChatPanel({
           conversation_state: response.conversation_state,
           follow_up_question: response.follow_up_question,
         });
+      } else {
+        console.log('[ChatPanel] NOT calling onProductRecommendations - no products or category data');
       }
     } catch (error: any) {
       // Don't show error if request was aborted (user sent new message)

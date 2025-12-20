@@ -194,3 +194,48 @@ class StartSessionResponse(BaseModel):
 
     session_id: str
     message: str = "Hello! I'm your AI interior design assistant. How can I help you transform your space today?"
+
+
+# ============================================================================
+# Pagination Schemas for Product Discovery
+# ============================================================================
+
+
+class PaginationCursor(BaseModel):
+    """Cursor for cursor-based pagination - encodes position in sorted results"""
+
+    style_score: float = Field(..., description="Style score of the last product in the previous page")
+    product_id: int = Field(..., description="ID of the last product in the previous page")
+
+
+class PaginatedProductsRequest(BaseModel):
+    """Request for paginated products within a category"""
+
+    category_id: str = Field(..., description="Category identifier to fetch products for")
+    page_size: int = Field(default=24, ge=1, le=50, description="Number of products per page")
+    cursor: Optional[PaginationCursor] = Field(default=None, description="Cursor for next page (None for first page)")
+    style_attributes: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Style attributes for scoring (style_keywords, colors, materials, size_keywords)",
+    )
+    budget_min: Optional[float] = Field(default=None, description="Minimum price filter")
+    budget_max: Optional[float] = Field(default=None, description="Maximum price filter")
+    selected_stores: Optional[List[str]] = Field(default=None, description="Filter by store names")
+
+
+class PaginatedProductsResponse(BaseModel):
+    """Response for paginated products"""
+
+    products: List[Dict[str, Any]] = Field(..., description="List of products for this page")
+    next_cursor: Optional[PaginationCursor] = Field(default=None, description="Cursor for next page (None if no more pages)")
+    has_more: bool = Field(..., description="Whether there are more products to load")
+    total_estimated: int = Field(..., description="Estimated total product count for this category")
+
+
+class CategoryProductsMetadata(BaseModel):
+    """Metadata for paginated category products - used in initial response"""
+
+    products: List[Dict[str, Any]] = Field(..., description="Initial page of products")
+    total_estimated: int = Field(default=0, description="Estimated total product count")
+    has_more: bool = Field(default=False, description="Whether there are more products")
+    next_cursor: Optional[PaginationCursor] = Field(default=None, description="Cursor for next page")

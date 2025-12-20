@@ -18,6 +18,9 @@ from schemas.chat import (
     ConversationState,
     DesignAnalysisSchema,
     MessageType,
+    PaginatedProductsRequest,
+    PaginatedProductsResponse,
+    PaginationCursor,
     StartSessionRequest,
     StartSessionResponse,
 )
@@ -28,7 +31,7 @@ from services.google_ai_service import VisualizationRequest, VisualizationResult
 from services.ml_recommendation_model import ml_recommendation_model
 from services.nlp_processor import design_nlp_processor
 from services.recommendation_engine import RecommendationRequest, recommendation_engine
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, case, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -646,8 +649,13 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                             is_direct_search = True
                             direct_search_result["is_direct_search"] = True
                             direct_search_result["detected_categories"] = previous_direct_search_categories
-                            # Mark as having sufficient info since user provided follow-up
-                            direct_search_result["has_sufficient_info"] = True
+                            # IMPORTANT: Clear is_simple flag from inherited categories
+                            # When we're in DIRECT_SEARCH_GATHERING follow-up, we've already decided to gather info
+                            # so we shouldn't let is_simple bypass the gathering process
+                            for cat in direct_search_result["detected_categories"]:
+                                cat["is_simple"] = False
+                            # DON'T mark as sufficient yet - we'll determine this after extracting qualifiers
+                            # We need BOTH style AND budget before showing products
                             # Extract qualifiers from current message
                             # For follow-up messages, we need to extract colors even from short messages like "red"
                             # Use direct keyword matching instead of _detect_direct_search_query which requires 5+ char messages
@@ -712,6 +720,49 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                             logger.info(
                                 f"[DIRECT SEARCH FOLLOW-UP] Converted to direct search with {len(previous_direct_search_categories)} categories={[c['category_id'] for c in previous_direct_search_categories]}, colors={direct_search_result['extracted_colors']}, styles={direct_search_result['extracted_styles']}"
                             )
+
+                            # CRITICAL: Determine if we have SUFFICIENT info to show products
+                            # For direct search gathering, we want BOTH style AND budget before showing products
+                            # Check what we have accumulated from Omni preferences + current message
+                            omni_prefs_check = conversation_context_manager.get_omni_preferences(session_id)
+                            has_style = bool(
+                                direct_search_result.get("extracted_styles")
+                                or direct_search_result.get("extracted_colors")
+                                or omni_prefs_check.overall_style
+                            )
+                            has_budget = bool(extracted_budget or omni_prefs_check.budget_total)
+
+                            # Check if user is declining to provide more info
+                            decline_keywords = [
+                                "any",
+                                "no preference",
+                                "don't care",
+                                "doesn't matter",
+                                "you choose",
+                                "surprise me",
+                                "whatever",
+                            ]
+                            user_declines = any(kw in message_lower for kw in decline_keywords)
+
+                            if has_style and has_budget:
+                                direct_search_result["has_sufficient_info"] = True
+                                logger.info(
+                                    f"[DIRECT SEARCH FOLLOW-UP] Has style AND budget - sufficient info, will show products"
+                                )
+                            elif user_declines:
+                                direct_search_result["has_sufficient_info"] = True
+                                logger.info(
+                                    f"[DIRECT SEARCH FOLLOW-UP] User declined preferences - sufficient info, will show products"
+                                )
+                            else:
+                                direct_search_result["has_sufficient_info"] = False
+                                missing = []
+                                if not has_style:
+                                    missing.append("style")
+                                if not has_budget:
+                                    missing.append("budget")
+                                logger.info(f"[DIRECT SEARCH FOLLOW-UP] Still missing: {missing} - will continue gathering")
+
                 except Exception as e:
                     logger.error(f"[DIRECT SEARCH FOLLOW-UP] Error parsing previous message: {e}")
 
@@ -801,7 +852,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             gpt_conversation_state = getattr(analysis, "conversation_state", None)
 
         # PRIORITY: Check for direct search FIRST, before accepting GPT's conversation state
-        # This ensures "suggest lounge chairs" triggers DIRECT_SEARCH even if GPT returns "INITIAL"
+        # This ensures "suggest lounge chairs" triggers product display even if GPT returns "INITIAL"
         if is_direct_search:
             # Check if we have sufficient info or it's a simple category
             has_sufficient = direct_search_result.get("has_sufficient_info", False)
@@ -809,20 +860,26 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             is_simple = any(cat.get("is_simple", False) for cat in detected_cats) if detected_cats else False
 
             if has_sufficient or is_simple:
-                early_conversation_state = "DIRECT_SEARCH"
-                logger.info(f"[DIRECT SEARCH] Simple category or has sufficient info - showing products immediately")
+                early_conversation_state = "READY_TO_RECOMMEND"
+                logger.info(f"[DIRECT SEARCH] Simple category or has sufficient info - setting READY_TO_RECOMMEND")
             else:
                 early_conversation_state = "DIRECT_SEARCH_GATHERING"
                 logger.info(f"[DIRECT SEARCH] Complex category - need to gather preferences")
         elif gpt_conversation_state and gpt_conversation_state in [
             "READY_TO_RECOMMEND",
             "BROWSING",
-            "DIRECT_SEARCH",
+            "DIRECT_SEARCH",  # Map to READY_TO_RECOMMEND below
             "DIRECT_SEARCH_GATHERING",
         ]:
             # GPT explicitly returned a product-showing state - use it
-            early_conversation_state = gpt_conversation_state
-            logger.info(f"[GPT STATE] Using GPT's conversation_state: {gpt_conversation_state}")
+            # Map DIRECT_SEARCH to READY_TO_RECOMMEND for consistency
+            if gpt_conversation_state == "DIRECT_SEARCH":
+                early_conversation_state = "READY_TO_RECOMMEND"
+            else:
+                early_conversation_state = gpt_conversation_state
+            logger.info(
+                f"[GPT STATE] Using conversation_state: {early_conversation_state} (GPT returned: {gpt_conversation_state})"
+            )
         elif user_message_count == 1:
             early_conversation_state = "GATHERING_USAGE"
         elif user_message_count == 2:
@@ -848,9 +905,9 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 logger.error(f"Error detecting furniture: {e}")
                 detected_furniture = []
 
-            # Get product recommendations if in READY_TO_RECOMMEND or DIRECT_SEARCH state
+            # Get product recommendations if in READY_TO_RECOMMEND state
             # This prevents showing products during the guided conversation gathering phase
-            if early_conversation_state in ["READY_TO_RECOMMEND", "DIRECT_SEARCH", "BROWSING"]:
+            if early_conversation_state in ["READY_TO_RECOMMEND", "BROWSING"]:
                 logger.info("[GUIDED FLOW] In READY_TO_RECOMMEND state - fetching products")
                 if analysis:
                     recommended_products = await _get_product_recommendations(
@@ -1038,9 +1095,11 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
         elif request.selected_product_id and request.user_action:
             logger.info(f"STEP 3: Executing {request.user_action} action for product {request.selected_product_id}")
 
-            # Get product from DB with images
+            # Get product from DB with images AND attributes (for color extraction)
             product_query = (
-                select(Product).options(selectinload(Product.images)).where(Product.id == int(request.selected_product_id))
+                select(Product)
+                .options(selectinload(Product.images), selectinload(Product.attributes))
+                .where(Product.id == int(request.selected_product_id))
             )
             result = await db.execute(product_query)
             product = result.scalar_one_or_none()
@@ -1053,6 +1112,15 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             if product.images:
                 primary_img = next((img for img in product.images if img.is_primary), product.images[0])
                 product_image_url = primary_img.original_url if primary_img else None
+
+            # Extract color from product attributes for visualization accuracy
+            product_color = None
+            if product.attributes:
+                for attr in product.attributes:
+                    if attr.attribute_name.lower() == "color":
+                        product_color = attr.attribute_value
+                        break
+            logger.info(f"Product color for visualization: {product_color}")
 
             # Get stored room image from conversation context
             room_image = conversation_context_manager.get_last_image(session_id)
@@ -1120,19 +1188,29 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 logger.warning(f"Space fitness validation failed, proceeding with visualization: {fitness_error}")
 
             # Generate visualization based on action
+            # Build product name with color for better visualization accuracy
+            product_name_with_color = product.name
+            if product_color:
+                product_name_with_color = f"{product_color} {product.name}"
+                logger.info(f"Using color-enhanced product name: {product_name_with_color}")
+
             try:
                 if request.user_action == "add":
-                    logger.info(f"Generating ADD visualization for {product.name}")
+                    logger.info(f"Generating ADD visualization for {product_name_with_color}")
                     visualization_image = await google_ai_service.generate_add_visualization(
-                        room_image=room_image, product_name=product.name, product_image=product_image_url
+                        room_image=room_image,
+                        product_name=product_name_with_color,
+                        product_image=product_image_url,
+                        product_color=product_color,
                     )
                 elif request.user_action == "replace":
-                    logger.info(f"Generating REPLACE visualization for {product.name} (replacing {furniture_type})")
+                    logger.info(f"Generating REPLACE visualization for {product_name_with_color} (replacing {furniture_type})")
                     visualization_image = await google_ai_service.generate_replace_visualization(
                         room_image=room_image,
-                        product_name=product.name,
+                        product_name=product_name_with_color,
                         furniture_type=furniture_type,
                         product_image=product_image_url,
+                        product_color=product_color,
                     )
                 else:
                     raise HTTPException(
@@ -1249,10 +1327,10 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     )
 
                 if has_sufficient_info:
-                    # User provided enough info (category + qualifier) - search directly
-                    conversation_state = "DIRECT_SEARCH"
+                    # User provided enough info (category + qualifier) - ready to show products
+                    conversation_state = "READY_TO_RECOMMEND"
                     follow_up_question = None
-                    logger.info(f"[DIRECT SEARCH] Sufficient info - bypassing guided flow for direct search")
+                    logger.info(f"[DIRECT SEARCH] Sufficient info - setting READY_TO_RECOMMEND")
 
                     # Build categories from detected categories
                     raw_categories = []
@@ -1431,7 +1509,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             if (
                 gpt_signals_products
                 and (not gpt_wants_to_gather or should_skip_gathering)
-                and conversation_state not in ["READY_TO_RECOMMEND", "DIRECT_SEARCH", "BROWSING"]
+                and conversation_state not in ["READY_TO_RECOMMEND", "BROWSING"]
             ):
                 # Only go to READY_TO_RECOMMEND if we have ALL essentials including scope
                 if omni_prefs.scope:
@@ -1477,10 +1555,10 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             # GPT's Omni persona generates context-aware, friendly questions naturally
             # IMPORTANT: Skip this if we already have a direct search state set above!
             # =================================================================
-            elif conversation_state in ["DIRECT_SEARCH", "DIRECT_SEARCH_GATHERING"]:
-                # Direct search state was already set - preserve it, don't override with message-count logic
+            elif conversation_state == "DIRECT_SEARCH_GATHERING":
+                # Direct search gathering state was already set - preserve it, don't override with message-count logic
                 logger.info(
-                    f"[DIRECT SEARCH PRESERVED] Keeping conversation_state={conversation_state} (not overriding with message-count logic)"
+                    f"[DIRECT SEARCH PRESERVED] Keeping conversation_state=DIRECT_SEARCH_GATHERING (not overriding with message-count logic)"
                 )
             elif conversation_state == "READY_TO_RECOMMEND":
                 # State was already set to READY_TO_RECOMMEND (e.g., user declined preferences) - preserve it
@@ -1876,7 +1954,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
 
                     # MANDATORY: Ensure generic categories (planters, wall_art, rugs) are ALWAYS included
                     # BUT ONLY for READY_TO_RECOMMEND with FULL ROOM styling
-                    # NOT for: DIRECT_SEARCH, BROWSING, or when user requests specific categories
+                    # NOT for: direct searches, BROWSING, or when user requests specific categories
                     #
                     # DETECT SPECIFIC CATEGORY REQUEST:
                     # If GPT returned only 1-2 categories, user is asking for something specific
@@ -1965,16 +2043,13 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                         for cat in selected_categories_response:
                             cat.budget_allocation = None
 
-                    # If we're in READY_TO_RECOMMEND, DIRECT_SEARCH, or BROWSING state, fetch products by category
+                    # If we're in READY_TO_RECOMMEND or BROWSING state, fetch products by category
                     # BROWSING: User is filtering to specific category mid-conversation (e.g., "show me decor items")
-                    if (
-                        conversation_state in ["READY_TO_RECOMMEND", "DIRECT_SEARCH", "BROWSING"]
-                        and selected_categories_response
-                    ):
+                    if conversation_state in ["READY_TO_RECOMMEND", "BROWSING"] and selected_categories_response:
                         # Extract size keywords for category-specific filtering
                         size_keywords_for_search = []
 
-                        if conversation_state == "DIRECT_SEARCH":
+                        if is_direct_search:
                             logger.info("[DIRECT SEARCH] Fetching products for direct search query...")
 
                             # Build style attributes from user's direct input instead of ChatGPT analysis
@@ -2051,14 +2126,14 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
 
                         state_label = (
                             "DIRECT SEARCH"
-                            if conversation_state == "DIRECT_SEARCH"
+                            if is_direct_search
                             else ("BROWSING" if conversation_state == "BROWSING" else "GUIDED FLOW")
                         )
                         logger.info(f"[{state_label}] Fetched products for {len(products_by_category)} categories")
 
                         # For direct search, use GPT's warm response if available
                         # Only fall back to generic template if GPT didn't provide a good response
-                        if conversation_state == "DIRECT_SEARCH" and products_by_category:
+                        if is_direct_search and products_by_category:
                             total_products = sum(len(prods) for prods in products_by_category.values())
 
                             # Check if GPT provided a meaningful response (not generic fallback)
@@ -2232,21 +2307,22 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     f"[DIRECT SEARCH GATHERING] Keeping selected_categories ({len(selected_categories_response) if selected_categories_response else 0} categories)"
                 )
 
-            # For GENERIC CATEGORIES (like "lighting"), use our specific subcategory question
-            # This ensures Omni asks "What kind of lighting? Floor lamps, table lamps, etc."
-            # instead of GPT's generic response that skips the subcategory selection
-            is_generic = direct_search_result.get("is_generic_category", False)
-            if is_generic and follow_up_question:
-                # Use the follow-up question as the main response for generic categories
+            # CRITICAL FIX: For DIRECT_SEARCH_GATHERING, ALWAYS use the follow-up question
+            # This ensures consistency: if we're clearing products, we ask for preferences
+            # Without this, GPT might say "here are products" but no products are shown
+            if follow_up_question:
+                # Use the follow-up question as the main response for all gathering states
                 conversational_response = follow_up_question
-                logger.info(f"[GENERIC CATEGORY] Using subcategory question: {follow_up_question[:80]}...")
+                is_generic = direct_search_result.get("is_generic_category", False)
+                if is_generic:
+                    logger.info(f"[GENERIC CATEGORY] Using subcategory question: {follow_up_question[:80]}...")
+                else:
+                    logger.info(f"[DIRECT SEARCH GATHERING] Using follow-up question: {follow_up_question[:80]}...")
                 follow_up_question = None  # Clear so frontend doesn't duplicate
             else:
-                # Normal gathering flow - use GPT's warm response
-                # Clear follow_up_question so frontend doesn't duplicate it.
-                follow_up_question = None
+                # Fallback to GPT's response if no follow-up question was generated
                 logger.info(
-                    f"[OMNI FLOW] Using GPT's warm response: {conversational_response[:80] if conversational_response else 'None'}..."
+                    f"[OMNI FLOW] No follow-up question, using GPT response: {conversational_response[:80] if conversational_response else 'None'}..."
                 )
 
             # Rebuild message schema with clean response and no products
@@ -3551,6 +3627,7 @@ def _detect_direct_search_query(message: str) -> Dict[str, Any]:
         "storage_cabinets": ["storage cabinet", "cabinet", "cupboard"],
         "planters": ["planter", "plant pot", "flower pot", "plant stand"],
         "wall_art": ["wall art", "painting", "print", "poster", "canvas", "artwork"],
+        "wallpapers": ["wallpaper", "wallpapers", "wall paper", "wall covering", "wall coverings"],
         "photo_frames": ["photo frame", "picture frame", "frame"],
         "rugs": ["rug", "carpet", "area rug", "dhurrie", "kilim", "floor rug"],
         "mats": ["mat", "floor mat", "door mat", "bath mat", "runner", "table runner"],
@@ -4791,6 +4868,7 @@ CATEGORY_KEYWORDS = {
         "faux plant",
     ],
     "wall_art": ["wall art", "painting", "print", "poster", "canvas", "artwork", "wall decor"],
+    "wallpapers": ["wallpaper", "wallpapers", "wall paper", "wall covering", "wall coverings"],
     "photo_frames": ["photo frame", "picture frame", "photo frames", "picture frames"],
     # Specific decor subcategories (more specific matches)
     "sculptures": ["sculpture", "sculptures", "statue", "statues", "statuette"],
@@ -5565,3 +5643,276 @@ async def remove_furniture_from_visualization(session_id: str, request: dict, db
         logger.error(f"Error removing furniture: {e}\n{traceback.format_exc()}")
         error_type = type(e).__name__
         raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
+
+
+# ============================================================================
+# Paginated Products Endpoint for Infinite Scroll
+# ============================================================================
+
+
+def _build_style_score_expression(
+    style_keywords: List[str],
+    preferred_colors: List[str],
+    preferred_materials: List[str],
+    size_keywords: List[str],
+):
+    """
+    Build a SQL CASE expression that approximates style scoring.
+    This allows efficient database-side sorting and cursor-based pagination.
+
+    Score ranges (lower = better match):
+    - Size/type match in name: -20 to -10
+    - Style keyword match: 5 to 15
+    - Color match: 20 to 30
+    - Material match: 35 to 45
+    - No match: 100
+
+    Returns: SQLAlchemy column expression for computed score
+    """
+    score_cases = []
+
+    # Size/type keywords get the best scores (most important for relevance)
+    for idx, size in enumerate(size_keywords[:5]):  # Limit to first 5
+        size_lower = size.lower()
+        score_cases.append((Product.name.ilike(f"%{size_lower}%"), literal(-20.0 + idx * 2)))
+
+    # Style keyword matches
+    for idx, style in enumerate(style_keywords[:5]):
+        style_lower = style.lower()
+        score_cases.append((Product.name.ilike(f"%{style_lower}%"), literal(5.0 + idx * 2)))
+        score_cases.append((Product.description.ilike(f"%{style_lower}%"), literal(10.0 + idx * 2)))
+
+    # Color matches
+    for idx, color in enumerate(preferred_colors[:5]):
+        color_lower = color.lower()
+        score_cases.append((Product.name.ilike(f"%{color_lower}%"), literal(20.0 + idx * 2)))
+        score_cases.append((Product.description.ilike(f"%{color_lower}%"), literal(25.0 + idx * 2)))
+
+    # Material matches
+    for idx, material in enumerate(preferred_materials[:5]):
+        material_lower = material.lower()
+        score_cases.append((Product.name.ilike(f"%{material_lower}%"), literal(35.0 + idx * 2)))
+        score_cases.append((Product.description.ilike(f"%{material_lower}%"), literal(40.0 + idx * 2)))
+
+    # Return CASE expression with default score of 100 for non-matching products
+    if score_cases:
+        return case(*score_cases, else_=literal(100.0))
+    else:
+        return literal(100.0)
+
+
+@router.post("/sessions/{session_id}/products/paginated", response_model=PaginatedProductsResponse)
+async def get_paginated_products(
+    session_id: str,
+    request: PaginatedProductsRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get paginated products for a category with consistent style-based ordering.
+    Uses cursor pagination for efficiency and consistency.
+
+    This endpoint is used for infinite scroll - after the initial product load,
+    subsequent pages are fetched using this endpoint with the cursor from the previous response.
+    """
+    try:
+        logger.info(f"[PAGINATED] Fetching page for category '{request.category_id}', page_size={request.page_size}")
+
+        # Extract style attributes for scoring
+        style_attrs = request.style_attributes or {}
+        style_keywords = style_attrs.get("style_keywords", [])
+        preferred_colors = style_attrs.get("colors", [])
+        preferred_materials = style_attrs.get("materials", [])
+        size_keywords = style_attrs.get("size_keywords", [])
+
+        # Build the style score expression for SQL-level scoring
+        score_expr = _build_style_score_expression(
+            style_keywords=style_keywords,
+            preferred_colors=preferred_colors,
+            preferred_materials=preferred_materials,
+            size_keywords=size_keywords,
+        )
+
+        # Map category_id to database category keywords
+        # This matches the logic in _get_category_based_recommendations
+        category_keywords = _get_category_keywords(request.category_id)
+
+        # Build base query with filters
+        query = (
+            select(Product, score_expr.label("computed_score"))
+            .options(selectinload(Product.images), selectinload(Product.attributes))
+            .where(Product.is_available.is_(True))
+        )
+
+        # Apply category filter using keywords
+        if category_keywords:
+            category_conditions = []
+            for keyword in category_keywords:
+                category_conditions.append(Product.name.ilike(f"%{keyword}%"))
+            query = query.where(or_(*category_conditions))
+
+        # Apply budget filters
+        if request.budget_min is not None:
+            query = query.where(Product.price >= request.budget_min)
+        if request.budget_max is not None:
+            query = query.where(Product.price <= request.budget_max)
+
+        # Apply store filter
+        if request.selected_stores:
+            query = query.where(Product.source_website.in_(request.selected_stores))
+
+        # Apply cursor for pagination (fetch items AFTER the cursor position)
+        if request.cursor:
+            # Cursor-based pagination: get items where (score > cursor_score) OR (score == cursor_score AND id > cursor_id)
+            query = query.where(
+                or_(
+                    score_expr > request.cursor.style_score,
+                    and_(
+                        score_expr == request.cursor.style_score,
+                        Product.id > request.cursor.product_id,
+                    ),
+                )
+            )
+
+        # Order by score (ascending = best first), then by id for deterministic ordering
+        query = query.order_by(score_expr.asc(), Product.id.asc())
+
+        # Fetch one extra to check if there are more pages
+        query = query.limit(request.page_size + 1)
+
+        # Execute query
+        result = await db.execute(query)
+        rows = result.all()
+
+        # Check if there are more results
+        has_more = len(rows) > request.page_size
+        products_rows = rows[: request.page_size]
+
+        # Build next cursor from the last item
+        next_cursor = None
+        if has_more and products_rows:
+            last_row = products_rows[-1]
+            next_cursor = PaginationCursor(
+                style_score=float(last_row.computed_score),
+                product_id=last_row.Product.id,
+            )
+
+        # Convert to product dicts (same format as _get_category_based_recommendations)
+        products = []
+        for row in products_rows:
+            product = row.Product
+            computed_score = row.computed_score
+
+            primary_image = None
+            if product.images:
+                primary_image = next(
+                    (img for img in product.images if img.is_primary),
+                    product.images[0] if product.images else None,
+                )
+
+            product_dict = {
+                "id": product.id,
+                "name": product.name,
+                "price": product.price,
+                "currency": product.currency,
+                "brand": product.brand,
+                "source_website": product.source_website,
+                "source_url": product.source_url,
+                "is_on_sale": product.is_on_sale,
+                "style_score": float(computed_score),
+                "description": product.description,
+                "primary_image": {
+                    "url": primary_image.original_url if primary_image else None,
+                    "alt_text": primary_image.alt_text if primary_image else product.name,
+                }
+                if primary_image
+                else None,
+                "attributes": [
+                    {"attribute_name": attr.attribute_name, "attribute_value": attr.attribute_value}
+                    for attr in product.attributes
+                ]
+                if product.attributes
+                else [],
+            }
+            products.append(product_dict)
+
+        # Get estimated total count (cached count query for performance)
+        total_estimated = await _get_category_product_count(request.category_id, category_keywords, db)
+
+        logger.info(
+            f"[PAGINATED] Returning {len(products)} products for '{request.category_id}', has_more={has_more}, total_estimated={total_estimated}"
+        )
+
+        return PaginatedProductsResponse(
+            products=products,
+            next_cursor=next_cursor,
+            has_more=has_more,
+            total_estimated=total_estimated,
+        )
+
+    except Exception as e:
+        import traceback
+
+        logger.error(f"Error fetching paginated products: {e}\n{traceback.format_exc()}")
+        error_type = type(e).__name__
+        raise HTTPException(status_code=500, detail=f"{error_type}: {str(e)}")
+
+
+def _get_category_keywords(category_id: str) -> List[str]:
+    """
+    Map category_id to search keywords for product matching.
+    This is a simplified version of the category mapping used in _get_category_based_recommendations.
+    """
+    # Common category keyword mappings
+    category_keyword_map = {
+        "sofas": ["sofa", "couch", "sectional", "loveseat", "settee"],
+        "chairs": ["chair", "armchair", "accent chair", "lounge chair"],
+        "coffee_tables": ["coffee table", "center table"],
+        "side_tables": ["side table", "end table", "accent table"],
+        "dining_tables": ["dining table"],
+        "dining_chairs": ["dining chair"],
+        "beds": ["bed", "bedframe"],
+        "wardrobes": ["wardrobe", "closet", "armoire"],
+        "dressers": ["dresser", "chest of drawers"],
+        "nightstands": ["nightstand", "bedside table"],
+        "desks": ["desk", "writing desk", "computer desk"],
+        "office_chairs": ["office chair", "desk chair", "ergonomic chair"],
+        "bookcases": ["bookcase", "bookshelf", "shelving"],
+        "tv_stands": ["tv stand", "tv unit", "media console", "entertainment center"],
+        "rugs": ["rug", "carpet", "area rug"],
+        "curtains": ["curtain", "drape", "window treatment"],
+        "lighting": ["lamp", "light", "chandelier", "pendant", "sconce"],
+        "mirrors": ["mirror", "wall mirror"],
+        "artwork": ["art", "painting", "print", "poster", "wall art"],
+        "wallpapers": ["wallpaper", "wallpapers", "wall paper", "wall covering"],
+        "planters": ["planter", "pot", "vase"],
+        "decor_accents": ["decor", "accent", "decorative", "ornament"],
+        "cushions": ["cushion", "pillow", "throw pillow"],
+        "throws": ["throw", "blanket"],
+        "storage": ["storage", "basket", "bin", "organizer"],
+    }
+
+    # Return keywords for the category, or use the category_id itself as a keyword
+    return category_keyword_map.get(category_id, [category_id.replace("_", " ")])
+
+
+async def _get_category_product_count(category_id: str, category_keywords: List[str], db: AsyncSession) -> int:
+    """
+    Get estimated product count for a category.
+    Uses a simple count query with category keyword matching.
+    """
+    try:
+        count_query = select(func.count(Product.id)).where(Product.is_available.is_(True))
+
+        if category_keywords:
+            category_conditions = []
+            for keyword in category_keywords:
+                category_conditions.append(Product.name.ilike(f"%{keyword}%"))
+            count_query = count_query.where(or_(*category_conditions))
+
+        result = await db.execute(count_query)
+        count = result.scalar() or 0
+        return count
+
+    except Exception as e:
+        logger.warning(f"Error getting category count for {category_id}: {e}")
+        return 0

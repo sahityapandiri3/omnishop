@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import Image from 'next/image';
-import { Product } from '@/types';
+import { Product, PaginationCursor } from '@/types';
 import { formatCurrency } from '@/utils/format';
 import { ProductDetailModal } from '../ProductDetailModal';
+import InfiniteScrollTrigger from '../InfiniteScrollTrigger';
+import { usePaginatedProducts, flattenPaginatedProducts } from '@/hooks/usePaginatedProducts';
 
 // Types for category recommendations from API
 export interface BudgetAllocation {
@@ -34,6 +36,17 @@ interface CategorySectionProps {
   canvasProducts: any[];
   isExpanded: boolean;
   onToggleExpand: () => void;
+  // Pagination props (optional for backward compatibility)
+  sessionId?: string;
+  hasMore?: boolean;
+  totalEstimated?: number;
+  nextCursor?: PaginationCursor | null;
+  styleAttributes?: {
+    style_keywords?: string[];
+    colors?: string[];
+    materials?: string[];
+    size_keywords?: string[];
+  };
 }
 
 /**
@@ -47,6 +60,12 @@ export default function CategorySection({
   canvasProducts,
   isExpanded,
   onToggleExpand,
+  // Pagination props
+  sessionId,
+  hasMore: initialHasMore = false,
+  totalEstimated: initialTotalEstimated,
+  nextCursor,
+  styleAttributes,
 }: CategorySectionProps) {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [filters, setFilters] = useState<CategoryFilterState>({
@@ -56,6 +75,45 @@ export default function CategorySection({
     sortBy: 'relevance',
   });
   const [showFilters, setShowFilters] = useState(false);
+
+  // Use pagination hook for infinite scroll (only active when expanded and sessionId is provided)
+  const paginationEnabled = isExpanded && !!sessionId && initialHasMore;
+  const {
+    data: paginatedData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = usePaginatedProducts({
+    sessionId: sessionId || '',
+    categoryId: category.category_id,
+    styleAttributes,
+    budgetMin: category.budget_allocation?.min,
+    budgetMax: category.budget_allocation?.max,
+    enabled: paginationEnabled,
+  });
+
+  // Combine initial products with paginated products
+  const allProducts = useMemo(() => {
+    const paginatedProducts = flattenPaginatedProducts(paginatedData);
+    if (paginatedProducts.length === 0) {
+      return products;
+    }
+    // Deduplicate by product ID (initial products may overlap with paginated)
+    const seenIds = new Set(products.map((p: any) => p.id));
+    const additionalProducts = paginatedProducts.filter((p: any) => !seenIds.has(p.id));
+    return [...products, ...additionalProducts];
+  }, [products, paginatedData]);
+
+  // Calculate pagination state
+  const currentHasMore = hasNextPage ?? initialHasMore;
+  const currentTotalEstimated = paginatedData?.pages[0]?.total_estimated ?? initialTotalEstimated ?? products.length;
+
+  // Memoize fetchNextPage callback
+  const handleLoadMore = useCallback(() => {
+    if (!isFetchingNextPage && hasNextPage) {
+      fetchNextPage();
+    }
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   // Transform raw product to Product type
   const transformProduct = (rawProduct: any): Product => {
@@ -96,16 +154,16 @@ export default function CategorySection({
     } as Product;
   };
 
-  // Get unique stores from products
+  // Get unique stores from products (use allProducts to include paginated)
   const uniqueStores = useMemo(() => {
     return Array.from(
-      new Set(products.map(p => p.source_website || p.source).filter(Boolean))
+      new Set(allProducts.map(p => p.source_website || p.source).filter(Boolean))
     ).sort();
-  }, [products]);
+  }, [allProducts]);
 
-  // Transform and filter products
+  // Transform and filter products (use allProducts to include paginated)
   const filteredProducts = useMemo(() => {
-    const transformed = products.map(transformProduct);
+    const transformed = allProducts.map(transformProduct);
 
     return transformed.filter(product => {
       const price = product.price || 0;
@@ -298,100 +356,113 @@ export default function CategorySection({
 
           {/* Products Grid */}
           {filteredProducts.length > 0 ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              {filteredProducts.map((product) => {
-                const productInCanvas = isInCanvas(product.id);
-                const imageUrl = getImageUrl(product);
-                const discountPercentage = product.original_price && product.price < product.original_price
-                  ? Math.round(((product.original_price - product.price) / product.original_price) * 100)
-                  : null;
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {filteredProducts.map((product) => {
+                  const productInCanvas = isInCanvas(product.id);
+                  const imageUrl = getImageUrl(product);
+                  const discountPercentage = product.original_price && product.price < product.original_price
+                    ? Math.round(((product.original_price - product.price) / product.original_price) * 100)
+                    : null;
 
-                return (
-                  <div
-                    key={product.id}
-                    className={`group border rounded-lg overflow-hidden transition-all duration-200 cursor-pointer ${
-                      productInCanvas
-                        ? 'bg-green-50 dark:bg-green-900/10 border-green-300 dark:border-green-700'
-                        : 'bg-white dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 hover:shadow-md'
-                    }`}
-                    onClick={() => setSelectedProduct(product)}
-                  >
-                    {/* Product Image */}
-                    <div className="relative aspect-square bg-neutral-100 dark:bg-neutral-700">
-                      {imageUrl && imageUrl !== '/placeholder-product.jpg' && imageUrl.startsWith('http') ? (
-                        <Image
-                          src={imageUrl}
-                          alt={product.name}
-                          fill
-                          className="object-cover group-hover:scale-105 transition-transform duration-300"
-                          sizes="(max-width: 768px) 50vw, 33vw"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-neutral-200 dark:bg-neutral-600">
-                          <svg className="w-8 h-8 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                        </div>
-                      )}
+                  return (
+                    <div
+                      key={product.id}
+                      className={`group border rounded-lg overflow-hidden transition-all duration-200 cursor-pointer ${
+                        productInCanvas
+                          ? 'bg-green-50 dark:bg-green-900/10 border-green-300 dark:border-green-700'
+                          : 'bg-white dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 hover:shadow-md'
+                      }`}
+                      onClick={() => setSelectedProduct(product)}
+                    >
+                      {/* Product Image */}
+                      <div className="relative aspect-square bg-neutral-100 dark:bg-neutral-700">
+                        {imageUrl && imageUrl !== '/placeholder-product.jpg' && imageUrl.startsWith('http') ? (
+                          <Image
+                            src={imageUrl}
+                            alt={product.name}
+                            fill
+                            className="object-cover group-hover:scale-105 transition-transform duration-300"
+                            sizes="(max-width: 768px) 50vw, 33vw"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-neutral-200 dark:bg-neutral-600">
+                            <svg className="w-8 h-8 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                        )}
 
-                      {/* Badges */}
-                      {discountPercentage && (
-                        <span className="absolute top-1 left-1 bg-red-500 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
-                          -{discountPercentage}%
-                        </span>
-                      )}
+                        {/* Badges */}
+                        {discountPercentage && (
+                          <span className="absolute top-1 left-1 bg-red-500 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
+                            -{discountPercentage}%
+                          </span>
+                        )}
 
-                      {productInCanvas && (
-                        <span className="absolute top-1 right-1 bg-green-500 text-white text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
-                          <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
-                          {getCanvasQuantity(product.id) > 1 && getCanvasQuantity(product.id)}
-                        </span>
-                      )}
+                        {productInCanvas && (
+                          <span className="absolute top-1 right-1 bg-green-500 text-white text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                            <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                            {getCanvasQuantity(product.id) > 1 && getCanvasQuantity(product.id)}
+                          </span>
+                        )}
 
-                      {product.source_website && (
-                        <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] px-1 py-0.5 rounded backdrop-blur-sm">
-                          {product.source_website}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Product Info */}
-                    <div className="p-2">
-                      <h4 className="font-medium text-[11px] text-neutral-900 dark:text-white line-clamp-2 mb-1">
-                        {product.name}
-                      </h4>
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs font-bold text-neutral-900 dark:text-white">
-                          {formatCurrency(product.price, product.currency)}
-                        </span>
-                        {product.original_price && product.price < product.original_price && (
-                          <span className="text-[10px] text-neutral-400 line-through">
-                            {formatCurrency(product.original_price, product.currency)}
+                        {product.source_website && (
+                          <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] px-1 py-0.5 rounded backdrop-blur-sm">
+                            {product.source_website}
                           </span>
                         )}
                       </div>
 
-                      {/* Add to Canvas Button - always enabled (allows adding multiple) */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onAddToCanvas(product);
-                        }}
-                        className={`w-full mt-1.5 py-1 text-[10px] font-medium rounded transition-colors ${
-                          productInCanvas
-                            ? 'bg-green-600 hover:bg-green-700 text-white'
-                            : 'bg-primary-600 hover:bg-primary-700 text-white'
-                        }`}
-                      >
-                        {productInCanvas ? `Add +1 (${getCanvasQuantity(product.id)})` : 'Add to Canvas'}
-                      </button>
+                      {/* Product Info */}
+                      <div className="p-2">
+                        <h4 className="font-medium text-[11px] text-neutral-900 dark:text-white line-clamp-2 mb-1">
+                          {product.name}
+                        </h4>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs font-bold text-neutral-900 dark:text-white">
+                            {formatCurrency(product.price, product.currency)}
+                          </span>
+                          {product.original_price && product.price < product.original_price && (
+                            <span className="text-[10px] text-neutral-400 line-through">
+                              {formatCurrency(product.original_price, product.currency)}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Add to Canvas Button - always enabled (allows adding multiple) */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onAddToCanvas(product);
+                          }}
+                          className={`w-full mt-1.5 py-1 text-[10px] font-medium rounded transition-colors ${
+                            productInCanvas
+                              ? 'bg-green-600 hover:bg-green-700 text-white'
+                              : 'bg-primary-600 hover:bg-primary-700 text-white'
+                          }`}
+                        >
+                          {productInCanvas ? `Add +1 (${getCanvasQuantity(product.id)})` : 'Add to Canvas'}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+
+              {/* Infinite Scroll Trigger */}
+              {sessionId && (
+                <InfiniteScrollTrigger
+                  onLoadMore={handleLoadMore}
+                  hasMore={currentHasMore}
+                  isLoading={isFetchingNextPage}
+                  loadedCount={filteredProducts.length}
+                  totalCount={currentTotalEstimated}
+                />
+              )}
+            </>
           ) : (
             <div className="text-center py-8 text-neutral-500 dark:text-neutral-400 text-sm">
               No products match your filters

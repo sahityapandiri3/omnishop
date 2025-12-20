@@ -1327,6 +1327,7 @@ function DesignPageContent() {
                 selectedCategories={selectedCategories}
                 productsByCategory={productsByCategory}
                 totalBudget={totalBudget}
+                sessionId={chatSessionId}
               />
             }
             canvasPanel={
@@ -1374,6 +1375,7 @@ function DesignPageContent() {
               selectedCategories={selectedCategories}
               productsByCategory={productsByCategory}
               totalBudget={totalBudget}
+              sessionId={chatSessionId}
             />
           </div>
           <div className={`h-full ${activeTab === 'canvas' ? 'block' : 'hidden'}`}>

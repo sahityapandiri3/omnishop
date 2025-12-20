@@ -301,3 +301,41 @@ export interface ChatMessageResponse {
   processing_time?: number;
   message?: any;
 }
+
+// ============================================================================
+// Pagination Types for Infinite Scroll
+// ============================================================================
+
+export interface PaginationCursor {
+  style_score: number;
+  product_id: number;
+}
+
+export interface PaginatedProductsRequest {
+  category_id: string;
+  page_size?: number;
+  cursor?: PaginationCursor | null;
+  style_attributes?: {
+    style_keywords?: string[];
+    colors?: string[];
+    materials?: string[];
+    size_keywords?: string[];
+  };
+  budget_min?: number;
+  budget_max?: number;
+  selected_stores?: string[];
+}
+
+export interface PaginatedProductsResponse {
+  products: any[];
+  next_cursor: PaginationCursor | null;
+  has_more: boolean;
+  total_estimated: number;
+}
+
+export interface CategoryProductsMetadata {
+  products: any[];
+  total_estimated: number;
+  has_more: boolean;
+  next_cursor: PaginationCursor | null;
+}

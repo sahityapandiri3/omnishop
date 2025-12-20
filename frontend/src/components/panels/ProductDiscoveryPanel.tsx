@@ -16,6 +16,8 @@ interface ProductDiscoveryPanelProps {
   selectedCategories?: CategoryRecommendation[] | null;
   productsByCategory?: Record<string, any[]> | null;
   totalBudget?: number | null;
+  // Session ID for pagination/infinite scroll
+  sessionId?: string | null;
 }
 
 /**
@@ -29,11 +31,18 @@ export default function ProductDiscoveryPanel({
   selectedCategories,
   productsByCategory,
   totalBudget,
+  sessionId,
 }: ProductDiscoveryPanelProps) {
   console.log('[ProductDiscoveryPanel] Received products:', products.length, 'products');
   console.log('[ProductDiscoveryPanel] Category mode:', selectedCategories ? 'YES' : 'NO');
+  console.log('[ProductDiscoveryPanel] productsByCategory exists:', !!productsByCategory);
+  if (productsByCategory) {
+    const categoryKeys = Object.keys(productsByCategory);
+    const totalProducts = Object.values(productsByCategory).reduce((sum, prods) => sum + (prods?.length || 0), 0);
+    console.log('[ProductDiscoveryPanel] Categories in productsByCategory:', categoryKeys, 'Total products:', totalProducts);
+  }
   if (selectedCategories) {
-    console.log('[ProductDiscoveryPanel] Categories:', selectedCategories.map(c => c.category_id));
+    console.log('[ProductDiscoveryPanel] selectedCategories:', selectedCategories.map(c => c.category_id));
   }
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -350,6 +359,8 @@ export default function ProductDiscoveryPanel({
               canvasProducts={canvasProducts}
               isExpanded={true}
               onToggleExpand={() => {}}
+              sessionId={sessionId || undefined}
+              hasMore={true}
             />
           </div>
         </div>
