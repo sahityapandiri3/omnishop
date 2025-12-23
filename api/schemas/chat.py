@@ -140,6 +140,17 @@ class DesignAnalysisSchema(BaseModel):
         from_attributes = True
 
 
+class OnboardingPreferences(BaseModel):
+    """User preferences collected during onboarding wizard"""
+
+    roomType: Optional[str] = None  # "living_room", "bedroom", etc.
+    primaryStyle: Optional[str] = None  # Primary style preference
+    secondaryStyle: Optional[str] = None  # Secondary style preference
+    budget: Optional[int] = None  # Budget in INR
+    budgetFlexible: bool = False  # Whether budget is flexible
+    roomImage: Optional[str] = None  # Base64 encoded room image
+
+
 class ChatMessageRequest(BaseModel):
     """Request to send a chat message"""
 
@@ -149,6 +160,7 @@ class ChatMessageRequest(BaseModel):
     selected_product_id: Optional[str] = None  # Product ID user wants to visualize
     user_action: Optional[str] = None  # "add" or "replace"
     selected_stores: Optional[List[str]] = None  # Filter products by selected stores
+    onboarding_preferences: Optional[OnboardingPreferences] = None  # Preferences from onboarding wizard
 
 
 class ChatMessageResponse(BaseModel):

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { sendChatMessage, startChatSession, getChatHistory } from '@/utils/api';
+import { sendChatMessage, startChatSession, getChatHistory, OnboardingPreferences } from '@/utils/api';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -56,6 +56,8 @@ export default function ChatPanel({
   const [imageSentToBackend, setImageSentToBackend] = useState(false); // Track if image was already sent
   const [conversationState, setConversationState] = useState<string>('INITIAL'); // Track conversation state for two-phase flow
   const [isRestoringSession, setIsRestoringSession] = useState(false); // Flag to prevent processing during restore
+  const [onboardingPreferences, setOnboardingPreferences] = useState<OnboardingPreferences | null>(null);
+  const onboardingProcessedRef = useRef(false); // Track if onboarding was already processed
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -145,6 +147,141 @@ export default function ChatPanel({
       // The user may upload a new image during the conversation
     }
   }, [roomImage]);
+
+  // Load and process onboarding preferences from sessionStorage
+  useEffect(() => {
+    // Only run once when session is ready and not restoring
+    if (!sessionId || isRestoringSession || onboardingProcessedRef.current) return;
+
+    try {
+      const prefsJson = sessionStorage.getItem('onboardingPreferences');
+      if (!prefsJson) return;
+
+      const prefs: OnboardingPreferences = JSON.parse(prefsJson);
+      console.log('[ChatPanel] Found onboarding preferences:', prefs);
+
+      // Mark as processed to prevent re-running
+      onboardingProcessedRef.current = true;
+
+      // Clear from sessionStorage
+      sessionStorage.removeItem('onboardingPreferences');
+
+      // Store preferences in state
+      setOnboardingPreferences(prefs);
+
+      // Build a natural language message from preferences
+      const parts: string[] = [];
+
+      // Room type
+      if (prefs.roomType) {
+        const roomName = prefs.roomType === 'living_room' ? 'living room' :
+                        prefs.roomType === 'bedroom' ? 'bedroom' : prefs.roomType;
+        parts.push(`I'm designing my ${roomName}`);
+      }
+
+      // Style
+      if (prefs.primaryStyle) {
+        const styleName = prefs.primaryStyle.replace(/_/g, ' ');
+        if (prefs.secondaryStyle) {
+          const secondaryName = prefs.secondaryStyle.replace(/_/g, ' ');
+          parts.push(`I love ${styleName} style with some ${secondaryName} touches`);
+        } else {
+          parts.push(`I love ${styleName} style`);
+        }
+      }
+
+      // Budget
+      if (prefs.budget && !prefs.budgetFlexible) {
+        const budgetStr = prefs.budget >= 100000
+          ? `₹${(prefs.budget / 100000).toFixed(prefs.budget % 100000 === 0 ? 0 : 1)} lakh`
+          : `₹${prefs.budget.toLocaleString('en-IN')}`;
+        parts.push(`my budget is around ${budgetStr}`);
+      } else if (prefs.budgetFlexible) {
+        parts.push(`I'm flexible on budget`);
+      }
+
+      // Construct the message
+      if (parts.length > 0) {
+        let message = parts.join('. ') + '.';
+        if (prefs.roomImage) {
+          message += ' Here is my room photo.';
+        }
+        message += ' Please help me find furniture!';
+
+        // Update welcome message to be personalized
+        const roomName = prefs.roomType === 'living_room' ? 'living room' :
+                        prefs.roomType === 'bedroom' ? 'bedroom' : 'space';
+        const welcomeMessage = prefs.primaryStyle
+          ? `Welcome! I see you're looking to create a beautiful ${prefs.primaryStyle.replace(/_/g, ' ')} ${roomName}. Let me help you find the perfect pieces!`
+          : `Welcome! I'm excited to help you design your ${roomName}. Let me find some great options for you!`;
+
+        setMessages([{
+          role: 'assistant',
+          content: welcomeMessage,
+          timestamp: new Date(),
+        }]);
+
+        // Auto-send the preferences as a user message (with image if provided)
+        setTimeout(() => {
+          // Add user message
+          setMessages(prev => [...prev, {
+            role: 'user',
+            content: message,
+            timestamp: new Date(),
+          }]);
+
+          // Send to backend
+          setIsLoading(true);
+          const sendPreferences = async () => {
+            try {
+              const response = await sendChatMessage(sessionId, {
+                message,
+                image: prefs.roomImage || undefined,
+                selected_stores: selectedStores.length > 0 ? selectedStores : undefined,
+                onboarding_preferences: prefs,
+              });
+
+              // Handle response
+              if (response.message) {
+                setMessages(prev => [...prev, {
+                  role: 'assistant',
+                  content: response.message.content,
+                  timestamp: new Date(),
+                }]);
+              }
+
+              // Handle product recommendations
+              if (response.selected_categories || response.products_by_category) {
+                onProductRecommendations(response);
+              }
+
+              // Update conversation state
+              if (response.conversation_state) {
+                setConversationState(response.conversation_state);
+              }
+
+              // Mark image as sent
+              if (prefs.roomImage) {
+                setImageSentToBackend(true);
+              }
+            } catch (error) {
+              console.error('[ChatPanel] Error sending onboarding preferences:', error);
+              setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: "I had trouble processing your preferences. Could you tell me more about what you're looking for?",
+                timestamp: new Date(),
+              }]);
+            } finally {
+              setIsLoading(false);
+            }
+          };
+          sendPreferences();
+        }, 500); // Small delay for better UX
+      }
+    } catch (error) {
+      console.error('[ChatPanel] Error loading onboarding preferences:', error);
+    }
+  }, [sessionId, isRestoringSession, selectedStores, onProductRecommendations]);
 
   // Process pending messages (ChatGPT-style: cancels previous, processes all pending)
   const processPendingMessages = useCallback(async () => {

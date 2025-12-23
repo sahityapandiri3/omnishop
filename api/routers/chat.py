@@ -27,9 +27,11 @@ from schemas.chat import (
 from services.budget_allocator import validate_and_adjust_budget_allocations
 from services.chatgpt_service import chatgpt_service
 from services.conversation_context import conversation_context_manager
+from services.embedding_service import get_embedding_service
 from services.google_ai_service import VisualizationRequest, VisualizationResult, google_ai_service
 from services.ml_recommendation_model import ml_recommendation_model
 from services.nlp_processor import design_nlp_processor
+from services.ranking_service import get_ranking_service
 from services.recommendation_engine import RecommendationRequest, recommendation_engine
 from sqlalchemy import and_, case, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -220,6 +222,43 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
         # Store image in conversation context if provided
         if request.image:
             conversation_context_manager.store_image(session_id, request.image)
+
+        # Process onboarding preferences if provided
+        if request.onboarding_preferences:
+            prefs = request.onboarding_preferences
+            logger.info(f"[Onboarding] Processing preferences for session {session_id}: {prefs}")
+
+            # Store preferences in conversation context
+            omni_prefs = conversation_context_manager.get_omni_preferences(session_id)
+
+            # Set room type
+            if prefs.roomType:
+                omni_prefs.room_type = prefs.roomType
+
+            # Set style preferences
+            if prefs.primaryStyle:
+                styles = [prefs.primaryStyle]
+                if prefs.secondaryStyle:
+                    styles.append(prefs.secondaryStyle)
+                omni_prefs.styles = styles
+
+            # Set budget
+            if prefs.budget and not prefs.budgetFlexible:
+                omni_prefs.budget = prefs.budget
+            elif prefs.budgetFlexible:
+                omni_prefs.budget = None  # Flexible = no budget filter
+
+            # Store room image from onboarding if provided
+            if prefs.roomImage:
+                conversation_context_manager.store_image(session_id, prefs.roomImage)
+
+            # Set scope to full room since they went through onboarding
+            omni_prefs.scope = "full_room"
+
+            conversation_context_manager.store_omni_preferences(session_id, omni_prefs)
+            logger.info(
+                f"[Onboarding] Stored preferences: room={omni_prefs.room_type}, styles={omni_prefs.styles}, budget={omni_prefs.budget}"
+            )
 
         # Save user message
         user_message_id = str(uuid.uuid4())
@@ -2117,6 +2156,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                             limit_per_category=100,  # Increased to provide more variety
                             style_attributes=style_attributes,
                             size_keywords=size_keywords_for_search,
+                            semantic_query=request.message,  # Enable semantic search for hybrid scoring
                         )
 
                         # Update product counts in category recommendations
@@ -2270,6 +2310,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     limit_per_category=100,
                     style_attributes=style_attributes,
                     size_keywords=[],
+                    semantic_query=request.message,  # Enable semantic search for hybrid scoring
                 )
 
                 # Update product counts
@@ -4952,6 +4993,96 @@ CATEGORY_PRIORITY_KEYWORDS = {
 }
 
 
+async def _semantic_search(
+    query_text: str,
+    db: AsyncSession,
+    category_ids: Optional[List[int]] = None,
+    store_filter: Optional[List[str]] = None,
+    price_min: Optional[float] = None,
+    price_max: Optional[float] = None,
+    limit: int = 100,
+) -> Dict[int, float]:
+    """
+    Perform vector similarity search for semantic matching.
+
+    This function generates an embedding for the query text and searches
+    products using cosine similarity with their stored embeddings.
+
+    Args:
+        query_text: Search query (e.g., "cozy minimalist sofa")
+        db: Database session
+        category_ids: Optional list of category IDs to filter by
+        store_filter: Optional list of store names to filter by
+        price_min: Optional minimum price
+        price_max: Optional maximum price
+        limit: Maximum products to return
+
+    Returns:
+        Dict mapping product_id to similarity score (0.0 to 1.0)
+    """
+    import json
+
+    embedding_service = get_embedding_service()
+
+    # Get query embedding
+    query_embedding = await embedding_service.get_query_embedding(query_text)
+    if not query_embedding:
+        logger.warning(f"[SEMANTIC SEARCH] Failed to generate embedding for: {query_text[:50]}...")
+        return {}
+
+    logger.info(f"[SEMANTIC SEARCH] Generated query embedding for: {query_text[:50]}...")
+
+    # Build base query for products with embeddings
+    query = select(Product.id, Product.embedding).where(Product.is_available.is_(True)).where(Product.embedding.isnot(None))
+
+    # Apply filters
+    if category_ids:
+        query = query.where(Product.category_id.in_(category_ids))
+
+    if store_filter:
+        query = query.where(Product.source_website.in_(store_filter))
+
+    if price_min is not None:
+        query = query.where(Product.price >= price_min)
+
+    if price_max is not None:
+        query = query.where(Product.price <= price_max)
+
+    # Execute query
+    result = await db.execute(query)
+    rows = result.fetchall()
+
+    logger.info(f"[SEMANTIC SEARCH] Found {len(rows)} products with embeddings")
+
+    # Calculate similarity scores
+    similarity_scores: Dict[int, float] = {}
+
+    for product_id, embedding_json in rows:
+        try:
+            # Parse stored embedding
+            product_embedding = json.loads(embedding_json)
+
+            # Compute cosine similarity
+            similarity = embedding_service.compute_cosine_similarity(query_embedding, product_embedding)
+
+            similarity_scores[product_id] = similarity
+
+        except (json.JSONDecodeError, Exception) as e:
+            logger.debug(f"[SEMANTIC SEARCH] Error processing product {product_id}: {e}")
+            continue
+
+    # Sort by similarity and take top N
+    sorted_scores = sorted(similarity_scores.items(), key=lambda x: x[1], reverse=True)[:limit]
+
+    result_dict = dict(sorted_scores)
+
+    if result_dict:
+        top_score = sorted_scores[0][1] if sorted_scores else 0
+        logger.info(f"[SEMANTIC SEARCH] Top similarity score: {top_score:.3f}, " f"returning {len(result_dict)} products")
+
+    return result_dict
+
+
 async def _get_category_based_recommendations(
     selected_categories: List[CategoryRecommendation],
     db: AsyncSession,
@@ -4959,6 +5090,7 @@ async def _get_category_based_recommendations(
     limit_per_category: int = 100,
     style_attributes: Optional[Dict[str, Any]] = None,
     size_keywords: Optional[List[str]] = None,
+    semantic_query: Optional[str] = None,
 ) -> Dict[str, List[dict]]:
     """
     Get product recommendations grouped by AI-selected categories.
@@ -4966,8 +5098,10 @@ async def _get_category_based_recommendations(
     This function queries products for each category using keyword matching,
     applies optional budget and store filters, and returns products grouped by category.
 
-    NEW: Also uses ChatGPT style attributes (colors, materials, style keywords) to
-    prioritize products that match the user's design preferences.
+    Uses HYBRID scoring combining:
+    - Keyword matching (exact/partial)
+    - Style/color/material attribute matching
+    - Semantic similarity (vector embeddings) when semantic_query is provided
 
     Args:
         selected_categories: List of CategoryRecommendation from ChatGPT analysis
@@ -4978,6 +5112,8 @@ async def _get_category_based_recommendations(
             - style_keywords: List of style terms (e.g., ["modern", "minimalist"])
             - colors: List of color preferences (e.g., ["beige", "gray", "neutral"])
             - materials: List of material preferences (e.g., ["wood", "leather", "velvet"])
+        size_keywords: Optional list of size/type keywords (e.g., ["3 seater", "sectional"])
+        semantic_query: Optional search query for semantic similarity matching
 
     Returns:
         Dict mapping category_id to list of product dicts
@@ -4998,6 +5134,15 @@ async def _get_category_based_recommendations(
         f"[CATEGORY RECS] Style attributes - keywords: {style_keywords}, colors: {preferred_colors}, materials: {preferred_materials}"
     )
     logger.info(f"[CATEGORY RECS] Size keywords: {size_keywords}")
+
+    # Get semantic similarity scores if query provided
+    semantic_scores: Dict[int, float] = {}
+    if semantic_query:
+        logger.info(f"[CATEGORY RECS] Running semantic search for: {semantic_query[:50]}...")
+        semantic_scores = await _semantic_search(
+            query_text=semantic_query, db=db, store_filter=selected_stores, limit=500  # Get top 500 for each category's pool
+        )
+        logger.info(f"[CATEGORY RECS] Got {len(semantic_scores)} semantic scores")
 
     # Normalize size keywords for flexible matching
     # Map various formats to a standard form for database search
@@ -5221,201 +5366,67 @@ async def _get_category_based_recommendations(
             logger.info(f"[CATEGORY RECS] {category_id}: Fetched {len(products)} candidate products for scoring")
 
             # =================================================================
-            # STYLE MATCHING: Score products based on style attributes
-            # Matches against: name, description, and ProductAttributes
-            # Also prioritizes size/type keywords (sectional, l-shaped, etc.)
+            # RANKING: Use deterministic weighted scoring via RankingService
+            # Formula: 0.50*vector + 0.20*attribute + 0.15*style + 0.10*material_color + 0.05*text_intent
+            # Higher score = better match (inverse of old scoring)
             # =================================================================
-            def calculate_style_score(product) -> float:
-                """
-                Calculate a style match score for a product (lower = better match).
-                Checks name, description, and product attributes.
-                Priority order: category keyword match > type/size match > priority keywords > style > colors > materials
-                """
-                score = 100.0  # Base score (high = no match)
+            ranking_service = get_ranking_service()
 
-                # Build searchable text from product
-                name_lower = (product.name or "").lower()
-                desc_lower = (product.description or "").lower()
+            # Get query embedding for text intent scoring
+            query_embedding = None
+            if semantic_query:
+                embedding_service = get_embedding_service()
+                query_embedding = await embedding_service.get_query_embedding(semantic_query)
 
-                # HIGHEST PRIORITY: Category keyword match in product name
-                # If user searches "cushion covers" and product name contains "cushion cover", rank it higher
-                for idx, keyword in enumerate(keywords):
-                    keyword_lower = keyword.lower()
-                    if keyword_lower in name_lower:
-                        # Exact/near-exact match in name = best score
-                        score = min(score, -30 + idx * 0.5)
-                        break
-                    elif keyword_lower in desc_lower:
-                        # Match in description = good but not as good as name
-                        score = min(score, -25 + idx * 0.5)
-                        break
+            # Extract user preferences for ranking
+            # Use first style keyword as primary style, second as secondary
+            user_primary_style = style_keywords[0] if style_keywords else None
+            user_secondary_style = style_keywords[1] if len(style_keywords) > 1 else None
+            user_type = normalized_sizes[0] if normalized_sizes else None
+            user_color = preferred_colors[0] if preferred_colors else None
 
-                # Extract attribute values for matching
-                attr_style = ""
-                attr_colors = ""
-                attr_materials = ""
-                attr_texture = ""
-                attr_type = ""  # For seating type, furniture type, etc.
-                attr_capacity = ""  # For seating capacity
+            # Get category ID for attribute matching
+            user_category_id = matching_category_ids[0] if matching_category_ids else None
 
-                if product.attributes:
-                    for attr in product.attributes:
-                        attr_name = (attr.attribute_name or "").lower()
-                        attr_value = (attr.attribute_value or "").lower()
+            # Rank products using the new weighted scoring system
+            ranked_products = ranking_service.rank_products(
+                products=products,
+                vector_scores=semantic_scores,
+                query_embedding=query_embedding,
+                user_category=user_category_id,
+                user_type=user_type,
+                user_capacity=None,  # Could be extracted from query if needed
+                user_primary_style=user_primary_style,
+                user_secondary_style=user_secondary_style,
+                user_materials=preferred_materials if preferred_materials else None,
+                user_color=user_color,
+            )
 
-                        if attr_name == "style":
-                            attr_style = attr_value
-                        elif attr_name in ["color_primary", "color_secondary", "color"]:
-                            attr_colors += f" {attr_value}"
-                        elif attr_name in ["material_primary", "material_secondary", "material", "materials"]:
-                            attr_materials += f" {attr_value}"
-                        elif attr_name == "texture":
-                            attr_texture = attr_value
-                        elif attr_name in ["type", "seating_type", "furniture_type", "sofa_type"]:
-                            attr_type += f" {attr_value}"
-                        elif attr_name in ["seating_capacity", "capacity", "size"]:
-                            attr_capacity += f" {attr_value}"
-
-                # HIGHEST PRIORITY: Check size/type keywords (sectional, l-shaped, 3-seater, etc.)
-                # These get the LOWEST scores (best matches)
-                if normalized_sizes:
-                    for idx, size in enumerate(normalized_sizes):
-                        size_lower = size.lower()
-                        # Check type attribute first (most accurate)
-                        if size_lower in attr_type:
-                            score = min(score, -20 + idx * 0.5)  # BEST match - negative score
-                        elif size_lower in attr_capacity:
-                            score = min(score, -15 + idx * 0.5)  # Very good match
-                        # Check product name
-                        elif size_lower in name_lower:
-                            score = min(score, -10 + idx * 0.5)  # Good match
-                        # Check description
-                        elif size_lower in desc_lower:
-                            score = min(score, -5 + idx * 0.5)  # Okay match
-
-                # Check category priority keywords first (highest priority)
-                for idx, pk in enumerate(priority_keywords):
-                    pk_lower = pk.lower()
-                    if pk_lower in name_lower:
-                        score = min(score, idx * 0.5)  # Very strong match
-                        break
-
-                # Check style keywords (e.g., "modern", "minimalist")
-                for idx, sk in enumerate(style_keywords):
-                    sk_lower = sk.lower()
-                    # Check attribute style first (most accurate)
-                    if sk_lower in attr_style:
-                        score = min(score, 5 + idx * 0.5)
-                    # Check name
-                    elif sk_lower in name_lower:
-                        score = min(score, 10 + idx * 0.5)
-                    # Check description
-                    elif sk_lower in desc_lower:
-                        score = min(score, 15 + idx * 0.5)
-
-                # Check color preferences
-                for idx, color in enumerate(preferred_colors):
-                    color_lower = color.lower()
-                    # Check color attributes first (most accurate)
-                    if color_lower in attr_colors:
-                        score = min(score, 20 + idx * 0.5)
-                    # Check name
-                    elif color_lower in name_lower:
-                        score = min(score, 25 + idx * 0.5)
-                    # Check description
-                    elif color_lower in desc_lower:
-                        score = min(score, 30 + idx * 0.5)
-
-                # Check material preferences
-                for idx, material in enumerate(preferred_materials):
-                    material_lower = material.lower()
-                    # Check material attributes first (most accurate)
-                    if material_lower in attr_materials or material_lower in attr_texture:
-                        score = min(score, 35 + idx * 0.5)
-                    # Check name
-                    elif material_lower in name_lower:
-                        score = min(score, 40 + idx * 0.5)
-                    # Check description
-                    elif material_lower in desc_lower:
-                        score = min(score, 45 + idx * 0.5)
-
-                return score
-
-            # Score and sort products
-            scored_products = []
-            for product in products:
-                style_score = calculate_style_score(product)
-                scored_products.append((product, style_score))
-
-            # Sort by style score (lower is better), then by price
-            scored_products.sort(key=lambda x: (x[1], x[0].price or 0))
-
-            # =================================================================
-            # TYPE/SIZE PRIORITIZATION (Not strict filter - just prioritize at top)
-            # Products matching type keywords (sectional, l-shaped, etc.) are scored
-            # higher and appear at the top, with non-matching products below
-            # =================================================================
-            if normalized_sizes:
-                # Count how many products match the type for logging
-                type_matched_count = 0
-                for product, score in scored_products:
-                    if score < 0:  # Negative scores = type match
-                        type_matched_count += 1
-
+            # Log top ranked products for debugging
+            if ranked_products:
                 logger.info(
-                    f"[CATEGORY RECS] {category_id}: Type prioritization - {type_matched_count} products match types {normalized_sizes} (shown first)"
+                    f"[RANKING] {category_id}: Top 3 products - "
+                    + ", ".join([f"{rp.product.id}:{rp.final_score:.3f}" for rp in ranked_products[:3]])
                 )
+                # Log breakdown for top product
+                if ranked_products[0].breakdown:
+                    logger.info(f"[RANKING] Top product breakdown: {ranked_products[0].breakdown}")
 
-            # =================================================================
-            # STRICT COLOR FILTER: If colors are specified, filter to only products
-            # that actually contain the color in their name, description, or attributes
-            # This ensures "red sofas" shows ONLY red sofas, not just red first
-            # =================================================================
-            if preferred_colors:
+            # Convert to scored_products format for compatibility with downstream code
+            # Note: Higher score is now better (inverted from old system)
+            scored_products = [(rp.product, rp.final_score, rp.breakdown) for rp in ranked_products]
 
-                def product_matches_color(product) -> bool:
-                    """Check if product matches any of the preferred colors"""
-                    name_lower = (product.name or "").lower()
-                    desc_lower = (product.description or "").lower()
-
-                    # Check product attributes for color
-                    attr_colors = ""
-                    if product.attributes:
-                        for attr in product.attributes:
-                            attr_name = (attr.attribute_name or "").lower()
-                            if attr_name in ["color_primary", "color_secondary", "color", "color_accent"]:
-                                attr_colors += f" {(attr.attribute_value or '').lower()}"
-
-                    for color in preferred_colors:
-                        color_lower = color.lower()
-                        if color_lower in name_lower or color_lower in desc_lower or color_lower in attr_colors:
-                            return True
-                    return False
-
-                color_matched = [(p, s) for p, s in scored_products if product_matches_color(p)]
-                if color_matched:
-                    logger.info(
-                        f"[CATEGORY RECS] {category_id}: Strict color filter - {len(color_matched)} products match colors {preferred_colors}"
-                    )
-                    scored_products = color_matched
-                else:
-                    logger.info(
-                        f"[CATEGORY RECS] {category_id}: No products match colors {preferred_colors}, showing all products"
-                    )
+            # Log style matching results
+            if user_primary_style or preferred_colors or preferred_materials:
+                high_score_count = sum(1 for _, score, _ in scored_products if score > 0.5)
+                logger.info(f"[RANKING] {category_id}: {high_score_count}/{len(scored_products)} products scored > 0.5")
 
             # Take only the limit we need
             top_products = scored_products[:limit_per_category]
 
-            # Log style matching results
-            if style_keywords or preferred_colors or preferred_materials:
-                matched_count = sum(1 for _, score in top_products if score < 50)
-                logger.info(
-                    f"[CATEGORY RECS] {category_id}: {matched_count}/{len(top_products)} products matched style criteria"
-                )
-
-            # Convert to product dicts
+            # Convert to product dicts with explainable ranking breakdown
             product_list = []
-            for product, style_score in top_products:
+            for product, final_score, breakdown in top_products:
                 primary_image = None
                 if product.images:
                     primary_image = next(
@@ -5431,7 +5442,8 @@ async def _get_category_based_recommendations(
                     "source_website": product.source_website,
                     "source_url": product.source_url,
                     "is_on_sale": product.is_on_sale,
-                    "style_score": style_score,  # Include score for debugging
+                    "ranking_score": final_score,  # New deterministic score (higher = better)
+                    "ranking_breakdown": breakdown,  # Explainable score components
                     "description": product.description,  # Include for AI visualization context
                     "primary_image": {
                         "url": primary_image.original_url if primary_image else None,

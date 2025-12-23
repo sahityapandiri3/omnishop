@@ -96,12 +96,13 @@ function CuratedPageContent() {
   }, [router, isAuthenticated]);
 
   const handleStyleFromScratch = useCallback(() => {
-    // Clear any preselected products and curated images, go to design studio
+    // Clear any preselected products and curated images, go to onboarding wizard
     sessionStorage.removeItem('preselectedProducts');
     sessionStorage.removeItem('preselectedLookTheme');
     sessionStorage.removeItem('curatedRoomImage');
     sessionStorage.removeItem('curatedVisualizationImage');
-    router.push('/design');
+    sessionStorage.removeItem('onboardingPreferences');
+    router.push('/onboarding');
   }, [router]);
 
   const roomTypes: { value: RoomType; label: string }[] = [

@@ -35,7 +35,19 @@ import_error_message = None
 import_error_traceback = None
 
 try:
-    from routers import admin_curated, admin_migrations, auth, categories, chat, curated, furniture, products, projects, stores, visualization
+    from routers import (
+        admin_curated,
+        admin_migrations,
+        auth,
+        categories,
+        chat,
+        curated,
+        furniture,
+        products,
+        projects,
+        stores,
+        visualization,
+    )
     from routers.curated import warm_curated_looks_cache
     from services.furniture_removal_service import furniture_removal_service
 
@@ -200,6 +212,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Request logging middleware with correlation IDs
 try:
     from middleware.logging_middleware import RequestLoggingMiddleware
+
     app.add_middleware(RequestLoggingMiddleware)
     logger.info("✅ Request logging middleware enabled with correlation IDs")
 except ImportError as e:
@@ -343,6 +356,16 @@ if "admin_migrations" in dir():
 # Mount static files for serving images
 if os.path.exists("../data/images"):
     app.mount("/static/images", StaticFiles(directory="../data/images"), name="images")
+
+# Mount static files for style thumbnails (used by onboarding wizard)
+styles_dir = os.path.join(os.path.dirname(__file__), "static/styles")
+if os.path.exists(styles_dir):
+    app.mount("/api/styles", StaticFiles(directory=styles_dir), name="styles")
+
+# Mount static files for room type thumbnails (used by onboarding wizard)
+rooms_dir = os.path.join(os.path.dirname(__file__), "static/rooms")
+if os.path.exists(rooms_dir):
+    app.mount("/api/rooms", StaticFiles(directory=rooms_dir), name="rooms")
 
 if __name__ == "__main__":
     import uvicorn

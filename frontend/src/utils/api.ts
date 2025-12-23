@@ -317,7 +317,16 @@ export const startChatSession = async (data?: { user_id?: string }) => {
   }
 };
 
-export const sendChatMessage = async (sessionId: string, data: { message: string; image?: string; selected_product_id?: string; selected_stores?: string[] }) => {
+export interface OnboardingPreferences {
+  roomType: string | null;
+  primaryStyle: string | null;
+  secondaryStyle: string | null;
+  budget: number | null;
+  budgetFlexible: boolean;
+  roomImage: string | null;
+}
+
+export const sendChatMessage = async (sessionId: string, data: { message: string; image?: string; selected_product_id?: string; selected_stores?: string[]; onboarding_preferences?: OnboardingPreferences }) => {
   try {
     const response = await api.post(`/api/chat/sessions/${sessionId}/messages`, data);
     return response.data;
