@@ -28,6 +28,8 @@ class BaseProductSpider(scrapy.Spider):
             # Images will be saved as direct URLs instead
             # 'scrapers.pipelines.CustomImagesPipeline': 300,
             'scrapers.pipelines.CategoryPipeline': 350,
+            # Generate embeddings and classify styles before saving
+            'scrapers.pipelines.EmbeddingAndStylePipeline': 380,
             'scrapers.pipelines.DatabasePipeline': 400,
             'scrapers.pipelines.StatsPipeline': 500,
         }

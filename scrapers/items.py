@@ -118,6 +118,26 @@ class ProductItem(scrapy.Item):
     # Additional attributes (dimensions, materials, etc.)
     attributes = Field()
 
+    # Embedding for semantic search
+    embedding = Field()  # List of floats (768 dimensions)
+    embedding_text = Field(
+        output_processor=TakeFirst()
+    )
+
+    # Style classification
+    primary_style = Field(
+        output_processor=TakeFirst()
+    )
+    secondary_style = Field(
+        output_processor=TakeFirst()
+    )
+    style_confidence = Field(
+        output_processor=TakeFirst()
+    )
+    style_extraction_method = Field(
+        output_processor=TakeFirst()
+    )
+
     # Metadata
     scraped_at = Field(
         output_processor=TakeFirst()

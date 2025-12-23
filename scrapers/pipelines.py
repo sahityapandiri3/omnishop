@@ -290,6 +290,319 @@ class AttributeExtractionPipeline:
                    f"Success rate: {(self.extractions_succeeded/max(self.items_processed,1))*100:.1f}%")
 
 
+class EmbeddingAndStylePipeline:
+    """Generate embeddings and classify styles for products during scraping"""
+
+    def __init__(self):
+        self.embedding_service = None
+        self.google_ai_service = None
+        self.items_processed = 0
+        self.embeddings_generated = 0
+        self.styles_classified = 0
+        self.errors = 0
+
+    def open_spider(self, spider):
+        """Initialize services"""
+        try:
+            # Import services
+            import sys
+            from pathlib import Path
+            sys.path.insert(0, str(Path(__file__).parent.parent / "api"))
+
+            from api.services.embedding_service import EmbeddingService
+            from api.services.google_ai_service import GoogleAIStudioService
+
+            self.embedding_service = EmbeddingService()
+            self.google_ai_service = GoogleAIStudioService()
+            logger.info("EmbeddingAndStylePipeline initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize EmbeddingAndStylePipeline: {e}")
+
+    def process_item(self, item, spider):
+        """Generate embedding and classify style for product"""
+        if not isinstance(item, ProductItem):
+            return item
+
+        adapter = ItemAdapter(item)
+        self.items_processed += 1
+
+        # Generate embedding
+        try:
+            embedding = self._generate_embedding(adapter)
+            if embedding:
+                adapter['embedding'] = embedding
+                adapter['embedding_text'] = self._build_embedding_text(adapter)
+                self.embeddings_generated += 1
+        except Exception as e:
+            logger.error(f"Error generating embedding: {e}")
+            self.errors += 1
+
+        # Classify style
+        try:
+            primary_style, secondary_style, confidence = self._classify_style(adapter)
+            if primary_style:
+                adapter['primary_style'] = primary_style
+                adapter['secondary_style'] = secondary_style
+                adapter['style_confidence'] = confidence
+                adapter['style_extraction_method'] = 'scraping_pipeline'
+                self.styles_classified += 1
+        except Exception as e:
+            logger.error(f"Error classifying style: {e}")
+            self.errors += 1
+
+        return item
+
+    def _build_embedding_text(self, adapter) -> str:
+        """Build text for embedding generation"""
+        parts = []
+
+        # Product name (most important)
+        name = adapter.get('name', '')
+        if name:
+            parts.append(f"Product: {name}")
+
+        # Category
+        category = adapter.get('category', '')
+        if category:
+            parts.append(f"Category: {category}")
+
+        # Brand
+        brand = adapter.get('brand', '')
+        if brand:
+            parts.append(f"Brand: {brand}")
+
+        # Description (truncated)
+        description = adapter.get('description', '')
+        if description:
+            # Truncate long descriptions
+            desc_text = description[:500] if len(description) > 500 else description
+            parts.append(f"Description: {desc_text}")
+
+        # Extracted attributes (if available)
+        attributes = adapter.get('attributes', {})
+        if attributes:
+            attr_parts = []
+            if attributes.get('color_primary'):
+                attr_parts.append(f"Color: {attributes['color_primary']}")
+            if attributes.get('material_primary'):
+                attr_parts.append(f"Material: {attributes['material_primary']}")
+            if attributes.get('style'):
+                attr_parts.append(f"Style: {attributes['style']}")
+            if attr_parts:
+                parts.append("Attributes: " + ", ".join(attr_parts))
+
+        return " | ".join(parts)
+
+    def _generate_embedding(self, adapter) -> Optional[list]:
+        """Generate embedding vector for product"""
+        if not self.embedding_service or not self.embedding_service.client:
+            return None
+
+        embedding_text = self._build_embedding_text(adapter)
+        if not embedding_text:
+            return None
+
+        try:
+            # Run async embedding generation in sync context
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                embedding = loop.run_until_complete(
+                    self.embedding_service.generate_embedding(
+                        text=embedding_text,
+                        task_type="RETRIEVAL_DOCUMENT"
+                    )
+                )
+                return embedding
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.error(f"Embedding generation failed: {e}")
+            return None
+
+    def _classify_style(self, adapter) -> tuple:
+        """Classify product style using Gemini Vision or text"""
+        if not self.google_ai_service:
+            return None, None, None
+
+        product_name = adapter.get('name', '')
+        description = adapter.get('description', '')
+        image_urls = adapter.get('image_urls', [])
+        first_image = image_urls[0] if image_urls else None
+
+        try:
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                # Try vision-based classification first if image available
+                if first_image:
+                    result = loop.run_until_complete(
+                        self._classify_with_vision(first_image, product_name, description)
+                    )
+                    if result[0]:
+                        return result
+
+                # Fallback to text-based classification
+                result = loop.run_until_complete(
+                    self._classify_with_text(product_name, description)
+                )
+                return result
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.error(f"Style classification failed: {e}")
+            return None, None, None
+
+    async def _fetch_image_as_base64(self, image_url: str) -> Optional[str]:
+        """Fetch image from URL and convert to base64"""
+        import aiohttp
+        import base64
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+                async with session.get(image_url, headers=headers) as response:
+                    if response.status == 200:
+                        image_data = await response.read()
+                        return base64.b64encode(image_data).decode('utf-8')
+                    else:
+                        logger.debug(f"Failed to fetch image: {response.status}")
+        except Exception as e:
+            logger.debug(f"Error fetching image: {e}")
+
+        return None
+
+    async def _classify_with_vision(self, image_url: str, name: str, description: str) -> tuple:
+        """Classify style using Gemini Vision API"""
+        from api.config.style_definitions import PREDEFINED_STYLES, STYLE_DESCRIPTIONS
+
+        # Fetch and convert image to base64
+        image_base64 = await self._fetch_image_as_base64(image_url)
+        if not image_base64:
+            logger.debug(f"Could not fetch image from {image_url[:50]}...")
+            return None, None, None
+
+        style_list = "\n".join([f"- {s}: {STYLE_DESCRIPTIONS.get(s, '')}" for s in PREDEFINED_STYLES])
+
+        prompt = f"""Analyze this furniture/home decor product image and classify its design style.
+
+Product: {name}
+Description: {description[:300] if description else 'N/A'}
+
+Available styles:
+{style_list}
+
+Respond ONLY with valid JSON (no markdown, no explanation):
+{{"primary_style": "style_name", "secondary_style": "style_name_or_null", "confidence": 0.8}}
+
+Rules:
+- Choose from ONLY the styles listed above
+- Pick the most dominant style as primary_style
+- If the product has elements of another style, include secondary_style, otherwise use null
+- confidence should be 0.0-1.0"""
+
+        try:
+            # Use Gemini Vision to analyze the image
+            response_text = await self.google_ai_service.analyze_image_with_prompt(
+                image=image_base64,
+                prompt=prompt
+            )
+
+            if response_text:
+                # Parse JSON response
+                import json
+                import re
+                # Extract JSON from response (handle potential markdown wrapping)
+                response_text = response_text.strip()
+                if response_text.startswith('```'):
+                    # Remove markdown code block
+                    response_text = re.sub(r'^```(?:json)?\s*', '', response_text)
+                    response_text = re.sub(r'\s*```$', '', response_text)
+
+                json_match = re.search(r'\{[^}]+\}', response_text)
+                if json_match:
+                    data = json.loads(json_match.group())
+                    primary = data.get('primary_style')
+                    secondary = data.get('secondary_style')
+                    confidence = data.get('confidence', 0.7)
+
+                    # Validate styles
+                    if primary and primary in PREDEFINED_STYLES:
+                        if secondary and secondary not in PREDEFINED_STYLES:
+                            secondary = None
+                        logger.info(f"✓ Gemini Vision classified: {primary} (confidence: {confidence:.2f})")
+                        return primary, secondary, confidence
+
+        except Exception as e:
+            logger.debug(f"Vision classification failed: {e}")
+
+        return None, None, None
+
+    async def _classify_with_text(self, name: str, description: str) -> tuple:
+        """Classify style using text-based analysis"""
+        from api.config.style_definitions import PREDEFINED_STYLES, STYLE_DESCRIPTIONS
+
+        if not name:
+            return None, None, None
+
+        style_list = "\n".join([f"- {s}: {STYLE_DESCRIPTIONS.get(s, '')}" for s in PREDEFINED_STYLES])
+
+        prompt = f"""Based on this product information, classify its design style.
+
+Product Name: {name}
+Description: {description[:500] if description else 'N/A'}
+
+Available styles:
+{style_list}
+
+Respond in JSON format:
+{{
+    "primary_style": "style_name",
+    "secondary_style": "style_name or null",
+    "confidence": 0.0-1.0
+}}
+
+Choose from ONLY the styles listed above."""
+
+        try:
+            result = await self.google_ai_service.generate_content(prompt, max_tokens=200)
+
+            if result:
+                import json
+                import re
+                json_match = re.search(r'\{[^}]+\}', result)
+                if json_match:
+                    data = json.loads(json_match.group())
+                    primary = data.get('primary_style')
+                    secondary = data.get('secondary_style')
+                    confidence = data.get('confidence', 0.5)
+
+                    if primary and primary in PREDEFINED_STYLES:
+                        if secondary and secondary not in PREDEFINED_STYLES:
+                            secondary = None
+                        return primary, secondary, confidence
+
+        except Exception as e:
+            logger.debug(f"Text classification failed: {e}")
+
+        return None, None, None
+
+    def close_spider(self, spider):
+        """Log final statistics"""
+        logger.info(
+            f"EmbeddingAndStylePipeline finished. "
+            f"Items: {self.items_processed}, "
+            f"Embeddings: {self.embeddings_generated}, "
+            f"Styles: {self.styles_classified}, "
+            f"Errors: {self.errors}"
+        )
+
+
 class DatabasePipeline:
     """Save items to database"""
 
@@ -345,6 +658,21 @@ class DatabasePipeline:
             product.is_available = adapter.get('is_available', True)
             product.is_on_sale = adapter.get('is_on_sale', False)
             product.stock_status = adapter.get('stock_status', 'in_stock')
+
+            # Save embedding if generated
+            embedding = adapter.get('embedding')
+            if embedding:
+                product.embedding = embedding
+                product.embedding_text = adapter.get('embedding_text')
+                product.embedding_updated_at = datetime.utcnow()
+
+            # Save style classification if available
+            primary_style = adapter.get('primary_style')
+            if primary_style:
+                product.primary_style = primary_style
+                product.secondary_style = adapter.get('secondary_style')
+                product.style_confidence = adapter.get('style_confidence')
+                product.style_extraction_method = adapter.get('style_extraction_method', 'scraping_pipeline')
 
             # Handle category
             category_name = adapter.get('category')
