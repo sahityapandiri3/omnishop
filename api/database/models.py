@@ -67,6 +67,18 @@ class Product(Base):
     is_on_sale = Column(Boolean, default=False, index=True)
     stock_status = Column(String(20), default="in_stock")
 
+    # Vector embedding for semantic search (768 dimensions for Google text-embedding-004)
+    # Stored as JSON array of floats, converted to pgvector for similarity search
+    embedding = Column(Text, nullable=True)  # JSON array of 768 floats
+    embedding_text = Column(Text, nullable=True)  # Text that was embedded
+    embedding_updated_at = Column(DateTime, nullable=True)
+
+    # Style classification (from Gemini Vision or NLP)
+    primary_style = Column(String(50), nullable=True, index=True)  # e.g., "modern", "minimalist"
+    secondary_style = Column(String(50), nullable=True)  # Optional secondary style
+    style_confidence = Column(Float, nullable=True)  # 0.0 to 1.0
+    style_extraction_method = Column(String(50), nullable=True)  # "gemini_vision", "text_nlp", "manual"
+
     # Category relationship
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True, index=True)
     category = relationship("Category", back_populates="products")
@@ -80,6 +92,7 @@ class Product(Base):
         Index("idx_product_source_external", "source_website", "external_id"),
         Index("idx_product_price_category", "price", "category_id"),
         Index("idx_product_brand_category", "brand", "category_id"),
+        Index("idx_product_styles", "primary_style", "secondary_style"),
     )
 
     def __repr__(self):
