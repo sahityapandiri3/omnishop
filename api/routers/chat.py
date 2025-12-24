@@ -237,27 +237,37 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
 
             # Set style preferences
             if prefs.primaryStyle:
+                # Set BOTH overall_style (for essentials check) AND styles array (for search)
+                overall_style = prefs.primaryStyle
+                if prefs.secondaryStyle:
+                    overall_style = f"{prefs.primaryStyle} with {prefs.secondaryStyle} touches"
+                omni_prefs.overall_style = overall_style
+                # Also set styles array for search filtering
                 styles = [prefs.primaryStyle]
                 if prefs.secondaryStyle:
                     styles.append(prefs.secondaryStyle)
                 omni_prefs.styles = styles
 
-            # Set budget
+            # Set budget - MUST set budget_total (for essentials check) AND budget (for filters)
             if prefs.budget and not prefs.budgetFlexible:
-                omni_prefs.budget = prefs.budget
+                omni_prefs.budget_total = prefs.budget  # Used by essentials check
+                omni_prefs.budget = prefs.budget  # Used by search filters
             elif prefs.budgetFlexible:
                 omni_prefs.budget = None  # Flexible = no budget filter
+                omni_prefs.budget_total = None
 
             # Store room image from onboarding if provided
             if prefs.roomImage:
                 conversation_context_manager.store_image(session_id, prefs.roomImage)
 
-            # Set scope to full room since they went through onboarding
-            omni_prefs.scope = "full_room"
+            # DO NOT set scope - let the AI ask about it
+            # The user requirement: stylist must ask "entire room or specific category?"
+            # even when style and budget are provided from onboarding
+            # omni_prefs.scope = "full_room"  # Commented out - scope should be asked
 
             conversation_context_manager.store_omni_preferences(session_id, omni_prefs)
             logger.info(
-                f"[Onboarding] Stored preferences: room={omni_prefs.room_type}, styles={omni_prefs.styles}, budget={omni_prefs.budget}"
+                f"[Onboarding] Stored preferences: room={omni_prefs.room_type}, overall_style={omni_prefs.overall_style}, budget_total={omni_prefs.budget_total}, scope={omni_prefs.scope}"
             )
 
         # Save user message
@@ -277,79 +287,19 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
         # Use active image (latest visualization OR original upload) for analysis
         active_image = conversation_context_manager.get_last_image(session_id) if session_id else None
 
-        # Pre-extract scope from user message BEFORE calling GPT
-        # This ensures GPT knows the scope when generating its response
+        # DISABLED: Pre-extract scope from user message
+        # Per user requirement: The AI stylist MUST ask about scope (entire room vs specific category)
+        # even when style and budget are provided from onboarding. Let GPT ask the question.
+        # The scope should only be set when the user explicitly answers the scope question.
         message_lower = request.message.lower()
         current_prefs = conversation_context_manager.get_omni_preferences(session_id)
-        if not current_prefs.scope:  # Only extract if scope not already set
-            if any(
-                phrase in message_lower
-                for phrase in [
-                    "entire room",
-                    "full room",
-                    "whole room",
-                    "complete room",
-                    "the room",
-                    "my room",
-                    "entire area",
-                    "full area",
-                    "whole area",
-                    "the area",
-                    "entire space",
-                    "full space",
-                    "whole space",
-                    "the space",
-                    "everything",
-                    "all of it",
-                    "the whole thing",
-                    "give me recommendations",
-                    "show me recommendations",
-                    "show recommendations",
-                    "give me options",
-                    "show me options",
-                    "show options",
-                    "give me products",
-                    "show me products",
-                    "show products",
-                    "recommend",
-                    "suggestions",
-                    "what do you suggest",
-                    "what do you recommend",
-                    # Full room styling phrases
-                    "general styling",
-                    "general style",
-                    "styling plan",
-                    "style the room",
-                    "style my room",
-                    "style this room",
-                    "style the space",
-                    "style my space",
-                    "style this space",
-                    "styling the room",
-                    "styling my room",
-                    "styling this room",
-                    "styling the space",
-                    "styling my space",
-                    "styling this space",
-                    "looking for styling",
-                    "furniture and decor",
-                    "furniture or decor",
-                    "broader selection",
-                    "full styling",
-                    "complete styling",
-                    "overall styling",
-                    "both",  # When asked "furniture or decor", "both" means full room
-                ]
-            ):
-                conversation_context_manager.update_omni_preferences(session_id, scope="full_room")
-                logger.info(f"[Session {session_id}] Pre-extracted scope: full_room from user message")
-            elif any(
-                phrase in message_lower for phrase in ["specific", "just a", "only a", "just the", "only the", "looking for a"]
-            ):
-                conversation_context_manager.update_omni_preferences(session_id, scope="specific_category")
-                logger.info(f"[Session {session_id}] Pre-extracted scope: specific_category from user message")
 
-            # Pre-extract room type from user message
+        # NOTE: Scope pre-extraction is DISABLED - AI must ask the user about scope
+        # Per user requirement: The stylist must ask "entire room or specific category?"
+        # The scope should only be set when the user explicitly answers the scope question.
+
+        # Pre-extract room type from user message (this is still useful)
+        if not current_prefs.room_type:
             room_type_keywords = {
                 "living room": ["living room", "living space", "living area", "lounge"],
                 "bedroom": ["bedroom", "master bedroom", "guest bedroom", "sleep room"],
@@ -557,6 +507,12 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
             direct_search_result["extracted_materials"] = keyword_search_result.get("extracted_materials", [])
             direct_search_result["extracted_sizes"] = keyword_search_result.get("extracted_sizes", [])
             direct_search_result["extracted_budget_max"] = keyword_search_result.get("extracted_budget_max")
+
+            # CRITICAL: If keyword detection found qualifiers (color, style, material, etc.),
+            # update has_sufficient_info so we show products instead of asking follow-up questions
+            if keyword_search_result.get("has_sufficient_info"):
+                direct_search_result["has_sufficient_info"] = True
+                logger.info(f"[DIRECT SEARCH] Keyword detection found qualifiers - marking has_sufficient_info=True")
 
             # =================================================================
             # PERSIST EXTRACTED ATTRIBUTES: Store sizes/types in category_attributes
@@ -1495,42 +1451,60 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
 
             if user_declines_preferences:
                 logger.info(
-                    f"[USER DECLINES] User declined to provide preferences: '{request.message[:50]}' - skipping gathering"
+                    f"[USER DECLINES] User declined to provide preferences: '{request.message[:50]}' - setting omni_decides mode"
                 )
                 # Set preference_mode to "omni_decides" so Omni picks based on room analysis
-                conversation_context_manager.update_omni_preferences(
-                    session_id, preference_mode="omni_decides", scope="full_room"
-                )
-                conversation_state = "READY_TO_RECOMMEND"
-                follow_up_question = None
+                # NOTE: DO NOT set scope here - let the AI ask "entire room or specific category?"
+                conversation_context_manager.update_omni_preferences(session_id, preference_mode="omni_decides")
+                # IMPORTANT: Set to GATHERING_SCOPE so AI asks about scope before showing products
+                # User requirement: AI must ask "Would you like me to help with the entire room or something specific?"
+                conversation_state = "GATHERING_SCOPE"
+                # Let GPT generate the scope question - don't override it
+                logger.info(f"[USER DECLINES] Set state to GATHERING_SCOPE - AI will ask about scope")
 
-                # Override GPT's response if it's asking a redundant question
-                # (products are being shown, so don't ask "would you like me to suggest...")
-                response_lower = conversational_response.lower() if conversational_response else ""
-                is_asking_redundant_question = conversational_response and (
-                    conversational_response.strip().endswith("?")
-                    or "would you like" in response_lower
-                    or "what type of room" in response_lower
-                    or "what room" in response_lower
-                    or "which room" in response_lower
-                    or "let me know if you" in response_lower
-                )
-                if is_asking_redundant_question:
-                    # Get room context for personalized response
-                    room_type = omni_prefs.room_type or "your space"
-                    conversational_response = f"No problem at all! Here are some versatile options that can work beautifully in {room_type}. Feel free to browse and let me know if you'd like me to narrow things down!"
-                    logger.info(f"[USER DECLINES] Overrode GPT question response with statement")
-                    # CRITICAL: Rebuild message_schema with the updated response
-                    # The original message_schema was created earlier with GPT's question
-                    message_schema = ChatMessageSchema(
-                        id=message_schema.id,
-                        type=message_schema.type,
-                        content=conversational_response,
-                        timestamp=message_schema.timestamp,
-                        session_id=message_schema.session_id,
-                        products=message_schema.products,
-                        image_url=message_schema.image_url,
-                    )
+            # =================================================================
+            # SCOPE DETECTION: Detect when user specifies scope (entire room vs specific)
+            # This persists the scope so the system knows what user wants
+            # =================================================================
+            user_wants_full_room = any(
+                phrase in message_lower
+                for phrase in [
+                    "entire room",
+                    "full room",
+                    "whole room",
+                    "the room",
+                    "style the room",
+                    "style my room",
+                    "design my room",
+                    "designing my room",
+                    "everything",
+                    "all of it",
+                    "the whole",
+                    "complete room",
+                    "entire space",
+                    "full space",
+                    "whole space",
+                    # Phrases that imply full room styling
+                    "help me find furniture",
+                    "find furniture",
+                    "help me style",
+                    "help me design",
+                    "need furniture",
+                    "looking for furniture",
+                    "want furniture",
+                    "show me furniture",
+                    "furniture for my",
+                    "furnish my",
+                    "furnishing my",
+                ]
+            )
+
+            if user_wants_full_room and not omni_prefs.scope:
+                logger.info(f"[SCOPE DETECTION] User wants full room: '{request.message[:50]}' - setting scope=full_room")
+                conversation_context_manager.update_omni_preferences(session_id, scope="full_room")
+                omni_prefs.scope = "full_room"  # Update local reference
+                # Recalculate essentials with new scope
+                omni_has_essentials = bool(omni_prefs.overall_style and omni_prefs.budget_total and omni_prefs.scope)
 
             # Only respect gathering states if we DON'T have style/budget context
             # If user already told us their style/budget, show products instead of asking more questions
@@ -1575,8 +1549,10 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 has_scope = bool(omni_prefs.scope)
                 user_declined = omni_prefs.preference_mode == "omni_decides"
 
-                if (has_style and has_budget and has_scope) or user_declined:
-                    # We have ALL essentials OR user declined to provide - trust GPT
+                # IMPORTANT: Scope is ALWAYS required, even when user declined preferences
+                # User requirement: AI must ask "entire room or specific category?" before showing products
+                if has_scope and ((has_style and has_budget) or user_declined):
+                    # We have scope AND (all essentials OR user declined for style/budget) - trust GPT
                     conversation_state = "READY_TO_RECOMMEND"
                     follow_up_question = None
                     logger.info(
@@ -1603,6 +1579,18 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 # State was already set to READY_TO_RECOMMEND (e.g., user declined preferences) - preserve it
                 logger.info(
                     f"[READY_TO_RECOMMEND PRESERVED] Keeping conversation_state=READY_TO_RECOMMEND (not overriding with message-count logic)"
+                )
+            # =================================================================
+            # CRITICAL FIX: Check for onboarding preferences BEFORE message-count logic
+            # If user provided style+budget in onboarding but NOT scope, ask for scope
+            # regardless of message count. This prevents re-asking style/budget.
+            # =================================================================
+            elif omni_prefs.overall_style and omni_prefs.budget_total and not omni_prefs.scope:
+                # User completed onboarding with style+budget, but scope is unknown
+                # Force GATHERING_SCOPE to ask "entire room or specific item?"
+                conversation_state = "GATHERING_SCOPE"
+                logger.info(
+                    f"[ONBOARDING SCOPE] Style='{omni_prefs.overall_style}', Budget='{omni_prefs.budget_total}' from onboarding, but scope is UNKNOWN - forcing GATHERING_SCOPE"
                 )
             elif user_message_count == 1:
                 conversation_state = "GATHERING_USAGE"
@@ -2050,13 +2038,17 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
 
                     # =================================================================
                     # BUDGET VALIDATION: Ensure budget allocations sum to total budget
-                    # Get budget from: AI analysis, direct search extraction, or accumulated filters
+                    # Get budget from: AI analysis, direct search extraction, accumulated filters, or onboarding
                     # =================================================================
                     user_total_budget = None
                     if total_budget:
                         user_total_budget = total_budget
                     elif direct_search_result.get("extracted_budget_max"):
                         user_total_budget = direct_search_result["extracted_budget_max"]
+                    elif omni_prefs.budget_total:
+                        # Use budget from onboarding preferences
+                        user_total_budget = omni_prefs.budget_total
+                        logger.info(f"[BUDGET] Using onboarding budget: ₹{user_total_budget:,}")
                     elif session_id:
                         # Try to get from accumulated filters
                         acc_filters = conversation_context_manager.get_accumulated_filters(session_id)
@@ -2114,6 +2106,38 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                             logger.info(f"[GUIDED FLOW] Extracted style attributes: {style_attributes}")
 
                         # =================================================================
+                        # MERGE PERSISTED STYLES: Add user's style preferences from context
+                        # Style should persist across category changes (modern sofas → modern floor lamps)
+                        # Sources: onboarding styles array AND overall_style from conversation
+                        # =================================================================
+                        existing_keywords = [s.lower() for s in style_attributes.get("style_keywords", [])]
+
+                        # First, add overall_style from conversation context (highest priority)
+                        if omni_prefs.overall_style:
+                            style_value = omni_prefs.overall_style.lower()
+                            # Handle compound styles like "modern with industrial touches"
+                            for word in style_value.replace(" with ", " ").replace(" touches", "").split():
+                                if word not in existing_keywords and len(word) > 2:
+                                    style_attributes.setdefault("style_keywords", []).insert(0, word)
+                                    existing_keywords.append(word)
+                            logger.info(
+                                f"[PERSISTED STYLE] Added overall_style '{omni_prefs.overall_style}' to style_keywords"
+                            )
+
+                        # Then add onboarding styles array if available
+                        if hasattr(omni_prefs, "styles") and omni_prefs.styles:
+                            for style in omni_prefs.styles:
+                                if style and style.lower() not in existing_keywords:
+                                    style_attributes.setdefault("style_keywords", []).insert(0, style.lower())
+                                    existing_keywords.append(style.lower())
+                            logger.info(
+                                f"[ONBOARDING STYLES] Merged onboarding styles {omni_prefs.styles} into style_attributes"
+                            )
+
+                        if style_attributes.get("style_keywords"):
+                            logger.info(f"[STYLE PERSISTENCE] Final style_keywords: {style_attributes['style_keywords']}")
+
+                        # =================================================================
                         # RETRIEVE PERSISTED ATTRIBUTES: Get size/type from category_attributes
                         # This ensures "sectional" persists from "find me sectional sofas"
                         # even after user says "no preference"
@@ -2153,10 +2177,11 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                             selected_categories_response,
                             db,
                             selected_stores=request.selected_stores,
-                            limit_per_category=100,  # Increased to provide more variety
+                            limit_per_category=0,  # 0 = no limit, return ALL scored products
                             style_attributes=style_attributes,
                             size_keywords=size_keywords_for_search,
                             semantic_query=request.message,  # Enable semantic search for hybrid scoring
+                            user_total_budget=user_total_budget,  # User's total budget for scoring
                         )
 
                         # Update product counts in category recommendations
@@ -2170,6 +2195,39 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                             else ("BROWSING" if conversation_state == "BROWSING" else "GUIDED FLOW")
                         )
                         logger.info(f"[{state_label}] Fetched products for {len(products_by_category)} categories")
+
+                        # =================================================================
+                        # RESPONSE ENHANCEMENT: Add "here are recommended products" when products shown
+                        # This ensures users know products are available in the panel
+                        # =================================================================
+                        if not is_direct_search and products_by_category:
+                            total_products = sum(len(prods) for prods in products_by_category.values())
+                            if total_products > 0:
+                                # Check if GPT's response already mentions products
+                                response_lower = (conversational_response or "").lower()
+                                already_mentions_products = any(
+                                    phrase in response_lower
+                                    for phrase in ["products", "recommendations", "options", "items", "check out", "panel"]
+                                )
+
+                                if not already_mentions_products:
+                                    # Append product notification to GPT's response
+                                    conversational_response = (
+                                        f"{conversational_response} "
+                                        f"I've found {total_products} products matching your preferences - check them out in the Products panel!"
+                                    )
+                                    logger.info(f"[RESPONSE ENHANCED] Added product notification ({total_products} products)")
+
+                                    # Rebuild message_schema with updated response
+                                    message_schema = ChatMessageSchema(
+                                        id=assistant_message_id,
+                                        type=MessageType.assistant,
+                                        content=conversational_response,
+                                        timestamp=assistant_message.timestamp,
+                                        session_id=session_id,
+                                        products=recommended_products,
+                                        image_url=visualization_image,
+                                    )
 
                         # For direct search, use GPT's warm response if available
                         # Only fall back to generic template if GPT didn't provide a good response
@@ -2291,9 +2349,18 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                         CategoryRecommendation(
                             category_id=cat_data["category_id"],
                             display_name=cat_data["display_name"],
-                            budget_allocation=None,  # No budget filter for fallback
+                            budget_allocation=None,  # Will be set by budget validator below
                             priority=cat_data["priority"],
                         )
+                    )
+
+                # Apply budget validation if user has a budget
+                if omni_prefs.budget_total and selected_categories_response:
+                    logger.info(f"[OMNI FALLBACK] Applying budget validation for ₹{omni_prefs.budget_total:,}")
+                    selected_categories_response = validate_and_adjust_budget_allocations(
+                        total_budget=float(omni_prefs.budget_total),
+                        categories=selected_categories_response,
+                        category_id_field="category_id",
                     )
 
                 # Fetch products for these categories
@@ -2307,10 +2374,11 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                     selected_categories_response,
                     db,
                     selected_stores=request.selected_stores,
-                    limit_per_category=100,
+                    limit_per_category=0,  # 0 = no limit, return ALL scored products
                     style_attributes=style_attributes,
                     size_keywords=[],
                     semantic_query=request.message,  # Enable semantic search for hybrid scoring
+                    user_total_budget=float(omni_prefs.budget_total) if omni_prefs.budget_total else None,
                 )
 
                 # Update product counts
@@ -2321,9 +2389,42 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 # Set conversation state to READY_TO_RECOMMEND
                 conversation_state = "READY_TO_RECOMMEND"
 
+                # Count total products
+                total_fallback_products = sum(len(p) for p in products_by_category.values())
+
                 logger.info(
-                    f"[OMNI FALLBACK] Generated {len(selected_categories_response)} categories with {sum(len(p) for p in products_by_category.values())} total products"
+                    f"[OMNI FALLBACK] Generated {len(selected_categories_response)} categories with {total_fallback_products} total products"
                 )
+
+                # =================================================================
+                # RESPONSE ENHANCEMENT: Add "here are recommended products" for fallback flow
+                # =================================================================
+                if total_fallback_products > 0:
+                    response_lower = (conversational_response or "").lower()
+                    already_mentions_products = any(
+                        phrase in response_lower
+                        for phrase in ["products", "recommendations", "options", "items", "check out", "panel"]
+                    )
+
+                    if not already_mentions_products:
+                        conversational_response = (
+                            f"{conversational_response} "
+                            f"I've found {total_fallback_products} products matching your preferences - check them out in the Products panel!"
+                        )
+                        logger.info(
+                            f"[OMNI FALLBACK RESPONSE] Added product notification ({total_fallback_products} products)"
+                        )
+
+                        # Rebuild message_schema with updated response
+                        message_schema = ChatMessageSchema(
+                            id=assistant_message_id,
+                            type=MessageType.assistant,
+                            content=conversational_response,
+                            timestamp=assistant_message.timestamp,
+                            session_id=session_id,
+                            products=recommended_products,
+                            image_url=visualization_image,
+                        )
 
             # Omni has the essentials, don't force gathering flow
             # Let GPT's dynamic response through unchanged
@@ -2347,6 +2448,43 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 logger.info(
                     f"[DIRECT SEARCH GATHERING] Keeping selected_categories ({len(selected_categories_response) if selected_categories_response else 0} categories)"
                 )
+
+            # =================================================================
+            # SCOPE QUESTION INJECTION: If in GATHERING_SCOPE but no proper scope question,
+            # inject one that acknowledges their style/budget preferences
+            # =================================================================
+            if conversation_state == "GATHERING_SCOPE" and omni_prefs.overall_style and omni_prefs.budget_total:
+                # Build a personalized scope question referencing their known preferences
+                style_text = omni_prefs.overall_style
+                budget_text = (
+                    f"₹{omni_prefs.budget_total:,}"
+                    if isinstance(omni_prefs.budget_total, (int, float))
+                    else f"₹{omni_prefs.budget_total}"
+                )
+                scope_question = f"With your {style_text} style and {budget_text} budget, would you like me to help style the entire room, or are you looking for something specific like a sofa or coffee table?"
+
+                # Check if GPT already asked a scope-like question
+                gpt_response_lower = (conversational_response or "").lower()
+                is_asking_scope = any(
+                    phrase in gpt_response_lower
+                    for phrase in [
+                        "entire room",
+                        "whole room",
+                        "full room",
+                        "specific",
+                        "something specific",
+                        "particular piece",
+                        "specific item",
+                    ]
+                )
+
+                if not is_asking_scope:
+                    # GPT didn't ask scope - inject our scope question
+                    conversational_response = scope_question
+                    follow_up_question = scope_question
+                    logger.info(f"[SCOPE INJECTION] GPT didn't ask scope, injecting: {scope_question}")
+                else:
+                    logger.info(f"[SCOPE CHECK] GPT already asking about scope: {gpt_response_lower[:80]}...")
 
             # CRITICAL FIX: For DIRECT_SEARCH_GATHERING, ALWAYS use the follow-up question
             # This ensures consistency: if we're clearing products, we ask for preferences
@@ -2868,11 +3006,13 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
 
                     product["source"] = db_product.source_website
 
-                    # Add image URLs
+                    # Add image URLs - include ALL images for better visualization accuracy
                     if db_product.images:
                         primary_image = next((img for img in db_product.images if img.is_primary), db_product.images[0])
                         if primary_image:
                             product["image_url"] = primary_image.original_url
+                        # Add all image URLs for multi-reference visualization
+                        product["image_urls"] = [img.original_url for img in db_product.images if img.original_url]
 
                     # Add productType for frontend replacement logic
                     # Extract from product name if not already present
@@ -5087,10 +5227,11 @@ async def _get_category_based_recommendations(
     selected_categories: List[CategoryRecommendation],
     db: AsyncSession,
     selected_stores: Optional[List[str]] = None,
-    limit_per_category: int = 100,
+    limit_per_category: int = 0,
     style_attributes: Optional[Dict[str, Any]] = None,
     size_keywords: Optional[List[str]] = None,
     semantic_query: Optional[str] = None,
+    user_total_budget: Optional[float] = None,
 ) -> Dict[str, List[dict]]:
     """
     Get product recommendations grouped by AI-selected categories.
@@ -5107,7 +5248,7 @@ async def _get_category_based_recommendations(
         selected_categories: List of CategoryRecommendation from ChatGPT analysis
         db: Database session
         selected_stores: Optional list of store names to filter by
-        limit_per_category: Max products per category (default 100)
+        limit_per_category: Max products per category (0 = no limit, return ALL scored products)
         style_attributes: Optional dict with style preferences from ChatGPT analysis
             - style_keywords: List of style terms (e.g., ["modern", "minimalist"])
             - colors: List of color preferences (e.g., ["beige", "gray", "neutral"])
@@ -5116,7 +5257,7 @@ async def _get_category_based_recommendations(
         semantic_query: Optional search query for semantic similarity matching
 
     Returns:
-        Dict mapping category_id to list of product dicts
+        Dict mapping category_id to list of product dicts (sorted by score descending)
     """
     import asyncio
     from typing import Dict
@@ -5224,15 +5365,11 @@ async def _get_category_based_recommendations(
                     if selected_stores:
                         query = query.where(Product.source_website.in_(selected_stores))
 
-                    # Apply budget filter if provided
-                    if category.budget_allocation:
-                        if category.budget_allocation.min > 0:
-                            query = query.where(Product.price >= category.budget_allocation.min)
-                        if category.budget_allocation.max < 999999:
-                            query = query.where(Product.price <= category.budget_allocation.max)
+                    # NOTE: Budget is NOT filtered here at SQL level
+                    # Instead, budget is used as a scoring factor in RankingService
+                    # Products over budget get lower scores but are still shown
 
-                    # Execute query
-                    query = query.limit(100)
+                    # Execute query - no limit, get ALL products for scoring
                     result = await db.execute(query)
                     products = result.scalars().all()
 
@@ -5350,16 +5487,12 @@ async def _get_category_based_recommendations(
             if selected_stores:
                 query = query.where(Product.source_website.in_(selected_stores))
 
-            # Apply budget filter if provided
-            if category.budget_allocation:
-                if category.budget_allocation.min > 0:
-                    query = query.where(Product.price >= category.budget_allocation.min)
-                if category.budget_allocation.max < 999999:
-                    query = query.where(Product.price <= category.budget_allocation.max)
+            # NOTE: Budget is NOT filtered here at SQL level
+            # Instead, budget is used as a scoring factor in RankingService
+            # Products over budget get lower scores but are still shown
+            # This ensures ALL products are displayed, ranked by relevance
 
-            # Don't limit in SQL - fetch ALL products in this category so we can score them all
-            # This ensures we don't miss products with great style matches that happen to be pricier
-            # The limit is applied AFTER scoring to get the best style-matched products
+            # Fetch ALL products in this category for scoring
             result = await db.execute(query)
             products = result.scalars().all()
 
@@ -5367,8 +5500,9 @@ async def _get_category_based_recommendations(
 
             # =================================================================
             # RANKING: Use deterministic weighted scoring via RankingService
-            # Formula: 0.50*vector + 0.20*attribute + 0.15*style + 0.10*material_color + 0.05*text_intent
+            # Formula: 0.45*vector + 0.15*attribute + 0.15*style + 0.10*material_color + 0.10*budget + 0.05*text_intent
             # Higher score = better match (inverse of old scoring)
+            # Budget scoring: within budget=1.0, 20% over=0.7, 50% over=0.4, >50% over=0.2
             # =================================================================
             ranking_service = get_ranking_service()
 
@@ -5388,6 +5522,11 @@ async def _get_category_based_recommendations(
             # Get category ID for attribute matching
             user_category_id = matching_category_ids[0] if matching_category_ids else None
 
+            # Use user's total budget for scoring (not category allocation)
+            # Any product under the user's total budget scores 1.0
+            if user_total_budget:
+                logger.info(f"[RANKING] {category_id}: Using user's total budget ₹{user_total_budget:,.0f} for scoring")
+
             # Rank products using the new weighted scoring system
             ranked_products = ranking_service.rank_products(
                 products=products,
@@ -5400,6 +5539,7 @@ async def _get_category_based_recommendations(
                 user_secondary_style=user_secondary_style,
                 user_materials=preferred_materials if preferred_materials else None,
                 user_color=user_color,
+                user_budget_max=user_total_budget,  # Use user's total budget, not category allocation
             )
 
             # Log top ranked products for debugging
@@ -5421,8 +5561,11 @@ async def _get_category_based_recommendations(
                 high_score_count = sum(1 for _, score, _ in scored_products if score > 0.5)
                 logger.info(f"[RANKING] {category_id}: {high_score_count}/{len(scored_products)} products scored > 0.5")
 
-            # Take only the limit we need
-            top_products = scored_products[:limit_per_category]
+            # Take only the limit we need (0 = no limit, return all scored products)
+            if limit_per_category > 0:
+                top_products = scored_products[:limit_per_category]
+            else:
+                top_products = scored_products  # Return all products, sorted by score
 
             # Convert to product dicts with explainable ranking breakdown
             product_list = []

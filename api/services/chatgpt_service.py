@@ -1274,7 +1274,7 @@ At the START of conversation or when intent changes:
                 if omni_context:
                     # Insert Omni context summary after system prompt
                     messages.insert(1, {"role": "system", "content": omni_context})
-                    logger.info(f"Injected Omni preferences context for session {session_id}")
+                    logger.info(f"[OMNI CONTEXT] Injecting context for session {session_id}:\n{omni_context}")
 
                 # Inject accumulated search context summary if available
                 context_summary = self.context_manager.get_search_context_summary(session_id)
@@ -1707,9 +1707,9 @@ At the START of conversation or when intent changes:
         elif error_type == "authentication":
             return "There's an issue with the OpenAI API authentication. Please contact the administrator to verify the API key configuration. I'll show you some product recommendations for now."
         elif error_type == "timeout":
-            return "The AI analysis is taking longer than expected. I'll show you some product recommendations while the system processes your request. You can try your request again in a moment."
+            return "My analysis is taking a bit longer than usual. I'll show you some product recommendations while I finish processing. You can try again in a moment."
         elif error_type == "api_error":
-            return "I'm currently experiencing high demand. I'll show you some product recommendations based on your preferences while the system catches up."
+            return "I'm currently experiencing high demand. I'll show you some product recommendations based on your preferences while I catch up."
         else:
             # Generic fallback with more helpful context
             action = "transform your space" if has_image else "find the perfect pieces"
@@ -2003,18 +2003,19 @@ At the START of conversation or when intent changes:
                     )
                     updates_made = True
 
-            # Extract scope from user message patterns
-            if any(word in user_message_lower for word in ["entire room", "whole room", "full room", "complete room"]):
-                self.context_manager.update_omni_preferences(session_id, scope="full_room")
-                updates_made = True
-            elif categories and len(categories) == 1:
-                # User is asking for specific category
-                prefs = self.context_manager.get_omni_preferences(session_id)
-                if not prefs.scope:  # Only set if not already set
-                    self.context_manager.update_omni_preferences(
-                        session_id, scope="specific_category", target_category=categories[0]
-                    )
-                    updates_made = True
+            # NOTE: Scope auto-extraction is DISABLED
+            # Per user requirement: The AI stylist must explicitly ASK about scope
+            # ("Would you like me to help style the entire room, or are you looking for something specific?")
+            # The scope should only be set when the user explicitly answers the scope question,
+            # NOT inferred from their message patterns.
+            #
+            # Old code (kept for reference):
+            # if any(word in user_message_lower for word in ["entire room", "whole room", "full room", "complete room"]):
+            #     self.context_manager.update_omni_preferences(session_id, scope="full_room")
+            # elif categories and len(categories) == 1:
+            #     prefs = self.context_manager.get_omni_preferences(session_id)
+            #     if not prefs.scope:
+            #         self.context_manager.update_omni_preferences(session_id, scope="specific_category", target_category=categories[0])
 
             # Extract preference mode from user message patterns
             if any(
