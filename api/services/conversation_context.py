@@ -66,7 +66,9 @@ class UserPreferencesData:
     room_type: Optional[str] = None  # "living room", "bedroom", etc.
     usage: List[str] = field(default_factory=list)  # ["relaxing", "entertaining"]
     overall_style: Optional[str] = None  # "minimalist", "modern", "traditional"
+    styles: List[str] = field(default_factory=list)  # ["minimalist", "scandinavian"] - primary + secondary
     budget_total: Optional[float] = None  # Total budget for room
+    budget: Optional[float] = None  # Budget for search filtering
 
     # Room analysis suggestions (populated from image analysis)
     room_analysis_suggestions: Optional[RoomAnalysisSuggestions] = None
@@ -93,7 +95,9 @@ class UserPreferencesData:
             "room_type": self.room_type,
             "usage": self.usage,
             "overall_style": self.overall_style,
+            "styles": self.styles,  # Primary + secondary styles array
             "budget_total": self.budget_total,
+            "budget": self.budget,  # Budget for search filtering
             "room_analysis_suggestions": self.room_analysis_suggestions.to_dict() if self.room_analysis_suggestions else None,
             "category_preferences": {k: v.to_dict() for k, v in self.category_preferences.items()},
             # NEW: Intent detection fields
@@ -120,7 +124,9 @@ class UserPreferencesData:
             room_type=data.get("room_type"),
             usage=data.get("usage", []),
             overall_style=data.get("overall_style"),
+            styles=data.get("styles", []),  # Primary + secondary styles array
             budget_total=data.get("budget_total"),
+            budget=data.get("budget"),  # Budget for search filtering
             room_analysis_suggestions=RoomAnalysisSuggestions.from_dict(room_suggestions) if room_suggestions else None,
             category_preferences={k: CategoryPreference.from_dict(v) for k, v in category_prefs.items()},
             # NEW: Intent detection fields
@@ -792,6 +798,11 @@ class ConversationContextManager:
             context.omni_preferences = UserPreferencesData()
         return context.omni_preferences
 
+    def store_omni_preferences(self, session_id: str, preferences: UserPreferencesData) -> None:
+        """Store complete Omni preferences for a session (replaces existing)"""
+        context = self.get_or_create_context(session_id)
+        context.omni_preferences = preferences
+
     def update_omni_preferences(
         self,
         session_id: str,
@@ -884,9 +895,11 @@ class ConversationContextManager:
         This tells Omni what preferences are known and what to ask about.
         """
         prefs = self.get_omni_preferences(session_id)
+        logger.info(f"[CONTEXT DEBUG] Session {session_id}: overall_style={prefs.overall_style}, budget_total={prefs.budget_total}, scope={prefs.scope}")
 
         known = prefs.get_known_preferences()
         unknown = prefs.get_unknown_preferences()
+        logger.info(f"[CONTEXT DEBUG] Known: {known}, Unknown: {unknown}")
 
         if not known and not unknown:
             return ""

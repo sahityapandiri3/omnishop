@@ -64,6 +64,9 @@ function DesignPageContent() {
   // Chat session state (for restoring conversation history)
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
 
+  // Track if we recovered from a 401 session expiry (used to determine if sessionStorage data should be used)
+  const wasRecoveredFromSessionExpiryRef = useRef<boolean>(false);
+
   // Track if we have unsaved changes
   const hasUnsavedChanges = saveStatus === 'unsaved' || saveStatus === 'saving';
 
@@ -95,11 +98,22 @@ function DesignPageContent() {
       return;
     }
 
+    // IMPORTANT: If loading an existing project (projectId in URL), skip this useEffect
+    // The project loading useEffect will handle deciding whether to use sessionStorage or backend data
+    // based on whether the project already has saved data
+    // NOTE: Do NOT clear sessionStorage here - curated looks need it for new projects!
+    const urlProjectId = searchParams?.get('projectId');
+    if (urlProjectId) {
+      console.log('[DesignPage] Loading existing project - deferring to project loading logic');
+      return;
+    }
+
     // Try to restore state from 401 recovery (session expiry during work)
     // This restores data that was saved to localStorage before redirect to login
     const wasRecovered = restoreDesignStateFromRecovery();
     if (wasRecovered) {
       console.log('[DesignPage] Restored design state from session recovery');
+      wasRecoveredFromSessionExpiryRef.current = true;
     }
 
     // Check if user has uploaded their own room image
@@ -120,6 +134,9 @@ function DesignPageContent() {
       hasPreselectedProducts: !!preselectedProducts,
     });
 
+    // Check if we need to auto-trigger furniture removal (from onboarding)
+    const pendingFurnitureRemoval = sessionStorage.getItem('pendingFurnitureRemoval');
+
     // Room image logic:
     // - If user uploaded image exists, use it and clear curated data
     // - Otherwise, use curated room image as the base room for visualization
@@ -136,6 +153,67 @@ function DesignPageContent() {
       // Clear curated data since we're using user's room
       sessionStorage.removeItem('curatedVisualizationImage');
       sessionStorage.removeItem('curatedRoomImage');
+
+      // Auto-trigger furniture removal if flagged from onboarding
+      if (pendingFurnitureRemoval === 'true' && !persistedCleanRoomImage) {
+        console.log('[DesignPage] Auto-triggering furniture removal for onboarding image');
+        sessionStorage.removeItem('pendingFurnitureRemoval');
+        // Delay slightly to ensure state is set, then trigger furniture removal
+        setTimeout(async () => {
+          try {
+            setIsProcessingFurniture(true);
+            setProcessingStatus('Preparing your room for design...');
+            const { startFurnitureRemoval: triggerRemoval, checkFurnitureRemovalStatus: checkStatus } = await import('@/utils/api');
+            const response = await triggerRemoval(userUploadedImage);
+            console.log('[DesignPage] Furniture removal started:', response.job_id);
+            sessionStorage.setItem('furnitureRemovalJobId', response.job_id);
+
+            // Start inline polling since the mount-time useEffect already ran
+            let pollAttempts = 0;
+            const MAX_POLL_ATTEMPTS = 150;
+            const poll = async () => {
+              pollAttempts++;
+              if (pollAttempts > MAX_POLL_ATTEMPTS) {
+                setIsProcessingFurniture(false);
+                setProcessingStatus('');
+                sessionStorage.removeItem('furnitureRemovalJobId');
+                return;
+              }
+              try {
+                const status = await checkStatus(response.job_id);
+                if (status.status === 'completed' && status.image) {
+                  const imageToSet = status.image.startsWith('data:') ? status.image : `data:image/png;base64,${status.image}`;
+                  setRoomImage(imageToSet);
+                  setCleanRoomImage(imageToSet);
+                  try {
+                    sessionStorage.setItem('cleanRoomImage', imageToSet);
+                    sessionStorage.setItem('roomImage', imageToSet);
+                  } catch (e) { /* quota exceeded */ }
+                  setIsProcessingFurniture(false);
+                  setProcessingStatus('');
+                  sessionStorage.removeItem('furnitureRemovalJobId');
+                } else if (status.status === 'failed') {
+                  setIsProcessingFurniture(false);
+                  setProcessingStatus('');
+                  sessionStorage.removeItem('furnitureRemovalJobId');
+                } else {
+                  setProcessingStatus('Processing your room image...');
+                  setTimeout(poll, 2000);
+                }
+              } catch (error) {
+                setIsProcessingFurniture(false);
+                setProcessingStatus('');
+                sessionStorage.removeItem('furnitureRemovalJobId');
+              }
+            };
+            poll();
+          } catch (error) {
+            console.error('[DesignPage] Auto furniture removal failed:', error);
+            setIsProcessingFurniture(false);
+            setProcessingStatus('');
+          }
+        }, 100);
+      }
     } else if (curatedRoomImage || curatedVisualizationImage) {
       // No user room image - use curated look's room image as the base
       // This allows visualization to happen on the curated room
@@ -342,10 +420,159 @@ function DesignPageContent() {
         const isNewProject = !project.room_image && !project.visualization_image && !project.canvas_products;
 
         if (isNewProject) {
-          // For new projects, use sessionStorage data (from curated looks or user upload)
-          // The first useEffect already loaded curated look data
-          // For user-uploaded room images, sessionStorage.roomImage should be set
-          console.log('[DesignPage] New project detected, preserving sessionStorage data');
+          // For new projects, load sessionStorage data (from curated looks or user upload)
+          console.log('[DesignPage] New project detected, loading sessionStorage data');
+
+          // Check for curated look data
+          const curatedRoomImage = sessionStorage.getItem('curatedRoomImage');
+          const curatedVisualizationImage = sessionStorage.getItem('curatedVisualizationImage');
+          const preselectedProducts = sessionStorage.getItem('preselectedProducts');
+          const userUploadedImage = sessionStorage.getItem('roomImage');
+          const cleanRoomImage = sessionStorage.getItem('cleanRoomImage');
+
+          // Check if we need to auto-trigger furniture removal (from onboarding)
+          const pendingFurnitureRemoval = sessionStorage.getItem('pendingFurnitureRemoval');
+
+          console.log('[DesignPage] SessionStorage for new project:', {
+            hasCuratedRoom: !!curatedRoomImage,
+            hasCuratedViz: !!curatedVisualizationImage,
+            hasPreselectedProducts: !!preselectedProducts,
+            hasUserUploadedImage: !!userUploadedImage,
+            pendingFurnitureRemoval: pendingFurnitureRemoval === 'true',
+          });
+
+          // Load room image (prefer user-uploaded, then curated)
+          // IMPORTANT: Must explicitly clear state if no data, since component doesn't remount on navigation
+          if (userUploadedImage) {
+            setRoomImage(userUploadedImage);
+            setCleanRoomImage(cleanRoomImage || userUploadedImage);
+
+            // Auto-trigger furniture removal if flagged from onboarding
+            if (pendingFurnitureRemoval === 'true' && !cleanRoomImage) {
+              console.log('[DesignPage] Auto-triggering furniture removal for onboarding image (authenticated)');
+              sessionStorage.removeItem('pendingFurnitureRemoval');
+              // Trigger after a short delay to let state settle
+              setTimeout(async () => {
+                try {
+                  setIsProcessingFurniture(true);
+                  setProcessingStatus('Preparing your room for design...');
+                  const response = await startFurnitureRemoval(userUploadedImage);
+                  console.log('[DesignPage] Furniture removal started:', response.job_id);
+                  sessionStorage.setItem('furnitureRemovalJobId', response.job_id);
+
+                  // Start inline polling since mount-time useEffect already ran
+                  let pollAttempts = 0;
+                  const MAX_POLL_ATTEMPTS = 150;
+                  const poll = async () => {
+                    pollAttempts++;
+                    if (pollAttempts > MAX_POLL_ATTEMPTS) {
+                      setIsProcessingFurniture(false);
+                      setProcessingStatus('');
+                      sessionStorage.removeItem('furnitureRemovalJobId');
+                      return;
+                    }
+                    try {
+                      const status = await checkFurnitureRemovalStatus(response.job_id);
+                      if (status.status === 'completed' && status.image) {
+                        const imageToSet = status.image.startsWith('data:') ? status.image : `data:image/png;base64,${status.image}`;
+                        setRoomImage(imageToSet);
+                        setCleanRoomImage(imageToSet);
+                        try {
+                          sessionStorage.setItem('cleanRoomImage', imageToSet);
+                          sessionStorage.setItem('roomImage', imageToSet);
+                        } catch (e) { /* quota exceeded */ }
+                        setIsProcessingFurniture(false);
+                        setProcessingStatus('');
+                        sessionStorage.removeItem('furnitureRemovalJobId');
+                      } else if (status.status === 'failed') {
+                        setIsProcessingFurniture(false);
+                        setProcessingStatus('');
+                        sessionStorage.removeItem('furnitureRemovalJobId');
+                      } else {
+                        setProcessingStatus('Processing your room image...');
+                        setTimeout(poll, 2000);
+                      }
+                    } catch (error) {
+                      setIsProcessingFurniture(false);
+                      setProcessingStatus('');
+                      sessionStorage.removeItem('furnitureRemovalJobId');
+                    }
+                  };
+                  poll();
+                } catch (error) {
+                  console.error('[DesignPage] Auto furniture removal failed:', error);
+                  setIsProcessingFurniture(false);
+                  setProcessingStatus('');
+                }
+              }, 100);
+            }
+          } else if (curatedRoomImage) {
+            const formattedRoomImage = curatedRoomImage.startsWith('data:')
+              ? curatedRoomImage
+              : `data:image/png;base64,${curatedRoomImage}`;
+            setRoomImage(formattedRoomImage);
+            setCleanRoomImage(formattedRoomImage);
+          } else if (curatedVisualizationImage) {
+            // Use visualization as room image if no clean room available
+            const formattedViz = curatedVisualizationImage.startsWith('data:')
+              ? curatedVisualizationImage
+              : `data:image/png;base64,${curatedVisualizationImage}`;
+            setRoomImage(formattedViz);
+            setCleanRoomImage(null); // No clean room available
+          } else {
+            // No room image data - explicitly clear state (prevents stale data from previous project)
+            setRoomImage(null);
+            setCleanRoomImage(null);
+          }
+
+          // Load curated visualization image (or clear if none)
+          if (curatedVisualizationImage) {
+            const formattedVizImage = curatedVisualizationImage.startsWith('data:')
+              ? curatedVisualizationImage
+              : `data:image/png;base64,${curatedVisualizationImage}`;
+            setInitialVisualizationImage(formattedVizImage);
+          } else {
+            setInitialVisualizationImage(null);
+          }
+
+          // Load preselected products from curated look (or clear if none)
+          if (preselectedProducts) {
+            try {
+              const products = JSON.parse(preselectedProducts);
+              const formattedProducts = products.map((p: any) => ({
+                id: String(p.id),
+                name: p.name,
+                price: p.price || 0,
+                image_url: p.image_url,
+                productType: p.product_type || 'other',
+                source: p.source_website,
+                source_url: p.source_url,
+                description: p.description,
+                attributes: p.attributes,
+              }));
+              setCanvasProducts(formattedProducts);
+              console.log('[DesignPage] Loaded', formattedProducts.length, 'preselected products from curated look');
+            } catch (e) {
+              console.error('[DesignPage] Failed to parse preselected products:', e);
+              setCanvasProducts([]);
+            }
+          } else {
+            setCanvasProducts([]);
+          }
+
+          // Clear other state that might persist from previous project
+          setVisualizationHistory([]);
+          setChatSessionId(null);
+          setProductRecommendations([]);
+          setSelectedCategories(null);
+          setProductsByCategory(null);
+          setTotalBudget(null);
+
+          // Clear curated data from sessionStorage after loading
+          sessionStorage.removeItem('curatedVisualizationImage');
+          sessionStorage.removeItem('curatedRoomImage');
+          sessionStorage.removeItem('preselectedProducts');
+          sessionStorage.removeItem('preselectedLookTheme');
 
           // Set initial state for change detection (starts as "unsaved" so first save works)
           lastSaveDataRef.current = JSON.stringify({
@@ -358,48 +585,63 @@ function DesignPageContent() {
           });
         } else {
           // Load existing project data
-          // BUT FIRST: Check if there's recovered session data (from 401 redirect during save)
-          // If recovery data exists, use it instead of backend data since it's more recent
-          const recoveredRoomImage = sessionStorage.getItem('roomImage');
-          const recoveredCleanRoomImage = sessionStorage.getItem('cleanRoomImage');
-          const recoveredCanvasProducts = sessionStorage.getItem('persistedCanvasProducts');
-          const hasRecoveredData = recoveredRoomImage || recoveredCanvasProducts;
+          // ONLY use sessionStorage data if we ACTUALLY recovered from a 401 session expiry
+          // This prevents stale sessionStorage data from overriding the saved project
+          const wasActuallyRecovered = wasRecoveredFromSessionExpiryRef.current;
 
-          if (hasRecoveredData) {
-            console.log('[DesignPage] Found recovered session data - using it instead of backend data');
-            // Use recovered data (already in sessionStorage from restoreDesignStateFromRecovery)
-            if (recoveredRoomImage) {
-              setRoomImage(recoveredRoomImage);
-            }
-            if (recoveredCleanRoomImage) {
-              setCleanRoomImage(recoveredCleanRoomImage);
-            }
-            if (recoveredCanvasProducts) {
-              try {
-                const products = JSON.parse(recoveredCanvasProducts);
-                setCanvasProducts(products);
-                console.log('[DesignPage] Restored', products.length, 'products from session recovery');
-              } catch (e) {
-                console.error('[DesignPage] Failed to parse recovered canvas products:', e);
+          if (wasActuallyRecovered) {
+            // We recovered from 401 - check for recovered data
+            const recoveredRoomImage = sessionStorage.getItem('roomImage');
+            const recoveredCleanRoomImage = sessionStorage.getItem('cleanRoomImage');
+            const recoveredCanvasProducts = sessionStorage.getItem('persistedCanvasProducts');
+            const hasRecoveredData = recoveredRoomImage || recoveredCanvasProducts;
+
+            if (hasRecoveredData) {
+              console.log('[DesignPage] Found recovered session data from 401 recovery - using it instead of backend data');
+              // Use recovered data (already in sessionStorage from restoreDesignStateFromRecovery)
+              if (recoveredRoomImage) {
+                setRoomImage(recoveredRoomImage);
               }
+              if (recoveredCleanRoomImage) {
+                setCleanRoomImage(recoveredCleanRoomImage);
+              }
+              if (recoveredCanvasProducts) {
+                try {
+                  const products = JSON.parse(recoveredCanvasProducts);
+                  setCanvasProducts(products);
+                  console.log('[DesignPage] Restored', products.length, 'products from session recovery');
+                } catch (e) {
+                  console.error('[DesignPage] Failed to parse recovered canvas products:', e);
+                }
+              }
+              // For visualization, chat session - use backend data if available
+              if (project.visualization_image) {
+                setInitialVisualizationImage(project.visualization_image);
+              }
+              if (project.chat_session_id) {
+                setChatSessionId(project.chat_session_id);
+              }
+              // Mark as having unsaved changes since recovery data wasn't saved
+              lastSaveDataRef.current = JSON.stringify({
+                room_image: null,
+                clean_room_image: null,
+                visualization_image: null,
+                canvas_products: null,
+                visualization_history: null,
+                chat_session_id: null,
+              });
+              // Clear the recovery flag after using the data
+              wasRecoveredFromSessionExpiryRef.current = false;
             }
-            // For visualization, chat session - use backend data if available
-            if (project.visualization_image) {
-              setInitialVisualizationImage(project.visualization_image);
-            }
-            if (project.chat_session_id) {
-              setChatSessionId(project.chat_session_id);
-            }
-            // Mark as having unsaved changes since recovery data wasn't saved
-            lastSaveDataRef.current = JSON.stringify({
-              room_image: null,
-              clean_room_image: null,
-              visualization_image: null,
-              canvas_products: null,
-              visualization_history: null,
-              chat_session_id: null,
-            });
-          } else {
+          }
+
+          // If no recovery happened OR recovery had no relevant data, load from backend
+          // Check if we need to load from backend: either no recovery, or recovery didn't have the data we need
+          const recoveredRoomImageCheck = wasActuallyRecovered ? sessionStorage.getItem('roomImage') : null;
+          const recoveredProductsCheck = wasActuallyRecovered ? sessionStorage.getItem('persistedCanvasProducts') : null;
+          const skipBackendLoad = wasActuallyRecovered && (recoveredRoomImageCheck || recoveredProductsCheck);
+
+          if (!skipBackendLoad) {
             // No recovered data - clear sessionStorage and load from backend as usual
             try {
               sessionStorage.removeItem('roomImage');
@@ -410,21 +652,22 @@ function DesignPageContent() {
               // Ignore errors when clearing
             }
 
+            // IMPORTANT: Explicitly set state from project data (including null values)
+            // This ensures any stale React state is cleared
+            setRoomImage(project.room_image || null);
+            setCleanRoomImage(project.clean_room_image || null);
+            setInitialVisualizationImage(project.visualization_image || null);
+
+            // Try to cache room image in sessionStorage (but don't fail if quota exceeded)
             if (project.room_image) {
-              setRoomImage(project.room_image);
-              // Try to cache in sessionStorage but don't fail if quota exceeded
               try {
                 sessionStorage.setItem('roomImage', project.room_image);
               } catch (storageError) {
                 console.warn('[DesignPage] Could not cache room image in sessionStorage (quota exceeded)');
               }
             }
-            if (project.clean_room_image) {
-              setCleanRoomImage(project.clean_room_image);
-            }
-            if (project.visualization_image) {
-              setInitialVisualizationImage(project.visualization_image);
-            }
+
+            // Load canvas products (or clear if none)
             if (project.canvas_products) {
               try {
                 const products = JSON.parse(project.canvas_products);
@@ -432,9 +675,12 @@ function DesignPageContent() {
                 console.log('[DesignPage] Loaded', products.length, 'products from project');
               } catch (e) {
                 console.error('[DesignPage] Failed to parse project canvas_products:', e);
+                setCanvasProducts([]);
               }
+            } else {
+              setCanvasProducts([]);
             }
-            // Load visualization history for undo/redo
+            // Load visualization history for undo/redo (or clear if none)
             if (project.visualization_history) {
               try {
                 const history = JSON.parse(project.visualization_history);
@@ -442,12 +688,17 @@ function DesignPageContent() {
                 console.log('[DesignPage] Loaded', history.length, 'visualization history entries');
               } catch (e) {
                 console.error('[DesignPage] Failed to parse visualization history:', e);
+                setVisualizationHistory([]);
               }
+            } else {
+              setVisualizationHistory([]);
             }
-            // Load chat session ID for restoring conversation
+            // Load chat session ID for restoring conversation (or clear if none)
             if (project.chat_session_id) {
               setChatSessionId(project.chat_session_id);
               console.log('[DesignPage] Loaded chat session ID:', project.chat_session_id);
+            } else {
+              setChatSessionId(null);
             }
 
             // Store the initial state for change detection

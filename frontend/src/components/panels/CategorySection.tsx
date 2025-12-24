@@ -68,15 +68,20 @@ export default function CategorySection({
   styleAttributes,
 }: CategorySectionProps) {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  // NOTE: Don't initialize price filters to budget allocation values
+  // All products should be shown by default (sorted by relevance/score)
+  // Users can manually apply budget filters if they want
   const [filters, setFilters] = useState<CategoryFilterState>({
     selectedStores: [],
-    priceMin: category.budget_allocation?.min || 0,
-    priceMax: category.budget_allocation?.max || Infinity,
+    priceMin: 0,
+    priceMax: Infinity,
     sortBy: 'relevance',
   });
   const [showFilters, setShowFilters] = useState(false);
 
   // Use pagination hook for infinite scroll (only active when expanded and sessionId is provided)
+  // NOTE: Don't pass budget constraints - all products should be shown, sorted by score
+  // Budget is used for scoring (products within budget ranked higher), not filtering
   const paginationEnabled = isExpanded && !!sessionId && initialHasMore;
   const {
     data: paginatedData,
@@ -87,8 +92,7 @@ export default function CategorySection({
     sessionId: sessionId || '',
     categoryId: category.category_id,
     styleAttributes,
-    budgetMin: category.budget_allocation?.min,
-    budgetMax: category.budget_allocation?.max,
+    // Don't pass budget constraints - show all products, ranked by score
     enabled: paginationEnabled,
   });
 

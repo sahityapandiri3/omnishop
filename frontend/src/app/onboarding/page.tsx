@@ -18,6 +18,7 @@ export interface OnboardingPreferences {
   budget: number | null;
   budgetFlexible: boolean;
   roomImage: string | null;
+  processedImage: string | null;
 }
 
 const TOTAL_STEPS = 4;
@@ -28,6 +29,11 @@ function OnboardingPageContent() {
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Image processing state
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState('');
+  const [processingError, setProcessingError] = useState<string | null>(null);
+
   const [preferences, setPreferences] = useState<OnboardingPreferences>({
     roomType: null,
     primaryStyle: null,
@@ -35,6 +41,7 @@ function OnboardingPageContent() {
     budget: null,
     budgetFlexible: false,
     roomImage: null,
+    processedImage: null,
   });
 
   const updatePreferences = useCallback((updates: Partial<OnboardingPreferences>) => {
@@ -67,12 +74,21 @@ function OnboardingPageContent() {
       sessionStorage.removeItem('curatedRoomImage');
       sessionStorage.removeItem('preselectedProducts');
       sessionStorage.removeItem('preselectedLookTheme');
+      sessionStorage.removeItem('pendingFurnitureRemoval');
 
       // Store preferences in sessionStorage for design studio
       sessionStorage.setItem('onboardingPreferences', JSON.stringify(preferences));
 
-      // Store room image separately if provided
-      if (preferences.roomImage) {
+      // Store room images - use processed image as the base for design
+      if (preferences.processedImage) {
+        // Store the processed (clean) image as both roomImage and cleanRoomImage
+        // This ensures the design page shows the furniture-removed image
+        console.log('[Onboarding] Storing PROCESSED image as roomImage, length:', preferences.processedImage.length);
+        sessionStorage.setItem('cleanRoomImage', preferences.processedImage);
+        sessionStorage.setItem('roomImage', preferences.processedImage);
+      } else if (preferences.roomImage) {
+        // No processed image - use original (furniture removal may not have completed)
+        console.log('[Onboarding] No processed image, storing ORIGINAL image as roomImage');
         sessionStorage.setItem('roomImage', preferences.roomImage);
       }
 
@@ -111,11 +127,14 @@ function OnboardingPageContent() {
       case 3:
         return true; // Budget is optional
       case 4:
-        return true; // Photo is optional
+        // Can proceed if no image, or if image is processed
+        // Cannot proceed if processing is in progress
+        if (isProcessingImage) return false;
+        return true;
       default:
         return false;
     }
-  }, [currentStep, preferences.roomType]);
+  }, [currentStep, preferences.roomType, isProcessingImage]);
 
   return (
     <div className="min-h-screen bg-neutral-50 flex flex-col">
@@ -141,7 +160,7 @@ function OnboardingPageContent() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col">
-        <div className="flex-1 max-w-3xl mx-auto w-full px-6 py-8">
+        <div className={`flex-1 mx-auto w-full px-6 py-8 ${currentStep === 2 ? 'max-w-6xl' : 'max-w-3xl'}`}>
           {/* Step Content */}
           <div className="flex-1">
             {currentStep === 1 && (
@@ -171,8 +190,35 @@ function OnboardingPageContent() {
             {currentStep === 4 && (
               <PhotoUploadStep
                 image={preferences.roomImage}
-                onUpload={(image) => updatePreferences({ roomImage: image })}
+                processedImage={preferences.processedImage}
+                isProcessing={isProcessingImage}
+                processingStatus={processingStatus}
+                onUpload={(original, processed) => {
+                  setProcessingError(null);
+                  updatePreferences({ roomImage: original, processedImage: processed });
+                }}
+                onProcessingStart={() => {
+                  setIsProcessingImage(true);
+                  setProcessingStatus('Preparing your room...');
+                  setProcessingError(null);
+                }}
+                onProcessingComplete={(processedImage) => {
+                  console.log('[Onboarding] Processing complete, setting processedImage, length:', processedImage.length);
+                  setIsProcessingImage(false);
+                  setProcessingStatus('');
+                  updatePreferences({ processedImage });
+                }}
+                onProcessingError={(error) => {
+                  setIsProcessingImage(false);
+                  setProcessingStatus('');
+                  setProcessingError(error);
+                }}
               />
+            )}
+            {processingError && currentStep === 4 && (
+              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm text-center">
+                {processingError}
+              </div>
             )}
           </div>
         </div>
@@ -227,8 +273,8 @@ function OnboardingPageContent() {
               ) : (
                 <button
                   onClick={handleComplete}
-                  disabled={isSubmitting}
-                  className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-all shadow-sm disabled:opacity-50"
+                  disabled={isSubmitting || isProcessingImage}
+                  className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? (
                     <>
@@ -237,6 +283,14 @@ function OnboardingPageContent() {
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                       </svg>
                       Creating...
+                    </>
+                  ) : isProcessingImage ? (
+                    <>
+                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Processing Image...
                     </>
                   ) : (
                     <>

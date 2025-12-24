@@ -14,7 +14,6 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
 
   // Redirect to login if not authenticated
@@ -45,31 +44,20 @@ export default function ProjectsPage() {
     }
   };
 
-  const handleCreateProject = async () => {
-    try {
-      setCreating(true);
+  const handleCreateProject = () => {
+    // Clear sessionStorage to start fresh - don't carry over images from previous projects
+    sessionStorage.removeItem('roomImage');
+    sessionStorage.removeItem('cleanRoomImage');
+    sessionStorage.removeItem('curatedRoomImage');
+    sessionStorage.removeItem('curatedVisualizationImage');
+    sessionStorage.removeItem('preselectedProducts');
+    sessionStorage.removeItem('persistedCanvasProducts');
+    sessionStorage.removeItem('design_session_id');
+    sessionStorage.removeItem('onboardingPreferences');
+    console.log('[ProjectsPage] Cleared sessionStorage for new project');
 
-      // Clear sessionStorage to start fresh - don't carry over images from previous projects
-      sessionStorage.removeItem('roomImage');
-      sessionStorage.removeItem('cleanRoomImage');
-      sessionStorage.removeItem('curatedRoomImage');
-      sessionStorage.removeItem('curatedVisualizationImage');
-      sessionStorage.removeItem('preselectedProducts');
-      sessionStorage.removeItem('persistedCanvasProducts');
-      sessionStorage.removeItem('design_session_id');
-      console.log('[ProjectsPage] Cleared sessionStorage for new project');
-
-      const project = await projectsAPI.create({
-        name: `Design ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
-      });
-      // Navigate to design page with the new project
-      // Add fresh=1 param to indicate this is a brand new project (not a refresh)
-      router.push(`/design?projectId=${project.id}&fresh=1`);
-    } catch (err: any) {
-      console.error('Failed to create project:', err);
-      setError('Failed to create project. Please try again.');
-      setCreating(false);
-    }
+    // Navigate to onboarding flow - project will be created at the end
+    router.push('/onboarding');
   };
 
   const handleDeleteProject = async (projectId: string, e: React.MouseEvent) => {
@@ -142,20 +130,10 @@ export default function ProjectsPage() {
           </div>
           <button
             onClick={handleCreateProject}
-            disabled={creating}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
           >
-            {creating ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                Creating...
-              </>
-            ) : (
-              <>
-                <PlusIcon className="w-5 h-5" />
-                New Project
-              </>
-            )}
+            <PlusIcon className="w-5 h-5" />
+            New Project
           </button>
         </div>
 
@@ -202,20 +180,10 @@ export default function ProjectsPage() {
             </p>
             <button
               onClick={handleCreateProject}
-              disabled={creating}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors shadow-lg shadow-primary-500/25"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-lg shadow-primary-500/25"
             >
-              {creating ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
-                  Creating...
-                </>
-              ) : (
-                <>
-                  <PlusIcon className="w-5 h-5" />
-                  Create Your First Project
-                </>
-              )}
+              <PlusIcon className="w-5 h-5" />
+              Create Your First Project
             </button>
           </div>
         ) : (
@@ -224,15 +192,10 @@ export default function ProjectsPage() {
             {/* New Project Card */}
             <button
               onClick={handleCreateProject}
-              disabled={creating}
-              className="group bg-white rounded-xl border-2 border-dashed border-gray-300 hover:border-primary-500 overflow-hidden transition-all disabled:opacity-50"
+              className="group bg-white rounded-xl border-2 border-dashed border-gray-300 hover:border-primary-500 overflow-hidden transition-all"
             >
               <div className="aspect-video flex items-center justify-center bg-gray-50 group-hover:bg-primary-50 transition-colors">
-                {creating ? (
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
-                ) : (
-                  <PlusIcon className="w-12 h-12 text-gray-400 group-hover:text-primary-600 transition-colors" />
-                )}
+                <PlusIcon className="w-12 h-12 text-gray-400 group-hover:text-primary-600 transition-colors" />
               </div>
               <div className="p-4 text-center">
                 <h3 className="font-medium text-gray-900 group-hover:text-primary-600 transition-colors">

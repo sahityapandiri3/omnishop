@@ -271,7 +271,15 @@ For recommended_furniture_zone: Place furniture against solid walls, NOT windows
             text_response = content.get("parts", [{}])[0].get("text", "{}")
 
             try:
-                analysis_data = json.loads(text_response)
+                # Clean up common JSON formatting issues from AI
+                # 1. Remove trailing commas before ] or }
+                import re
+                cleaned_response = re.sub(r',(\s*[}\]])', r'\1', text_response)
+                # 2. Remove any markdown code blocks
+                cleaned_response = re.sub(r'^```json\s*', '', cleaned_response)
+                cleaned_response = re.sub(r'\s*```$', '', cleaned_response)
+
+                analysis_data = json.loads(cleaned_response)
                 # Log what keys the AI actually returned
                 logger.info(f"Room analysis response keys from AI: {list(analysis_data.keys())}")
                 # Log the camera_view_analysis from the AI response
@@ -280,24 +288,36 @@ For recommended_furniture_zone: Place furniture against solid walls, NOT windows
                 )
             except json.JSONDecodeError as e:
                 logger.warning(f"Failed to parse JSON response: {e}")
-                logger.warning(f"Raw response text (first 500 chars): {text_response[:500]}")
-                # Use a fallback DICT (not RoomAnalysis) since we call .get() on it below
-                analysis_data = {
-                    "room_type": "unknown",
-                    "dimensions": {},
-                    "lighting_conditions": "mixed",
-                    "color_palette": [],
-                    "existing_furniture": [],
-                    "architectural_features": [],
-                    "style_assessment": "unknown",
-                    "scale_references": {},
-                    "camera_view_analysis": {
-                        "viewing_angle": "straight_on",
-                        "primary_wall": "back",
-                        "floor_center_location": "image_center",
-                        "recommended_furniture_zone": "center_floor",
-                    },
-                }
+                logger.warning(f"Raw response text (first 500 chars): {text_response[:500]}...")
+                # Try one more time with aggressive cleanup
+                try:
+                    # Extract just the JSON object between { and }
+                    json_match = re.search(r'\{[\s\S]*\}', text_response)
+                    if json_match:
+                        cleaned = re.sub(r',(\s*[}\]])', r'\1', json_match.group())
+                        analysis_data = json.loads(cleaned)
+                        logger.info(f"Successfully parsed JSON after aggressive cleanup")
+                    else:
+                        raise json.JSONDecodeError("No JSON object found", text_response, 0)
+                except json.JSONDecodeError:
+                    # Use a fallback DICT (not RoomAnalysis) since we call .get() on it below
+                    logger.warning("Both JSON parsing attempts failed, using fallback")
+                    analysis_data = {
+                        "room_type": "unknown",
+                        "dimensions": {},
+                        "lighting_conditions": "mixed",
+                        "color_palette": [],
+                        "existing_furniture": [],
+                        "architectural_features": [],
+                        "style_assessment": "unknown",
+                        "scale_references": {},
+                        "camera_view_analysis": {
+                            "viewing_angle": "straight_on",
+                            "primary_wall": "back",
+                            "floor_center_location": "image_center",
+                            "recommended_furniture_zone": "center_floor",
+                        },
+                    }
 
             return RoomAnalysis(
                 room_type=analysis_data.get("room_type", "unknown"),
@@ -1004,10 +1024,18 @@ FAILURE IS NOT ACCEPTABLE: Every single piece of furniture AND floor covering MU
             logger.error(f"Error in furniture removal: {e}", exc_info=True)
             return None
 
-    async def generate_add_visualization(self, room_image: str, product_name: str, product_image: Optional[str] = None) -> str:
+    async def generate_add_visualization(
+        self, room_image: str, product_name: str, product_image: Optional[str] = None, product_color: Optional[str] = None
+    ) -> str:
         """
         Generate visualization with product ADDED to room
         Returns: base64 image data
+
+        Args:
+            room_image: Base64 encoded room image
+            product_name: Name of the product (may include color prefix)
+            product_image: URL of product reference image
+            product_color: Explicit color from product attributes (e.g., "beige", "cream", "walnut")
         """
         try:
             processed_room = self._preprocess_image(room_image)
@@ -1097,9 +1125,25 @@ This is an ACCENT ITEM. Critical rules:
 
 """
 
-            prompt = f"""{zoom_warning}{small_item_warning}{planter_placement_hint}ADD the following product to this room in an appropriate location WITHOUT removing any existing furniture:
+            # Build explicit color instruction if color is known
+            color_emphasis = ""
+            if product_color:
+                color_emphasis = f"""
+🎨🎨🎨 CRITICAL COLOR REQUIREMENT 🎨🎨🎨
+═══════════════════════════════════════════════════════════════
+THE PRODUCT COLOR IS: **{product_color.upper()}**
+- YOU MUST render this product in {product_color.upper()} color
+- DO NOT change the color to grey, white, or any other color
+- DO NOT "adapt" the color to match the room
+- The exact shade/tone from the reference image MUST be preserved
+- If the reference shows {product_color}, output MUST show {product_color}
+═══════════════════════════════════════════════════════════════
 
-Product to add: {product_name}
+"""
+
+            prompt = f"""{zoom_warning}{small_item_warning}{planter_placement_hint}{color_emphasis}ADD the following product to this room in an appropriate location WITHOUT removing any existing furniture:
+
+Product to add: {product_name} (COLOR: {product_color if product_color else 'see reference image'})
 
 🚨🚨🚨 ABSOLUTE REQUIREMENT - ROOM DIMENSIONS 🚨🚨🚨
 ═══════════════════════════════════════════════════════════════
@@ -1201,7 +1245,11 @@ If a product reference image is provided, you MUST render the EXACT SAME product
 PLACEMENT GUIDELINES:
 
 🪑 SOFAS:
-- Place along a wall or centered in the room as the main seating piece
+- Place DIRECTLY AGAINST the wall with MINIMAL GAP (2-4 inches max)
+- ⚠️ DO NOT leave large empty space between sofa back and wall
+- The sofa's back should be nearly touching the wall
+- Position as the main seating piece, centered on the wall or in the room
+- Real sofas sit flush against walls - replicate this realistic placement
 
 🪑 CHAIRS (accent chair, side chair, armchair, sofa chair, dining chair, recliner):
 - Position on ONE OF THE SIDES of the existing sofa (if sofa exists)
@@ -1283,6 +1331,28 @@ PLACEMENT GUIDELINES:
 - Maintain realistic spacing and proportions
 - Side tables should be 0-6 inches from sofa's side
 - Center tables should be 14-18 inches from sofa's front
+
+🎯 MANDATORY FRONT ANGLE REQUIREMENT:
+═══════════════════════════════════════════════════════════════
+⚠️ THE PRODUCT MUST ALWAYS SHOW ITS FRONT FACE TOWARDS THE CAMERA ⚠️
+- Sofas: Show the front cushions/seating area facing the camera, NOT the back
+- Tables: Show the front/main side facing the camera
+- Chairs: Show the front/seating side facing the camera, NOT the back
+- Cabinets/Storage: Show the doors/drawers facing the camera
+- Lamps: Show the shade opening or decorative front facing the camera
+- All furniture: The primary viewing angle (how it appears in showrooms) must face the camera
+
+❌ INCORRECT ANGLES:
+- Showing the back of a sofa (you should see cushions, not the sofa back panel)
+- Showing a chair from behind (you should see the seat, not the chair back)
+- Showing a table from a sharp side angle (you should see the full tabletop)
+- Placing furniture facing away from the camera view
+
+✅ CORRECT ANGLES:
+- Products oriented so their "front" (showroom display angle) faces the camera
+- User should clearly see what the product looks like from its best viewing angle
+- The product should appear as it would in a furniture catalog - front and center
+═══════════════════════════════════════════════════════════════
 
 🔦 CRITICAL LIGHTING REQUIREMENTS:
 ⚠️ THE PRODUCT MUST LOOK LIKE IT IS PART OF THE ROOM, NOT ADDED ON TOP OF IT ⚠️
@@ -1654,6 +1724,16 @@ PLACEMENT GUIDELINES:
 - Lamps go on tables or as floor lamps
 - Decor items go on table surfaces
 
+🎯 MANDATORY FRONT ANGLE REQUIREMENT:
+⚠️ ALL PRODUCTS MUST SHOW THEIR FRONT FACE TOWARDS THE CAMERA ⚠️
+- Sofas: Front cushions/seating area facing camera, NOT the back
+- Tables: Front/main side facing camera
+- Chairs: Front/seating side facing camera, NOT the back
+- Cabinets: Doors/drawers facing camera
+- All furniture: Show the primary viewing angle (showroom display angle) facing the camera
+❌ WRONG: Showing furniture backs or sharp side angles
+✅ CORRECT: Products oriented with their "front" facing the camera view
+
 🔄 BALANCED DISTRIBUTION - VERY IMPORTANT:
 - Distribute items on BOTH SIDES of the sofa for visual balance
 - If adding a floor lamp AND a planter: put one on each side of the sofa
@@ -1800,11 +1880,23 @@ The room structure, walls, and camera angle MUST be identical to the input image
             raise ValueError(f"Visualization generation failed: {e}")
 
     async def generate_replace_visualization(
-        self, room_image: str, product_name: str, furniture_type: str, product_image: Optional[str] = None
+        self,
+        room_image: str,
+        product_name: str,
+        furniture_type: str,
+        product_image: Optional[str] = None,
+        product_color: Optional[str] = None,
     ) -> str:
         """
         Generate visualization with furniture REPLACED
         Returns: base64 image data
+
+        Args:
+            room_image: Base64 encoded room image
+            product_name: Name of the product (may include color prefix)
+            furniture_type: Type of furniture being replaced
+            product_image: URL of product reference image
+            product_color: Explicit color from product attributes (e.g., "beige", "cream", "walnut")
         """
         try:
             processed_room = self._preprocess_image(room_image)
@@ -1817,8 +1909,24 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 except Exception as e:
                     logger.warning(f"Failed to download product image: {e}")
 
+            # Build explicit color instruction if color is known
+            color_emphasis = ""
+            if product_color:
+                color_emphasis = f"""
+🎨🎨🎨 CRITICAL COLOR REQUIREMENT 🎨🎨🎨
+═══════════════════════════════════════════════════════════════
+THE PRODUCT COLOR IS: **{product_color.upper()}**
+- YOU MUST render this product in {product_color.upper()} color
+- DO NOT change the color to grey, white, or any other color
+- DO NOT "adapt" the color to match the room
+- The exact shade/tone from the reference image MUST be preserved
+- If the reference shows {product_color}, output MUST show {product_color}
+═══════════════════════════════════════════════════════════════
+
+"""
+
             # Build prompt for REPLACE action - simple and direct like Google AI Studio
-            prompt = f"""Replace the {furniture_type} in the first image with the {product_name} shown in the second image.
+            prompt = f"""{color_emphasis}Replace the {furniture_type} in the first image with the {product_name} (COLOR: {product_color if product_color else 'see reference image'}) shown in the second image.
 
 🚨🚨🚨 ABSOLUTE REQUIREMENT - ROOM DIMENSIONS 🚨🚨🚨
 ═══════════════════════════════════════════════════════════════
@@ -1856,6 +1964,15 @@ ALL OTHER FURNITURE MUST REMAIN THE EXACT SAME SIZE AND SCALE:
 ═══════════════════════════════════════════════════════════════
 
 Keep everything else in the room exactly the same - the walls, floor, windows, curtains, and all other furniture and decor should remain unchanged. The room must look the EXACT same size - not bigger, not smaller.
+
+🎯 MANDATORY FRONT ANGLE REQUIREMENT:
+⚠️ THE REPLACEMENT PRODUCT MUST SHOW ITS FRONT FACE TOWARDS THE CAMERA ⚠️
+- Sofas: Show front cushions/seating area facing camera, NOT the back
+- Tables: Show front/main side facing camera
+- Chairs: Show front/seating side facing camera, NOT the back
+- The product must be oriented so its "showroom display angle" faces the camera
+❌ WRONG: Replacement showing its back or side to the camera
+✅ CORRECT: Replacement oriented with front facing the camera view
 
 🔦 CRITICAL LIGHTING REQUIREMENTS:
 ⚠️ THE REPLACEMENT PRODUCT MUST LOOK LIKE IT IS PART OF THE ROOM, NOT ADDED ON TOP OF IT ⚠️
@@ -2013,14 +2130,28 @@ Generate a photorealistic image of the room with the {product_name} replacing th
                 product_name = product.get("full_name") or product.get("name", "furniture item")
                 products_description.append(f"Product {idx+1}: {product_name}")
 
-                # Download product image if available
-                if product.get("image_url"):
+                # Download ALL product images for better reference (up to 3 per product)
+                image_urls = product.get("image_urls", [])
+                if not image_urls and product.get("image_url"):
+                    image_urls = [product["image_url"]]
+
+                # Limit to 3 images per product to avoid overwhelming the model
+                for img_idx, img_url in enumerate(image_urls[:3]):
                     try:
-                        product_image_data = await self._download_image(product["image_url"])
+                        product_image_data = await self._download_image(img_url)
                         if product_image_data:
-                            product_images.append({"data": product_image_data, "name": product_name, "index": idx + 1})
+                            product_images.append({
+                                "data": product_image_data,
+                                "name": product_name,
+                                "index": idx + 1,
+                                "image_number": img_idx + 1,
+                                "total_images": min(len(image_urls), 3)
+                            })
                     except Exception as e:
-                        logger.warning(f"Failed to download product image: {e}")
+                        logger.warning(f"Failed to download product image {img_idx + 1}: {e}")
+
+                if image_urls:
+                    logger.info(f"[VIZ] Product {idx+1} '{product_name}': Downloaded {min(len(image_urls), 3)} of {len(image_urls)} reference images")
 
             # Process the base image
             processed_image = self._preprocess_image(visualization_request.base_image)
@@ -2263,6 +2394,16 @@ For EACH product reference image provided, you MUST render the EXACT SAME produc
 ✅ DO render EXACTLY what you see in the product reference image
 ✅ The product in the output MUST look like the same exact product as the reference
 
+📸 MULTIPLE REFERENCE IMAGES PER PRODUCT:
+When multiple reference images are provided for a product (e.g., "1/3", "2/3", "3/3"):
+- These show the SAME product from DIFFERENT ANGLES
+- Use ALL images to understand the product's full 3D appearance
+- Study each angle: front view, side view, detail shots, in-room shots
+- Combine information from ALL reference images to render accurately
+- The first image is usually the primary/front view
+- Additional images show details, materials, proportions from other angles
+- 🎯 Your rendered product should match what someone would see looking at the ACTUAL product
+
 REFERENCE IMAGE MATCHING CHECKLIST (for each product):
 □ Same exact color/shade
 □ Same exact material appearance
@@ -2324,10 +2465,11 @@ SPECIFIC BLOCKING PREVENTION RULES:
 📍 TYPE-SPECIFIC PLACEMENT RULES (ROOM-GEOMETRY AWARE):
 
 🛋️ SOFAS & SECTIONALS (CRITICAL - READ CAREFULLY):
-- ALWAYS place AGAINST a SOLID wall - NEVER floating in the middle of the room
+- ALWAYS place DIRECTLY AGAINST a SOLID wall with MINIMAL GAP (2-4 inches max from wall)
+- ⚠️ DO NOT leave large empty space between sofa back and wall - sofas sit FLUSH against walls
 - 🚨 NEVER place against WINDOWS, GLASS DOORS, or SLIDING DOORS - only solid walls!
-- For STRAIGHT-ON camera views: place against the back wall (if solid), centered
-- For DIAGONAL camera views: place against the PRIMARY SOLID WALL (not windows/glass)
+- For STRAIGHT-ON camera views: place against the back wall (if solid), centered, TOUCHING the wall
+- For DIAGONAL camera views: place against the PRIMARY SOLID WALL (not windows/glass), FLUSH to wall
 - For CORNER camera views: place against one of the visible SOLID walls, NOT in the corner intersection
 - Orientation: Sofa should be PARALLEL to the wall it's against
 - Distance from wall: 0-6 inches (touching or nearly touching)
@@ -2477,8 +2619,33 @@ QUALITY CHECKS:
 ✓ Did you only add products? YES
 ✓ Is the room structure unchanged? YES
 ✓ Does the output show the FULL ROOM (not zoomed in on product)? YES
+✓ Are ALL products showing their FRONT FACE to the camera? YES
 
 If ANY answer is NO, you've failed the task.
+
+🎯 MANDATORY FRONT ANGLE REQUIREMENT 🎯
+═══════════════════════════════════════════════════════════════
+⚠️ ALL PRODUCTS MUST SHOW THEIR FRONT FACE TOWARDS THE CAMERA ⚠️
+
+This is MANDATORY - products must be oriented correctly:
+- Sofas: Show front cushions/seating area facing camera, NOT the back panel
+- Tables: Show the front/main side facing camera, NOT a sharp side angle
+- Chairs: Show front/seating side facing camera, NOT the chair back
+- Cabinets/Storage: Show doors/drawers facing camera
+- Lamps: Show the decorative front/shade facing camera
+- Beds: Show the headboard and side where you'd get in, NOT just the footboard
+
+❌ INCORRECT ORIENTATIONS (FAILURES):
+- Sofa showing its back (you see the back panel, not cushions)
+- Chair showing its back (you see the chair back, not the seat)
+- Table at a sharp side angle (can't see the tabletop properly)
+- Any furniture "facing away" from the camera
+
+✅ CORRECT ORIENTATIONS (REQUIRED):
+- All products oriented with their "showroom display angle" facing camera
+- User can clearly see what each product looks like from its primary view
+- Products appear as they would in a furniture catalog - front and center
+═══════════════════════════════════════════════════════════════
 
 🔦 LIGHTING & REALISM - MOST CRITICAL FOR NATURAL APPEARANCE 🔦
 ═══════════════════════════════════════════════════════════════
@@ -2576,14 +2743,21 @@ Create a photorealistic interior design visualization that addresses the user's 
 
                     contents.append(room_pil_image)
 
-                    # Add product images as PIL Images
+                    # Add product images as PIL Images (multiple angles per product for accuracy)
                     for prod_img in product_images:
-                        contents.append(f"\nProduct {prod_img['index']} reference image ({prod_img['name']}):")
+                        img_label = f"Product {prod_img['index']} reference image"
+                        if prod_img.get("total_images", 1) > 1:
+                            img_label += f" ({prod_img['image_number']}/{prod_img['total_images']}) - {prod_img['name']}"
+                        else:
+                            img_label += f" - {prod_img['name']}"
+                        contents.append(f"\n{img_label}:")
                         prod_image_bytes = base64.b64decode(prod_img["data"])
                         prod_pil_image = Image.open(io.BytesIO(prod_image_bytes))
                         if prod_pil_image.mode != "RGB":
                             prod_pil_image = prod_pil_image.convert("RGB")
                         contents.append(prod_pil_image)
+
+                    logger.info(f"[VIZ] Passing {len(product_images)} total reference images to model")
 
                     # Use response modalities for image and text generation
                     # Use HIGH media resolution for better quality output
@@ -3987,7 +4161,7 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
 {products_section}
 
 ⚠️ CRITICAL RULES FOR DIAGONAL/CORNER CAMERA VIEWS:
-1. SOFAS & LARGE SEATING: Place AGAINST SOLID walls (NOT windows/glass doors), not floating in the image center
+1. SOFAS & LARGE SEATING: Place FLUSH AGAINST SOLID walls (2-4 inch gap max), NOT floating in image center
 2. The "center" of the IMAGE may NOT be the "center" of the ROOM floor
 3. For diagonal views, one wall is more prominent - that's where sofas go (if it's a solid wall)
 4. NEVER place sofas diagonally across corners unless explicitly requested
@@ -3995,6 +4169,7 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
 6. NEVER place furniture against floor-to-ceiling windows or glass doors
 
 🚫 DO NOT:
+- Leave large gaps between sofa back and wall - sofas should be TOUCHING or nearly touching the wall
 - Place a sofa in the geometric center of the image if this is a diagonal shot
 - Float large furniture in what appears to be a corner in the room
 - Place sofas/beds/large furniture AGAINST WINDOWS or GLASS DOORS
@@ -4003,7 +4178,7 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
 
 ✅ DO:
 - Place furniture where a real interior designer would place it
-- Put sofas against the primary SOLID wall ({primary_wall}) - never against windows
+- Put sofas FLUSH against the primary SOLID wall ({primary_wall}) with minimal gap - never against windows
 - Center coffee tables relative to the seating arrangement
 - Keep windows/glass doors unobstructed
 - Consider the actual room geometry, not just the camera's view
@@ -4123,6 +4298,180 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
         # Placeholder: Just return the base image
         # TODO: Implement actual image isolation using background removal or segmentation
         return base_image
+
+    async def classify_product_style(
+        self,
+        image_url: str,
+        product_name: str,
+        product_description: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Classify a product's design style using Gemini Vision API.
+
+        Args:
+            image_url: URL of the product image
+            product_name: Name of the product
+            product_description: Optional product description
+
+        Returns:
+            Dict with:
+                - primary_style: Main design style (one of 11 predefined)
+                - secondary_style: Optional secondary style or None
+                - confidence: Confidence score 0.0-1.0
+                - reasoning: Brief explanation
+        """
+        logger.info(f"[GoogleAIStudioService] Classifying style for: {product_name[:50]}...")
+
+        # Download and prepare image
+        try:
+            image_data = await self._download_image(image_url)
+            if not image_data:
+                logger.warning(f"Could not download image from {image_url}")
+                return self._fallback_style_classification(product_name, product_description)
+        except Exception as e:
+            logger.error(f"Error downloading image: {e}")
+            return self._fallback_style_classification(product_name, product_description)
+
+        # Truncate description if too long
+        desc_truncated = product_description[:500] if product_description else ""
+
+        # Build classification prompt
+        prompt = f"""Analyze this furniture/decor product image and classify its design style.
+
+Product: {product_name}
+Description: {desc_truncated}
+
+Choose ONLY from these 11 styles:
+1. indian_contemporary - Modern Indian design with subtle craft elements, warm tones, traditional motifs reimagined
+2. modern - Clean and functional design, neutral colors, everyday modern aesthetic
+3. minimalist - Ultra clean design, minimal ornamentation, simple geometric forms
+4. japandi - Japanese-Scandinavian fusion with warm minimalism, natural materials
+5. scandinavian - Light woods, hygge comfort, airy and bright, cozy textiles
+6. mid_century_modern - 1950s-60s inspired with tapered legs, organic curves, bold accents
+7. modern_luxury - Premium materials and finishes, hotel-like sophisticated feel
+8. contemporary - Current trend-driven design, mixed materials, fresh aesthetic
+9. boho - Relaxed bohemian style with layered textures, natural materials, patterns
+10. eclectic - Intentional mix of styles, personality-driven, curated collected look
+11. industrial - Raw materials like metal and wood, urban warehouse aesthetic
+
+Return ONLY valid JSON in this exact format (no markdown):
+{{"primary_style": "one_of_the_11_styles", "secondary_style": "another_style_or_null", "confidence": 0.85, "reasoning": "brief explanation"}}
+
+IMPORTANT:
+- primary_style MUST be one of the 11 styles listed above (use exact snake_case)
+- secondary_style can be null or one of the 11 styles
+- confidence should be 0.0 to 1.0
+- Keep reasoning under 100 characters"""
+
+        # Build request payload
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": prompt},
+                        {"inline_data": {"mime_type": "image/png", "data": image_data}}
+                    ]
+                }
+            ]
+        }
+
+        try:
+            # Make API request using Gemini Flash for faster style classification
+            response = await self._make_api_request("models/gemini-2.0-flash:generateContent", payload)
+
+            # Extract and parse JSON response
+            if response and "candidates" in response:
+                candidate = response["candidates"][0]
+                if "content" in candidate and "parts" in candidate["content"]:
+                    parts = candidate["content"]["parts"]
+                    if parts and "text" in parts[0]:
+                        text_response = parts[0]["text"].strip()
+
+                        # Clean up response (remove markdown code blocks if present)
+                        if text_response.startswith("```"):
+                            lines = text_response.split("\n")
+                            text_response = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+
+                        try:
+                            result = json.loads(text_response)
+
+                            # Validate result
+                            valid_styles = [
+                                "indian_contemporary", "modern", "minimalist", "japandi",
+                                "scandinavian", "mid_century_modern", "modern_luxury",
+                                "contemporary", "boho", "eclectic", "industrial"
+                            ]
+
+                            primary = result.get("primary_style", "").lower().replace(" ", "_")
+                            if primary not in valid_styles:
+                                logger.warning(f"Invalid primary style: {primary}, defaulting to 'modern'")
+                                primary = "modern"
+
+                            secondary = result.get("secondary_style")
+                            if secondary:
+                                secondary = secondary.lower().replace(" ", "_")
+                                if secondary not in valid_styles:
+                                    secondary = None
+
+                            return {
+                                "primary_style": primary,
+                                "secondary_style": secondary,
+                                "confidence": min(1.0, max(0.0, float(result.get("confidence", 0.7)))),
+                                "reasoning": result.get("reasoning", "Style classified by AI vision")[:200]
+                            }
+
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Failed to parse style classification JSON: {e}")
+                            logger.debug(f"Raw response: {text_response}")
+
+            logger.warning("[GoogleAIStudioService] No valid response from Gemini for style classification")
+            return self._fallback_style_classification(product_name, product_description)
+
+        except Exception as e:
+            logger.error(f"[GoogleAIStudioService] Error classifying product style: {str(e)}")
+            return self._fallback_style_classification(product_name, product_description)
+
+    def _fallback_style_classification(
+        self,
+        product_name: str,
+        product_description: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Fallback style classification using text-based keyword matching.
+        Used when image-based classification fails.
+        """
+        text = f"{product_name} {product_description}".lower()
+
+        # Keyword-based style detection
+        style_keywords = {
+            "indian_contemporary": ["indian", "ethnic", "traditional indian", "brass", "carved", "jharokha", "mughal"],
+            "minimalist": ["minimalist", "minimal", "simple", "clean lines", "understated"],
+            "japandi": ["japandi", "japanese", "zen", "wabi-sabi", "tatami"],
+            "scandinavian": ["scandinavian", "scandi", "nordic", "hygge", "danish", "swedish"],
+            "mid_century_modern": ["mid-century", "midcentury", "retro", "vintage", "60s", "70s", "tapered legs"],
+            "modern_luxury": ["luxury", "luxurious", "premium", "opulent", "elegant", "glam", "velvet"],
+            "contemporary": ["contemporary", "current", "trendy"],
+            "boho": ["boho", "bohemian", "macrame", "rattan", "wicker", "jute", "tribal"],
+            "eclectic": ["eclectic", "mix", "mixed", "collected", "unique"],
+            "industrial": ["industrial", "metal", "iron", "pipe", "loft", "warehouse", "raw"],
+            "modern": ["modern", "sleek", "streamlined", "functional"]
+        }
+
+        detected_style = "modern"  # Default
+        max_matches = 0
+
+        for style, keywords in style_keywords.items():
+            matches = sum(1 for kw in keywords if kw in text)
+            if matches > max_matches:
+                max_matches = matches
+                detected_style = style
+
+        return {
+            "primary_style": detected_style,
+            "secondary_style": None,
+            "confidence": 0.4 if max_matches > 0 else 0.2,
+            "reasoning": "Classified by text analysis (image unavailable)"
+        }
 
     async def close(self):
         """Close HTTP session"""

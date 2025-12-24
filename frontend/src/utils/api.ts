@@ -324,6 +324,7 @@ export interface OnboardingPreferences {
   budget: number | null;
   budgetFlexible: boolean;
   roomImage: string | null;
+  processedImage?: string | null;
 }
 
 export const sendChatMessage = async (sessionId: string, data: { message: string; image?: string; selected_product_id?: string; selected_stores?: string[]; onboarding_preferences?: OnboardingPreferences }) => {
@@ -411,7 +412,7 @@ export const startFurnitureRemoval = async (image: string): Promise<{ job_id: st
   }
 };
 
-export const checkFurnitureRemovalStatus = async (jobId: string): Promise<{ job_id: string; status: string; image?: string }> => {
+export const checkFurnitureRemovalStatus = async (jobId: string): Promise<{ job_id: string; status: string; image?: string; error?: string }> => {
   try {
     const response = await api.get(`/api/furniture/status/${jobId}`);
     return response.data;

@@ -57,19 +57,19 @@ export function BudgetStep({ budget, isFlexible, onSelect }: BudgetStepProps) {
   };
 
   return (
-    <div className="flex flex-col items-center">
+    <div className="flex flex-col items-center max-w-xl mx-auto">
       {/* Header */}
-      <div className="text-center mb-10">
-        <h2 className="text-2xl md:text-3xl font-light text-neutral-900 mb-3">
+      <div className="text-center mb-6">
+        <h2 className="text-2xl md:text-3xl font-light text-neutral-900 mb-2">
           What's your budget?
         </h2>
-        <p className="text-neutral-500 font-light">
+        <p className="text-neutral-500 font-light text-sm">
           This helps us recommend products in your range
         </p>
       </div>
 
-      {/* Budget Presets */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full max-w-2xl mb-6">
+      {/* Budget Presets - Compact grid */}
+      <div className="grid grid-cols-4 gap-2 w-full mb-4">
         {BUDGET_OPTIONS.map((option) => {
           const isSelected = budget === option.value && !isFlexible;
 
@@ -78,18 +78,18 @@ export function BudgetStep({ budget, isFlexible, onSelect }: BudgetStepProps) {
               key={option.value}
               onClick={() => handlePresetSelect(option.value)}
               disabled={isFlexible}
-              className={`p-4 rounded-xl border-2 transition-all duration-200 ${
+              className={`py-3 px-2 rounded-lg border transition-all duration-200 ${
                 isFlexible
-                  ? 'opacity-50 cursor-not-allowed border-neutral-200 bg-neutral-50'
+                  ? 'opacity-40 cursor-not-allowed border-neutral-200 bg-neutral-50'
                   : isSelected
-                  ? 'border-primary-600 bg-primary-50 shadow-md'
-                  : 'border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-sm'
+                  ? 'border-primary-600 bg-primary-50 shadow-sm'
+                  : 'border-neutral-200 bg-white hover:border-primary-400 hover:bg-primary-50/30'
               }`}
             >
-              <div className="text-lg font-semibold text-neutral-900">
+              <div className="text-base font-semibold text-neutral-900">
                 {option.label}
               </div>
-              <div className="text-xs text-neutral-500 mt-1">
+              <div className="text-[10px] text-neutral-500 mt-0.5">
                 {option.description}
               </div>
             </button>
@@ -97,13 +97,13 @@ export function BudgetStep({ budget, isFlexible, onSelect }: BudgetStepProps) {
         })}
       </div>
 
-      {/* Custom Budget Input */}
-      <div className="w-full max-w-md mb-6">
-        <label className="block text-sm font-medium text-neutral-700 mb-2 text-center">
+      {/* Custom Budget Input - Smaller */}
+      <div className="w-full mb-4">
+        <label className="block text-xs text-neutral-500 mb-1.5 text-center">
           Or enter a custom budget
         </label>
         <div className="relative">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500 font-medium">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 text-sm">
             ₹
           </span>
           <input
@@ -112,50 +112,50 @@ export function BudgetStep({ budget, isFlexible, onSelect }: BudgetStepProps) {
             onChange={(e) => handleCustomBudgetChange(e.target.value)}
             disabled={isFlexible}
             placeholder="Enter amount"
-            className={`w-full pl-8 pr-4 py-3 border-2 rounded-xl text-center text-lg font-medium transition-all ${
+            className={`w-full pl-7 pr-4 py-2.5 border rounded-lg text-center text-sm font-medium transition-all ${
               isFlexible
                 ? 'bg-neutral-50 border-neutral-200 text-neutral-400 cursor-not-allowed'
                 : customBudget
                 ? 'border-primary-600 bg-primary-50'
-                : 'border-neutral-200 bg-white focus:border-primary-500 focus:ring-2 focus:ring-primary-100'
+                : 'border-neutral-200 bg-white focus:border-primary-500 focus:ring-1 focus:ring-primary-100'
             }`}
           />
         </div>
         {customBudget && (
-          <p className="text-center text-sm text-neutral-500 mt-2">
+          <p className="text-center text-xs text-neutral-500 mt-1">
             {formatCurrency(parseInt(customBudget, 10))}
           </p>
         )}
       </div>
 
-      {/* Flexible Budget Toggle */}
-      <div className="w-full max-w-md">
+      {/* Flexible Budget Toggle - Compact */}
+      <div className="w-full">
         <button
           onClick={handleFlexibleToggle}
-          className={`w-full p-4 rounded-xl border-2 transition-all duration-200 flex items-center justify-center gap-3 ${
+          className={`w-full py-2.5 px-4 rounded-lg border transition-all duration-200 flex items-center justify-center gap-2 ${
             isFlexible
               ? 'border-primary-600 bg-primary-50'
               : 'border-neutral-200 bg-white hover:border-neutral-300'
           }`}
         >
           <div
-            className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+            className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
               isFlexible
                 ? 'border-primary-600 bg-primary-600'
                 : 'border-neutral-300'
             }`}
           >
             {isFlexible && (
-              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
               </svg>
             )}
           </div>
-          <span className="text-neutral-700 font-medium">
+          <span className="text-neutral-700 text-sm font-medium">
             I'm flexible on budget
           </span>
         </button>
-        <p className="text-xs text-neutral-400 text-center mt-2">
+        <p className="text-[10px] text-neutral-400 text-center mt-1.5">
           We'll show you the best options across all price ranges
         </p>
       </div>

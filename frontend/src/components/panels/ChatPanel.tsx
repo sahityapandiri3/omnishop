@@ -195,7 +195,7 @@ export default function ChatPanel({
         const budgetStr = prefs.budget >= 100000
           ? `₹${(prefs.budget / 100000).toFixed(prefs.budget % 100000 === 0 ? 0 : 1)} lakh`
           : `₹${prefs.budget.toLocaleString('en-IN')}`;
-        parts.push(`my budget is around ${budgetStr}`);
+        parts.push(`My budget is around ${budgetStr}`);
       } else if (prefs.budgetFlexible) {
         parts.push(`I'm flexible on budget`);
       }
@@ -234,9 +234,14 @@ export default function ChatPanel({
           setIsLoading(true);
           const sendPreferences = async () => {
             try {
+              // Use the PROCESSED image (clean room) for room analysis, not the original
+              // The processed image has furniture removed, allowing proper analysis of:
+              // wall colors, space, lighting, ceiling, etc.
+              const imageForAnalysis = prefs.processedImage || prefs.roomImage;
+
               const response = await sendChatMessage(sessionId, {
                 message,
-                image: prefs.roomImage || undefined,
+                image: imageForAnalysis || undefined,
                 selected_stores: selectedStores.length > 0 ? selectedStores : undefined,
                 onboarding_preferences: prefs,
               });
@@ -261,7 +266,7 @@ export default function ChatPanel({
               }
 
               // Mark image as sent
-              if (prefs.roomImage) {
+              if (imageForAnalysis) {
                 setImageSentToBackend(true);
               }
             } catch (error) {

@@ -75,8 +75,8 @@ export function StylePreferenceStep({
         </div>
       </div>
 
-      {/* Style Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 w-full">
+      {/* Style Grid - Increased size by 20% */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5 w-full max-w-6xl">
         {STYLE_OPTIONS.map((style) => {
           const selectionState = getSelectionState(style.id);
 
@@ -96,12 +96,12 @@ export function StylePreferenceStep({
                   : ''
               }`}
             >
-              {/* Image */}
-              <div className="aspect-square relative overflow-hidden">
+              {/* Image - 20% larger */}
+              <div className="aspect-[1.2/1] relative overflow-hidden">
                 <img
                   src={style.imagePath}
                   alt={style.displayName}
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 />
                 {/* Overlay */}
                 <div

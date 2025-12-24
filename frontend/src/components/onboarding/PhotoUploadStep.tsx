@@ -1,17 +1,100 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { startFurnitureRemoval, checkFurnitureRemovalStatus } from '@/utils/api';
 
 interface PhotoUploadStepProps {
   image: string | null;
-  onUpload: (image: string | null) => void;
+  processedImage: string | null;
+  isProcessing: boolean;
+  processingStatus: string;
+  onUpload: (original: string | null, processed: string | null) => void;
+  onProcessingStart: () => void;
+  onProcessingComplete: (processedImage: string) => void;
+  onProcessingError: (error: string) => void;
 }
 
-export function PhotoUploadStep({ image, onUpload }: PhotoUploadStepProps) {
+export function PhotoUploadStep({
+  image,
+  processedImage,
+  isProcessing,
+  processingStatus,
+  onUpload,
+  onProcessingStart,
+  onProcessingComplete,
+  onProcessingError,
+}: PhotoUploadStepProps) {
   const [isDragging, setIsDragging] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, []);
+
+  const startProcessing = async (imageData: string) => {
+    onProcessingStart();
+
+    try {
+      // Start furniture removal
+      const response = await startFurnitureRemoval(imageData);
+      const jobId = response.job_id;
+
+      // Poll for completion
+      let attempts = 0;
+      const maxAttempts = 150; // 5 minutes max (2s intervals)
+
+      const poll = async () => {
+        attempts++;
+
+        if (attempts > maxAttempts) {
+          onProcessingError('Processing timed out. Please try again.');
+          return;
+        }
+
+        try {
+          const status = await checkFurnitureRemovalStatus(jobId);
+
+          if (status.status === 'completed' && status.image) {
+            const processedImg = status.image.startsWith('data:')
+              ? status.image
+              : `data:image/png;base64,${status.image}`;
+            console.log('[PhotoUploadStep] Furniture removal completed, image length:', processedImg.length);
+            onProcessingComplete(processedImg);
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+            }
+          } else if (status.status === 'failed') {
+            onProcessingError(status.error || 'Processing failed. Please try again.');
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+            }
+          }
+          // Still processing, continue polling
+        } catch (err) {
+          console.error('Polling error:', err);
+          // Continue polling on transient errors
+        }
+      };
+
+      // Start polling every 2 seconds
+      pollIntervalRef.current = setInterval(poll, 2000);
+      poll(); // Initial poll
+
+    } catch (err) {
+      console.error('Failed to start processing:', err);
+      onProcessingError('Failed to start image processing. Please try again.');
+    }
+  };
 
   const processFile = useCallback(
     async (file: File) => {
@@ -29,24 +112,27 @@ export function PhotoUploadStep({ image, onUpload }: PhotoUploadStepProps) {
         return;
       }
 
-      setIsProcessing(true);
+      setIsUploading(true);
 
       try {
         // Convert to base64
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
           const base64 = e.target?.result as string;
-          onUpload(base64);
-          setIsProcessing(false);
+          onUpload(base64, null); // Store original, clear processed
+          setIsUploading(false);
+
+          // Start furniture removal processing
+          await startProcessing(base64);
         };
         reader.onerror = () => {
           setError('Failed to read the image file');
-          setIsProcessing(false);
+          setIsUploading(false);
         };
         reader.readAsDataURL(file);
       } catch (err) {
         setError('Failed to process the image');
-        setIsProcessing(false);
+        setIsUploading(false);
       }
     },
     [onUpload]
@@ -86,11 +172,19 @@ export function PhotoUploadStep({ image, onUpload }: PhotoUploadStepProps) {
   );
 
   const handleRemove = useCallback(() => {
-    onUpload(null);
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    onUpload(null, null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   }, [onUpload]);
+
+  // Determine which image to show
+  const displayImage = processedImage || image;
+  const showingProcessed = !!processedImage;
 
   return (
     <div className="flex flex-col items-center">
@@ -100,42 +194,76 @@ export function PhotoUploadStep({ image, onUpload }: PhotoUploadStepProps) {
           Upload your room photo
         </h2>
         <p className="text-neutral-500 font-light">
-          We'll visualize furniture right in your space
+          We'll prepare your room for furniture visualization
         </p>
       </div>
 
       {/* Upload Area */}
       <div className="w-full max-w-xl">
-        {image ? (
+        {displayImage ? (
           // Preview
           <div className="relative rounded-2xl overflow-hidden shadow-lg">
             <img
-              src={image}
+              src={displayImage}
               alt="Uploaded room"
               className="w-full aspect-video object-cover"
             />
-            {/* Overlay with actions */}
-            <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-2 bg-white text-neutral-900 rounded-lg font-medium text-sm hover:bg-neutral-100 transition-colors"
-              >
-                Change Photo
-              </button>
-              <button
-                onClick={handleRemove}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium text-sm hover:bg-red-700 transition-colors"
-              >
-                Remove
-              </button>
-            </div>
-            {/* Success indicator */}
-            <div className="absolute top-3 right-3 bg-green-500 text-white px-3 py-1 rounded-full text-sm font-medium flex items-center gap-1.5">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              Photo ready
-            </div>
+
+            {/* Processing overlay */}
+            {isProcessing && (
+              <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center">
+                <div className="w-16 h-16 border-4 border-white/30 border-t-white rounded-full animate-spin mb-4" />
+                <p className="text-white font-medium text-lg mb-2">
+                  {processingStatus || 'Preparing your room...'}
+                </p>
+                <p className="text-white/70 text-sm">
+                  Removing existing furniture for visualization
+                </p>
+              </div>
+            )}
+
+            {/* Hover overlay with actions (only when not processing) */}
+            {!isProcessing && (
+              <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-4 py-2 bg-white text-neutral-900 rounded-lg font-medium text-sm hover:bg-neutral-100 transition-colors"
+                >
+                  Change Photo
+                </button>
+                <button
+                  onClick={handleRemove}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium text-sm hover:bg-red-700 transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
+            )}
+
+            {/* Status indicator */}
+            {!isProcessing && (
+              <div className={`absolute top-3 right-3 px-3 py-1 rounded-full text-sm font-medium flex items-center gap-1.5 ${
+                showingProcessed
+                  ? 'bg-green-500 text-white'
+                  : 'bg-amber-500 text-white'
+              }`}>
+                {showingProcessed ? (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Room ready
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Processing...
+                  </>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           // Drop zone
@@ -150,10 +278,10 @@ export function PhotoUploadStep({ image, onUpload }: PhotoUploadStepProps) {
                 : 'border-neutral-300 bg-white hover:border-neutral-400 hover:bg-neutral-50'
             }`}
           >
-            {isProcessing ? (
+            {isUploading ? (
               <div className="flex flex-col items-center">
                 <div className="w-12 h-12 border-3 border-primary-200 border-t-primary-600 rounded-full animate-spin mb-4" />
-                <p className="text-neutral-600">Processing image...</p>
+                <p className="text-neutral-600">Uploading image...</p>
               </div>
             ) : (
               <>
@@ -206,32 +334,79 @@ export function PhotoUploadStep({ image, onUpload }: PhotoUploadStepProps) {
         )}
       </div>
 
-      {/* Tips */}
-      <div className="mt-8 w-full max-w-xl">
-        <h3 className="text-sm font-medium text-neutral-700 mb-3 text-center">
-          Tips for best results
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {[
-            { icon: '📐', text: 'Wide-angle shot works best' },
-            { icon: '💡', text: 'Good lighting helps' },
-            { icon: '🪑', text: 'Clear floor space for visualization' },
-          ].map((tip, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-2 p-3 bg-neutral-100 rounded-lg text-sm"
-            >
-              <span className="text-lg">{tip.icon}</span>
-              <span className="text-neutral-600">{tip.text}</span>
+      {/* Processing info */}
+      {isProcessing && (
+        <div className="mt-6 w-full max-w-xl">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-blue-900 font-medium text-sm">Preparing your room</p>
+                <p className="text-blue-700 text-xs mt-1">
+                  We're removing existing furniture from your photo to create a clean canvas.
+                  This typically takes 30-60 seconds.
+                </p>
+              </div>
             </div>
-          ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Skip note */}
-      <p className="mt-6 text-xs text-neutral-400 text-center">
-        You can also upload a photo later in the Design Studio
-      </p>
+      {/* Tips - only show when not processing */}
+      {!isProcessing && !processedImage && (
+        <div className="mt-8 w-full max-w-xl">
+          <h3 className="text-sm font-medium text-neutral-700 mb-3 text-center">
+            Tips for best results
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {[
+              { icon: '📐', text: 'Wide-angle shot works best' },
+              { icon: '💡', text: 'Good lighting helps' },
+              { icon: '🪑', text: 'Clear floor space for visualization' },
+            ].map((tip, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-2 p-3 bg-neutral-100 rounded-lg text-sm"
+              >
+                <span className="text-lg">{tip.icon}</span>
+                <span className="text-neutral-600">{tip.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Success message */}
+      {processedImage && !isProcessing && (
+        <div className="mt-6 w-full max-w-xl">
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-green-900 font-medium text-sm">Your room is ready!</p>
+                <p className="text-green-700 text-xs mt-0.5">
+                  Click "Start Designing" to visualize furniture in your space.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Skip note - only when no image */}
+      {!image && (
+        <p className="mt-6 text-xs text-neutral-400 text-center">
+          You can also upload a photo later in the Design Studio
+        </p>
+      )}
     </div>
   );
 }

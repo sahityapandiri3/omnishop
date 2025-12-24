@@ -133,8 +133,15 @@ export const DraggableFurnitureCanvas: React.FC<DraggableFurnitureCanvasProps> =
 
   // Get product image for a position
   // Always uses product catalog image (no layer extraction)
+  // Handles instance IDs like "12345-1" by extracting the base product ID
   const getImageForPosition = (position: FurniturePosition): string => {
-    const product = products.find(p => String(p.id) === String(position.productId));
+    // Extract base product ID from instance ID (e.g., "12345-1" -> "12345")
+    // Instance IDs are created for products with quantity > 1
+    const baseProductId = position.productId.includes('-')
+      ? position.productId.split('-')[0]
+      : position.productId;
+
+    const product = products.find(p => String(p.id) === baseProductId);
     return product ? getProductImageUrl(product) : '/placeholder-product.jpg';
   };
 

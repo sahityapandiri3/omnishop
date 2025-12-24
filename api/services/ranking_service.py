@@ -3,15 +3,23 @@ Deterministic, explainable product ranking service.
 
 This service implements a weighted scoring system for ranking products
 based on multiple factors including vector similarity, style matching,
-attribute matching, and material/color preferences.
+attribute matching, material/color preferences, and budget fit.
 
 Scoring Formula:
     FINAL_SCORE =
-        0.50 * vector_similarity      +
-        0.20 * attribute_match_score  +
+        0.45 * vector_similarity      +
+        0.15 * attribute_match_score  +
         0.15 * style_score            +
         0.10 * material_color_score   +
+        0.10 * budget_score           +
         0.05 * text_intent_score
+
+Budget Scoring:
+    - Products within budget get score 1.0
+    - Products up to 20% over budget get score 0.7
+    - Products up to 50% over budget get score 0.4
+    - Products over 50% above budget get score 0.2
+    - If no budget specified, all products get neutral score 0.5
 """
 import json
 import logging
@@ -34,10 +42,11 @@ class RankingService:
 
     # Scoring weights - must sum to 1.0
     WEIGHTS = {
-        "vector_similarity": 0.50,
-        "attribute_match": 0.20,
+        "vector_similarity": 0.45,
+        "attribute_match": 0.15,
         "style": 0.15,
         "material_color": 0.10,
+        "budget": 0.10,
         "text_intent": 0.05,
     }
 
@@ -131,6 +140,7 @@ class RankingService:
         user_secondary_style: Optional[str] = None,
         user_materials: Optional[List[str]] = None,
         user_color: Optional[str] = None,
+        user_budget_max: Optional[float] = None,
     ) -> List[RankedProduct]:
         """
         Rank products using weighted scoring.
@@ -146,6 +156,7 @@ class RankingService:
             user_secondary_style: User's secondary style preference
             user_materials: List of preferred materials
             user_color: Preferred color
+            user_budget_max: Maximum budget for this category (products over budget get lower scores)
 
         Returns:
             List of RankedProduct sorted by final_score (descending)
@@ -164,6 +175,9 @@ class RankingService:
                 ),
                 "material_color": self._compute_material_color_score(
                     product, user_materials, user_color
+                ),
+                "budget": self._compute_budget_score(
+                    product, user_budget_max
                 ),
                 "text_intent": self._compute_text_intent_score(
                     product, query_embedding
@@ -411,6 +425,51 @@ class RankingService:
             return 0.85
 
         return 0.5  # Different colors = neutral
+
+    def _compute_budget_score(
+        self,
+        product,
+        user_budget_max: Optional[float]
+    ) -> float:
+        """
+        Compute budget fit score based on product price vs category budget.
+
+        Scoring approach:
+        - Within budget = 1.0 (full score)
+        - Up to 20% over = 0.7 (still good, slight stretch)
+        - Up to 50% over = 0.4 (significant stretch)
+        - Over 50% above budget = 0.2 (out of budget but still shown)
+        - No budget specified = 0.5 (neutral)
+        - No price info = 0.5 (neutral)
+
+        Returns a score in [0, 1] range.
+        """
+        if not user_budget_max:
+            return 0.5  # Neutral when no budget specified
+
+        product_price = getattr(product, 'price', None)
+        if not product_price:
+            return 0.5  # Neutral for missing price info
+
+        try:
+            price = float(product_price)
+            budget = float(user_budget_max)
+
+            if price <= budget:
+                return 1.0  # Within budget = perfect score
+
+            # Calculate how much over budget
+            over_ratio = (price - budget) / budget
+
+            if over_ratio <= 0.20:
+                return 0.7  # Up to 20% over = still good
+            elif over_ratio <= 0.50:
+                return 0.4  # Up to 50% over = significant stretch
+            else:
+                return 0.2  # Over 50% = out of budget but still shown
+
+        except (ValueError, TypeError):
+            return 0.5  # Invalid data = neutral
 
     def _compute_text_intent_score(
         self,
