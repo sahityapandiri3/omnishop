@@ -150,23 +150,12 @@ export default function ChatPanel({
 
   // Load and process onboarding preferences from sessionStorage
   useEffect(() => {
-    // Debug: Log all conditions
-    console.log('[ChatPanel] Onboarding effect check:', {
-      sessionId: !!sessionId,
-      isRestoringSession,
-      alreadyProcessed: onboardingProcessedRef.current,
-      hasPrefs: !!sessionStorage.getItem('onboardingPreferences'),
-    });
-
     // Only run once when session is ready and not restoring
     if (!sessionId || isRestoringSession || onboardingProcessedRef.current) return;
 
     try {
       const prefsJson = sessionStorage.getItem('onboardingPreferences');
-      if (!prefsJson) {
-        console.log('[ChatPanel] No onboarding preferences in sessionStorage');
-        return;
-      }
+      if (!prefsJson) return;
 
       const prefs: OnboardingPreferences = JSON.parse(prefsJson);
       console.log('[ChatPanel] Found onboarding preferences:', prefs);
@@ -226,7 +215,6 @@ export default function ChatPanel({
           ? `Welcome! I see you're looking to create a beautiful ${prefs.primaryStyle.replace(/_/g, ' ')} ${roomName}. Let me help you find the perfect pieces!`
           : `Welcome! I'm excited to help you design your ${roomName}. Let me find some great options for you!`;
 
-        console.log('[ChatPanel] Setting welcome message:', welcomeMessage);
         setMessages([{
           role: 'assistant',
           content: welcomeMessage,
@@ -259,7 +247,7 @@ export default function ChatPanel({
               });
 
               // Handle response
-              if (response.message) {
+              if (response.message && response.message.content) {
                 setMessages(prev => [...prev, {
                   role: 'assistant',
                   content: response.message.content,
