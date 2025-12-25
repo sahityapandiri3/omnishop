@@ -135,3 +135,6 @@ dmypy.json
 db_exports/chat_messages.csv
 db_exports/chat_sessions.csv
 chat.md
+
+# Large data files for production migration
+api/scripts/products_embeddings_styles.csv.gz
