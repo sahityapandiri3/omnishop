@@ -1686,6 +1686,7 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 4. PRESERVE THE ROOM: Keep the same walls, windows, floors, ceiling, lighting
 5. NATURAL PLACEMENT: Place products naturally where they would logically fit
 6. ROOM SIZE UNCHANGED: The room must look the EXACT same size
+7. ⛔ DO NOT ADD EXTRA ITEMS: Only add the items listed above. Do NOT add extra copies of items already in the room unless specifically requested. If the room has 2 lamps, keep exactly 2 lamps (not 3). Count preservation is critical.
 
 🖼️ WALL ART / PAINTINGS - CRITICAL:
 - If the room ALREADY has wall art/paintings hanging → DO NOT REPLACE them

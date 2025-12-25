@@ -1,50 +1,50 @@
 """
-Migrate embeddings and styles from local database directly to production.
-
-This script connects to both databases and transfers data without needing
-to transfer large CSV files.
-
-Usage:
-    # Set your local database URL and run with Railway
-    LOCAL_DB_URL="postgresql://user@localhost:5432/omnishop" railway run python scripts/migrate_embeddings_to_prod.py
-
-    # Or specify both URLs explicitly
-    LOCAL_DB_URL="postgresql://..." PROD_DB_URL="postgresql://..." python scripts/migrate_embeddings_to_prod.py
+Migrate remaining products that don't have embeddings/styles on production.
 """
 import os
 import sys
 from pathlib import Path
 
-# Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import create_engine, text  # noqa: E402
 
-# Get database URLs
 LOCAL_DB_URL = os.environ.get("LOCAL_DB_URL", "postgresql://sahityapandiri@localhost:5432/omnishop")
 PROD_DB_URL = os.environ.get("PROD_DB_URL") or os.environ.get("DATABASE_URL")
 
-BATCH_SIZE = 100
+BATCH_SIZE = 50
 
 
-def migrate_data():
-    """Migrate embeddings and styles from local to production."""
+def migrate_remaining():
+    """Migrate only products that don't have styles on production."""
 
     if not PROD_DB_URL:
         print("ERROR: Production database URL not found.")
-        print("Set PROD_DB_URL or run with 'railway run'")
         return
 
     print(f"Source DB: {LOCAL_DB_URL[:50]}...")
     print(f"Target DB: {PROD_DB_URL[:50]}...")
-    print(f"Batch size: {BATCH_SIZE}")
     print()
 
-    # Connect to both databases
     local_engine = create_engine(LOCAL_DB_URL, pool_pre_ping=True)
     prod_engine = create_engine(PROD_DB_URL, pool_pre_ping=True)
 
-    # Query products with embeddings/styles from local
+    # Get list of product IDs that don't have styles on production
+    print("Finding products without styles on production...")
+    with prod_engine.connect() as conn:
+        result = conn.execute(text("""
+            SELECT id FROM products WHERE primary_style IS NULL ORDER BY id
+        """))
+        missing_ids = [row.id for row in result.fetchall()]
+
+    print(f"Found {len(missing_ids)} products without styles")
+
+    if not missing_ids:
+        print("All products already have styles!")
+        return
+
+    # Get data from local for those IDs
+    print("Fetching data from local database...")
     select_query = text("""
         SELECT
             id,
@@ -56,24 +56,22 @@ def migrate_data():
             style_confidence,
             style_extraction_method
         FROM products
-        WHERE embedding IS NOT NULL
-           OR primary_style IS NOT NULL
+        WHERE id = ANY(:ids)
+        AND primary_style IS NOT NULL
         ORDER BY id
     """)
 
-    print("Reading from local database...")
-    with local_engine.connect() as local_conn:
-        result = local_conn.execute(select_query)
+    with local_engine.connect() as conn:
+        result = conn.execute(select_query, {"ids": missing_ids})
         rows = result.fetchall()
 
-    total = len(rows)
-    print(f"Found {total} products to migrate")
+    print(f"Found {len(rows)} products with data in local DB")
 
-    if total == 0:
-        print("Nothing to migrate.")
+    if not rows:
+        print("No matching products with data in local DB")
         return
 
-    # Prepare update query - embedding is stored as text
+    # Migrate in small batches with individual commits
     update_sql = text("""
         UPDATE products SET
             embedding = :embedding,
@@ -86,17 +84,17 @@ def migrate_data():
         WHERE id = :id
     """)
 
-    # Migrate in batches
     updated = 0
     skipped = 0
     errors = 0
+    total = len(rows)
 
-    print("\nMigrating to production...")
+    print(f"\nMigrating {total} products...")
 
-    with prod_engine.connect() as prod_conn:
+    with prod_engine.connect() as conn:
         for i, row in enumerate(rows):
             try:
-                result = prod_conn.execute(update_sql, {
+                result = conn.execute(update_sql, {
                     "id": row.id,
                     "embedding": row.embedding,
                     "embedding_text": row.embedding_text,
@@ -114,27 +112,40 @@ def migrate_data():
 
                 # Commit every BATCH_SIZE records
                 if (i + 1) % BATCH_SIZE == 0:
-                    prod_conn.commit()
+                    conn.commit()
                     pct = (i + 1) / total * 100
                     print(f"Progress: {i + 1}/{total} ({pct:.1f}%) | Updated: {updated} | Skipped: {skipped}")
 
             except Exception as e:
                 errors += 1
-                if errors <= 10:
-                    print(f"Error on product {row.id}: {e}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                if errors <= 3:
+                    print(f"Error on product {row.id}: {str(e)[:100]}")
+                # Try to reconnect
+                try:
+                    conn.close()
+                    conn = prod_engine.connect()
+                except Exception:
+                    pass
 
         # Final commit
-        prod_conn.commit()
+        try:
+            conn.commit()
+        except Exception:
+            pass
 
     print("\n" + "=" * 60)
     print("MIGRATION COMPLETE")
     print("=" * 60)
-    print(f"Total processed: {total}")
+    print(f"Total attempted: {total}")
     print(f"Updated:         {updated}")
-    print(f"Skipped:         {skipped} (product not found in prod DB)")
+    print(f"Skipped:         {skipped}")
     print(f"Errors:          {errors}")
     print("=" * 60)
 
 
 if __name__ == "__main__":
-    migrate_data()
+    migrate_remaining()

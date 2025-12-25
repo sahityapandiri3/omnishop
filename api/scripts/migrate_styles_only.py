@@ -1,63 +1,45 @@
 """
-Migrate embeddings and styles from local database directly to production.
+Migrate only style classifications (not embeddings) to production.
 
-This script connects to both databases and transfers data without needing
-to transfer large CSV files.
+Use this when pgvector is not available on production or disk space is limited.
 
 Usage:
-    # Set your local database URL and run with Railway
-    LOCAL_DB_URL="postgresql://user@localhost:5432/omnishop" railway run python scripts/migrate_embeddings_to_prod.py
-
-    # Or specify both URLs explicitly
-    LOCAL_DB_URL="postgresql://..." PROD_DB_URL="postgresql://..." python scripts/migrate_embeddings_to_prod.py
+    PROD_DB_URL="postgresql://..." python scripts/migrate_styles_only.py
 """
 import os
 import sys
 from pathlib import Path
 
-# Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import create_engine, text  # noqa: E402
 
-# Get database URLs
 LOCAL_DB_URL = os.environ.get("LOCAL_DB_URL", "postgresql://sahityapandiri@localhost:5432/omnishop")
 PROD_DB_URL = os.environ.get("PROD_DB_URL") or os.environ.get("DATABASE_URL")
 
-BATCH_SIZE = 100
+BATCH_SIZE = 500
 
 
-def migrate_data():
-    """Migrate embeddings and styles from local to production."""
+def migrate_styles():
+    """Migrate only style classifications from local to production."""
 
     if not PROD_DB_URL:
         print("ERROR: Production database URL not found.")
-        print("Set PROD_DB_URL or run with 'railway run'")
         return
 
     print(f"Source DB: {LOCAL_DB_URL[:50]}...")
     print(f"Target DB: {PROD_DB_URL[:50]}...")
-    print(f"Batch size: {BATCH_SIZE}")
+    print("Migrating: primary_style, secondary_style, style_confidence, style_extraction_method")
     print()
 
-    # Connect to both databases
     local_engine = create_engine(LOCAL_DB_URL, pool_pre_ping=True)
     prod_engine = create_engine(PROD_DB_URL, pool_pre_ping=True)
 
-    # Query products with embeddings/styles from local
+    # Query only style columns from local
     select_query = text("""
-        SELECT
-            id,
-            embedding::text as embedding,
-            embedding_text,
-            embedding_updated_at,
-            primary_style,
-            secondary_style,
-            style_confidence,
-            style_extraction_method
+        SELECT id, primary_style, secondary_style, style_confidence, style_extraction_method
         FROM products
-        WHERE embedding IS NOT NULL
-           OR primary_style IS NOT NULL
+        WHERE primary_style IS NOT NULL
         ORDER BY id
     """)
 
@@ -67,18 +49,15 @@ def migrate_data():
         rows = result.fetchall()
 
     total = len(rows)
-    print(f"Found {total} products to migrate")
+    print(f"Found {total} products with style classifications")
 
     if total == 0:
         print("Nothing to migrate.")
         return
 
-    # Prepare update query - embedding is stored as text
+    # Update query for styles only
     update_sql = text("""
         UPDATE products SET
-            embedding = :embedding,
-            embedding_text = :embedding_text,
-            embedding_updated_at = :embedding_updated_at,
             primary_style = :primary_style,
             secondary_style = :secondary_style,
             style_confidence = :style_confidence,
@@ -86,21 +65,17 @@ def migrate_data():
         WHERE id = :id
     """)
 
-    # Migrate in batches
     updated = 0
     skipped = 0
     errors = 0
 
-    print("\nMigrating to production...")
+    print("\nMigrating styles to production...")
 
     with prod_engine.connect() as prod_conn:
         for i, row in enumerate(rows):
             try:
                 result = prod_conn.execute(update_sql, {
                     "id": row.id,
-                    "embedding": row.embedding,
-                    "embedding_text": row.embedding_text,
-                    "embedding_updated_at": row.embedding_updated_at,
                     "primary_style": row.primary_style,
                     "secondary_style": row.secondary_style,
                     "style_confidence": float(row.style_confidence) if row.style_confidence else None,
@@ -112,7 +87,6 @@ def migrate_data():
                 else:
                     skipped += 1
 
-                # Commit every BATCH_SIZE records
                 if (i + 1) % BATCH_SIZE == 0:
                     prod_conn.commit()
                     pct = (i + 1) / total * 100
@@ -120,21 +94,21 @@ def migrate_data():
 
             except Exception as e:
                 errors += 1
-                if errors <= 10:
+                prod_conn.rollback()
+                if errors <= 5:
                     print(f"Error on product {row.id}: {e}")
 
-        # Final commit
         prod_conn.commit()
 
     print("\n" + "=" * 60)
-    print("MIGRATION COMPLETE")
+    print("STYLE MIGRATION COMPLETE")
     print("=" * 60)
     print(f"Total processed: {total}")
     print(f"Updated:         {updated}")
-    print(f"Skipped:         {skipped} (product not found in prod DB)")
+    print(f"Skipped:         {skipped}")
     print(f"Errors:          {errors}")
     print("=" * 60)
 
 
 if __name__ == "__main__":
-    migrate_data()
+    migrate_styles()
