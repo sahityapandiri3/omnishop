@@ -246,7 +246,12 @@ class User(Base):
     name = Column(String(200), nullable=True)
     profile_image_url = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, index=True)
-    role = Column(Enum(UserRole), default=UserRole.USER, nullable=False, index=True)
+    role = Column(
+        Enum(UserRole, values_callable=lambda x: [e.value for e in x], name="userrole"),
+        default=UserRole.USER,
+        nullable=False,
+        index=True
+    )
     last_login = Column(DateTime, nullable=True, index=True)  # Track last login timestamp
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
