@@ -274,10 +274,11 @@ For recommended_furniture_zone: Place furniture against solid walls, NOT windows
                 # Clean up common JSON formatting issues from AI
                 # 1. Remove trailing commas before ] or }
                 import re
-                cleaned_response = re.sub(r',(\s*[}\]])', r'\1', text_response)
+
+                cleaned_response = re.sub(r",(\s*[}\]])", r"\1", text_response)
                 # 2. Remove any markdown code blocks
-                cleaned_response = re.sub(r'^```json\s*', '', cleaned_response)
-                cleaned_response = re.sub(r'\s*```$', '', cleaned_response)
+                cleaned_response = re.sub(r"^```json\s*", "", cleaned_response)
+                cleaned_response = re.sub(r"\s*```$", "", cleaned_response)
 
                 analysis_data = json.loads(cleaned_response)
                 # Log what keys the AI actually returned
@@ -292,11 +293,11 @@ For recommended_furniture_zone: Place furniture against solid walls, NOT windows
                 # Try one more time with aggressive cleanup
                 try:
                     # Extract just the JSON object between { and }
-                    json_match = re.search(r'\{[\s\S]*\}', text_response)
+                    json_match = re.search(r"\{[\s\S]*\}", text_response)
                     if json_match:
-                        cleaned = re.sub(r',(\s*[}\]])', r'\1', json_match.group())
+                        cleaned = re.sub(r",(\s*[}\]])", r"\1", json_match.group())
                         analysis_data = json.loads(cleaned)
-                        logger.info(f"Successfully parsed JSON after aggressive cleanup")
+                        logger.info("Successfully parsed JSON after aggressive cleanup")
                     else:
                         raise json.JSONDecodeError("No JSON object found", text_response, 0)
                 except json.JSONDecodeError:
@@ -2141,18 +2142,22 @@ Generate a photorealistic image of the room with the {product_name} replacing th
                     try:
                         product_image_data = await self._download_image(img_url)
                         if product_image_data:
-                            product_images.append({
-                                "data": product_image_data,
-                                "name": product_name,
-                                "index": idx + 1,
-                                "image_number": img_idx + 1,
-                                "total_images": min(len(image_urls), 3)
-                            })
+                            product_images.append(
+                                {
+                                    "data": product_image_data,
+                                    "name": product_name,
+                                    "index": idx + 1,
+                                    "image_number": img_idx + 1,
+                                    "total_images": min(len(image_urls), 3),
+                                }
+                            )
                     except Exception as e:
                         logger.warning(f"Failed to download product image {img_idx + 1}: {e}")
 
                 if image_urls:
-                    logger.info(f"[VIZ] Product {idx+1} '{product_name}': Downloaded {min(len(image_urls), 3)} of {len(image_urls)} reference images")
+                    logger.info(
+                        f"[VIZ] Product {idx+1} '{product_name}': Downloaded {min(len(image_urls), 3)} of {len(image_urls)} reference images"
+                    )
 
             # Process the base image
             processed_image = self._preprocess_image(visualization_request.base_image)
@@ -2827,7 +2832,9 @@ Create a photorealistic interior design visualization that addresses the user's 
 
                 except asyncio.TimeoutError:
                     elapsed = time.time() - start_time
-                    logger.warning(f"TIMEOUT: Google Gemini API timed out after {elapsed:.2f}s (attempt {attempt + 1}/{max_retries})")
+                    logger.warning(
+                        f"TIMEOUT: Google Gemini API timed out after {elapsed:.2f}s (attempt {attempt + 1}/{max_retries})"
+                    )
                     # Retry on timeout with exponential backoff
                     if attempt < max_retries - 1:
                         wait_time = retry_delay * (2**attempt)  # Exponential backoff: 2, 4 seconds
@@ -3569,101 +3576,99 @@ YOUR TASK: Generate this room from a COMPLETELY DIFFERENT angle - a STRAIGHT-ON 
 
             # Build angle-specific prompts - emphasize CAMERA POSITION not just rotation
             angle_prompts = {
-                "left": """🎥 CAMERA REPOSITIONED TO LEFT SIDE OF ROOM - TRUE 90° PERSPECTIVE SHIFT
+                "left": """🎥 CAMERA MOVED TO LEFT WALL - LOOKING RIGHT
 
-🚨🚨🚨 CRITICAL WARNING - DO NOT MIRROR/FLIP THE IMAGE 🚨🚨🚨
+Imagine you are standing with your back against the LEFT WALL of this room, looking toward the RIGHT WALL.
 
-A mirror/flip is WRONG. This must be a NEW PERSPECTIVE where the camera physically moved.
+📐 GEOMETRIC TRANSFORMATION:
+- Original camera: Looking at the BACK WALL (the wall behind the furniture)
+- New camera: Looking at the RIGHT WALL (the wall that was on the right side of frame)
 
-📍 CAMERA HAS MOVED:
-- Camera WAS at the FRONT of the room, looking at the BACK wall (windows behind furniture)
-- Camera is NOW standing at the LEFT SIDE of the room, looking ACROSS toward the RIGHT wall
-- You are now seeing the room from a 90° different angle
+🖼️ HOW THE VIEW CHANGES:
+- What was the RIGHT EDGE of the image is now the CENTER BACKGROUND
+- What was the LEFT EDGE (windows/features on left) is now BEHIND YOU (not visible or barely visible at edge)
+- What was the BACK WALL (center of original image) is now on your RIGHT SIDE
+- What was the FRONT (where camera was) is now on your LEFT SIDE
 
-🖼️ WHAT THE NEW VIEW SHOULD SHOW:
-- BACKGROUND: The RIGHT WALL is now CENTER of image (what camera points at)
-- The furniture (sofa, chairs) are seen from their SIDE PROFILE
-- You see the NARROW END of the sofa (armrest), not the wide front cushions
-- The large windows that were BEHIND the furniture are now to your RIGHT (edge of frame or not visible)
-- Any fireplace/feature on the left wall is now BEHIND the camera (not visible)
+📦 FURNITURE APPEARANCE:
+- Sofas/daybeds: You now see their SIDE PROFILE (narrow end with armrest), NOT the front cushions
+- The furniture has NOT rotated - YOU have moved. The sofa still faces the same direction in the room.
+- Tables: Seen from a 90° different angle
+- Wall art that was on the back wall is now on a wall to your right
 
-🚫🚫🚫 CRITICAL - DO NOT DO THESE:
-- ❌ WRONG: MIRROR/FLIP the image horizontally - this is NOT a perspective change
-- ❌ WRONG: Same background with furniture flipped to opposite positions
-- ❌ WRONG: Feature walls swap sides (that's just mirroring!)
-- ❌ WRONG: Sofa still shown from front view with cushions fully visible
-- ❌ WRONG: Any result that looks like Image 1 horizontally reversed
+🚫 COMMON MISTAKES TO AVOID:
+- ❌ DO NOT just rotate the furniture 90° while keeping the same background
+- ❌ DO NOT mirror/flip the image
+- ❌ DO NOT show the furniture from the same front-facing angle
+- ❌ The sofa should NOT still show its full front cushions
 
-✅ CORRECT - The result must show:
-- ✅ Sofa seen from its SIDE (narrow profile, one armrest facing camera)
-- ✅ The right wall is now the main BACKGROUND (what camera points at)
-- ✅ Windows are to the side or not visible (NOT still in background)
-- ✅ Floor pattern perspective changes to match new camera position
-- ✅ Furniture appears in DIFFERENT positions in frame (NOT mirrored positions)
+✅ CORRECT RESULT:
+- The room is the SAME room with same dimensions and colors
+- You see DIFFERENT WALLS than before (right wall is now background)
+- Furniture is seen from the SIDE (not front)
+- It looks like a real photo taken from the left side of the room""",
+                "right": """🎥 CAMERA MOVED TO RIGHT WALL - LOOKING LEFT
 
-Think of it like you WALKED to the left side of the room and took a completely NEW photo looking at the right wall.""",
-                "right": """🎥 CAMERA REPOSITIONED TO RIGHT SIDE OF ROOM - TRUE 90° PERSPECTIVE SHIFT
+Imagine you are standing with your back against the RIGHT WALL of this room, looking toward the LEFT WALL.
 
-🚨🚨🚨 CRITICAL WARNING - DO NOT MIRROR/FLIP THE IMAGE 🚨🚨🚨
+📐 GEOMETRIC TRANSFORMATION:
+- Original camera: Looking at the BACK WALL (the wall behind the furniture)
+- New camera: Looking at the LEFT WALL (the wall that was on the left side of frame)
 
-A mirror/flip is WRONG. This must be a NEW PERSPECTIVE where the camera physically moved.
+🖼️ HOW THE VIEW CHANGES:
+- What was the LEFT EDGE of the image (windows/door) is now the CENTER BACKGROUND
+- What was the RIGHT EDGE is now BEHIND YOU (not visible or barely visible at edge)
+- What was the BACK WALL (center of original image) is now on your LEFT SIDE
+- What was the FRONT (where camera was) is now on your RIGHT SIDE
 
-📍 CAMERA HAS MOVED:
-- Camera WAS at the FRONT of the room, looking at the BACK wall (windows behind furniture)
-- Camera is NOW standing at the RIGHT SIDE of the room, looking ACROSS toward the LEFT wall
-- You are now seeing the room from a 90° different angle
+📦 FURNITURE APPEARANCE:
+- Sofas/daybeds: You now see their SIDE PROFILE (narrow end with armrest), NOT the front cushions
+- The furniture has NOT rotated - YOU have moved. The sofa still faces the same direction in the room.
+- Tables: Seen from a 90° different angle
+- Wall art that was on the back wall is now on a wall to your left
 
-🖼️ WHAT THE NEW VIEW SHOULD SHOW:
-- BACKGROUND: The LEFT WALL (brick fireplace/feature wall) is now CENTER of image
-- The furniture (sofa, chairs) are seen from their SIDE PROFILE
-- You see the NARROW END of the sofa (armrest), not the wide front cushions
-- The large windows that were BEHIND the furniture are now to your LEFT (edge of frame or not visible)
+🚫 COMMON MISTAKES TO AVOID:
+- ❌ DO NOT just rotate the furniture 90° while keeping the same background
+- ❌ DO NOT mirror/flip the image
+- ❌ DO NOT show the furniture from the same front-facing angle
+- ❌ The sofa should NOT still show its full front cushions
 
-🚫🚫🚫 CRITICAL - DO NOT DO THESE:
-- ❌ WRONG: MIRROR/FLIP the image horizontally - this is NOT a perspective change
-- ❌ WRONG: Same background with furniture flipped to opposite positions
-- ❌ WRONG: Fireplace moves from left to right edge (that's just mirroring!)
-- ❌ WRONG: Sofa still shown from front view with cushions fully visible
-- ❌ WRONG: Any result that looks like Image 1 horizontally reversed
+✅ CORRECT RESULT:
+- The room is the SAME room with same dimensions and colors
+- You see DIFFERENT WALLS than before (left wall is now background)
+- Furniture is seen from the SIDE (not front)
+- It looks like a real photo taken from the right side of the room""",
+                "back": """🎥 CAMERA MOVED TO BACK WALL - LOOKING FORWARD (180° TURN)
 
-✅ CORRECT - The result must show:
-- ✅ Sofa seen from its SIDE (narrow profile, one armrest facing camera)
-- ✅ The fireplace/left wall is now the main BACKGROUND (what camera points at)
-- ✅ Windows are to the side or not visible (NOT still in background)
-- ✅ Floor pattern perspective changes to match new camera position
-- ✅ Furniture appears in DIFFERENT positions in frame (NOT mirrored positions)
+Imagine you walked to the BACK of the room (where the wall art is) and turned around to face the FRONT.
 
-Think of it like you WALKED to the right side of the room and took a completely NEW photo looking at the left wall.""",
-                "back": """🎥 EXACT 180° OPPOSITE VIEW - CAMERA FLIPPED TO OTHER END OF ROOM
+📐 GEOMETRIC TRANSFORMATION:
+- Original camera: Near FRONT WALL, looking at BACK WALL
+- New camera: Near BACK WALL, looking at FRONT WALL
+- This is a 180° turn - you're looking at the OPPOSITE wall
 
-This is the EXACT OPPOSITE of the front view. Imagine picking up the camera and moving it to the opposite end of the room, then turning it around 180°.
+🖼️ HOW THE VIEW CHANGES:
+- What was BEHIND the camera (front wall with entrance) is now the CENTER BACKGROUND
+- What was the BACKGROUND (back wall with art) is now BEHIND YOU (not visible)
+- LEFT wall is still on your LEFT, RIGHT wall is still on your RIGHT
+- Any windows/doors on the left side are still on the left (but now you see them from the opposite end)
 
-📍 CAMERA POSITION:
-- In the FRONT VIEW: Camera was near the FRONT WALL, pointing at the BACK WALL
-- In the BACK VIEW: Camera is now near the BACK WALL, pointing at the FRONT WALL
-- This is a straight 180° flip - NOT a side angle
+📦 FURNITURE APPEARANCE:
+- If the sofa was against the back wall, it's now BEHIND the camera (not visible or at edges)
+- Tables in the center of the room are now in the FOREGROUND
+- You see the BACKS of furniture that was facing the original camera
+- Rug/floor patterns appear from the opposite direction
 
-📐 COMPOSITION (mirror opposite of front view):
-- The FRONT WALL with windows/glass doors is now the BACKGROUND (where the back wall was in front view)
-- Furniture that was IN FRONT of the camera is now BEHIND the camera (not visible)
-- Furniture that was FAR from the camera is now CLOSE to the camera
-- The coffee table that was between camera and sofa is now between camera and front wall
+🚫 COMMON MISTAKES TO AVOID:
+- ❌ DO NOT create a completely different room
+- ❌ DO NOT change where windows/doors are located on the walls
+- ❌ DO NOT flip left and right (left wall stays left, right wall stays right)
 
-🖼️ WHAT THE FRAME SHOWS:
-- CENTER/BACKGROUND: The front wall - large windows, glass doors, curtains, natural light, outdoor view
-- The same WIDTH of room is visible (left wall on left, right wall on right)
-- The same HEIGHT of room is visible (floor to ceiling)
-- Any furniture in the middle of the room (coffee table) appears in the foreground
-
-🚫 NOT VISIBLE:
-- The back wall and its art/paintings (now BEHIND the camera)
-- The sofa (if it was against the back wall, it's now behind/beside the camera)
-
-⚠️ KEY REQUIREMENT:
-- This must look like the EXACT SAME ROOM viewed from the opposite end
-- Same room dimensions, same floor, same ceiling, same side walls
-- Just looking at the OTHER END of the room (front wall instead of back wall)
-- Do NOT create a side-angle view - this is straight-on, just flipped 180°""",
+✅ CORRECT RESULT:
+- Same room, same dimensions, same floor, same ceiling
+- Looking at the wall that was BEHIND the original camera
+- Windows that were on the LEFT are still on the LEFT (just seen from opposite end)
+- It looks like walking to the other end of the room and taking a photo facing back""",
             }
 
             if target_angle not in angle_prompts:
@@ -4300,12 +4305,7 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
         # TODO: Implement actual image isolation using background removal or segmentation
         return base_image
 
-    async def classify_product_style(
-        self,
-        image_url: str,
-        product_name: str,
-        product_description: str = ""
-    ) -> Dict[str, Any]:
+    async def classify_product_style(self, image_url: str, product_name: str, product_description: str = "") -> Dict[str, Any]:
         """
         Classify a product's design style using Gemini Vision API.
 
@@ -4366,14 +4366,7 @@ IMPORTANT:
 
         # Build request payload
         payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": prompt},
-                        {"inline_data": {"mime_type": "image/png", "data": image_data}}
-                    ]
-                }
-            ]
+            "contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "image/png", "data": image_data}}]}]
         }
 
         try:
@@ -4398,9 +4391,17 @@ IMPORTANT:
 
                             # Validate result
                             valid_styles = [
-                                "indian_contemporary", "modern", "minimalist", "japandi",
-                                "scandinavian", "mid_century_modern", "modern_luxury",
-                                "contemporary", "boho", "eclectic", "industrial"
+                                "indian_contemporary",
+                                "modern",
+                                "minimalist",
+                                "japandi",
+                                "scandinavian",
+                                "mid_century_modern",
+                                "modern_luxury",
+                                "contemporary",
+                                "boho",
+                                "eclectic",
+                                "industrial",
                             ]
 
                             primary = result.get("primary_style", "").lower().replace(" ", "_")
@@ -4418,7 +4419,7 @@ IMPORTANT:
                                 "primary_style": primary,
                                 "secondary_style": secondary,
                                 "confidence": min(1.0, max(0.0, float(result.get("confidence", 0.7)))),
-                                "reasoning": result.get("reasoning", "Style classified by AI vision")[:200]
+                                "reasoning": result.get("reasoning", "Style classified by AI vision")[:200],
                             }
 
                         except json.JSONDecodeError as e:
@@ -4432,11 +4433,7 @@ IMPORTANT:
             logger.error(f"[GoogleAIStudioService] Error classifying product style: {str(e)}")
             return self._fallback_style_classification(product_name, product_description)
 
-    def _fallback_style_classification(
-        self,
-        product_name: str,
-        product_description: str = ""
-    ) -> Dict[str, Any]:
+    def _fallback_style_classification(self, product_name: str, product_description: str = "") -> Dict[str, Any]:
         """
         Fallback style classification using text-based keyword matching.
         Used when image-based classification fails.
@@ -4455,7 +4452,7 @@ IMPORTANT:
             "boho": ["boho", "bohemian", "macrame", "rattan", "wicker", "jute", "tribal"],
             "eclectic": ["eclectic", "mix", "mixed", "collected", "unique"],
             "industrial": ["industrial", "metal", "iron", "pipe", "loft", "warehouse", "raw"],
-            "modern": ["modern", "sleek", "streamlined", "functional"]
+            "modern": ["modern", "sleek", "streamlined", "functional"],
         }
 
         detected_style = "modern"  # Default
@@ -4471,7 +4468,7 @@ IMPORTANT:
             "primary_style": detected_style,
             "secondary_style": None,
             "confidence": 0.4 if max_matches > 0 else 0.2,
-            "reasoning": "Classified by text analysis (image unavailable)"
+            "reasoning": "Classified by text analysis (image unavailable)",
         }
 
     async def close(self):
