@@ -20,8 +20,9 @@ from sqlalchemy import case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from core.auth import require_admin
 from core.database import get_db
-from database.models import Category, CuratedLook, CuratedLookProduct, Product
+from database.models import Category, CuratedLook, CuratedLookProduct, Product, User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/curated", tags=["admin-curated"])
@@ -164,7 +165,10 @@ def get_primary_image_url(product: Product) -> Optional[str]:
 
 
 @router.get("/categories")
-async def get_product_categories(db: AsyncSession = Depends(get_db)):
+async def get_product_categories(
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
     """Get all product categories for filtering"""
     try:
         # Get categories that have products
@@ -188,6 +192,7 @@ async def search_products_for_look(
     max_price: Optional[float] = Query(None),
     colors: Optional[str] = Query(None, description="Comma-separated list of colors"),
     limit: int = Query(500, ge=1, le=1000),
+    current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Search for products to add to a curated look. Can search by text query or filter by category."""
@@ -298,6 +303,7 @@ async def list_curated_looks(
     size: int = Query(20, ge=1, le=100),
     room_type: Optional[str] = Query(None),
     is_published: Optional[bool] = Query(None),
+    current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """List all curated looks with pagination (admin view)"""
@@ -365,7 +371,11 @@ async def list_curated_looks(
 
 
 @router.get("/{look_id}", response_model=CuratedLookSchema)
-async def get_curated_look(look_id: int, db: AsyncSession = Depends(get_db)):
+async def get_curated_look(
+    look_id: int,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
     """Get a single curated look with full details"""
     try:
         query = (
@@ -422,7 +432,11 @@ async def get_curated_look(look_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/", response_model=CuratedLookSchema)
-async def create_curated_look(look_data: CuratedLookCreate, db: AsyncSession = Depends(get_db)):
+async def create_curated_look(
+    look_data: CuratedLookCreate,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
     """Create a new curated look"""
     # Log request details
     viz_size = len(look_data.visualization_image) if look_data.visualization_image else 0
@@ -491,7 +505,12 @@ async def create_curated_look(look_data: CuratedLookCreate, db: AsyncSession = D
 
 
 @router.put("/{look_id}", response_model=CuratedLookSchema)
-async def update_curated_look(look_id: int, look_data: CuratedLookUpdate, db: AsyncSession = Depends(get_db)):
+async def update_curated_look(
+    look_id: int,
+    look_data: CuratedLookUpdate,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
     """Update a curated look's details and optionally its products"""
     try:
         query = select(CuratedLook).where(CuratedLook.id == look_id)
@@ -574,7 +593,10 @@ async def update_curated_look(look_id: int, look_data: CuratedLookUpdate, db: As
 
 @router.put("/{look_id}/products", response_model=CuratedLookSchema)
 async def update_curated_look_products(
-    look_id: int, product_data: CuratedLookProductUpdate, db: AsyncSession = Depends(get_db)
+    look_id: int,
+    product_data: CuratedLookProductUpdate,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
 ):
     """Update the products in a curated look"""
     try:
@@ -627,7 +649,11 @@ async def update_curated_look_products(
 
 
 @router.delete("/{look_id}")
-async def delete_curated_look(look_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_curated_look(
+    look_id: int,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
     """Delete a curated look"""
     try:
         query = select(CuratedLook).where(CuratedLook.id == look_id)
@@ -655,7 +681,11 @@ async def delete_curated_look(look_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{look_id}/publish")
-async def publish_curated_look(look_id: int, db: AsyncSession = Depends(get_db)):
+async def publish_curated_look(
+    look_id: int,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
     """Publish a curated look (make it visible to users)"""
     try:
         query = select(CuratedLook).where(CuratedLook.id == look_id)
@@ -680,7 +710,11 @@ async def publish_curated_look(look_id: int, db: AsyncSession = Depends(get_db))
 
 
 @router.post("/{look_id}/unpublish")
-async def unpublish_curated_look(look_id: int, db: AsyncSession = Depends(get_db)):
+async def unpublish_curated_look(
+    look_id: int,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
     """Unpublish a curated look (hide from users)"""
     try:
         query = select(CuratedLook).where(CuratedLook.id == look_id)

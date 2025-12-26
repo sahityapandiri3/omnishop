@@ -1,31 +1,42 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/contexts/AuthContext';
-
-// Global whitelist of allowed emails (can be overridden per-route)
-const GLOBAL_WHITELIST = [
-  'sahityapandiri3@gmail.com',
-];
+import { useAuth, UserRole } from '@/contexts/AuthContext';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  allowedEmails?: string[];  // Optional override for specific routes
+  requiredRole?: UserRole;  // Optional: 'user' (default), 'admin', or 'super_admin'
 }
 
 /**
  * Wrapper component that protects routes requiring authentication.
  * Redirects unauthenticated users to the login page.
- * Optionally restricts access to whitelisted emails only.
+ * Optionally restricts access based on user role.
  */
-export function ProtectedRoute({ children, allowedEmails }: ProtectedRouteProps) {
+export function ProtectedRoute({ children, requiredRole = 'user' }: ProtectedRouteProps) {
   const router = useRouter();
   const { isAuthenticated, isLoading, user } = useAuth();
 
-  // Use provided whitelist or fall back to global
-  const whitelist = allowedEmails || GLOBAL_WHITELIST;
-  const isWhitelisted = user?.email && whitelist.includes(user.email.toLowerCase());
+  // Check if user has required role
+  const hasRequiredRole = useMemo(() => {
+    if (!user) return false;
+
+    // Role hierarchy: super_admin > admin > user
+    if (requiredRole === 'user') {
+      // Any authenticated user has 'user' role access
+      return true;
+    }
+    if (requiredRole === 'admin') {
+      // Admin or super_admin can access admin routes
+      return user.role === 'admin' || user.role === 'super_admin';
+    }
+    if (requiredRole === 'super_admin') {
+      // Only super_admin can access super_admin routes
+      return user.role === 'super_admin';
+    }
+    return false;
+  }, [user, requiredRole]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -60,8 +71,8 @@ export function ProtectedRoute({ children, allowedEmails }: ProtectedRouteProps)
     );
   }
 
-  // Check whitelist - block unauthorized users
-  if (!isWhitelisted) {
+  // Check role - block unauthorized users
+  if (!hasRequiredRole) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md mx-auto px-6">
@@ -72,7 +83,7 @@ export function ProtectedRoute({ children, allowedEmails }: ProtectedRouteProps)
           </div>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Restricted</h2>
           <p className="text-gray-600 mb-6">
-            This feature is currently in private beta. Contact support if you believe you should have access.
+            You don't have permission to access this page. {requiredRole === 'admin' ? 'Admin' : 'Super admin'} privileges are required.
           </p>
           <button
             onClick={() => router.push('/curated')}

@@ -4,7 +4,7 @@ Pydantic schemas for authentication
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_serializer
 
 
 # Request schemas
@@ -39,7 +39,15 @@ class UserResponse(BaseModel):
     profile_image_url: Optional[str] = None
     auth_provider: str
     is_active: bool
+    role: str  # "user", "admin", or "super_admin"
     created_at: datetime
+
+    @field_serializer("role")
+    def serialize_role(self, role):
+        """Convert UserRole enum to string value"""
+        if hasattr(role, "value"):
+            return role.value
+        return role
 
     class Config:
         from_attributes = True

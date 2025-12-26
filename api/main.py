@@ -43,6 +43,7 @@ try:
         chat,
         curated,
         furniture,
+        permissions,
         products,
         projects,
         stores,
@@ -350,6 +351,9 @@ if "projects" in dir():
 
 if "admin_migrations" in dir():
     app.include_router(admin_migrations.router, prefix="/api", tags=["admin"])
+
+if "permissions" in dir():
+    app.include_router(permissions.router, prefix="/api", tags=["permissions"])
 
 # Additional routers can be added here as needed
 

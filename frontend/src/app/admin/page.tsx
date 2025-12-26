@@ -80,7 +80,7 @@ function AdminPageContent() {
 
 export default function AdminPage() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute requiredRole="admin">
       <AdminPageContent />
     </ProtectedRoute>
   );

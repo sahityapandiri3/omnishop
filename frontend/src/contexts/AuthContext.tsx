@@ -4,6 +4,8 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { api } from '@/utils/api';
 
 // Types
+export type UserRole = 'user' | 'admin' | 'super_admin';
+
 export interface User {
   id: string;
   email: string;
@@ -11,7 +13,17 @@ export interface User {
   profile_image_url: string | null;
   auth_provider: string;
   is_active: boolean;
+  role: UserRole;
   created_at: string;
+}
+
+// Role helper functions
+export function isAdmin(user: User | null): boolean {
+  return user?.role === 'admin' || user?.role === 'super_admin';
+}
+
+export function isSuperAdmin(user: User | null): boolean {
+  return user?.role === 'super_admin';
 }
 
 interface AuthState {

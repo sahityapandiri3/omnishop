@@ -10,7 +10,7 @@ from services.auth_service import auth_service
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
-from database.models import User
+from database.models import User, UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -95,3 +95,33 @@ async def get_optional_user(
         return None
 
     return user
+
+
+async def require_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    Dependency that requires admin or super_admin role.
+    Raises 403 if user doesn't have sufficient permissions.
+    """
+    if current_user.role not in [UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
+    return current_user
+
+
+async def require_super_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    Dependency that requires super_admin role.
+    Raises 403 if user doesn't have sufficient permissions.
+    """
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super admin privileges required",
+        )
+    return current_user

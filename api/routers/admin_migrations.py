@@ -12,10 +12,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 
+from core.auth import require_super_admin
 from core.database import get_db
-from database.models import Product
+from database.models import Product, User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/migrations", tags=["admin"])
@@ -24,6 +24,7 @@ router = APIRouter(prefix="/admin/migrations", tags=["admin"])
 # =====================================================================
 # BACKFILL STATE TRACKING
 # =====================================================================
+
 
 class BackfillState:
     """Track state of background backfill operations."""
@@ -49,6 +50,7 @@ backfill_state = BackfillState()
 
 class BackfillRequest(BaseModel):
     """Request model for backfill operations."""
+
     batch_size: int = 100
     limit: Optional[int] = None
     regenerate: bool = False
@@ -58,15 +60,13 @@ class BackfillRequest(BaseModel):
 # EMBEDDING BACKFILL ENDPOINTS
 # =====================================================================
 
-async def _run_embedding_backfill(
-    batch_size: int,
-    limit: Optional[int],
-    regenerate: bool
-):
+
+async def _run_embedding_backfill(batch_size: int, limit: Optional[int], regenerate: bool):
     """Background task to run embedding backfill."""
     from services.embedding_service import get_embedding_service
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
+
     from core.config import settings
 
     embedding_service = get_embedding_service()
@@ -89,13 +89,7 @@ async def _run_embedding_backfill(
             product_ids = [row[0] for row in query.all()]
             total = len(product_ids)
 
-            backfill_state.update_embeddings(
-                "running",
-                total=total,
-                processed=0,
-                success=0,
-                failed=0
-            )
+            backfill_state.update_embeddings("running", total=total, processed=0, success=0, failed=0)
 
             logger.info(f"[EMBEDDING BACKFILL] Starting backfill for {total} products")
 
@@ -104,7 +98,7 @@ async def _run_embedding_backfill(
             failed = 0
 
             for i in range(0, total, batch_size):
-                batch_ids = product_ids[i:i + batch_size]
+                batch_ids = product_ids[i : i + batch_size]
 
                 for product_id in batch_ids:
                     try:
@@ -116,10 +110,7 @@ async def _run_embedding_backfill(
                         embedding_text = embedding_service.build_product_embedding_text(product)
 
                         # Generate embedding
-                        embedding = await embedding_service.generate_embedding(
-                            embedding_text,
-                            task_type="RETRIEVAL_DOCUMENT"
-                        )
+                        embedding = await embedding_service.generate_embedding(embedding_text, task_type="RETRIEVAL_DOCUMENT")
 
                         if embedding:
                             product.embedding = json.dumps(embedding)
@@ -143,7 +134,7 @@ async def _run_embedding_backfill(
                     processed=processed,
                     success=success,
                     failed=failed,
-                    percent_complete=round(processed / total * 100, 1) if total > 0 else 0
+                    percent_complete=round(processed / total * 100, 1) if total > 0 else 0,
                 )
 
             session.commit()
@@ -152,11 +143,7 @@ async def _run_embedding_backfill(
             session.close()
 
         backfill_state.update_embeddings(
-            "completed",
-            processed=processed,
-            success=success,
-            failed=failed,
-            completed_at=datetime.utcnow().isoformat()
+            "completed", processed=processed, success=success, failed=failed, completed_at=datetime.utcnow().isoformat()
         )
         logger.info(f"[EMBEDDING BACKFILL] Completed: {success}/{total} successful")
 
@@ -168,7 +155,8 @@ async def _run_embedding_backfill(
 @router.post("/backfill/embeddings")
 async def start_embedding_backfill(
     request: BackfillRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_super_admin),
 ):
     """
     Start background embedding generation for products.
@@ -177,17 +165,9 @@ async def start_embedding_backfill(
     using Google text-embedding-004 for semantic search.
     """
     if backfill_state.embeddings["status"] == "running":
-        raise HTTPException(
-            status_code=409,
-            detail="Embedding backfill is already running"
-        )
+        raise HTTPException(status_code=409, detail="Embedding backfill is already running")
 
-    background_tasks.add_task(
-        _run_embedding_backfill,
-        request.batch_size,
-        request.limit,
-        request.regenerate
-    )
+    background_tasks.add_task(_run_embedding_backfill, request.batch_size, request.limit, request.regenerate)
 
     backfill_state.update_embeddings("starting")
 
@@ -195,7 +175,7 @@ async def start_embedding_backfill(
         "message": "Embedding backfill started",
         "batch_size": request.batch_size,
         "limit": request.limit,
-        "regenerate": request.regenerate
+        "regenerate": request.regenerate,
     }
 
 
@@ -203,14 +183,13 @@ async def start_embedding_backfill(
 # STYLE CLASSIFICATION BACKFILL ENDPOINTS
 # =====================================================================
 
-async def _run_style_backfill(
-    batch_size: int,
-    limit: Optional[int]
-):
+
+async def _run_style_backfill(batch_size: int, limit: Optional[int]):
     """Background task to run style classification backfill."""
     from services.google_ai_service import google_ai_service
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
+
     from core.config import settings
     from database.models import ProductImage
 
@@ -235,14 +214,7 @@ async def _run_style_backfill(
             product_ids = [row[0] for row in query.all()]
             total = len(product_ids)
 
-            backfill_state.update_styles(
-                "running",
-                total=total,
-                processed=0,
-                success_vision=0,
-                success_text=0,
-                failed=0
-            )
+            backfill_state.update_styles("running", total=total, processed=0, success_vision=0, success_text=0, failed=0)
 
             logger.info(f"[STYLE BACKFILL] Starting backfill for {total} products")
 
@@ -252,7 +224,7 @@ async def _run_style_backfill(
             failed = 0
 
             for i in range(0, total, batch_size):
-                batch_ids = product_ids[i:i + batch_size]
+                batch_ids = product_ids[i : i + batch_size]
 
                 for product_id in batch_ids:
                     try:
@@ -264,7 +236,7 @@ async def _run_style_backfill(
                         image = (
                             session.query(ProductImage)
                             .filter(ProductImage.product_id == product_id)
-                            .filter(ProductImage.is_primary == True)
+                            .filter(ProductImage.is_primary.is_(True))
                             .first()
                         )
                         image_url = ""
@@ -273,9 +245,7 @@ async def _run_style_backfill(
 
                         # Classify style
                         result = await google_ai_service.classify_product_style(
-                            image_url=image_url,
-                            product_name=product.name or "",
-                            product_description=product.description or ""
+                            image_url=image_url, product_name=product.name or "", product_description=product.description or ""
                         )
 
                         # Update product
@@ -305,7 +275,7 @@ async def _run_style_backfill(
                     success_vision=success_vision,
                     success_text=success_text,
                     failed=failed,
-                    percent_complete=round(processed / total * 100, 1) if total > 0 else 0
+                    percent_complete=round(processed / total * 100, 1) if total > 0 else 0,
                 )
 
             session.commit()
@@ -319,7 +289,7 @@ async def _run_style_backfill(
             success_vision=success_vision,
             success_text=success_text,
             failed=failed,
-            completed_at=datetime.utcnow().isoformat()
+            completed_at=datetime.utcnow().isoformat(),
         )
         logger.info(f"[STYLE BACKFILL] Completed: vision={success_vision}, text={success_text}, failed={failed}")
 
@@ -331,7 +301,8 @@ async def _run_style_backfill(
 @router.post("/backfill/styles")
 async def start_style_backfill(
     request: BackfillRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_super_admin),
 ):
     """
     Start background style classification for products.
@@ -340,73 +311,70 @@ async def start_style_backfill(
     using Gemini Vision API with text-based fallback.
     """
     if backfill_state.styles["status"] == "running":
-        raise HTTPException(
-            status_code=409,
-            detail="Style backfill is already running"
-        )
+        raise HTTPException(status_code=409, detail="Style backfill is already running")
 
-    background_tasks.add_task(
-        _run_style_backfill,
-        request.batch_size,
-        request.limit
-    )
+    background_tasks.add_task(_run_style_backfill, request.batch_size, request.limit)
 
     backfill_state.update_styles("starting")
 
-    return {
-        "message": "Style backfill started",
-        "batch_size": request.batch_size,
-        "limit": request.limit
-    }
+    return {"message": "Style backfill started", "batch_size": request.batch_size, "limit": request.limit}
 
 
 @router.get("/backfill/status")
-async def get_backfill_status():
+async def get_backfill_status(
+    current_user: User = Depends(require_super_admin),
+):
     """Get status of all backfill operations."""
-    return {
-        "embeddings": backfill_state.embeddings,
-        "styles": backfill_state.styles
-    }
+    return {"embeddings": backfill_state.embeddings, "styles": backfill_state.styles}
 
 
 @router.get("/backfill/stats")
-async def get_backfill_stats(db: AsyncSession = Depends(get_db)):
+async def get_backfill_stats(
+    current_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
     """Get statistics about embeddings and styles in the database."""
     # Count products with/without embeddings
     embedding_stats = await db.execute(
-        text("""
+        text(
+            """
             SELECT
                 COUNT(*) as total,
                 COUNT(embedding) as with_embedding,
                 COUNT(*) - COUNT(embedding) as without_embedding
             FROM products
             WHERE is_available = true
-        """)
+        """
+        )
     )
     emb_row = embedding_stats.fetchone()
 
     # Count products with/without styles
     style_stats = await db.execute(
-        text("""
+        text(
+            """
             SELECT
                 COUNT(*) as total,
                 COUNT(primary_style) as with_style,
                 COUNT(*) - COUNT(primary_style) as without_style
             FROM products
             WHERE is_available = true
-        """)
+        """
+        )
     )
     style_row = style_stats.fetchone()
 
     # Style distribution
     style_distribution = await db.execute(
-        text("""
+        text(
+            """
             SELECT primary_style, COUNT(*) as count
             FROM products
             WHERE is_available = true AND primary_style IS NOT NULL
             GROUP BY primary_style
             ORDER BY count DESC
-        """)
+        """
+        )
     )
     style_dist = [{"style": row[0], "count": row[1]} for row in style_distribution.fetchall()]
 
@@ -415,20 +383,23 @@ async def get_backfill_stats(db: AsyncSession = Depends(get_db)):
             "total_products": emb_row[0],
             "with_embedding": emb_row[1],
             "without_embedding": emb_row[2],
-            "percent_complete": round(emb_row[1] / emb_row[0] * 100, 1) if emb_row[0] > 0 else 0
+            "percent_complete": round(emb_row[1] / emb_row[0] * 100, 1) if emb_row[0] > 0 else 0,
         },
         "styles": {
             "total_products": style_row[0],
             "with_style": style_row[1],
             "without_style": style_row[2],
             "percent_complete": round(style_row[1] / style_row[0] * 100, 1) if style_row[0] > 0 else 0,
-            "distribution": style_dist
-        }
+            "distribution": style_dist,
+        },
     }
 
 
 @router.post("/migrate-bedside-tables")
-async def migrate_bedside_tables(db: AsyncSession = Depends(get_db)):
+async def migrate_bedside_tables(
+    current_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
     """
     One-time migration to categorize bedside table products into Bedside Tables category.
     """
@@ -500,7 +471,10 @@ async def migrate_bedside_tables(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/migrate-table-mats")
-async def migrate_table_mats(db: AsyncSession = Depends(get_db)):
+async def migrate_table_mats(
+    current_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
     """
     One-time migration to:
     1. Create Table Mats category if it doesn't exist

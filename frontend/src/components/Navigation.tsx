@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useRef, useEffect } from 'react'
 import { Bars3Icon, XMarkIcon, UserCircleIcon, FolderIcon, ArrowRightOnRectangleIcon, ArrowLeftOnRectangleIcon } from '@heroicons/react/24/outline'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth, isAdmin, isSuperAdmin } from '@/contexts/AuthContext'
 
 const navigation = [
   { name: 'Home', href: '/' },
@@ -110,12 +110,12 @@ export function Navigation() {
               )}
             </div>
 
-            {/* Admin Link - Next to profile */}
-            {isAuthenticated && (
+            {/* Admin Link - Only show for admin/super_admin */}
+            {isAuthenticated && isAdmin(user) && (
               <Link
                 href="/admin"
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2 ${
-                  pathname?.startsWith('/admin')
+                  pathname === '/admin' || (pathname?.startsWith('/admin') && !pathname?.startsWith('/admin/permissions'))
                     ? 'bg-purple-100 text-purple-700'
                     : 'text-purple-600 hover:text-purple-800 hover:bg-purple-50'
                 }`}
@@ -125,6 +125,23 @@ export function Navigation() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
                 Admin
+              </Link>
+            )}
+
+            {/* Permissions Link - Only show for super_admin */}
+            {isAuthenticated && isSuperAdmin(user) && (
+              <Link
+                href="/admin/permissions"
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2 ${
+                  pathname?.startsWith('/admin/permissions')
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'text-amber-600 hover:text-amber-800 hover:bg-amber-50'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                Permissions
               </Link>
             )}
 
@@ -276,12 +293,12 @@ export function Navigation() {
                 </Link>
               )}
 
-              {/* Admin - Mobile */}
-              {isAuthenticated && (
+              {/* Admin - Mobile (only for admin/super_admin) */}
+              {isAuthenticated && isAdmin(user) && (
                 <Link
                   href="/admin"
                   className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
-                    pathname?.startsWith('/admin')
+                    pathname === '/admin' || (pathname?.startsWith('/admin') && !pathname?.startsWith('/admin/permissions'))
                       ? 'bg-purple-100 text-purple-700'
                       : 'text-purple-600 hover:text-purple-800 hover:bg-purple-50'
                   }`}
@@ -293,6 +310,26 @@ export function Navigation() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                     Admin
+                  </div>
+                </Link>
+              )}
+
+              {/* Permissions - Mobile (only for super_admin) */}
+              {isAuthenticated && isSuperAdmin(user) && (
+                <Link
+                  href="/admin/permissions"
+                  className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                    pathname?.startsWith('/admin/permissions')
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'text-amber-600 hover:text-amber-800 hover:bg-amber-50'
+                  }`}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    Permissions
                   </div>
                 </Link>
               )}

@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { adminCuratedAPI, AdminCuratedLookSummary } from '@/utils/api';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
 
-export default function AdminCuratedLooksPage() {
+function AdminCuratedLooksContent() {
   const [looks, setLooks] = useState<AdminCuratedLookSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -261,5 +262,13 @@ export default function AdminCuratedLooksPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function AdminCuratedLooksPage() {
+  return (
+    <ProtectedRoute requiredRole="admin">
+      <AdminCuratedLooksContent />
+    </ProtectedRoute>
   );
 }
