@@ -3574,101 +3574,63 @@ YOUR TASK: Generate this room from a COMPLETELY DIFFERENT angle - a STRAIGHT-ON 
 
             logger.info(f"Generating {target_angle} view of visualization ({pil_image.width}x{pil_image.height})")
 
-            # Build angle-specific prompts - emphasize CAMERA POSITION not just rotation
+            # Build angle-specific prompts - SIMPLE and DIRECT instructions
+            # Key insight: Focus on WHAT to show, emphasize furniture stays in place
             angle_prompts = {
-                "left": """🎥 CAMERA MOVED TO LEFT WALL - LOOKING RIGHT
+                "left": """TASK: Generate a LEFT SIDE VIEW of this room.
 
-Imagine you are standing with your back against the LEFT WALL of this room, looking toward the RIGHT WALL.
+CAMERA POSITION: You are now standing at the LEFT WALL, looking toward the RIGHT WALL (90° clockwise rotation from original view).
 
-📐 GEOMETRIC TRANSFORMATION:
-- Original camera: Looking at the BACK WALL (the wall behind the furniture)
-- New camera: Looking at the RIGHT WALL (the wall that was on the right side of frame)
+WHAT YOU SHOULD NOW SEE:
+- The RIGHT WALL of the room becomes your main background
+- Windows/doors that were on the LEFT side of the original are now BEHIND the camera (not visible or barely at edge)
+- The back wall from the original (where furniture may be against) is now on your RIGHT edge
+- You see NEW wall space on your LEFT side (the front wall from original view)
 
-🖼️ HOW THE VIEW CHANGES:
-- What was the RIGHT EDGE of the image is now the CENTER BACKGROUND
-- What was the LEFT EDGE (windows/features on left) is now BEHIND YOU (not visible or barely visible at edge)
-- What was the BACK WALL (center of original image) is now on your RIGHT SIDE
-- What was the FRONT (where camera was) is now on your LEFT SIDE
+FURNITURE RULES - THIS IS CRITICAL:
+- FURNITURE DOES NOT MOVE - it stays in the EXACT same physical position in the room
+- You are simply viewing the same furniture from a different angle
+- A sofa that was facing you in the original is now seen from its SIDE (you see the armrest profile, not the front cushions)
+- DO NOT rotate, move, or rearrange any furniture - the camera moved, NOT the furniture
+- Coffee tables, rugs, and other items remain in their exact positions
 
-📦 FURNITURE APPEARANCE:
-- Sofas/daybeds: You now see their SIDE PROFILE (narrow end with armrest), NOT the front cushions
-- The furniture has NOT rotated - YOU have moved. The sofa still faces the same direction in the room.
-- Tables: Seen from a 90° different angle
-- Wall art that was on the back wall is now on a wall to your right
+MAINTAIN: Same room dimensions, wall colors, floor, ceiling, lighting style. Photorealistic quality.""",
+                "right": """TASK: Generate a RIGHT SIDE VIEW of this room.
 
-🚫 COMMON MISTAKES TO AVOID:
-- ❌ DO NOT just rotate the furniture 90° while keeping the same background
-- ❌ DO NOT mirror/flip the image
-- ❌ DO NOT show the furniture from the same front-facing angle
-- ❌ The sofa should NOT still show its full front cushions
+CAMERA POSITION: You are now standing at the RIGHT WALL, looking toward the LEFT WALL (90° counter-clockwise rotation from original view).
 
-✅ CORRECT RESULT:
-- The room is the SAME room with same dimensions and colors
-- You see DIFFERENT WALLS than before (right wall is now background)
-- Furniture is seen from the SIDE (not front)
-- It looks like a real photo taken from the left side of the room""",
-                "right": """🎥 CAMERA MOVED TO RIGHT WALL - LOOKING LEFT
+WHAT YOU SHOULD NOW SEE:
+- The LEFT WALL of the room becomes your main background
+- Windows/doors on the LEFT side of the original are now your CENTER BACKGROUND (prominently visible)
+- Features on the RIGHT side of original are now BEHIND the camera (not visible)
+- The back wall from original is now on your LEFT edge
 
-Imagine you are standing with your back against the RIGHT WALL of this room, looking toward the LEFT WALL.
+FURNITURE RULES - THIS IS CRITICAL:
+- FURNITURE DOES NOT MOVE - it stays in the EXACT same physical position in the room
+- You are simply viewing the same furniture from a different angle
+- A sofa that was facing you in the original is now seen from its SIDE (you see the armrest profile, not the front cushions)
+- DO NOT rotate, move, or rearrange any furniture - the camera moved, NOT the furniture
+- Coffee tables, rugs, and other items remain in their exact positions
 
-📐 GEOMETRIC TRANSFORMATION:
-- Original camera: Looking at the BACK WALL (the wall behind the furniture)
-- New camera: Looking at the LEFT WALL (the wall that was on the left side of frame)
+MAINTAIN: Same room dimensions, wall colors, floor, ceiling, lighting style. Photorealistic quality.""",
+                "back": """TASK: Generate a BACK VIEW of this room (180° turn from original).
 
-🖼️ HOW THE VIEW CHANGES:
-- What was the LEFT EDGE of the image (windows/door) is now the CENTER BACKGROUND
-- What was the RIGHT EDGE is now BEHIND YOU (not visible or barely visible at edge)
-- What was the BACK WALL (center of original image) is now on your LEFT SIDE
-- What was the FRONT (where camera was) is now on your RIGHT SIDE
+CAMERA POSITION: You walked to the BACK of the room and turned around. Now looking at the FRONT WALL (where the entrance likely is).
 
-📦 FURNITURE APPEARANCE:
-- Sofas/daybeds: You now see their SIDE PROFILE (narrow end with armrest), NOT the front cushions
-- The furniture has NOT rotated - YOU have moved. The sofa still faces the same direction in the room.
-- Tables: Seen from a 90° different angle
-- Wall art that was on the back wall is now on a wall to your left
-
-🚫 COMMON MISTAKES TO AVOID:
-- ❌ DO NOT just rotate the furniture 90° while keeping the same background
-- ❌ DO NOT mirror/flip the image
-- ❌ DO NOT show the furniture from the same front-facing angle
-- ❌ The sofa should NOT still show its full front cushions
-
-✅ CORRECT RESULT:
-- The room is the SAME room with same dimensions and colors
-- You see DIFFERENT WALLS than before (left wall is now background)
-- Furniture is seen from the SIDE (not front)
-- It looks like a real photo taken from the right side of the room""",
-                "back": """🎥 CAMERA MOVED TO BACK WALL - LOOKING FORWARD (180° TURN)
-
-Imagine you walked to the BACK of the room (where the wall art is) and turned around to face the FRONT.
-
-📐 GEOMETRIC TRANSFORMATION:
-- Original camera: Near FRONT WALL, looking at BACK WALL
-- New camera: Near BACK WALL, looking at FRONT WALL
-- This is a 180° turn - you're looking at the OPPOSITE wall
-
-🖼️ HOW THE VIEW CHANGES:
-- What was BEHIND the camera (front wall with entrance) is now the CENTER BACKGROUND
-- What was the BACKGROUND (back wall with art) is now BEHIND YOU (not visible)
+WHAT YOU SHOULD NOW SEE:
+- The FRONT WALL (which was behind the original camera) is now your main background
+- You likely see a door or entrance since you're looking toward where people enter the room
 - LEFT wall is still on your LEFT, RIGHT wall is still on your RIGHT
-- Any windows/doors on the left side are still on the left (but now you see them from the opposite end)
+- The back wall (from original) is now BEHIND you, not visible
 
-📦 FURNITURE APPEARANCE:
-- If the sofa was against the back wall, it's now BEHIND the camera (not visible or at edges)
-- Tables in the center of the room are now in the FOREGROUND
-- You see the BACKS of furniture that was facing the original camera
-- Rug/floor patterns appear from the opposite direction
+FURNITURE RULES - THIS IS CRITICAL:
+- FURNITURE DOES NOT MOVE - it stays in the EXACT same physical position in the room
+- Furniture that was in the BACK of the original (near the back wall) is now CLOSE TO YOU or behind the camera
+- Furniture that was in the FRONT/FOREGROUND of the original is now in your BACKGROUND
+- You see the BACKS of furniture items that were facing the original camera
+- DO NOT rotate, move, or rearrange any furniture - the camera moved, NOT the furniture
 
-🚫 COMMON MISTAKES TO AVOID:
-- ❌ DO NOT create a completely different room
-- ❌ DO NOT change where windows/doors are located on the walls
-- ❌ DO NOT flip left and right (left wall stays left, right wall stays right)
-
-✅ CORRECT RESULT:
-- Same room, same dimensions, same floor, same ceiling
-- Looking at the wall that was BEHIND the original camera
-- Windows that were on the LEFT are still on the LEFT (just seen from opposite end)
-- It looks like walking to the other end of the room and taking a photo facing back""",
+MAINTAIN: Same room dimensions, wall colors, floor, ceiling, lighting style. Photorealistic quality.""",
             }
 
             if target_angle not in angle_prompts:
@@ -3679,16 +3641,15 @@ Imagine you walked to the BACK of the room (where the wall art is) and turned ar
             prompt = f"""{angle_prompts[target_angle]}
 {products_info}
 
-✅ REQUIREMENTS:
-1. SAME ROOM: Maintain exact room dimensions, colors, and style
-2. SAME FURNITURE: All items in the same positions (just viewed from different angle)
-3. CONSISTENT LIGHTING: Same light sources and shadow directions (adjusted for new viewpoint)
-4. REALISTIC: The result should look like a real photograph from this angle
+CRITICAL REMINDERS:
+1. FURNITURE STAYS IN PLACE - Only the camera viewpoint changes
+2. Same room dimensions, colors, floor, ceiling
+3. Photorealistic interior design photograph quality
 
-🚫 DO NOT:
-- Add or remove furniture
-- Change room style or colors
-- Create completely different furniture appearances"""
+DO NOT:
+- Move or rearrange any furniture
+- Rotate furniture to face the new camera angle
+- Add or remove any items"""
 
             # Generate alternate view
             def _run_generate():

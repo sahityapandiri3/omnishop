@@ -253,17 +253,22 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                 omni_prefs.budget_total = prefs.budget  # Used by essentials check
                 omni_prefs.budget = prefs.budget  # Used by search filters
             elif prefs.budgetFlexible:
-                omni_prefs.budget = None  # Flexible = no budget filter
-                omni_prefs.budget_total = None
+                omni_prefs.budget = None  # Flexible = no budget filter for search
+                # CRITICAL: Set budget_total to a marker value so essentials check passes
+                # "Flexible" means user HAS given budget info (they said "no limit")
+                # This is different from "no budget info provided" (None)
+                omni_prefs.budget_total = -1  # Special marker: flexible/no limit
 
             # Store room image from onboarding if provided
             if prefs.roomImage:
                 conversation_context_manager.store_image(session_id, prefs.roomImage)
 
-            # DO NOT set scope - let the AI ask about it
-            # The user requirement: stylist must ask "entire room or specific category?"
-            # even when style and budget are provided from onboarding
-            # omni_prefs.scope = "full_room"  # Commented out - scope should be asked
+            # Auto-set scope to "full_room" when user provided a room type in onboarding
+            # User selecting "bedroom" or "living_room" implies they want to furnish the entire room
+            # This prevents the AI from asking an unnecessary follow-up question
+            if prefs.roomType:
+                omni_prefs.scope = "full_room"
+                logger.info(f"[Onboarding] Auto-set scope to 'full_room' based on room type: {prefs.roomType}")
 
             conversation_context_manager.store_omni_preferences(session_id, omni_prefs)
             logger.info(

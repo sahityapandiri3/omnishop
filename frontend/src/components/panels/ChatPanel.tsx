@@ -215,23 +215,25 @@ export default function ChatPanel({
           ? `Welcome! I see you're looking to create a beautiful ${prefs.primaryStyle.replace(/_/g, ' ')} ${roomName}. Let me help you find the perfect pieces!`
           : `Welcome! I'm excited to help you design your ${roomName}. Let me find some great options for you!`;
 
-        setMessages([{
-          role: 'assistant',
-          content: welcomeMessage,
-          timestamp: new Date(),
-        }]);
-
-        // Auto-send the preferences as a user message (with image if provided)
-        setTimeout(() => {
-          // Add user message
-          setMessages(prev => [...prev, {
+        // IMPORTANT: Set BOTH messages immediately - don't use setTimeout for user message
+        // This prevents race conditions where the message isn't displayed
+        console.log('[ChatPanel] Setting personalized welcome and user preference messages');
+        setMessages([
+          {
+            role: 'assistant',
+            content: welcomeMessage,
+            timestamp: new Date(),
+          },
+          {
             role: 'user',
             content: message,
             timestamp: new Date(),
-          }]);
+          }
+        ]);
 
-          // Send to backend
-          setIsLoading(true);
+        // Send to backend immediately (small delay for UI to update)
+        setIsLoading(true);
+        setTimeout(() => {
           const sendPreferences = async () => {
             try {
               // Use the PROCESSED image (clean room) for room analysis, not the original
