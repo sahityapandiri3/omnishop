@@ -344,6 +344,11 @@ function DesignPageContent() {
     const loadProject = async () => {
       const urlProjectId = searchParams?.get('projectId');
 
+      // CRITICAL: Reset projectLoaded when starting to load a new project
+      // This forces ChatPanel to unmount, which resets its refs (sessionInitializedRef, onboardingProcessedRef)
+      // Without this, switching between projects wouldn't properly reset the chat session
+      setProjectLoaded(false);
+
       // If not authenticated, mark as loaded immediately (guest mode)
       if (!isAuthenticated) {
         console.log('[DesignPage] No project to load (guest mode)');
