@@ -69,7 +69,7 @@ export function CuratedLookCard({
           </div>
         </div>
         <div className="p-4">
-          <h3 className="text-sm font-semibold text-neutral-800 mb-1">{look.style_theme}</h3>
+          <h3 className="text-sm font-semibold text-neutral-800 mb-1">{look.title || look.style_theme}</h3>
           <p className="text-neutral-500 text-xs">{look.style_description}</p>
         </div>
       </div>
@@ -131,7 +131,7 @@ export function CuratedLookCard({
 
       {/* Card content */}
       <div className="p-4">
-        <h3 className="text-sm font-semibold text-neutral-800 mb-1">{look.style_theme}</h3>
+        <h3 className="text-sm font-semibold text-neutral-800 mb-1">{look.title || look.style_theme}</h3>
         <p className="text-neutral-500 text-xs mb-3 line-clamp-2">{look.style_description}</p>
 
         {/* Action buttons */}

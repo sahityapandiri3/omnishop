@@ -119,6 +119,7 @@ async def warm_curated_looks_cache(db_session_factory) -> None:
                 looks.append(
                     CuratedLook(
                         look_id=str(look.id),
+                        title=look.title,
                         style_theme=look.style_theme,
                         style_description=look.style_description or "",
                         room_image=None,  # Don't cache large images
@@ -209,6 +210,7 @@ class CuratedLook(BaseModel):
     """A single curated look with products and visualization"""
 
     look_id: str
+    title: Optional[str] = None  # Display title (e.g., "Emerald-Centered Living Room")
     style_theme: str
     style_description: str
     room_image: Optional[str] = None  # Base room image (furniture removed)
@@ -424,6 +426,7 @@ async def get_curated_looks(
             looks.append(
                 CuratedLook(
                     look_id=str(look.id),
+                    title=look.title,
                     style_theme=look.style_theme,
                     style_description=look.style_description or "",
                     room_image=room_img,
@@ -511,6 +514,7 @@ async def get_curated_look_by_id(
 
         return CuratedLook(
             look_id=str(look.id),
+            title=look.title,
             style_theme=look.style_theme,
             style_description=look.style_description or "",
             room_image=look.room_image,

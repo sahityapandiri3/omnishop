@@ -1,7 +1,8 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { CuratedLook } from '@/utils/api';
+import { CuratedLook, getCuratedLookById } from '@/utils/api';
 
 interface LookDetailModalProps {
   look: CuratedLook;
@@ -16,7 +17,32 @@ export function LookDetailModal({
   onClose,
   onStyleThisLook,
 }: LookDetailModalProps) {
+  const [fullLook, setFullLook] = useState<CuratedLook | null>(null);
+  const [loadingFullImage, setLoadingFullImage] = useState(false);
+
+  // Fetch full-resolution image when modal opens
+  useEffect(() => {
+    if (isOpen && look.look_id) {
+      setLoadingFullImage(true);
+      getCuratedLookById(look.look_id)
+        .then((fullData) => {
+          setFullLook(fullData);
+        })
+        .catch((err) => {
+          console.error('Failed to fetch full look:', err);
+        })
+        .finally(() => {
+          setLoadingFullImage(false);
+        });
+    } else {
+      setFullLook(null);
+    }
+  }, [isOpen, look.look_id]);
+
   if (!isOpen) return null;
+
+  // Use full-resolution image if loaded, otherwise fall back to thumbnail
+  const displayImage = fullLook?.visualization_image || look.visualization_image;
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -49,7 +75,7 @@ export function LookDetailModal({
 
           {/* Header - Theme info */}
           <div className="p-4 border-b border-neutral-100">
-            <h2 className="text-lg font-bold text-neutral-800">{look.style_theme}</h2>
+            <h2 className="text-lg font-bold text-neutral-800">{look.title || look.style_theme}</h2>
             <p className="text-neutral-500 text-sm mt-0.5">{look.style_description}</p>
           </div>
 
@@ -58,9 +84,15 @@ export function LookDetailModal({
             {/* Left Side - Curated Visualization Image */}
             <div className="lg:w-1/2 p-4 flex flex-col">
               <div className="relative flex-1 min-h-[250px] lg:min-h-[350px] bg-gradient-to-br from-neutral-100 to-neutral-200 rounded-xl overflow-hidden">
-                {look.visualization_image ? (
+                {/* Loading indicator for full image */}
+                {loadingFullImage && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-100/50">
+                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-600 border-t-transparent"></div>
+                  </div>
+                )}
+                {displayImage ? (
                   <Image
-                    src={look.visualization_image.startsWith('data:') ? look.visualization_image : `data:image/png;base64,${look.visualization_image}`}
+                    src={displayImage.startsWith('data:') ? displayImage : `data:image/png;base64,${displayImage}`}
                     alt={look.style_theme}
                     fill
                     className="object-cover"

@@ -526,6 +526,7 @@ export const analyticsAPI = {
 // Curated Styling API
 export interface CuratedLook {
   look_id: string;
+  title?: string;  // Display title (e.g., "Emerald-Centered Living Room")
   style_theme: string;
   style_description: string;
   room_image: string | null;  // Base room image (furniture removed)
