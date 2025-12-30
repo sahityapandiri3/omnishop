@@ -8,8 +8,8 @@ import { useAuth, isAdmin, isSuperAdmin } from '@/contexts/AuthContext'
 
 const navigation = [
   { name: 'Home', href: '/' },
-  { name: 'Curated Looks', href: '/curated', badge: 'New' },
-  { name: 'Design Studio', href: '/design' },
+  { name: 'Curated', href: '/curated' },
+  { name: 'Design', href: '/design' },
 ]
 
 export function Navigation() {
@@ -71,25 +71,20 @@ export function Navigation() {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-4">
-            <div className="flex items-baseline space-x-8">
+            <div className="flex items-baseline space-x-1">
               {navigation.map((item) => {
                 const isActive = pathname === item.href
                 return (
                   <Link
                     key={item.name}
                     href={item.href}
-                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2 ${
+                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                       isActive
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                        ? 'bg-gray-100 text-gray-900'
+                        : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
                     {item.name}
-                    {item.badge && (
-                      <span className="px-1.5 py-0.5 bg-gradient-to-r from-primary-500 to-secondary-500 text-white text-[10px] font-bold rounded-full">
-                        {item.badge}
-                      </span>
-                    )}
                   </Link>
                 )
               })}
@@ -98,52 +93,47 @@ export function Navigation() {
               {isAuthenticated && (
                 <Link
                   href="/projects"
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2 ${
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                     pathname === '/projects'
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
-                  <FolderIcon className="w-4 h-4" />
-                  My Projects
+                  Projects
+                </Link>
+              )}
+
+              {/* Admin Link - Only show for admin/super_admin */}
+              {isAuthenticated && isAdmin(user) && (
+                <Link
+                  href="/admin"
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    pathname === '/admin' || (pathname?.startsWith('/admin') && !pathname?.startsWith('/admin/permissions'))
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Admin
+                </Link>
+              )}
+
+              {/* Home Styling Link - Only show for super_admin (testing) */}
+              {isAuthenticated && isSuperAdmin(user) && (
+                <Link
+                  href="/homestyling"
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-1.5 ${
+                    pathname?.startsWith('/homestyling')
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Home Styling
+                  <span className="px-1.5 py-0.5 bg-emerald-500 text-white text-[9px] font-bold rounded">
+                    Beta
+                  </span>
                 </Link>
               )}
             </div>
-
-            {/* Admin Link - Only show for admin/super_admin */}
-            {isAuthenticated && isAdmin(user) && (
-              <Link
-                href="/admin"
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2 ${
-                  pathname === '/admin' || (pathname?.startsWith('/admin') && !pathname?.startsWith('/admin/permissions'))
-                    ? 'bg-purple-100 text-purple-700'
-                    : 'text-purple-600 hover:text-purple-800 hover:bg-purple-50'
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                Admin
-              </Link>
-            )}
-
-            {/* Permissions Link - Only show for super_admin */}
-            {isAuthenticated && isSuperAdmin(user) && (
-              <Link
-                href="/admin/permissions"
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2 ${
-                  pathname?.startsWith('/admin/permissions')
-                    ? 'bg-amber-100 text-amber-700'
-                    : 'text-amber-600 hover:text-amber-800 hover:bg-amber-50'
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-                Permissions
-              </Link>
-            )}
 
             {/* User Menu / Login Button */}
             <div className="ml-4 relative" ref={userMenuRef}>
@@ -184,16 +174,14 @@ export function Navigation() {
                       <Link
                         href="/projects"
                         onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                       >
-                        <FolderIcon className="w-4 h-4 text-gray-400" />
                         My Projects
                       </Link>
                       <button
                         onClick={handleLogout}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                        className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
                       >
-                        <ArrowRightOnRectangleIcon className="w-4 h-4" />
                         Sign Out
                       </button>
                     </div>
@@ -202,9 +190,8 @@ export function Navigation() {
               ) : (
                 <Link
                   href="/login"
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-sky-600 text-white text-sm font-medium rounded-lg hover:bg-sky-700 transition-colors shadow-sm"
+                  className="px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors"
                 >
-                  <ArrowLeftOnRectangleIcon className="w-4 h-4" />
                   Sign In
                 </Link>
               )}
@@ -258,19 +245,12 @@ export function Navigation() {
                     href={item.href}
                     className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
                       isActive
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                        ? 'bg-gray-100 text-gray-900'
+                        : 'text-gray-600 hover:text-gray-900'
                     }`}
                     onClick={() => setMobileMenuOpen(false)}
                   >
-                    <div className="flex items-center justify-between">
-                      <span>{item.name}</span>
-                      {item.badge && (
-                        <span className="px-1.5 py-0.5 bg-gradient-to-r from-primary-500 to-secondary-500 text-white text-[10px] font-bold rounded-full">
-                          {item.badge}
-                        </span>
-                      )}
-                    </div>
+                    {item.name}
                   </Link>
                 )
               })}
@@ -281,15 +261,12 @@ export function Navigation() {
                   href="/projects"
                   className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
                     pathname === '/projects'
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'text-gray-600 hover:text-gray-900'
                   }`}
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  <div className="flex items-center gap-2">
-                    <FolderIcon className="w-5 h-5" />
-                    My Projects
-                  </div>
+                  Projects
                 </Link>
               )}
 
@@ -299,38 +276,32 @@ export function Navigation() {
                   href="/admin"
                   className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
                     pathname === '/admin' || (pathname?.startsWith('/admin') && !pathname?.startsWith('/admin/permissions'))
-                      ? 'bg-purple-100 text-purple-700'
-                      : 'text-purple-600 hover:text-purple-800 hover:bg-purple-50'
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'text-gray-600 hover:text-gray-900'
                   }`}
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  <div className="flex items-center gap-2">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    Admin
-                  </div>
+                  Admin
                 </Link>
               )}
 
-              {/* Permissions - Mobile (only for super_admin) */}
+              {/* Home Styling - Mobile (only for super_admin) */}
               {isAuthenticated && isSuperAdmin(user) && (
                 <Link
-                  href="/admin/permissions"
+                  href="/homestyling"
                   className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
-                    pathname?.startsWith('/admin/permissions')
-                      ? 'bg-amber-100 text-amber-700'
-                      : 'text-amber-600 hover:text-amber-800 hover:bg-amber-50'
+                    pathname?.startsWith('/homestyling')
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'text-gray-600 hover:text-gray-900'
                   }`}
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  <div className="flex items-center gap-2">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                    Permissions
-                  </div>
+                  <span className="flex items-center gap-2">
+                    Home Styling
+                    <span className="px-1.5 py-0.5 bg-emerald-500 text-white text-[9px] font-bold rounded">
+                      Beta
+                    </span>
+                  </span>
                 </Link>
               )}
 
@@ -339,29 +310,25 @@ export function Navigation() {
                 {isAuthenticated ? (
                   <>
                     <div className="px-3 py-2 text-sm text-gray-500">
-                      Signed in as {user?.name || user?.email}
+                      {user?.name || user?.email}
                     </div>
                     <button
                       onClick={() => {
                         handleLogout()
                         setMobileMenuOpen(false)
                       }}
-                      className="w-full text-left px-3 py-2 rounded-md text-base font-medium text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2"
+                      className="w-full text-left px-3 py-2 rounded-md text-base font-medium text-red-600 hover:bg-red-50 transition-colors"
                     >
-                      <ArrowRightOnRectangleIcon className="w-5 h-5" />
                       Sign Out
                     </button>
                   </>
                 ) : (
                   <Link
                     href="/login"
-                    className="block px-3 py-2 rounded-md text-base font-medium text-sky-600 hover:bg-sky-50 transition-colors"
+                    className="block px-3 py-2 rounded-md text-base font-medium text-gray-900 hover:bg-gray-100 transition-colors"
                     onClick={() => setMobileMenuOpen(false)}
                   >
-                    <div className="flex items-center gap-2">
-                      <ArrowLeftOnRectangleIcon className="w-5 h-5" />
-                      Sign In
-                    </div>
+                    Sign In
                   </Link>
                 )}
               </div>

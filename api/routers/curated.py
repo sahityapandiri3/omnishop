@@ -310,6 +310,7 @@ def get_primary_image_url(product: Product) -> Optional[str]:
 @router.get("/looks", response_model=CuratedLooksResponse)
 async def get_curated_looks(
     room_type: Optional[str] = Query(None, description="Filter by room type (living_room, bedroom)"),
+    style: Optional[str] = Query(None, description="Filter by style label (modern, modern_luxury, indian_contemporary, etc.)"),
     include_images: bool = Query(False, description="Include large base64 images (room_image, visualization_image)"),
     image_quality: str = Query("thumbnail", description="Image quality: thumbnail (400px), medium (1200px), full"),
     db: AsyncSession = Depends(get_db),
@@ -329,7 +330,7 @@ async def get_curated_looks(
     """
     try:
         # Build cache key based on query parameters
-        cache_key = f"looks:{room_type or 'all'}:{image_quality}"
+        cache_key = f"looks:{room_type or 'all'}:{style or 'all'}:{image_quality}"
 
         # Check cache first
         cached_response = _curated_looks_cache.get(cache_key)
@@ -339,7 +340,7 @@ async def get_curated_looks(
             cached_response["session_id"] = str(uuid.uuid4())
             return CuratedLooksResponse(**cached_response)
 
-        logger.info(f"Cache MISS - Fetching curated looks from DB (room_type: {room_type})")
+        logger.info(f"Cache MISS - Fetching curated looks from DB (room_type: {room_type}, style: {style})")
         start_time = time.time()
 
         # Build query for published looks
@@ -355,6 +356,22 @@ async def get_curated_looks(
         # Apply room type filter if provided
         if room_type:
             query = query.where(CuratedLookModel.room_type == room_type)
+
+        # Apply style filter if provided (checks if style is in the style_labels JSON array)
+        # Supports multiple styles separated by commas (OR logic - match ANY of the styles)
+        if style:
+            from sqlalchemy import or_
+            from sqlalchemy.dialects.postgresql import JSONB
+
+            # Split comma-separated styles
+            style_list = [s.strip() for s in style.split(",") if s.strip()]
+            if len(style_list) == 1:
+                # Single style - use JSONB containment
+                query = query.where(CuratedLookModel.style_labels.cast(JSONB).contains([style_list[0]]))
+            elif len(style_list) > 1:
+                # Multiple styles - use OR to match ANY of them
+                style_conditions = [CuratedLookModel.style_labels.cast(JSONB).contains([s]) for s in style_list]
+                query = query.where(or_(*style_conditions))
 
         result = await db.execute(query)
         looks_from_db = result.scalars().unique().all()

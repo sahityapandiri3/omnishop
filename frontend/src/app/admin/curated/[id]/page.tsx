@@ -6,6 +6,21 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { adminCuratedAPI, AdminCuratedLook } from '@/utils/api';
 
+// Available style labels for multi-select
+const STYLE_LABEL_OPTIONS = [
+  { value: 'modern', label: 'Modern' },
+  { value: 'modern_luxury', label: 'Modern Luxury' },
+  { value: 'indian_contemporary', label: 'Indian Contemporary' },
+  { value: 'minimalist', label: 'Minimalist' },
+  { value: 'japandi', label: 'Japandi' },
+  { value: 'scandinavian', label: 'Scandinavian' },
+  { value: 'mid_century_modern', label: 'Mid-Century Modern' },
+  { value: 'bohemian', label: 'Bohemian' },
+  { value: 'industrial', label: 'Industrial' },
+  { value: 'contemporary', label: 'Contemporary' },
+  { value: 'eclectic', label: 'Eclectic' },
+];
+
 export default function CuratedLookDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -14,6 +29,9 @@ export default function CuratedLookDetailPage() {
   const [look, setLook] = useState<AdminCuratedLook | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editingLabels, setEditingLabels] = useState(false);
+  const [styleLabels, setStyleLabels] = useState<string[]>([]);
+  const [savingLabels, setSavingLabels] = useState(false);
 
   useEffect(() => {
     if (lookId) {
@@ -26,6 +44,7 @@ export default function CuratedLookDetailPage() {
       setLoading(true);
       const data = await adminCuratedAPI.get(lookId);
       setLook(data);
+      setStyleLabels(data.style_labels || []);
       setError(null);
     } catch (err) {
       console.error('Error fetching look:', err);
@@ -64,6 +83,38 @@ export default function CuratedLookDetailPage() {
       router.push('/admin/curated');
     } catch (err) {
       console.error('Error deleting look:', err);
+    }
+  };
+
+  const handleStartEditLabels = () => {
+    setStyleLabels(look?.style_labels || []);
+    setEditingLabels(true);
+  };
+
+  const handleCancelEditLabels = () => {
+    setStyleLabels(look?.style_labels || []);
+    setEditingLabels(false);
+  };
+
+  const toggleStyleLabel = (value: string) => {
+    setStyleLabels(prev =>
+      prev.includes(value)
+        ? prev.filter(l => l !== value)
+        : [...prev, value]
+    );
+  };
+
+  const handleSaveLabels = async () => {
+    if (!look) return;
+    try {
+      setSavingLabels(true);
+      await adminCuratedAPI.update(look.id, { style_labels: styleLabels });
+      setLook({ ...look, style_labels: styleLabels });
+      setEditingLabels(false);
+    } catch (err) {
+      console.error('Error saving style labels:', err);
+    } finally {
+      setSavingLabels(false);
     }
   };
 
@@ -201,6 +252,74 @@ export default function CuratedLookDetailPage() {
                 <div>
                   <label className="text-sm font-medium text-gray-500">Style Theme</label>
                   <p className="text-gray-900">{look.style_theme}</p>
+                </div>
+
+                {/* Style Labels Section */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-gray-500">Style Labels</label>
+                    {!editingLabels ? (
+                      <button
+                        onClick={handleStartEditLabels}
+                        className="text-xs text-purple-600 hover:text-purple-700 font-medium"
+                      >
+                        Edit
+                      </button>
+                    ) : (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleCancelEditLabels}
+                          className="text-xs text-gray-500 hover:text-gray-700"
+                          disabled={savingLabels}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleSaveLabels}
+                          className="text-xs text-purple-600 hover:text-purple-700 font-medium"
+                          disabled={savingLabels}
+                        >
+                          {savingLabels ? 'Saving...' : 'Save'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {editingLabels ? (
+                    <div className="flex flex-wrap gap-2">
+                      {STYLE_LABEL_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          onClick={() => toggleStyleLabel(option.value)}
+                          className={`px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                            styleLabels.includes(option.value)
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {look.style_labels && look.style_labels.length > 0 ? (
+                        look.style_labels.map((label) => {
+                          const option = STYLE_LABEL_OPTIONS.find(o => o.value === label);
+                          return (
+                            <span
+                              key={label}
+                              className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium"
+                            >
+                              {option?.label || label}
+                            </span>
+                          );
+                        })
+                      ) : (
+                        <span className="text-gray-400 text-sm italic">No style labels</span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {look.style_description && (

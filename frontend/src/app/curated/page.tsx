@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 
 type RoomType = 'all' | 'living_room' | 'bedroom';
+type StyleOption = 'modern' | 'modern_luxury' | 'indian_contemporary';
 
 function CuratedPageContent() {
   const router = useRouter();
@@ -20,6 +21,7 @@ function CuratedPageContent() {
   const [selectedLook, setSelectedLook] = useState<CuratedLook | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [roomTypeFilter, setRoomTypeFilter] = useState<RoomType>('all');
+  const [selectedStyles, setSelectedStyles] = useState<StyleOption[]>([]);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
 
   // Fetch curated looks when filter changes
@@ -29,7 +31,9 @@ function CuratedPageContent() {
         setLoading(true);
         setError(null);
         const roomType = roomTypeFilter === 'all' ? undefined : roomTypeFilter;
-        const result = await getCuratedLooks(roomType);
+        // Pass comma-separated styles if multiple selected, or undefined if none
+        const style = selectedStyles.length > 0 ? selectedStyles.join(',') : undefined;
+        const result = await getCuratedLooks(roomType, 'thumbnail', style);
         setLooksData(result);
       } catch (err: any) {
         console.error('Error fetching looks:', err);
@@ -40,7 +44,7 @@ function CuratedPageContent() {
     };
 
     fetchLooks();
-  }, [roomTypeFilter]);
+  }, [roomTypeFilter, selectedStyles]);
 
   const handleViewDetails = useCallback((look: CuratedLook) => {
     setSelectedLook(look);
@@ -111,6 +115,20 @@ function CuratedPageContent() {
     { value: 'bedroom', label: 'Bedroom' },
   ];
 
+  const styleOptions: { value: StyleOption; label: string }[] = [
+    { value: 'modern', label: 'Modern' },
+    { value: 'modern_luxury', label: 'Modern Luxury' },
+    { value: 'indian_contemporary', label: 'Indian Contemporary' },
+  ];
+
+  const toggleStyle = (style: StyleOption) => {
+    setSelectedStyles(prev =>
+      prev.includes(style)
+        ? prev.filter(s => s !== style)
+        : [...prev, style]
+    );
+  };
+
   return (
     <div className="min-h-screen bg-neutral-50">
       {/* Main content */}
@@ -126,33 +144,74 @@ function CuratedPageContent() {
             </p>
           </div>
 
-          {/* Room Type Filter Tabs + Create Your Own */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="w-[140px]"></div>
-            <div className="bg-white rounded-lg p-1 shadow-sm border border-neutral-200 inline-flex gap-1">
-              {roomTypes.map((type) => (
-                <button
-                  key={type.value}
-                  onClick={() => setRoomTypeFilter(type.value)}
-                  className={`px-4 py-1.5 rounded-md text-xs font-medium transition-all ${
-                    roomTypeFilter === type.value
-                      ? 'bg-primary-600 text-white'
-                      : 'text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50'
-                  }`}
-                >
-                  {type.label}
-                </button>
-              ))}
+          {/* Filters + Create Your Own */}
+          <div className="flex flex-col gap-3 mb-6">
+            {/* Room Type Filter */}
+            <div className="flex justify-center">
+              <div className="bg-white rounded-lg p-1 shadow-sm border border-neutral-200 inline-flex gap-1">
+                {roomTypes.map((type) => (
+                  <button
+                    key={type.value}
+                    onClick={() => setRoomTypeFilter(type.value)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                      roomTypeFilter === type.value
+                        ? 'bg-primary-600 text-white'
+                        : 'text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50'
+                    }`}
+                  >
+                    {type.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <button
-              onClick={handleStyleFromScratch}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-900 text-white text-sm font-medium rounded-lg transition-all shadow-sm"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Create Your Own
-            </button>
+
+            {/* Style Filter - Multi-select capsules */}
+            <div className="flex justify-center">
+              <div className="flex flex-wrap justify-center gap-2">
+                {styleOptions.map((style) => {
+                  const isSelected = selectedStyles.includes(style.value);
+                  return (
+                    <button
+                      key={style.value}
+                      onClick={() => toggleStyle(style.value)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${
+                        isSelected
+                          ? 'bg-purple-100 text-purple-700 border-purple-300'
+                          : 'bg-white text-neutral-500 border-neutral-200 hover:border-neutral-300 hover:text-neutral-700'
+                      }`}
+                    >
+                      {isSelected && (
+                        <svg className="w-3 h-3 inline mr-1 -ml-0.5" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                      {style.label}
+                    </button>
+                  );
+                })}
+                {selectedStyles.length > 0 && (
+                  <button
+                    onClick={() => setSelectedStyles([])}
+                    className="px-2 py-1 text-xs text-neutral-400 hover:text-neutral-600 transition-colors"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Create Your Own Button - Centered */}
+            <div className="flex justify-center">
+              <button
+                onClick={handleStyleFromScratch}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-900 text-white text-sm font-medium rounded-lg transition-all shadow-sm"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Create Your Own
+              </button>
+            </div>
           </div>
 
           {/* Loading state */}
@@ -196,16 +255,19 @@ function CuratedPageContent() {
               </div>
               <h2 className="text-base font-semibold text-neutral-800 mb-2">No Looks Available</h2>
               <p className="text-xs text-neutral-500 mb-4">
-                {roomTypeFilter !== 'all'
-                  ? `No looks for ${roomTypeFilter.replace('_', ' ')} yet.`
+                {roomTypeFilter !== 'all' || selectedStyles.length > 0
+                  ? `No looks found for the selected filters.`
                   : 'Check back soon for new curated looks!'}
               </p>
-              {roomTypeFilter !== 'all' && (
+              {(roomTypeFilter !== 'all' || selectedStyles.length > 0) && (
                 <button
-                  onClick={() => setRoomTypeFilter('all')}
+                  onClick={() => {
+                    setRoomTypeFilter('all');
+                    setSelectedStyles([]);
+                  }}
                   className="text-primary-600 hover:text-primary-700 text-sm font-medium"
                 >
-                  View all rooms
+                  Clear filters
                 </button>
               )}
             </div>
@@ -229,6 +291,7 @@ function CuratedPageContent() {
               <div className="text-center text-neutral-400 text-xs mb-6">
                 {looksData.looks.length} {looksData.looks.length === 1 ? 'look' : 'looks'}
                 {roomTypeFilter !== 'all' && ` • ${roomTypeFilter.replace('_', ' ')}`}
+                {selectedStyles.length > 0 && ` • ${selectedStyles.map(s => s.replace('_', ' ')).join(', ')}`}
               </div>
             </>
           )}

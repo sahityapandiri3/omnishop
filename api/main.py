@@ -43,6 +43,7 @@ try:
         chat,
         curated,
         furniture,
+        homestyling,
         permissions,
         products,
         projects,
@@ -354,6 +355,9 @@ if "admin_migrations" in dir():
 
 if "permissions" in dir():
     app.include_router(permissions.router, prefix="/api", tags=["permissions"])
+
+if "homestyling" in dir():
+    app.include_router(homestyling.router, prefix="/api", tags=["homestyling"])
 
 # Additional routers can be added here as needed
 

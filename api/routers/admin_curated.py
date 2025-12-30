@@ -22,7 +22,7 @@ from sqlalchemy.orm import selectinload
 
 from core.auth import require_admin
 from core.database import get_db
-from database.models import Category, CuratedLook, CuratedLookProduct, Product, User
+from database.models import Category, CuratedLook, CuratedLookProduct, Product, ProductAttribute, User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/curated", tags=["admin-curated"])
@@ -160,6 +160,56 @@ def get_primary_image_url(product: Product) -> Optional[str]:
     return product.images[0].original_url if product.images else None
 
 
+async def fetch_curated_look_with_products(look_id: int, db: AsyncSession) -> CuratedLookSchema:
+    """Helper function to fetch a curated look with full details - can be called directly"""
+    query = (
+        select(CuratedLook)
+        .where(CuratedLook.id == look_id)
+        .options(selectinload(CuratedLook.products).selectinload(CuratedLookProduct.product).selectinload(Product.images))
+    )
+    result = await db.execute(query)
+    look = result.scalar_one_or_none()
+
+    if not look:
+        raise HTTPException(status_code=404, detail="Curated look not found")
+
+    # Build product list with details
+    products = []
+    for lp in sorted(look.products, key=lambda x: x.display_order or 0):
+        product = lp.product
+        if product:
+            products.append(
+                CuratedLookProductSchema(
+                    id=product.id,
+                    name=product.name,
+                    price=product.price,
+                    image_url=get_primary_image_url(product),
+                    source_website=product.source_website,
+                    source_url=product.source_url,
+                    product_type=lp.product_type,
+                    quantity=lp.quantity or 1,
+                    description=product.description,
+                )
+            )
+
+    return CuratedLookSchema(
+        id=look.id,
+        title=look.title,
+        style_theme=look.style_theme,
+        style_description=look.style_description,
+        style_labels=look.style_labels or [],
+        room_type=look.room_type,
+        room_image=look.room_image,
+        visualization_image=look.visualization_image,
+        total_price=look.total_price or 0,
+        is_published=look.is_published,
+        display_order=look.display_order or 0,
+        products=products,
+        created_at=look.created_at,
+        updated_at=look.updated_at,
+    )
+
+
 # NOTE: These routes MUST be defined BEFORE the /{look_id} route
 # otherwise FastAPI will try to match "categories" or "search" as a look_id
 
@@ -191,6 +241,8 @@ async def search_products_for_look(
     min_price: Optional[float] = Query(None),
     max_price: Optional[float] = Query(None),
     colors: Optional[str] = Query(None, description="Comma-separated list of colors"),
+    styles: Optional[str] = Query(None, description="Comma-separated list of primary_style values"),
+    materials: Optional[str] = Query(None, description="Comma-separated list of materials"),
     limit: int = Query(500, ge=1, le=1000),
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -247,6 +299,25 @@ async def search_products_for_look(
                 color_conditions.append(or_(Product.name.ilike(f"%{color}%"), Product.description.ilike(f"%{color}%")))
             if color_conditions:
                 search_query = search_query.where(or_(*color_conditions))
+
+        # Filter by styles (uses Product.primary_style field)
+        if styles:
+            style_list = [s.strip().lower() for s in styles.split(",") if s.strip()]
+            if style_list:
+                # OR logic: match any of the selected styles
+                search_query = search_query.where(func.lower(Product.primary_style).in_(style_list))
+
+        # Filter by materials (uses ProductAttribute with material/material_primary)
+        if materials:
+            material_list = [m.strip().lower() for m in materials.split(",") if m.strip()]
+            if material_list:
+                # Subquery to find products with matching materials in ProductAttribute
+                material_subquery = (
+                    select(ProductAttribute.product_id)
+                    .where(ProductAttribute.attribute_name.in_(["material", "material_primary"]))
+                    .where(func.lower(ProductAttribute.attribute_value).in_(material_list))
+                )
+                search_query = search_query.where(Product.id.in_(material_subquery))
 
         # Order by: match priority (name > brand > description), then price
         # This ensures "paintings" shows actual paintings first, not rugs that mention paintings
@@ -350,6 +421,7 @@ async def list_curated_looks(
                 title=look.title,
                 style_theme=look.style_theme,
                 style_description=look.style_description,
+                style_labels=look.style_labels or [],
                 room_type=look.room_type,
                 visualization_image=look.visualization_image,
                 total_price=look.total_price or 0,
@@ -378,52 +450,7 @@ async def get_curated_look(
 ):
     """Get a single curated look with full details"""
     try:
-        query = (
-            select(CuratedLook)
-            .where(CuratedLook.id == look_id)
-            .options(selectinload(CuratedLook.products).selectinload(CuratedLookProduct.product).selectinload(Product.images))
-        )
-        result = await db.execute(query)
-        look = result.scalar_one_or_none()
-
-        if not look:
-            raise HTTPException(status_code=404, detail="Curated look not found")
-
-        # Build product list with details
-        products = []
-        for lp in sorted(look.products, key=lambda x: x.display_order or 0):
-            product = lp.product
-            if product:
-                products.append(
-                    CuratedLookProductSchema(
-                        id=product.id,
-                        name=product.name,
-                        price=product.price,
-                        image_url=get_primary_image_url(product),
-                        source_website=product.source_website,
-                        source_url=product.source_url,
-                        product_type=lp.product_type,
-                        quantity=lp.quantity or 1,
-                        description=product.description,
-                    )
-                )
-
-        return CuratedLookSchema(
-            id=look.id,
-            title=look.title,
-            style_theme=look.style_theme,
-            style_description=look.style_description,
-            room_type=look.room_type,
-            room_image=look.room_image,
-            visualization_image=look.visualization_image,
-            total_price=look.total_price or 0,
-            is_published=look.is_published,
-            display_order=look.display_order or 0,
-            products=products,
-            created_at=look.created_at,
-            updated_at=look.updated_at,
-        )
-
+        return await fetch_curated_look_with_products(look_id, db)
     except HTTPException:
         raise
     except Exception as e:
@@ -451,6 +478,7 @@ async def create_curated_look(
             title=look_data.title,
             style_theme=look_data.style_theme,
             style_description=look_data.style_description,
+            style_labels=look_data.style_labels or [],
             room_type=look_data.room_type.value,
             room_image=look_data.room_image,
             visualization_image=look_data.visualization_image,
@@ -496,7 +524,7 @@ async def create_curated_look(
         await db.refresh(look)
 
         # Return the created look with full details
-        return await get_curated_look(look.id, db)
+        return await fetch_curated_look_with_products(look.id, db)
 
     except Exception as e:
         await db.rollback()
@@ -527,6 +555,8 @@ async def update_curated_look(
             look.style_theme = look_data.style_theme
         if look_data.style_description is not None:
             look.style_description = look_data.style_description
+        if look_data.style_labels is not None:
+            look.style_labels = look_data.style_labels
         if look_data.room_type is not None:
             look.room_type = look_data.room_type.value
         if look_data.room_image is not None:
@@ -581,7 +611,7 @@ async def update_curated_look(
         await db.commit()
         await db.refresh(look)
 
-        return await get_curated_look(look_id, db)
+        return await fetch_curated_look_with_products(look_id, db)
 
     except HTTPException:
         raise
@@ -638,7 +668,7 @@ async def update_curated_look_products(
         look.updated_at = datetime.utcnow()
         await db.commit()
 
-        return await get_curated_look(look_id, db)
+        return await fetch_curated_look_with_products(look_id, db)
 
     except HTTPException:
         raise

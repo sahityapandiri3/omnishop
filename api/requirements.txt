@@ -42,6 +42,9 @@ google-genai>=1.47.0
 Pillow==10.0.1
 python-magic==0.4.27
 
+# Replicate (for SAM segmentation and SDXL)
+replicate>=0.25.0
+
 # Data science and ML
 numpy>=2.0.2
 scikit-learn==1.3.0

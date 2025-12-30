@@ -64,6 +64,7 @@ class CuratedLookBase(BaseModel):
     title: str = Field(..., max_length=200)
     style_theme: str = Field(..., max_length=100)
     style_description: Optional[str] = None
+    style_labels: List[str] = []  # ["modern", "modern_luxury", "indian_contemporary"]
     room_type: RoomType
 
 
@@ -85,6 +86,7 @@ class CuratedLookUpdate(BaseModel):
     title: Optional[str] = Field(None, max_length=200)
     style_theme: Optional[str] = Field(None, max_length=100)
     style_description: Optional[str] = None
+    style_labels: Optional[List[str]] = None  # ["modern", "modern_luxury", "indian_contemporary"]
     room_type: Optional[RoomType] = None
     room_image: Optional[str] = None
     visualization_image: Optional[str] = None
@@ -111,6 +113,7 @@ class CuratedLookSchema(BaseModel):
     title: str
     style_theme: str
     style_description: Optional[str] = None
+    style_labels: List[str] = []
     room_type: str
     room_image: Optional[str] = None
     visualization_image: Optional[str] = None
@@ -132,6 +135,7 @@ class CuratedLookSummarySchema(BaseModel):
     title: str
     style_theme: str
     style_description: Optional[str] = None
+    style_labels: List[str] = []
     room_type: str
     visualization_image: Optional[str] = None
     total_price: float = 0
@@ -151,6 +155,7 @@ class CuratedLookPublicSchema(BaseModel):
     look_id: str
     style_theme: str
     style_description: Optional[str] = None
+    style_labels: List[str] = []
     room_image: Optional[str] = None  # Base room image for visualization
     visualization_image: Optional[str] = None
     products: List[CuratedLookProductSchema] = []

@@ -854,9 +854,18 @@ RESPOND WITH JSON ONLY - NO OTHER TEXT."""
 
             logger.info(f"Loaded image for furniture removal (EXIF corrected): {pil_image.width}x{pil_image.height} pixels")
 
-            prompt = """🚨 CRITICAL TASK: Remove ALL furniture and movable objects from this room image.
+            prompt = """🚨 CRITICAL TASK: Remove ALL furniture and movable objects from this room image AND correct the perspective.
 
-The output MUST be a COMPLETELY EMPTY room with ZERO furniture remaining.
+The output MUST be:
+1. A COMPLETELY EMPTY room with ZERO furniture remaining
+2. PERSPECTIVE CORRECTED like a professional architectural photo
+
+📐 PERSPECTIVE CORRECTION (MANDATORY):
+- Straighten ALL vertical lines (walls, door frames, window frames should be perfectly vertical)
+- Level ALL horizontal lines (floor line, ceiling line, window sills should be horizontal)
+- Correct any lens distortion or tilted camera angle
+- The output should look like a professional real estate photo with proper architectural perspective
+- Walls should not lean inward or outward - they should be straight and vertical
 
 ⚠️ MANDATORY REMOVALS - These items MUST be deleted from the image:
 1. ALL SEATING: Sofas (including curved/sectional sofas), couches, chairs, armchairs, ottomans
@@ -884,9 +893,11 @@ The output MUST be a COMPLETELY EMPTY room with ZERO furniture remaining.
 - Electrical outlets and switches
 - Archways and architectural features
 
-OUTPUT: Generate an image of the SAME room but COMPLETELY EMPTY - no furniture, no lamps, no mirrors, no plants, NO CARPETS OR RUGS. The bare floor must be visible. The room should look vacant and ready for new furniture to be added.
+OUTPUT: Generate an image of the SAME room but:
+1. COMPLETELY EMPTY - no furniture, no lamps, no mirrors, no plants, NO CARPETS OR RUGS
+2. PERSPECTIVE CORRECTED - vertical lines straight, horizontal lines level, like a professional architectural photo
 
-FAILURE IS NOT ACCEPTABLE: Every single piece of furniture AND floor covering MUST be removed. Do not leave any sofa, lamp, mirror, or carpet in the output."""
+FAILURE IS NOT ACCEPTABLE: Every single piece of furniture AND floor covering MUST be removed, AND the perspective MUST be corrected. Do not leave any sofa, lamp, mirror, or carpet in the output."""
 
             # Retry loop with exponential backoff
             for attempt in range(max_retries):
@@ -1089,6 +1100,21 @@ Adding a small item does NOT mean zooming in on it.
 The item you add should be a SMALL part of the overall image.
 
 ⛔ IF YOU ZOOM IN OR CROP THE IMAGE, YOU HAVE FAILED ⛔
+═══════════════════════════════════════════════════════════════
+
+🚫🚫🚫 CRITICAL: DO NOT ADD EXTRA FURNITURE 🚫🚫🚫
+═══════════════════════════════════════════════════════════════
+⛔ ADD ONLY THE ONE SPECIFIC PRODUCT LISTED BELOW ⛔
+⛔ DO NOT add sofas, chairs, tables, or any other furniture ⛔
+⛔ DO NOT "complete" or "design" the room ⛔
+⛔ DO NOT add items you think would look nice ⛔
+⛔ DO NOT add matching or complementary pieces ⛔
+
+YOUR ONLY TASK: Add the ONE product specified below.
+The room is ALREADY COMPLETE - it does NOT need more furniture.
+If I ask for 1 lamp, add ONLY 1 lamp - nothing else.
+
+⛔ ADDING ANY EXTRA FURNITURE = AUTOMATIC FAILURE ⛔
 ═══════════════════════════════════════════════════════════════
 
 """
@@ -1311,7 +1337,7 @@ PLACEMENT GUIDELINES:
 - ✅ CORRECT: Full room view with tiny planter visible in corner/edge
 - The ENTIRE input room must be visible in the output - planter is just a small addition
 
-💐 TABLETOP DECOR (vases, flower bunches, flower arrangements, sculptures, decorative objects):
+💐 TABLETOP DECOR (vases, flower bunches, flower arrangements, decorative objects):
 🚨🚨🚨 CRITICAL - PLACE ON TABLE SURFACES, NOT ON FLOOR 🚨🚨🚨
 - ⚠️ These are SMALL tabletop items - they belong ON coffee tables, center tables, side tables, console tables, dining tables
 - ⚠️ NEVER replace furniture (sofas, chairs) with decor items - ADD decor ON existing table surfaces
@@ -1322,6 +1348,18 @@ PLACEMENT GUIDELINES:
 - 🚫 WRONG: Replacing a sofa with a vase - this is COMPLETELY INCORRECT
 - 🚫 WRONG: Placing a flower bunch on the floor
 - ✅ CORRECT: A small vase sitting on the center coffee table
+
+🗿 SCULPTURES / FIGURINES / DECORATIVE STATUES:
+🚨🚨🚨 CRITICAL - PLACEMENT PRIORITY FOR SCULPTURES 🚨🚨🚨
+- ⚠️ FIRST PRIORITY: Place on the CENTER TABLE / COFFEE TABLE (in front of sofa)
+- ⚠️ SECOND PRIORITY: If center table is full or doesn't exist, place on a SIDE TABLE
+- ⚠️ THIRD PRIORITY: If no tables available, place on console table, shelf, or mantel
+- Sculptures are decorative accent pieces - they should be PROMINENTLY visible on table surfaces
+- Position the sculpture facing the camera/viewer for best visual impact
+- Keep proportions realistic - tabletop sculptures are typically 15-40cm tall
+- 🚫 WRONG: Placing sculpture on the floor
+- 🚫 WRONG: Hiding sculpture in a corner
+- ✅ CORRECT: Sculpture placed centrally on the coffee table as a focal point
 
 🖼️ WALL ART / MIRRORS / DECORATIVE ITEMS:
 - Mount on walls at appropriate eye level
@@ -1570,10 +1608,28 @@ The room structure, walls, and camera angle MUST be identical to the input image
             has_multiple_copies = any(qty > 1 for _, qty in product_entries)
             multiple_instance_instruction = ""
 
+            # Base instruction to prevent adding extra furniture (applies to ALL cases)
+            no_extra_furniture_warning = """
+🚫🚫🚫 CRITICAL: DO NOT ADD EXTRA FURNITURE 🚫🚫🚫
+═══════════════════════════════════════════════════════════════════════
+⛔ ADD ONLY THE SPECIFIC PRODUCTS LISTED BELOW ⛔
+⛔ DO NOT add sofas, chairs, tables, or any other furniture not in the list ⛔
+⛔ DO NOT "complete" or "design" the room ⛔
+⛔ DO NOT add items you think would look nice ⛔
+⛔ DO NOT add matching or complementary pieces not specified ⛔
+
+YOUR ONLY TASK: Add EXACTLY the products listed below - NOTHING MORE.
+The room is ALREADY COMPLETE - it does NOT need additional furniture.
+
+⛔ ADDING ANY UNLISTED FURNITURE = AUTOMATIC FAILURE ⛔
+═══════════════════════════════════════════════════════════════════════
+
+"""
+
             # For single items, add explicit instruction NOT to add extras
             if total_items_to_add == 1 and not has_multiple_copies:
                 single_item_name = product_entries[0][0] if product_entries else "item"
-                multiple_instance_instruction = f"""
+                multiple_instance_instruction = f"""{no_extra_furniture_warning}
 ⚠️⚠️⚠️ CRITICAL: ADD EXACTLY 1 ITEM - NO MORE, NO LESS ⚠️⚠️⚠️
 ═══════════════════════════════════════════════════════════════════════
 
@@ -1583,10 +1639,12 @@ The room structure, walls, and camera angle MUST be identical to the input image
 - Add 2 or more of this item
 - Create duplicates or similar-looking items
 - Add any matching/complementary pieces
+- Add ANY other furniture (sofas, chairs, tables, etc.)
 
 ✅ DO:
 - Add ONLY 1 (ONE) single item
 - Place it in ONE appropriate location
+- Keep ALL existing furniture EXACTLY as it is
 
 COUNT CHECK: Your output should have exactly 1 new {single_item_name} added.
 ═══════════════════════════════════════════════════════════════════════
@@ -1595,7 +1653,7 @@ COUNT CHECK: Your output should have exactly 1 new {single_item_name} added.
             elif has_multiple_copies:
                 logger.info(f"🪑 MULTIPLE COPIES REQUESTED: {total_items_to_add} total items from {len(products)} products")
                 # Build instruction for multiple copies - use the summary we already built
-                multiple_instance_instruction = f"""
+                multiple_instance_instruction = f"""{no_extra_furniture_warning}
 🚨🚨🚨 CRITICAL: YOU MUST ADD MULTIPLE COPIES OF SOME PRODUCTS 🚨🚨🚨
 ═══════════════════════════════════════════════════════════════════════
 
@@ -1608,12 +1666,14 @@ COUNT CHECK: Your output should have exactly 1 new {single_item_name} added.
 - Adding only 1 item when 2+ copies are required
 - Ignoring the quantity requirements
 - Placing fewer items than specified
+- Adding ANY furniture not in the list above (sofas, chairs, tables, etc.)
 
 ✅ SUCCESS CONDITIONS (DO THIS):
 - Count EXACTLY {total_items_to_add} separate items in your output
 - For chairs with qty=2: Place BOTH chairs SIDE BY SIDE (next to each other, facing the same direction)
 - For cushions with qty=2+: Place ALL cushions on the sofa or seating
 - Each copy should be in a DIFFERENT location but same style/color
+- DO NOT add any furniture not specified in the list
 
 🪑 CHAIR PLACEMENT FOR MULTIPLE COPIES:
 - 2 accent chairs → Place SIDE BY SIDE (next to each other, facing the same direction)
@@ -1629,6 +1689,22 @@ COUNT CHECK: Your output should have exactly 1 new {single_item_name} added.
   - Can also be placed at the end of the bed facing outward
 - 🚫 NEVER place directly in front of sofa blocking the coffee table area
 - 🚫 NEVER remove or replace existing chairs/furniture to make room for the bench
+═══════════════════════════════════════════════════════════════════════
+
+"""
+            else:
+                # Multiple different products without multiple copies of any single product
+                multiple_instance_instruction = f"""{no_extra_furniture_warning}
+🎯 ADD EXACTLY THESE {total_items_to_add} ITEMS - NO MORE, NO LESS 🎯
+═══════════════════════════════════════════════════════════════════════
+
+Items to add:
+{product_summary_str}
+
+⛔ DO NOT add any items not in this list
+⛔ DO NOT add sofas, chairs, tables, or furniture not specified
+⛔ The room is ALREADY COMPLETE
+
 ═══════════════════════════════════════════════════════════════════════
 
 """
@@ -1725,6 +1801,13 @@ PLACEMENT GUIDELINES:
 - Accent chairs angle towards the main seating
 - Lamps go on tables or as floor lamps
 - Decor items go on table surfaces
+
+🗿 SCULPTURES / FIGURINES / DECORATIVE STATUES:
+- ⚠️ FIRST PRIORITY: Place on the CENTER TABLE / COFFEE TABLE (in front of sofa)
+- ⚠️ SECOND PRIORITY: If center table is full or doesn't exist, place on a SIDE TABLE
+- ⚠️ THIRD PRIORITY: If no tables available, place on console table, shelf, or mantel
+- Sculptures should be PROMINENTLY visible on table surfaces, NOT on the floor
+- Position facing the camera for best visual impact
 
 🎯 MANDATORY FRONT ANGLE REQUIREMENT:
 ⚠️ ALL PRODUCTS MUST SHOW THEIR FRONT FACE TOWARDS THE CAMERA ⚠️
@@ -3218,10 +3301,104 @@ QUALITY REQUIREMENTS:
             )
 
     def _build_custom_position_instructions(self, positions: list, products: list) -> str:
-        """Build custom position instructions for Gemini prompt using grid-based positioning"""
+        """Build custom position instructions for Gemini prompt using grid-based positioning.
+
+        Supports two modes:
+        1. MOVE mode: When positions have fromX/fromY - relocate existing items in the scene
+        2. PLACE mode: When positions only have x/y - place products at specific locations
+        """
         if not positions or len(positions) == 0:
             return "No custom positions provided. Use default placement strategy above."
 
+        # Check if this is a MOVE operation (positions have fromX/fromY)
+        has_move_operations = any(pos.get("fromX") is not None and pos.get("fromY") is not None for pos in positions)
+
+        if has_move_operations:
+            return self._build_move_instructions(positions, products)
+        else:
+            return self._build_placement_instructions(positions, products)
+
+    def _get_grid_position(self, x: float, y: float) -> tuple:
+        """Convert x,y coordinates to grid cell description."""
+        # X: 0-0.33=left, 0.33-0.67=center, 0.67-1=right
+        # Y: 0-0.33=top/back, 0.33-0.67=middle, 0.67-1=bottom/front
+
+        if x < 0.33:
+            h_cell = "LEFT"
+            h_desc = "left side"
+        elif x < 0.67:
+            h_cell = "CENTER"
+            h_desc = "center"
+        else:
+            h_cell = "RIGHT"
+            h_desc = "right side"
+
+        if y < 0.33:
+            v_cell = "TOP"
+            v_desc = "back of room"
+        elif y < 0.67:
+            v_cell = "MID"
+            v_desc = "middle"
+        else:
+            v_cell = "BOT"
+            v_desc = "foreground"
+
+        return (f"{v_cell}-{h_cell}", h_desc, v_desc)
+
+    def _build_move_instructions(self, positions: list, products: list) -> str:
+        """Build instructions for MOVING existing items in the scene."""
+        instructions = []
+        instructions.append("=" * 70)
+        instructions.append("🚚 MOVE OPERATION - RELOCATE EXISTING ITEMS IN THE SCENE")
+        instructions.append("=" * 70)
+        instructions.append("")
+        instructions.append("⚠️ CRITICAL RULES FOR THIS MOVE OPERATION:")
+        instructions.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        instructions.append("1. DO NOT add any new furniture or products to the scene")
+        instructions.append("2. DO NOT remove any existing items (except moving them)")
+        instructions.append("3. ONLY relocate the specific item(s) listed below")
+        instructions.append("4. Keep ALL other items in their EXACT current positions")
+        instructions.append("5. The scene should look identical EXCEPT for the moved item(s)")
+        instructions.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        instructions.append("")
+        instructions.append("ITEMS TO MOVE:")
+        instructions.append("")
+
+        for pos in positions:
+            from_x = pos.get("fromX")
+            from_y = pos.get("fromY")
+            to_x = pos.get("x", 0.5)
+            to_y = pos.get("y", 0.5)
+            item_label = pos.get("label", "item")
+
+            if from_x is not None and from_y is not None:
+                from_grid, from_h, from_v = self._get_grid_position(from_x, from_y)
+                to_grid, to_h, to_v = self._get_grid_position(to_x, to_y)
+
+                instructions.append(f"📦 MOVE: {item_label}")
+                instructions.append(
+                    f"   FROM: {from_v}, {from_h} (coordinates: X={int(from_x * 100)}%, Y={int(from_y * 100)}%)"
+                )
+                instructions.append(f"   TO:   {to_v}, {to_h} (coordinates: X={int(to_x * 100)}%, Y={int(to_y * 100)}%)")
+                instructions.append("")
+                instructions.append(f"   🔍 FIND the {item_label} at the FROM location")
+                instructions.append(f"   🚫 REMOVE it from that location")
+                instructions.append(f"   ✅ PLACE it at the TO location")
+                instructions.append(f"   ⚠️  Keep the item's appearance EXACTLY the same")
+                instructions.append("")
+
+        instructions.append("=" * 70)
+        instructions.append("🛑 ABSOLUTE RESTRICTIONS:")
+        instructions.append("   - NO new furniture, decor, or products may appear")
+        instructions.append("   - NO existing items may disappear (except being moved)")
+        instructions.append("   - NO changes to items that are NOT being moved")
+        instructions.append("   - The room structure, lighting, and background stay identical")
+        instructions.append("=" * 70)
+
+        return "\n".join(instructions)
+
+    def _build_placement_instructions(self, positions: list, products: list) -> str:
+        """Build instructions for PLACING products at specific locations."""
         instructions = []
         instructions.append("=" * 60)
         instructions.append("🎯 USER-SPECIFIED CUSTOM POSITIONS - OVERRIDE DEFAULT PLACEMENT")
@@ -3266,31 +3443,7 @@ QUALITY REQUIREMENTS:
                 x = pos.get("x", 0.5)
                 y = pos.get("y", 0.5)
 
-                # Convert to 3x3 grid cell using clearer boundaries
-                # X: 0-0.33=left, 0.33-0.67=center, 0.67-1=right
-                # Y: 0-0.33=top/back, 0.33-0.67=middle, 0.67-1=bottom/front
-
-                if x < 0.33:
-                    h_cell = "LEFT"
-                    h_desc = "left third of the image"
-                elif x < 0.67:
-                    h_cell = "CENTER"
-                    h_desc = "center third of the image"
-                else:
-                    h_cell = "RIGHT"
-                    h_desc = "right third of the image"
-
-                if y < 0.33:
-                    v_cell = "TOP"
-                    v_desc = "back of room (upper third)"
-                elif y < 0.67:
-                    v_cell = "MID"
-                    v_desc = "middle depth (center third)"
-                else:
-                    v_cell = "BOT"
-                    v_desc = "foreground (lower third)"
-
-                grid_cell = f"{v_cell}-{h_cell}"
+                grid_cell, h_desc, v_desc = self._get_grid_position(x, y)
 
                 instructions.append(f"📍 Product {product_num}: {product_name}")
                 instructions.append(f"   → GRID CELL: {grid_cell}")
@@ -4431,6 +4584,226 @@ IMPORTANT:
             "confidence": 0.4 if max_matches > 0 else 0.2,
             "reasoning": "Classified by text analysis (image unavailable)",
         }
+
+    async def extract_furniture_layers(self, visualization_image: str, products: list[dict]) -> dict:
+        """
+        Extract furniture from visualization as separate layers for edit mode.
+
+        Uses Gemini Vision to:
+        1. Detect bounding boxes for each product in the visualization
+        2. Extract each furniture piece as a layer (cropped from original)
+        3. Generate clean background using existing furniture removal
+
+        Args:
+            visualization_image: Base64 encoded visualization image
+            products: List of products with id and name
+
+        Returns:
+            {
+                "clean_background": "data:image/...;base64,...",
+                "layers": [
+                    {
+                        "product_id": "123",
+                        "product_name": "Brass Sculpture",
+                        "layer_image": "data:image/...;base64,...",
+                        "bounding_box": {"x": 0.45, "y": 0.55, "width": 0.08, "height": 0.12},
+                        "center": {"x": 0.49, "y": 0.61}
+                    }
+                ]
+            }
+        """
+        logger.info(f"[extract_furniture_layers] Starting extraction for {len(products)} products")
+
+        try:
+            # Step 1: Detect bounding boxes for all products
+            detected_positions = await self._detect_product_positions(visualization_image, products)
+            logger.info(f"[extract_furniture_layers] Detected {len(detected_positions)} positions")
+
+            # Step 2: Generate clean background (run in parallel with layer extraction)
+            # Reuse existing remove_furniture method
+            clean_background_task = asyncio.create_task(self.remove_furniture(visualization_image))
+
+            # Step 3: Extract layer images for each detected position
+            layers = []
+            for position in detected_positions:
+                try:
+                    layer_image = await self._extract_single_layer(
+                        visualization_image, position["bounding_box"], position["product_name"]
+                    )
+                    layers.append(
+                        {
+                            "product_id": str(position["product_id"]),
+                            "product_name": position["product_name"],
+                            "layer_image": layer_image,
+                            "bounding_box": position["bounding_box"],
+                            "center": {
+                                "x": position["bounding_box"]["x"] + position["bounding_box"]["width"] / 2,
+                                "y": position["bounding_box"]["y"] + position["bounding_box"]["height"] / 2,
+                            },
+                        }
+                    )
+                except Exception as e:
+                    logger.warning(f"[extract_furniture_layers] Failed to extract layer for {position['product_name']}: {e}")
+                    # Still include the position without a layer image
+                    layers.append(
+                        {
+                            "product_id": str(position["product_id"]),
+                            "product_name": position["product_name"],
+                            "layer_image": None,
+                            "bounding_box": position["bounding_box"],
+                            "center": {
+                                "x": position["bounding_box"]["x"] + position["bounding_box"]["width"] / 2,
+                                "y": position["bounding_box"]["y"] + position["bounding_box"]["height"] / 2,
+                            },
+                        }
+                    )
+
+            # Wait for clean background
+            clean_background = await clean_background_task
+
+            return {"clean_background": clean_background, "layers": layers}
+
+        except Exception as e:
+            logger.error(f"[extract_furniture_layers] Error: {e}", exc_info=True)
+            raise
+
+    async def _detect_product_positions(self, visualization_image: str, products: list[dict]) -> list[dict]:
+        """
+        Detect bounding boxes for furniture in the visualization image.
+        Simply detects all furniture and assigns to products in order.
+
+        Returns list of:
+        {
+            "product_id": "123",
+            "product_name": "Sofa",
+            "bounding_box": {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.4}
+        }
+        """
+        logger.info(f"[_detect_product_positions] Starting detection for {len(products)} products")
+        processed_image = self._preprocess_image(visualization_image)
+
+        num_products = len(products)
+        prompt = f"""Detect exactly {num_products} main furniture/decor items in this room visualization.
+
+I need to find the positions of {num_products} items. Look for the most prominent furniture pieces.
+
+For EACH item, provide its bounding box as percentages (0-1) where:
+- x = left edge position (0 = left side of image, 1 = right side)
+- y = top edge position (0 = top of image, 1 = bottom)
+- width = width as fraction of image width
+- height = height as fraction of image height
+
+Return a JSON array with exactly {num_products} items:
+[
+  {{"item_type": "sofa", "bounding_box": {{"x": 0.1, "y": 0.4, "width": 0.4, "height": 0.25}}}},
+  {{"item_type": "coffee_table", "bounding_box": {{"x": 0.3, "y": 0.6, "width": 0.2, "height": 0.1}}}}
+]
+
+RULES:
+- Return EXACTLY {num_products} items
+- Be accurate with bounding boxes - they should tightly fit each item
+- item_type is just a description, doesn't need to match exactly
+- Return ONLY valid JSON array, no other text"""
+
+        payload = {
+            "contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "image/jpeg", "data": processed_image}}]}],
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 4096, "responseMimeType": "application/json"},
+        }
+
+        try:
+            logger.info("[_detect_product_positions] Calling Gemini API...")
+            result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
+            logger.info(f"[_detect_product_positions] Got API response")
+
+            content = result.get("candidates", [{}])[0].get("content", {})
+            text_response = content.get("parts", [{}])[0].get("text", "[]")
+            logger.info(f"[_detect_product_positions] Response text: {text_response[:500]}")
+
+            detected_items = json.loads(text_response)
+            if not isinstance(detected_items, list):
+                detected_items = []
+            logger.info(f"[_detect_product_positions] Parsed {len(detected_items)} items")
+
+        except json.JSONDecodeError as e:
+            logger.error(f"[_detect_product_positions] JSON parse error: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"[_detect_product_positions] API error: {e}")
+            return []
+
+        # Simple mapping: assign detected items to products in order
+        positions = []
+        for i, product in enumerate(products):
+            if i < len(detected_items):
+                detected = detected_items[i]
+                bbox = detected.get("bounding_box", {})
+                # Validate bounding box
+                if all(k in bbox for k in ["x", "y", "width", "height"]):
+                    positions.append({"product_id": product["id"], "product_name": product["name"], "bounding_box": bbox})
+                    logger.info(f"[_detect_product_positions] Product '{product['name']}' -> bbox {bbox}")
+                else:
+                    logger.warning(f"[_detect_product_positions] Invalid bbox for item {i}: {bbox}")
+
+        logger.info(f"[_detect_product_positions] Final: {len(positions)} positions")
+        return positions
+
+    async def _extract_single_layer(self, visualization_image: str, bounding_box: dict, product_name: str) -> str:
+        """
+        Extract a single furniture item as a cropped layer image.
+
+        Args:
+            visualization_image: Full visualization image (base64)
+            bounding_box: {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.4}
+            product_name: Name of the product for context
+
+        Returns:
+            Base64 encoded cropped image with data URL prefix
+        """
+        # Decode the visualization image
+        image_data = visualization_image
+        if image_data.startswith("data:image"):
+            image_data = image_data.split(",")[1]
+
+        image_bytes = base64.b64decode(image_data)
+        pil_image = Image.open(io.BytesIO(image_bytes))
+
+        # Apply EXIF correction
+        pil_image = ImageOps.exif_transpose(pil_image)
+
+        # Convert to RGB if needed
+        if pil_image.mode != "RGB":
+            pil_image = pil_image.convert("RGB")
+
+        width, height = pil_image.size
+
+        # Calculate pixel coordinates from percentages
+        x = int(bounding_box["x"] * width)
+        y = int(bounding_box["y"] * height)
+        box_width = int(bounding_box["width"] * width)
+        box_height = int(bounding_box["height"] * height)
+
+        # Add small padding (5%) to include some context
+        padding_x = int(box_width * 0.05)
+        padding_y = int(box_height * 0.05)
+
+        # Ensure we don't go outside image bounds
+        left = max(0, x - padding_x)
+        top = max(0, y - padding_y)
+        right = min(width, x + box_width + padding_x)
+        bottom = min(height, y + box_height + padding_y)
+
+        # Crop the image
+        cropped = pil_image.crop((left, top, right, bottom))
+
+        # Convert to base64
+        buffer = io.BytesIO()
+        cropped.save(buffer, format="PNG", quality=95)
+        buffer.seek(0)
+        cropped_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+        logger.info(f"[_extract_single_layer] Extracted layer for {product_name}: {cropped.width}x{cropped.height}px")
+
+        return f"data:image/png;base64,{cropped_base64}"
 
     async def close(self):
         """Close HTTP session"""

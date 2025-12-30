@@ -2979,7 +2979,19 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
 
         # Get full product details with images from database
         # ISSUE #3 FIX: Cast product IDs to integers for database query (PostgreSQL requires type matching)
-        product_ids = [int(p.get("id")) for p in products if p.get("id")]
+        # Handle product IDs with quantity suffix (e.g., "552-1" -> 552)
+        def extract_base_product_id(product_id):
+            """Extract base integer ID from product ID string that may have quantity suffix."""
+            try:
+                id_str = str(product_id)
+                # Extract base ID before "-" suffix (e.g., "552-1" -> "552")
+                base_id = id_str.split("-")[0]
+                return int(base_id)
+            except (ValueError, TypeError):
+                return None
+
+        product_ids = list(set(filter(None, [extract_base_product_id(p.get("id")) for p in products if p.get("id")])))
+        logger.info(f"Extracted base product IDs for DB query: {product_ids}")
         if product_ids:
             from sqlalchemy.orm import selectinload
 
@@ -2989,7 +3001,9 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
 
             # Enrich products with full details for proper undo/redo support
             for product in products:
-                db_product = next((p for p in db_products if p.id == product.get("id")), None)
+                # Match using base product ID (handles "552-1" format)
+                base_id = extract_base_product_id(product.get("id"))
+                db_product = next((p for p in db_products if p.id == base_id), None)
                 if db_product:
                     # Add price and other essential fields
                     product["price"] = float(db_product.price) if db_product.price else 0.0

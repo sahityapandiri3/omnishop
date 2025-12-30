@@ -250,7 +250,7 @@ class User(Base):
         Enum(UserRole, values_callable=lambda x: [e.value for e in x], name="userrole"),
         default=UserRole.USER,
         nullable=False,
-        index=True
+        index=True,
     )
     last_login = Column(DateTime, nullable=True, index=True)  # Track last login timestamp
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -436,6 +436,7 @@ class CuratedLook(Base):
     title = Column(String(200), nullable=False)
     style_theme = Column(String(100), nullable=False)  # "Modern", "Traditional", "Bohemian", etc.
     style_description = Column(Text, nullable=True)
+    style_labels = Column(JSON, default=list)  # ["modern", "modern_luxury", "indian_contemporary"] for filtering
     room_type = Column(String(50), nullable=False, index=True)  # "living_room", "bedroom"
 
     # Images
@@ -504,3 +505,128 @@ class ChatLog(Base):
 
     def __repr__(self):
         return f"<ChatLog(id={self.id}, session={self.session_id[:8]}..., user={self.user_id})>"
+
+
+class HomeStylingSessionStatus(enum.Enum):
+    """Status for home styling sessions"""
+
+    PREFERENCES = "preferences"
+    UPLOAD = "upload"
+    TIER_SELECTION = "tier_selection"
+    GENERATING = "generating"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class HomeStylingTier(enum.Enum):
+    """Tier options for home styling"""
+
+    FREE = "free"  # 1 view
+    BASIC = "basic"  # 3 views
+    PREMIUM = "premium"  # 6 views (coming soon)
+
+
+class HomeStylingSession(Base):
+    """User sessions for home styling flow"""
+
+    __tablename__ = "homestyling_sessions"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
+
+    # Preferences
+    room_type = Column(String(50), nullable=True)  # "living_room", "bedroom"
+    style = Column(String(50), nullable=True)  # "modern", "modern_luxury", "indian_contemporary"
+    color_palette = Column(JSON, default=list)  # ["warm", "neutral", "cool", "bold"]
+
+    # Images
+    original_room_image = Column(Text, nullable=True)  # Base64 encoded
+    clean_room_image = Column(Text, nullable=True)  # Furniture removed
+
+    # Tier selection (no payment in Phase 1)
+    selected_tier = Column(
+        Enum(HomeStylingTier, values_callable=lambda x: [e.value for e in x], name="homestylingtier"), nullable=True
+    )
+    views_count = Column(Integer, default=1)  # 1, 3, or 6
+
+    # Session status
+    status = Column(
+        Enum(HomeStylingSessionStatus, values_callable=lambda x: [e.value for e in x], name="homestylingsessionstatus"),
+        default=HomeStylingSessionStatus.PREFERENCES,
+        nullable=False,
+        index=True,
+    )
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    user = relationship("User", backref="homestyling_sessions")
+    views = relationship("HomeStylingView", back_populates="session", cascade="all, delete-orphan")
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_homestyling_session_user", "user_id", "created_at"),
+        Index("idx_homestyling_session_status", "status", "created_at"),
+    )
+
+    def __repr__(self):
+        return f"<HomeStylingSession(id={self.id[:8]}..., style='{self.style}', status='{self.status}')>"
+
+
+class HomeStylingView(Base):
+    """Generated visualizations for home styling sessions"""
+
+    __tablename__ = "homestyling_views"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String(36), ForeignKey("homestyling_sessions.id"), nullable=False, index=True)
+    curated_look_id = Column(Integer, ForeignKey("curated_looks.id"), nullable=True, index=True)
+
+    # Generated visualization
+    visualization_image = Column(Text, nullable=True)  # Base64 encoded
+    view_number = Column(Integer, nullable=False)  # 1, 2, 3, etc.
+
+    # Status
+    generation_status = Column(String(20), default="pending")  # "pending", "generating", "completed", "failed"
+    error_message = Column(Text, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    session = relationship("HomeStylingSession", back_populates="views")
+    curated_look = relationship("CuratedLook")
+
+    # Indexes
+    __table_args__ = (Index("idx_homestyling_view_session", "session_id", "view_number"),)
+
+    def __repr__(self):
+        return f"<HomeStylingView(id={self.id}, session_id={self.session_id[:8]}..., view_number={self.view_number})>"
+
+
+class AnalyticsEvent(Base):
+    """Analytics events for tracking user behavior"""
+
+    __tablename__ = "analytics_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_type = Column(String(50), nullable=False, index=True)  # "page_view", "preferences_selected", etc.
+    session_id = Column(String(36), nullable=True, index=True)  # HomeStylingSession ID
+    user_id = Column(String(36), nullable=True, index=True)
+    step_name = Column(String(50), nullable=True)  # "preferences", "upload", "tier", "results"
+    event_data = Column(JSON, default=dict)  # Additional event data (renamed from 'metadata' which is reserved)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_analytics_event_type_created", "event_type", "created_at"),
+        Index("idx_analytics_session_created", "session_id", "created_at"),
+        Index("idx_analytics_user_created", "user_id", "created_at"),
+    )
+
+    def __repr__(self):
+        return f"<AnalyticsEvent(id={self.id}, event_type='{self.event_type}', session_id={self.session_id})>"

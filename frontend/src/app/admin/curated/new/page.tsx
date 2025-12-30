@@ -6,7 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import { adminCuratedAPI, getAvailableStores, visualizeRoom, startChatSession, startFurnitureRemoval, checkFurnitureRemovalStatus, furniturePositionAPI, generateAngleView } from '@/utils/api';
-import { FurniturePosition } from '@/components/DraggableFurnitureCanvas';
+import { FurniturePosition, MagicGrabLayer, PendingMoveData } from '@/components/DraggableFurnitureCanvas';
 import { AngleSelector, ViewingAngle } from '@/components/AngleSelector';
 
 const DraggableFurnitureCanvas = dynamic(
@@ -30,6 +30,41 @@ const FURNITURE_COLORS = [
   { name: 'Purple', value: 'purple', color: '#9370DB' },
 ];
 
+// Product style options (matches Product.primary_style values)
+const PRODUCT_STYLES = [
+  { value: 'modern', label: 'Modern' },
+  { value: 'modern_luxury', label: 'Modern Luxury' },
+  { value: 'indian_contemporary', label: 'Indian Contemporary' },
+  { value: 'minimalist', label: 'Minimalist' },
+  { value: 'japandi', label: 'Japandi' },
+  { value: 'scandinavian', label: 'Scandinavian' },
+  { value: 'mid_century_modern', label: 'Mid-Century Modern' },
+  { value: 'boho', label: 'Boho' },
+  { value: 'industrial', label: 'Industrial' },
+  { value: 'contemporary', label: 'Contemporary' },
+  { value: 'eclectic', label: 'Eclectic' },
+];
+
+// Common material options for filtering
+const PRODUCT_MATERIALS = [
+  { value: 'wood', label: 'Wood' },
+  { value: 'metal', label: 'Metal' },
+  { value: 'glass', label: 'Glass' },
+  { value: 'fabric', label: 'Fabric' },
+  { value: 'leather', label: 'Leather' },
+  { value: 'ceramic', label: 'Ceramic' },
+  { value: 'marble', label: 'Marble' },
+  { value: 'brass', label: 'Brass' },
+  { value: 'iron', label: 'Iron' },
+  { value: 'concrete', label: 'Concrete' },
+  { value: 'linen', label: 'Linen' },
+  { value: 'velvet', label: 'Velvet' },
+  { value: 'cotton', label: 'Cotton' },
+  { value: 'stone', label: 'Stone' },
+  { value: 'bamboo', label: 'Bamboo' },
+  { value: 'rattan', label: 'Rattan' },
+];
+
 interface Category {
   id: number;
   name: string;
@@ -47,6 +82,9 @@ export default function CreateCuratedLookPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const styleFromId = searchParams?.get('style_from');
+  const editId = searchParams?.get('edit');
+  // Use either style_from or edit parameter for loading existing look
+  const existingLookId = styleFromId || editId;
 
   // Loading state for style_from
   const [loadingStyleFrom, setLoadingStyleFrom] = useState(false);
@@ -62,6 +100,8 @@ export default function CreateCuratedLookPage() {
   const [minPrice, setMinPrice] = useState<string>('');
   const [maxPrice, setMaxPrice] = useState<string>('');
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
+  const [selectedProductStyles, setSelectedProductStyles] = useState<string[]>([]);
+  const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
 
   // Product discovery state
   const [discoveredProducts, setDiscoveredProducts] = useState<any[]>([]);
@@ -90,7 +130,23 @@ export default function CreateCuratedLookPage() {
   const [title, setTitle] = useState('');
   const [styleTheme, setStyleTheme] = useState('');
   const [styleDescription, setStyleDescription] = useState('');
+  const [styleLabels, setStyleLabels] = useState<string[]>([]);
   const [roomType, setRoomType] = useState<'living_room' | 'bedroom'>('living_room');
+
+  // Available style labels for multi-select
+  const STYLE_LABEL_OPTIONS = [
+    { value: 'modern', label: 'Modern' },
+    { value: 'modern_luxury', label: 'Modern Luxury' },
+    { value: 'indian_contemporary', label: 'Indian Contemporary' },
+    { value: 'minimalist', label: 'Minimalist' },
+    { value: 'japandi', label: 'Japandi' },
+    { value: 'scandinavian', label: 'Scandinavian' },
+    { value: 'mid_century_modern', label: 'Mid-Century Modern' },
+    { value: 'bohemian', label: 'Bohemian' },
+    { value: 'industrial', label: 'Industrial' },
+    { value: 'contemporary', label: 'Contemporary' },
+    { value: 'eclectic', label: 'Eclectic' },
+  ];
   const [saving, setSaving] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -167,6 +223,15 @@ export default function CreateCuratedLookPage() {
   const [furnitureLayers, setFurnitureLayers] = useState<any[]>([]);
   const [isExtractingLayers, setIsExtractingLayers] = useState(false);
 
+  // Magic Grab state (for draggable layers mode)
+  const [magicGrabBackground, setMagicGrabBackground] = useState<string | null>(null);
+  const [magicGrabLayers, setMagicGrabLayers] = useState<MagicGrabLayer[]>([]);
+  const [useMagicGrabMode, setUseMagicGrabMode] = useState(false);
+
+  // Click-to-Select edit mode state
+  const [pendingMoveData, setPendingMoveData] = useState<PendingMoveData | null>(null);
+  const [preEditVisualization, setPreEditVisualization] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasProductsRef = useRef<HTMLDivElement>(null);
   const visualizationRef = useRef<HTMLDivElement>(null);
@@ -179,12 +244,12 @@ export default function CreateCuratedLookPage() {
     loadStores();
   }, []);
 
-  // Load existing curated look if style_from parameter is present
+  // Load existing curated look if style_from or edit parameter is present
   useEffect(() => {
-    if (styleFromId && sessionId) {
-      loadExistingLook(parseInt(styleFromId));
+    if (existingLookId && sessionId) {
+      loadExistingLook(parseInt(existingLookId));
     }
-  }, [styleFromId, sessionId]);
+  }, [existingLookId, sessionId]);
 
   const loadExistingLook = async (lookId: number) => {
     try {
@@ -198,6 +263,7 @@ export default function CreateCuratedLookPage() {
       setTitle(look.title || '');
       setStyleTheme(look.style_theme || '');
       setStyleDescription(look.style_description || '');
+      setStyleLabels(look.style_labels || []);
       setRoomType(look.room_type as 'living_room' | 'bedroom');
 
       // Pre-populate room image
@@ -328,7 +394,7 @@ export default function CreateCuratedLookPage() {
     try {
       setSearching(true);
 
-      // Build search params - server now handles price and color filtering
+      // Build search params - server now handles price, color, style, and material filtering
       const searchParams: any = {
         query: searchQuery || undefined,
         categoryId: selectedCategory || undefined,
@@ -336,6 +402,8 @@ export default function CreateCuratedLookPage() {
         minPrice: minPrice ? parseFloat(minPrice) : undefined,
         maxPrice: maxPrice ? parseFloat(maxPrice) : undefined,
         colors: selectedColors.length > 0 ? selectedColors.join(',') : undefined,
+        styles: selectedProductStyles.length > 0 ? selectedProductStyles.join(',') : undefined,
+        materials: selectedMaterials.length > 0 ? selectedMaterials.join(',') : undefined,
         limit: 500  // High limit to show all matching products
       };
 
@@ -359,6 +427,24 @@ export default function CreateCuratedLookPage() {
     }
   };
 
+  // Toggle product style selection
+  const toggleProductStyle = (styleValue: string) => {
+    if (selectedProductStyles.includes(styleValue)) {
+      setSelectedProductStyles(selectedProductStyles.filter(s => s !== styleValue));
+    } else {
+      setSelectedProductStyles([...selectedProductStyles, styleValue]);
+    }
+  };
+
+  // Toggle material selection
+  const toggleMaterial = (materialValue: string) => {
+    if (selectedMaterials.includes(materialValue)) {
+      setSelectedMaterials(selectedMaterials.filter(m => m !== materialValue));
+    } else {
+      setSelectedMaterials([...selectedMaterials, materialValue]);
+    }
+  };
+
   // Clear all filters
   const clearFilters = () => {
     setSelectedCategory(null);
@@ -366,6 +452,8 @@ export default function CreateCuratedLookPage() {
     setMinPrice('');
     setMaxPrice('');
     setSelectedColors([]);
+    setSelectedProductStyles([]);
+    setSelectedMaterials([]);
   };
 
   // Handle room image upload and trigger furniture removal
@@ -739,6 +827,7 @@ export default function CreateCuratedLookPage() {
         title,
         style_theme: styleTheme || title,
         style_description: styleDescription,
+        style_labels: styleLabels,
         room_type: roomType,
         room_image: roomImageData || undefined,
         visualization_image: vizImageData,
@@ -748,12 +837,12 @@ export default function CreateCuratedLookPage() {
         product_quantities: selectedProducts.map(p => p.quantity || 1),
       };
 
-      // Update existing look if style_from is present, otherwise create new
-      const result = styleFromId
-        ? await adminCuratedAPI.update(parseInt(styleFromId), lookData)
+      // Update existing look if editing, otherwise create new
+      const result = existingLookId
+        ? await adminCuratedAPI.update(parseInt(existingLookId), lookData)
         : await adminCuratedAPI.create(lookData);
 
-      console.log('[Publish] Success:', result, styleFromId ? '(updated existing)' : '(created new)');
+      console.log('[Publish] Success:', result, existingLookId ? '(updated existing)' : '(created new)');
       router.push('/admin/curated');
     } catch (err: any) {
       console.error('Error saving look:', err);
@@ -784,13 +873,14 @@ export default function CreateCuratedLookPage() {
         ? roomImage.split('base64,')[1]
         : roomImage;
 
-      console.log(`[SaveDraft] Saving curated look as draft - products: ${selectedProducts.length}, styleFromId: ${styleFromId || 'none'}`);
+      console.log(`[SaveDraft] Saving curated look as draft - products: ${selectedProducts.length}, existingLookId: ${existingLookId || 'none'}`);
       console.log('[SaveDraft] Product quantities:', selectedProducts.map(p => ({ name: p.name, qty: p.quantity || 1 })));
 
       const lookData = {
         title,
         style_theme: styleTheme || title,
         style_description: styleDescription,
+        style_labels: styleLabels,
         room_type: roomType,
         room_image: roomImageData || undefined,
         visualization_image: vizImageData || undefined,
@@ -800,12 +890,12 @@ export default function CreateCuratedLookPage() {
         product_quantities: selectedProducts.map(p => p.quantity || 1),
       };
 
-      // Update existing look if style_from is present, otherwise create new
-      const result = styleFromId
-        ? await adminCuratedAPI.update(parseInt(styleFromId), lookData)
+      // Update existing look if editing, otherwise create new
+      const result = existingLookId
+        ? await adminCuratedAPI.update(parseInt(existingLookId), lookData)
         : await adminCuratedAPI.create(lookData);
 
-      console.log('[SaveDraft] Success:', result, styleFromId ? '(updated existing)' : '(created new)');
+      console.log('[SaveDraft] Success:', result, existingLookId ? '(updated existing)' : '(created new)');
       router.push('/admin/curated');
     } catch (err: any) {
       console.error('Error saving draft:', err);
@@ -1181,8 +1271,100 @@ export default function CreateCuratedLookPage() {
     console.log(`Redo: history now has ${visualizationHistory.length + 1} items, redo stack has ${newRedoStack.length} items`);
   };
 
-  // Enter edit mode for positions
+  // Enter edit mode for positions - now uses click-to-select
   const handleEnterEditMode = async () => {
+    if (!sessionId || !visualizationImage) {
+      setError('Please create a visualization first.');
+      return;
+    }
+
+    // NEW: Click-to-Select mode - no pre-extraction needed
+    // SAM is called only when user clicks "Drag" button after selecting an object
+    console.log('[AdminCurated] Entering Click-to-Select edit mode...');
+
+    // Store the current visualization for potential revert
+    setPreEditVisualization(visualizationImage);
+    setPendingMoveData(null);
+
+    setUseMagicGrabMode(true);  // Enable click-to-select (reusing this flag)
+    setIsEditingPositions(true);
+    setHasUnsavedPositions(false);
+    console.log('[AdminCurated] Click-to-Select ready - click on objects to select them');
+  };
+
+  // Handle final image from click-to-select mode
+  const handleClickToSelectFinalImage = (newImage: string) => {
+    console.log('[AdminCurated] Click-to-Select final image received');
+    setVisualizationImage(newImage);
+    // Stay in edit mode so user can move more objects
+  };
+
+  // Handle pending move changes from DraggableFurnitureCanvas
+  const handlePendingMoveChange = (hasPending: boolean, moveData?: PendingMoveData) => {
+    console.log('[AdminCurated] Pending move change:', { hasPending, hasData: !!moveData });
+    if (hasPending && moveData) {
+      setPendingMoveData(moveData);
+      setHasUnsavedPositions(true);
+    } else {
+      setPendingMoveData(null);
+      setHasUnsavedPositions(false);
+    }
+  };
+
+  // Handle Re-visualize for edit mode (finalize the move via API)
+  const handleEditModeRevisualize = async () => {
+    if (!pendingMoveData || !sessionId) {
+      console.log('[AdminCurated] No pending move data or session');
+      return;
+    }
+
+    console.log('[AdminCurated] Finalizing move via API...');
+    setIsVisualizing(true);
+
+    try {
+      const result = await furniturePositionAPI.finalizeMove(
+        sessionId,
+        pendingMoveData.originalImage,
+        pendingMoveData.mask,
+        pendingMoveData.cutout,
+        pendingMoveData.originalPosition,
+        pendingMoveData.newPosition,
+        pendingMoveData.scale,
+        pendingMoveData.inpaintedBackground,
+        pendingMoveData.matchedProductId
+      );
+
+      if (result.image) {
+        console.log('[AdminCurated] Move finalized successfully');
+
+        // Add to history for undo/redo
+        const newHistoryEntry: VisualizationHistoryEntry = {
+          image: result.image,
+          products: [...visualizedProducts],
+          productIds: new Set(visualizedProducts.map((p: any) => String(p.id))),
+        };
+        setVisualizationHistory(prev => [...prev, newHistoryEntry]);
+        setRedoStack([]);
+        setCanUndo(true);
+        setCanRedo(false);
+
+        // Update visualization with final image
+        handleClickToSelectFinalImage(result.image);
+
+        // Clear pending move data
+        setPendingMoveData(null);
+        setHasUnsavedPositions(false);
+      }
+    } catch (error: any) {
+      console.error('[AdminCurated] Error finalizing move:', error);
+      setError('Failed to finalize move: ' + (error.message || 'Unknown error'));
+    } finally {
+      setIsVisualizing(false);
+    }
+  };
+
+  // Legacy enter edit mode (kept for reference but not used)
+  const handleEnterEditModeLegacy = async () => {
     if (!sessionId || !visualizationImage) {
       setError('Please create a visualization first.');
       return;
@@ -1190,82 +1372,231 @@ export default function CreateCuratedLookPage() {
 
     setIsExtractingLayers(true);
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/remove-furniture`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: visualizationImage }),
-        }
-      );
-      if (!response.ok) throw new Error('Failed to get clean room background');
+      console.log('[AdminCurated] Entering edit mode with layer extraction...');
 
-      const data = await response.json();
-      const cleanRoom = data.clean_image || visualizationImage;
-      setBaseRoomLayer(cleanRoom);
-
+      // Get products to edit
       const productsToEdit = visualizedProducts.length > 0 ? visualizedProducts : selectedProducts;
 
-      // Expand products by quantity - each instance gets its own draggable position
-      const expandedProducts: Array<{product: any, instanceIndex: number, totalInstances: number}> = [];
+      // Prepare products for API (expand by quantity)
+      const expandedProductsForApi: Array<{ id: string; name: string }> = [];
       productsToEdit.forEach(product => {
         const qty = product.quantity || 1;
         for (let i = 1; i <= qty; i++) {
-          expandedProducts.push({
-            product,
-            instanceIndex: i,
-            totalInstances: qty
-          });
+          const instanceId = qty > 1 ? `${product.id}-${i}` : String(product.id);
+          const label = qty > 1 ? `${product.name} (${i} of ${qty})` : product.name;
+          expandedProductsForApi.push({ id: instanceId, name: label });
         }
       });
 
-      const numProducts = expandedProducts.length;
-      const cols = Math.ceil(Math.sqrt(numProducts));
+      // Call the layer extraction API (Magic Grab) to get actual positions and cropped layers
+      console.log('[AdminCurated] Extracting furniture layers via Magic Grab...');
+      const result = await furniturePositionAPI.extractLayers(
+        sessionId,
+        visualizationImage,
+        expandedProductsForApi,
+        true  // useSam = true for Magic Grab (falls back to Gemini if SAM unavailable)
+      );
 
-      const initialPositions: FurniturePosition[] = expandedProducts.map((item, index) => {
-        const row = Math.floor(index / cols);
-        const col = index % cols;
-        const spacingX = 0.6 / (cols + 1);
-        const spacingY = 0.6 / (Math.ceil(numProducts / cols) + 1);
-
-        // Create unique instance ID: "productId-instanceIndex"
-        const instanceId = item.totalInstances > 1
-          ? `${item.product.id}-${item.instanceIndex}`
-          : String(item.product.id);
-
-        // Label shows instance number if qty > 1
-        const label = item.totalInstances > 1
-          ? `${item.product.name} (${item.instanceIndex} of ${item.totalInstances})`
-          : item.product.name;
-
-        return {
-          productId: instanceId,
-          x: 0.2 + (col + 1) * spacingX,
-          y: 0.2 + (row + 1) * spacingY,
-          label: label,
-          width: 0.15,
-          height: 0.15,
-        };
+      console.log('[AdminCurated] Layer extraction result:', {
+        hasBackground: !!result.background,
+        layersCount: result.layers?.length || 0,
+        method: result.extraction_method,
       });
 
-      setFurniturePositions(initialPositions);
-      setFurnitureLayers([]);
-      setIsEditingPositions(true);
-      setHasUnsavedPositions(false);
+      // Get clean background and layers
+      const cleanBackground = result.background || result.clean_background || visualizationImage;
+      const layers = result.layers || [];
+
+      // Check if layers have cutout images (Magic Grab mode)
+      const hasCutouts = layers.length > 0 && layers.some((l: any) => l.cutout || l.layer_image);
+
+      if (hasCutouts && cleanBackground !== visualizationImage) {
+        // === MAGIC GRAB MODE ===
+        console.log(`[AdminCurated] Enabling Magic Grab mode with ${layers.length} draggable layers`);
+
+        // Convert to MagicGrabLayer format
+        const magicLayers: MagicGrabLayer[] = layers.map((layer: any, index: number) => ({
+          id: String(layer.id || layer.product_id || `layer_${index}`),
+          productId: layer.product_id || layer.id,
+          productName: layer.product_name || 'Product',
+          cutout: layer.cutout || layer.layer_image || '',
+          x: layer.x ?? layer.center?.x ?? 0.5,
+          y: layer.y ?? layer.center?.y ?? 0.5,
+          width: layer.width ?? layer.bounding_box?.width ?? 0.15,
+          height: layer.height ?? layer.bounding_box?.height ?? 0.15,
+          scale: layer.scale || 1.0,
+          rotation: 0,
+          zIndex: index,
+        }));
+
+        // Set Magic Grab state
+        setMagicGrabBackground(cleanBackground);
+        setMagicGrabLayers(magicLayers);
+        setUseMagicGrabMode(true);
+        setIsEditingPositions(true);
+        setHasUnsavedPositions(false);
+
+        console.log('[AdminCurated] Magic Grab mode ready - drag furniture to reposition');
+      } else {
+        // === LEGACY MODE (fallback) ===
+        console.log('[AdminCurated] Using legacy edit mode');
+        setBaseRoomLayer(cleanBackground);
+        setUseMagicGrabMode(false);
+
+        let initialPositions: FurniturePosition[];
+
+        if (layers.length > 0) {
+          initialPositions = layers.map((layer: any) => ({
+            productId: String(layer.product_id || layer.id),
+            x: layer.x ?? layer.center?.x ?? 0.5,
+            y: layer.y ?? layer.center?.y ?? 0.5,
+            width: layer.width ?? layer.bounding_box?.width ?? 0.15,
+            height: layer.height ?? layer.bounding_box?.height ?? 0.15,
+            label: layer.product_name || 'Product',
+            layerImage: layer.cutout || layer.layer_image || undefined,
+          }));
+          console.log(`[AdminCurated] Using ${initialPositions.length} detected positions`);
+        } else {
+          console.log('[AdminCurated] No layers detected, using default grid layout');
+          const numProducts = expandedProductsForApi.length;
+          const cols = Math.ceil(Math.sqrt(numProducts));
+
+          initialPositions = expandedProductsForApi.map((item, index) => {
+            const row = Math.floor(index / cols);
+            const col = index % cols;
+            const spacingX = 0.6 / (cols + 1);
+            const spacingY = 0.6 / (Math.ceil(numProducts / cols) + 1);
+
+            return {
+              productId: item.id,
+              x: 0.2 + (col + 1) * spacingX,
+              y: 0.2 + (row + 1) * spacingY,
+              label: item.name,
+              width: 0.15,
+              height: 0.15,
+            };
+          });
+        }
+
+        setFurniturePositions(initialPositions);
+        setFurnitureLayers([]);
+        setIsEditingPositions(true);
+        setHasUnsavedPositions(false);
+      }
     } catch (error: any) {
-      setError('Error entering edit mode. Please try again.');
+      console.error('[AdminCurated] Error entering edit mode:', error);
+
+      // Fall back to simple furniture removal approach
+      console.log('[AdminCurated] Falling back to simple edit mode...');
+      try {
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/remove-furniture`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: visualizationImage }),
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          setBaseRoomLayer(data.clean_image || visualizationImage);
+        }
+
+        // Use default grid positions
+        const productsToEdit = visualizedProducts.length > 0 ? visualizedProducts : selectedProducts;
+        const expandedProducts: Array<{product: any, instanceIndex: number, totalInstances: number}> = [];
+        productsToEdit.forEach(product => {
+          const qty = product.quantity || 1;
+          for (let i = 1; i <= qty; i++) {
+            expandedProducts.push({ product, instanceIndex: i, totalInstances: qty });
+          }
+        });
+
+        const numProducts = expandedProducts.length;
+        const cols = Math.ceil(Math.sqrt(numProducts));
+
+        const fallbackPositions: FurniturePosition[] = expandedProducts.map((item, index) => {
+          const row = Math.floor(index / cols);
+          const col = index % cols;
+          const spacingX = 0.6 / (cols + 1);
+          const spacingY = 0.6 / (Math.ceil(numProducts / cols) + 1);
+
+          const instanceId = item.totalInstances > 1
+            ? `${item.product.id}-${item.instanceIndex}`
+            : String(item.product.id);
+
+          const label = item.totalInstances > 1
+            ? `${item.product.name} (${item.instanceIndex} of ${item.totalInstances})`
+            : item.product.name;
+
+          return {
+            productId: instanceId,
+            x: 0.2 + (col + 1) * spacingX,
+            y: 0.2 + (row + 1) * spacingY,
+            label: label,
+            width: 0.15,
+            height: 0.15,
+          };
+        });
+
+        setFurniturePositions(fallbackPositions);
+        setFurnitureLayers([]);
+        setIsEditingPositions(true);
+        setHasUnsavedPositions(false);
+      } catch (fallbackError) {
+        console.error('[AdminCurated] Fallback also failed:', fallbackError);
+        setError('Error entering edit mode. Please try again.');
+      }
     } finally {
       setIsExtractingLayers(false);
     }
   };
 
+  // Exit edit mode without saving - revert to pre-edit visualization
   const handleExitEditMode = () => {
-    if (hasUnsavedPositions) {
-      const confirmExit = window.confirm('You have unsaved position changes. Exit anyway?');
-      if (!confirmExit) return;
+    console.log('[AdminCurated] Exiting edit mode (reverting to pre-edit state)');
+
+    // Revert to pre-edit visualization if available
+    if (preEditVisualization) {
+      setVisualizationImage(preEditVisualization);
     }
+
+    // Clean up edit mode state
     setIsEditingPositions(false);
     setHasUnsavedPositions(false);
+    setPendingMoveData(null);
+    setPreEditVisualization(null);
+    setUseMagicGrabMode(false);
+    setMagicGrabBackground(null);
+    setMagicGrabLayers([]);
+  };
+
+  // Save and exit edit mode - keep current visualization
+  const handleSaveAndExitEditMode = () => {
+    console.log('[AdminCurated] Saving and exiting edit mode');
+
+    // Add current visualization to history if we have changes
+    if (visualizationImage && preEditVisualization && visualizationImage !== preEditVisualization) {
+      const newHistoryEntry: VisualizationHistoryEntry = {
+        image: visualizationImage,
+        products: [...visualizedProducts],
+        productIds: new Set(visualizedProducts.map((p: any) => String(p.id))),
+      };
+      setVisualizationHistory(prev => [...prev, newHistoryEntry]);
+      setRedoStack([]);
+      setCanUndo(true);
+      setCanRedo(false);
+    }
+
+    // Clean up edit mode state (keep current visualization)
+    setIsEditingPositions(false);
+    setHasUnsavedPositions(false);
+    setPendingMoveData(null);
+    setPreEditVisualization(null);
+    setUseMagicGrabMode(false);
+    setMagicGrabBackground(null);
+    setMagicGrabLayers([]);
   };
 
   const handlePositionsChange = (newPositions: FurniturePosition[]) => {
@@ -1391,11 +1722,11 @@ export default function CreateCuratedLookPage() {
             </svg>
           </Link>
           <h1 className="text-lg font-bold text-gray-900">
-            {styleFromId ? 'Edit Curated Look' : 'Create Curated Look'}
+            {existingLookId ? 'Edit Curated Look' : 'Create Curated Look'}
           </h1>
-          {styleFromId && !loadingStyleFrom && (
+          {existingLookId && !loadingStyleFrom && (
             <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded">
-              Editing #{styleFromId}
+              Editing #{existingLookId}
             </span>
           )}
           {loadingStyleFrom && (
@@ -1583,6 +1914,76 @@ export default function CreateCuratedLookPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                       </svg>
                     )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Style Filter */}
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="block text-sm font-medium text-gray-700">Style</label>
+                {selectedProductStyles.length > 0 && (
+                  <button
+                    onClick={() => setSelectedProductStyles([])}
+                    className="text-xs text-purple-600 hover:text-purple-700"
+                  >
+                    Clear ({selectedProductStyles.length})
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {PRODUCT_STYLES.map((style) => (
+                  <button
+                    key={style.value}
+                    onClick={() => toggleProductStyle(style.value)}
+                    className={`px-2 py-1 text-xs rounded-full transition-all ${
+                      selectedProductStyles.includes(style.value)
+                        ? 'bg-purple-100 text-purple-700 border border-purple-300'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-transparent'
+                    }`}
+                  >
+                    {selectedProductStyles.includes(style.value) && (
+                      <svg className="w-3 h-3 inline mr-0.5 -ml-0.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                    {style.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Material Filter */}
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="block text-sm font-medium text-gray-700">Material</label>
+                {selectedMaterials.length > 0 && (
+                  <button
+                    onClick={() => setSelectedMaterials([])}
+                    className="text-xs text-purple-600 hover:text-purple-700"
+                  >
+                    Clear ({selectedMaterials.length})
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                {PRODUCT_MATERIALS.map((material) => (
+                  <button
+                    key={material.value}
+                    onClick={() => toggleMaterial(material.value)}
+                    className={`px-2 py-1 text-xs rounded-full transition-all ${
+                      selectedMaterials.includes(material.value)
+                        ? 'bg-blue-100 text-blue-700 border border-blue-300'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-transparent'
+                    }`}
+                  >
+                    {selectedMaterials.includes(material.value) && (
+                      <svg className="w-3 h-3 inline mr-0.5 -ml-0.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                    {material.label}
                   </button>
                 ))}
               </div>
@@ -2108,16 +2509,31 @@ export default function CreateCuratedLookPage() {
                 {/* Image/Canvas Container */}
                 <div className={`relative aspect-video bg-gray-100 rounded-lg overflow-hidden ${needsRevisualization ? 'ring-2 ring-amber-400' : ''} ${isEditingPositions ? 'ring-2 ring-purple-400' : ''}`}>
                   {isEditingPositions ? (
-                    <DraggableFurnitureCanvas
-                      visualizationImage={visualizationImage}
-                      baseRoomLayer={baseRoomLayer}
-                      furnitureLayers={furnitureLayers}
-                      furniturePositions={furniturePositions}
-                      onPositionsChange={handlePositionsChange}
-                      products={selectedProducts}
-                      containerWidth={800}
-                      containerHeight={450}
-                    />
+                    useMagicGrabMode ? (
+                      // Click-to-Select mode - click on objects, then drag
+                      <DraggableFurnitureCanvas
+                        mode="click-to-select"
+                        visualizationImage={visualizationImage}
+                        sessionId={sessionId || ''}
+                        onFinalImage={handleClickToSelectFinalImage}
+                        onPendingMoveChange={handlePendingMoveChange}
+                        containerWidth={800}
+                        containerHeight={450}
+                      />
+                    ) : (
+                      // Legacy mode - marker-based positioning
+                      <DraggableFurnitureCanvas
+                        mode="legacy"
+                        visualizationImage={visualizationImage}
+                        baseRoomLayer={baseRoomLayer}
+                        furnitureLayers={furnitureLayers}
+                        furniturePositions={furniturePositions}
+                        onPositionsChange={handlePositionsChange}
+                        products={selectedProducts}
+                        containerWidth={800}
+                        containerHeight={450}
+                      />
+                    )
                   ) : (
                     <>
                       <img
@@ -2150,25 +2566,34 @@ export default function CreateCuratedLookPage() {
                   )}
                 </div>
 
-                {/* Edit Mode Actions */}
+                {/* Edit Mode Actions - Save & Exit / Exit buttons */}
                 {isEditingPositions && (
-                  <div className="mt-3 flex items-center gap-2">
+                  <div className="mt-3 flex items-center justify-center gap-2">
+                    <button
+                      onClick={handleSaveAndExitEditMode}
+                      className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors flex items-center gap-1"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Save & Exit
+                    </button>
                     <button
                       onClick={handleExitEditMode}
                       className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 text-sm font-medium transition-colors"
                     >
-                      Cancel
+                      Exit
                     </button>
                   </div>
                 )}
 
-                {/* Unsaved Changes Warning */}
-                {hasUnsavedPositions && isEditingPositions && (
-                  <p className="text-xs text-amber-600 mt-2 text-center flex items-center justify-center gap-1">
+                {/* Pending Move Indicator */}
+                {pendingMoveData && isEditingPositions && (
+                  <p className="text-xs text-purple-600 mt-2 text-center flex items-center justify-center gap-1">
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clipRule="evenodd" />
                     </svg>
-                    You have unsaved position changes
+                    Object moved - click Re-visualize to apply
                   </p>
                 )}
 
@@ -2215,6 +2640,39 @@ export default function CreateCuratedLookPage() {
                     <option value="office">Office</option>
                   </select>
                 </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Style Labels (for filtering)</label>
+                  <div className="flex flex-wrap gap-2 p-2 border border-gray-300 rounded-lg bg-gray-50 min-h-[80px]">
+                    {STYLE_LABEL_OPTIONS.map((option) => {
+                      const isSelected = styleLabels.includes(option.value);
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => {
+                            if (isSelected) {
+                              setStyleLabels(styleLabels.filter(l => l !== option.value));
+                            } else {
+                              setStyleLabels([...styleLabels, option.value]);
+                            }
+                          }}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                            isSelected
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-white text-gray-700 border border-gray-300 hover:border-purple-400'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {styleLabels.length > 0 && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Selected: {styleLabels.map(l => STYLE_LABEL_OPTIONS.find(o => o.value === l)?.label).join(', ')}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -2222,8 +2680,32 @@ export default function CreateCuratedLookPage() {
           {/* Visualize & Publish Buttons - Fixed at bottom (Smart states from CanvasPanel) */}
           <div className="p-4 border-t border-gray-200 flex-shrink-0 space-y-2">
             {/* Visualize Button with Smart States */}
-            {isEditingPositions && hasUnsavedPositions ? (
-              /* State: Edit Mode with Unsaved Positions (Purple, Enabled) */
+            {isEditingPositions && useMagicGrabMode && pendingMoveData ? (
+              /* State: Click-to-Select Edit Mode with pending move (Purple, Enabled) */
+              <button
+                onClick={handleEditModeRevisualize}
+                disabled={isVisualizing}
+                className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
+              >
+                {isVisualizing ? (
+                  <>
+                    <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Re-visualizing...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Re-visualize
+                  </>
+                )}
+              </button>
+            ) : isEditingPositions && hasUnsavedPositions ? (
+              /* State: Legacy Edit Mode with Unsaved Positions (Purple, Enabled) */
               <button
                 onClick={handleRevisualizeWithPositions}
                 disabled={isVisualizing}

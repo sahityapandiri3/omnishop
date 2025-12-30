@@ -1,0 +1,148 @@
+"""
+Pydantic schemas for Home Styling API endpoints
+"""
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
+
+
+class RoomType(str, Enum):
+    """Available room types"""
+
+    LIVING_ROOM = "living_room"
+    BEDROOM = "bedroom"
+
+
+class StyleType(str, Enum):
+    """Available style types for V1"""
+
+    MODERN = "modern"
+    MODERN_LUXURY = "modern_luxury"
+    INDIAN_CONTEMPORARY = "indian_contemporary"
+
+
+class ColorPalette(str, Enum):
+    """Available color palettes"""
+
+    WARM = "warm"
+    NEUTRAL = "neutral"
+    COOL = "cool"
+    BOLD = "bold"
+
+
+class SessionStatus(str, Enum):
+    """Session status values"""
+
+    PREFERENCES = "preferences"
+    UPLOAD = "upload"
+    TIER_SELECTION = "tier_selection"
+    GENERATING = "generating"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class TierType(str, Enum):
+    """Available tiers"""
+
+    FREE = "free"  # 1 view
+    BASIC = "basic"  # 3 views
+    PREMIUM = "premium"  # 6 views (coming soon)
+
+
+# Request schemas
+class CreateSessionRequest(BaseModel):
+    """Request to create a new home styling session"""
+
+    room_type: Optional[RoomType] = None
+    style: Optional[StyleType] = None
+    color_palette: Optional[List[ColorPalette]] = None
+
+
+class UpdatePreferencesRequest(BaseModel):
+    """Request to update session preferences"""
+
+    room_type: Optional[RoomType] = None
+    style: Optional[StyleType] = None
+    color_palette: Optional[List[ColorPalette]] = None
+
+
+class UploadImageRequest(BaseModel):
+    """Request to upload room image"""
+
+    image: str = Field(..., description="Base64 encoded room image")
+
+
+class SelectTierRequest(BaseModel):
+    """Request to select a tier"""
+
+    tier: TierType
+
+
+# Response schemas
+class ProductInView(BaseModel):
+    """Product included in a home styling view"""
+
+    id: int
+    name: str
+    price: Optional[float] = None
+    image_url: Optional[str] = None
+    source_website: str
+    source_url: Optional[str] = None
+    product_type: Optional[str] = None
+
+
+class HomeStylingViewSchema(BaseModel):
+    """Schema for a generated view"""
+
+    id: int
+    view_number: int
+    visualization_image: Optional[str] = None
+    curated_look_id: Optional[int] = None
+    style_theme: Optional[str] = None
+    generation_status: str
+    error_message: Optional[str] = None
+    products: List[ProductInView] = []
+    total_price: float = 0
+
+    class Config:
+        from_attributes = True
+
+
+class HomeStylingSessionSchema(BaseModel):
+    """Schema for home styling session response"""
+
+    id: str
+    user_id: Optional[str] = None
+    room_type: Optional[str] = None
+    style: Optional[str] = None
+    color_palette: List[str] = []
+    original_room_image: Optional[str] = None
+    clean_room_image: Optional[str] = None
+    selected_tier: Optional[str] = None
+    views_count: int = 1
+    status: str
+    views: List[HomeStylingViewSchema] = []
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Analytics schemas
+class TrackEventRequest(BaseModel):
+    """Request to track an analytics event"""
+
+    event_type: str = Field(..., description="Type of event (page_view, preferences_selected, etc.)")
+    session_id: Optional[str] = None
+    step_name: Optional[str] = None
+    event_data: Optional[Dict[str, Any]] = None
+
+
+class TrackEventResponse(BaseModel):
+    """Response for tracking event"""
+
+    success: bool
+    event_id: int

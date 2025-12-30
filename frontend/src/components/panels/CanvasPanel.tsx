@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
-import { FurniturePosition } from '../DraggableFurnitureCanvas';
+import { FurniturePosition, MagicGrabLayer } from '../DraggableFurnitureCanvas';
 import { furniturePositionAPI, generateAngleView } from '@/utils/api';
 import { AngleSelector, ViewingAngle } from '../AngleSelector';
 
@@ -131,6 +131,16 @@ export default function CanvasPanel({
   const [baseRoomLayer, setBaseRoomLayer] = useState<string | null>(null);
   const [furnitureLayers, setFurnitureLayers] = useState<any[]>([]);
   const [isExtractingLayers, setIsExtractingLayers] = useState(false);
+
+  // Magic Grab state (new SAM-based editing)
+  const [magicGrabBackground, setMagicGrabBackground] = useState<string | null>(null);
+  const [magicGrabLayers, setMagicGrabLayers] = useState<MagicGrabLayer[]>([]);
+  const [useMagicGrab, setUseMagicGrab] = useState(true);  // Use SAM by default
+  const [isCompositingLayers, setIsCompositingLayers] = useState(false);
+
+  // Click-to-select edit mode state
+  const [pendingMoveData, setPendingMoveData] = useState<any>(null);  // Pending move for Re-visualize
+  const [preEditVisualization, setPreEditVisualization] = useState<string | null>(null);  // For Exit button
 
   // Multi-angle viewing state
   const [currentAngle, setCurrentAngle] = useState<ViewingAngle>('front');
@@ -819,6 +829,8 @@ export default function CanvasPanel({
 
   // Position editing handlers
   const handleEnterEditMode = async () => {
+    console.log('=== EDIT POSITION CLICKED (Click-to-Select) ===');
+
     const sessionId = sessionStorage.getItem('design_session_id');
     if (!sessionId || !visualizationResult) {
       console.error('[CanvasPanel] No session ID or visualization found');
@@ -826,100 +838,213 @@ export default function CanvasPanel({
       return;
     }
 
-    setIsExtractingLayers(true);
-
-    try {
-      console.log('[CanvasPanel] Entering edit mode (simplified - no layer extraction)');
-
-      // Get clean room background by calling furniture removal
-      console.log('[CanvasPanel] Removing furniture to get clean room background...');
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/remove-furniture`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            image: visualizationResult
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to get clean room background');
-      }
-
-      const data = await response.json();
-      const cleanRoom = data.clean_image || visualizationResult;
-      console.log('[CanvasPanel] Got clean room background');
-      setBaseRoomLayer(cleanRoom);
-
-      // Initialize default positions for ALL visualized products (not just newly added ones)
-      // ISSUE #2 FIX: Use visualizedProducts instead of products to include all visualized items
-      const productsToEdit = visualizedProducts.length > 0 ? visualizedProducts : products;
-
-      // Expand products by quantity - each instance gets its own draggable position
-      // This matches the curated page behavior for consistent UX
-      const expandedProducts: Array<{product: typeof productsToEdit[0], instanceIndex: number, totalInstances: number}> = [];
-      productsToEdit.forEach(product => {
-        const qty = product.quantity || 1;
-        for (let i = 1; i <= qty; i++) {
-          expandedProducts.push({
-            product,
-            instanceIndex: i,
-            totalInstances: qty
-          });
-        }
-      });
-
-      const numProducts = expandedProducts.length;
-      const cols = Math.ceil(Math.sqrt(numProducts));
-
-      const initialPositions: FurniturePosition[] = expandedProducts.map((item, index) => {
-        const row = Math.floor(index / cols);
-        const col = index % cols;
-        const spacingX = 0.6 / (cols + 1);
-        const spacingY = 0.6 / (Math.ceil(numProducts / cols) + 1);
-
-        // Create unique instance ID: "productId-instanceIndex" for items with qty > 1
-        const instanceId = item.totalInstances > 1
-          ? `${item.product.id}-${item.instanceIndex}`
-          : String(item.product.id);
-
-        // Label shows instance number if qty > 1
-        const label = item.totalInstances > 1
-          ? `${item.product.name} (${item.instanceIndex} of ${item.totalInstances})`
-          : item.product.name;
-
-        return {
-          productId: instanceId,
-          x: 0.2 + (col + 1) * spacingX,
-          y: 0.2 + (row + 1) * spacingY,
-          label: label,
-          width: 0.15,
-          height: 0.15,
-        };
-      });
-
-      console.log(`[CanvasPanel] Initialized default positions for ${numProducts} items (from ${productsToEdit.length} products, expanded by quantity):`, initialPositions);
-      setFurniturePositions(initialPositions);
-      setFurnitureLayers([]); // No layers needed with simplified approach
+    if (useMagicGrab) {
+      // NEW: Click-to-Select mode - user clicks on objects to select them
+      // No pre-extraction needed - SAM is called only when user clicks "Drag"
+      console.log('[CanvasPanel] Entering Click-to-Select edit mode with', products.length, 'products');
+      // Store pre-edit visualization for Exit button
+      setPreEditVisualization(visualizationResult);
+      setPendingMoveData(null);
       setIsEditingPositions(true);
       setHasUnsavedPositions(false);
+      return;
+    }
+
+    // LEGACY: Marker-based edit mode
+    console.log('[CanvasPanel] Using legacy marker-based edit mode...');
+    setBaseRoomLayer(visualizationResult);
+    setFurniturePositions([]);
+    setFurnitureLayers([]);
+    setIsEditingPositions(true);
+    setHasUnsavedPositions(false);
+    console.log('[CanvasPanel] Legacy edit mode ready - click to place markers');
+  };
+
+  // Handle final image from click-to-select mode
+  const handleClickToSelectFinalImage = useCallback((newImage: string) => {
+    console.log('[CanvasPanel] Click-to-Select final image received');
+    setVisualizationResult(newImage);
+
+    // Add to visualization history for undo/redo
+    const newProductIds = new Set(products.map(p => String(p.id)));
+    setVisualizationHistory(prev => [...prev, {
+      image: newImage,
+      products: [...products],
+      productIds: newProductIds
+    }]);
+
+    // Clear redo stack and update undo state
+    setRedoStack([]);
+    setCanUndo(true);
+    setCanRedo(false);
+
+    // Clear pending move
+    setPendingMoveData(null);
+    setHasUnsavedPositions(false);
+
+    console.log('[CanvasPanel] Edit position added to history for undo');
+    // Stay in edit mode so user can move more objects
+  }, [products]);
+
+  // Handle pending move changes from DraggableFurnitureCanvas
+  const handlePendingMoveChange = useCallback((hasPending: boolean, moveData?: any) => {
+    if (hasPending && moveData) {
+      setPendingMoveData(moveData);
+      setHasUnsavedPositions(true);
+    } else {
+      setPendingMoveData(null);
+      setHasUnsavedPositions(false);
+    }
+  }, []);
+
+  // Handle Re-visualize for edit mode (finalize the move)
+  const handleEditModeRevisualize = useCallback(async () => {
+    if (!pendingMoveData) {
+      console.error('[CanvasPanel] No pending move data');
+      return;
+    }
+
+    const sessionId = sessionStorage.getItem('design_session_id');
+    if (!sessionId) {
+      console.error('[CanvasPanel] No session ID');
+      return;
+    }
+
+    setIsVisualizing(true);
+    setVisualizationStartTime(Date.now());
+    setVisualizationProgress('Moving product to new position...');
+
+    try {
+      const result = await furniturePositionAPI.finalizeMove(
+        sessionId,
+        pendingMoveData.originalImage,
+        pendingMoveData.mask,
+        pendingMoveData.cutout,
+        pendingMoveData.originalPosition,
+        pendingMoveData.newPosition,
+        pendingMoveData.scale,
+        pendingMoveData.inpaintedBackground,
+        pendingMoveData.matchedProductId
+      );
+
+      // Update with the new image
+      handleClickToSelectFinalImage(result.image);
+      console.log('[CanvasPanel] Edit mode re-visualization complete');
+
     } catch (error: any) {
-      console.error('[CanvasPanel] Error entering edit mode:', error);
-      alert('Error entering edit mode. Please try again.');
+      console.error('[CanvasPanel] Edit mode re-visualization failed:', error);
+      alert(error?.response?.data?.detail || error?.message || 'Failed to move product');
     } finally {
-      setIsExtractingLayers(false);
+      setIsVisualizing(false);
+      setVisualizationStartTime(null);
+      setVisualizationProgress('');
+    }
+  }, [pendingMoveData, handleClickToSelectFinalImage]);
+
+
+  // Handle Magic Grab layers change (real-time drag updates)
+  const handleMagicGrabLayersChange = (updatedLayers: MagicGrabLayer[]) => {
+    setMagicGrabLayers(updatedLayers);
+    setHasUnsavedPositions(true);
+  };
+
+  // Handle Magic Grab finalization (composite layers and save)
+  const handleFinishMagicGrab = async () => {
+    const sessionId = sessionStorage.getItem('design_session_id');
+    if (!sessionId || !magicGrabBackground || magicGrabLayers.length === 0) {
+      console.error('[CanvasPanel] Cannot finish: missing data');
+      return;
+    }
+
+    setIsCompositingLayers(true);
+
+    try {
+      console.log('[CanvasPanel] Compositing layers...', { layersCount: magicGrabLayers.length });
+
+      // Call composite-layers API
+      const result = await furniturePositionAPI.compositeLayers(
+        sessionId,
+        magicGrabBackground,
+        magicGrabLayers.map(layer => ({
+          id: layer.id,
+          cutout: layer.cutout,
+          x: layer.x,
+          y: layer.y,
+          scale: layer.scale || 1.0,
+          rotation: layer.rotation || 0,
+          opacity: 1.0,
+          z_index: layer.zIndex || 0,
+        })),
+        false  // harmonize = false for faster results (can enable if needed)
+      );
+
+      console.log('[CanvasPanel] Compositing complete:', {
+        hasImage: !!result.image,
+        time: result.processing_time,
+      });
+
+      if (result.image) {
+        // Update visualization with composited result
+        setVisualizationResult(result.image);
+
+        // Add to history for undo
+        const newProductIds = new Set(products.map(p => String(p.id)));
+        setVisualizationHistory(prev => [...prev, {
+          image: result.image,
+          products: [...products],
+          productIds: newProductIds
+        }]);
+        setRedoStack([]);
+        setCanUndo(true);
+        setCanRedo(false);
+
+        // Exit edit mode
+        setIsEditingPositions(false);
+        setMagicGrabBackground(null);
+        setMagicGrabLayers([]);
+        setHasUnsavedPositions(false);
+
+        console.log('[CanvasPanel] Magic Grab edit complete!');
+      }
+    } catch (error: any) {
+      console.error('[CanvasPanel] Error compositing layers:', error);
+      alert(`Error applying changes: ${error.message || 'Please try again.'}`);
+    } finally {
+      setIsCompositingLayers(false);
     }
   };
 
+  // Exit without saving - revert to pre-edit visualization
   const handleExitEditMode = () => {
     if (hasUnsavedPositions) {
-      const confirmExit = window.confirm('You have unsaved position changes. Exit anyway?');
+      const confirmExit = window.confirm('You have unsaved changes. Exit without saving?');
       if (!confirmExit) return;
     }
+
+    // Revert to pre-edit visualization
+    if (preEditVisualization) {
+      setVisualizationResult(preEditVisualization);
+    }
+
     setIsEditingPositions(false);
     setHasUnsavedPositions(false);
+    setPendingMoveData(null);
+    setPreEditVisualization(null);
+    // Clean up Magic Grab state
+    setMagicGrabBackground(null);
+    setMagicGrabLayers([]);
+  };
+
+  // Save and exit - keep current visualization
+  const handleSaveAndExitEditMode = () => {
+    console.log('[CanvasPanel] Save & Exit edit mode');
+    setIsEditingPositions(false);
+    setHasUnsavedPositions(false);
+    setPendingMoveData(null);
+    setPreEditVisualization(null);
+    // Clean up Magic Grab state
+    setMagicGrabBackground(null);
+    setMagicGrabLayers([]);
   };
 
   const handlePositionsChange = (newPositions: FurniturePosition[]) => {
@@ -1606,19 +1731,44 @@ export default function CanvasPanel({
               </div>
             )}
 
-            {/* Image/Canvas Container */}
-            <div className={`relative aspect-video bg-neutral-100 dark:bg-neutral-700 rounded-lg overflow-hidden ${needsRevisualization ? 'ring-2 ring-amber-400 dark:ring-amber-600' : ''} ${isEditingPositions ? 'ring-2 ring-purple-400 dark:ring-purple-600' : ''}`}>
+            {/* Image/Canvas Container - aspect-video only when NOT editing positions */}
+            <div className={`relative ${isEditingPositions ? '' : 'aspect-video'} bg-neutral-100 dark:bg-neutral-700 rounded-lg overflow-hidden ${needsRevisualization ? 'ring-2 ring-amber-400 dark:ring-amber-600' : ''} ${isEditingPositions ? 'ring-2 ring-purple-400 dark:ring-purple-600' : ''}`}>
               {isEditingPositions ? (
-                <DraggableFurnitureCanvas
-                  visualizationImage={visualizationResult}
-                  baseRoomLayer={baseRoomLayer}
-                  furnitureLayers={furnitureLayers}
-                  furniturePositions={furniturePositions}
-                  onPositionsChange={handlePositionsChange}
-                  products={products}
-                  containerWidth={800}
-                  containerHeight={450}
-                />
+                useMagicGrab ? (
+                  // Click-to-Select mode - click on objects, then drag
+                  <DraggableFurnitureCanvas
+                    mode="click-to-select"
+                    visualizationImage={visualizationResult!}
+                    sessionId={sessionStorage.getItem('design_session_id') || ''}
+                    onFinalImage={handleClickToSelectFinalImage}
+                    onPendingMoveChange={handlePendingMoveChange}
+                    containerWidth={800}
+                    containerHeight={450}
+                    curatedProducts={products.map(p => {
+                      // Get image URL from images array or direct image_url
+                      const primaryImage = p.images?.find(img => img.is_primary) || p.images?.[0];
+                      const imageUrl = primaryImage?.medium_url || primaryImage?.original_url || p.image_url;
+                      return {
+                        id: parseInt(p.id) || 0,
+                        name: p.name,
+                        image_url: imageUrl
+                      };
+                    })}
+                  />
+                ) : (
+                  // Legacy marker mode
+                  <DraggableFurnitureCanvas
+                    mode="legacy"
+                    visualizationImage={visualizationResult!}
+                    baseRoomLayer={baseRoomLayer}
+                    furnitureLayers={furnitureLayers}
+                    furniturePositions={furniturePositions}
+                    onPositionsChange={handlePositionsChange}
+                    products={products}
+                    containerWidth={800}
+                    containerHeight={450}
+                  />
+                )
               ) : (
                 <>
                   {/* Display current angle image (front = main visualization, others = generated on-demand) */}
@@ -1652,14 +1802,32 @@ export default function CanvasPanel({
               )}
             </div>
 
-            {/* Edit Mode Actions */}
-            {isEditingPositions && (
+            {/* Edit Mode Actions - Only show for legacy mode since click-to-select has its own buttons */}
+            {isEditingPositions && !useMagicGrab && (
               <div className="mt-3 flex items-center gap-2">
                 <button
                   onClick={handleExitEditMode}
                   className="px-4 py-2 rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-sm font-medium transition-colors"
                 >
                   Cancel
+                </button>
+              </div>
+            )}
+
+            {/* Save & Exit / Exit buttons for click-to-select mode */}
+            {isEditingPositions && useMagicGrab && (
+              <div className="mt-3 flex items-center justify-center gap-2">
+                <button
+                  onClick={handleSaveAndExitEditMode}
+                  className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors"
+                >
+                  Save & Exit
+                </button>
+                <button
+                  onClick={handleExitEditMode}
+                  className="px-4 py-2 rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-sm font-medium transition-colors"
+                >
+                  Exit
                 </button>
               </div>
             )}
@@ -1685,8 +1853,43 @@ export default function CanvasPanel({
 
       {/* Visualize Button with Smart States - Fixed at bottom */}
       <div className="p-4 border-t border-neutral-200 dark:border-neutral-700 flex-shrink-0">
-        {isEditingPositions && hasUnsavedPositions ? (
-          // State: Edit Mode with Unsaved Positions (Purple, Enabled)
+        {isEditingPositions && hasUnsavedPositions && useMagicGrab ? (
+          // State: Click-to-Select Edit Mode with Pending Move (Purple, Enabled)
+          <button
+            onClick={handleEditModeRevisualize}
+            disabled={isVisualizing || !pendingMoveData}
+            className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 disabled:bg-neutral-400 text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
+          >
+            {isVisualizing ? (
+              <>
+                <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                <span className="text-sm">{visualizationProgress || 'Moving product...'}</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Re-visualize
+              </>
+            )}
+          </button>
+        ) : isEditingPositions && hasUnsavedPositions ? (
+          // State: Legacy Edit Mode with Unsaved Positions (Purple, Enabled)
           <button
             onClick={handleRevisualizeWithPositions}
             disabled={isVisualizing}

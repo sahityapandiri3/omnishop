@@ -670,21 +670,336 @@ export const furniturePositionAPI = {
   },
 
   /**
-   * Extract furniture layers from a visualization
-   * Returns base layer (empty room) and individual furniture layers
+   * Extract furniture layers from a visualization using SAM segmentation (Magic Grab).
+   * Returns clean background and individual furniture layers with transparent cutouts.
+   *
+   * @param sessionId - The session ID
+   * @param visualizationImage - Base64 visualization image
+   * @param products - List of products (for matching/labeling)
+   * @param useSam - Use SAM for precise segmentation (true) or Gemini bounding boxes (false)
    */
-  extractLayers: async (sessionId: string, visualizationImage: string, products: any[]) => {
+  extractLayers: async (
+    sessionId: string,
+    visualizationImage: string,
+    products: any[],
+    useSam: boolean = true
+  ) => {
     try {
-      const response = await api.post(`/api/visualization/sessions/${sessionId}/extract-layers`, {
-        visualization_image: visualizationImage,
-        products: products
+      console.log('[extractLayers] Starting Magic Grab extraction...', {
+        sessionId,
+        imageLength: visualizationImage?.length || 0,
+        productsCount: products?.length || 0,
+        useSam,
       });
+
+      const response = await api.post(
+        `/api/visualization/sessions/${sessionId}/extract-layers`,
+        {
+          visualization_image: visualizationImage,
+          products: products,
+          use_sam: useSam  // Use SAM for precise segmentation
+        },
+        {
+          timeout: 300000, // 5 minute timeout for SAM (Replicate cold starts can be slow)
+        }
+      );
+
+      console.log('[extractLayers] Magic Grab extraction complete:', {
+        hasBackground: !!response.data?.background,
+        layersCount: response.data?.layers?.length || 0,
+        method: response.data?.extraction_method,
+        time: response.data?.extraction_time,
+      });
+
       return response.data;
-    } catch (error) {
-      console.error('Error extracting furniture layers:', error);
+    } catch (error: any) {
+      console.error('[extractLayers] API error:', {
+        message: error?.message,
+        status: error?.response?.status,
+        statusText: error?.response?.statusText,
+        data: error?.response?.data,
+      });
       throw error;
     }
-  }
+  },
+
+  /**
+   * Composite layers onto background at new positions (Magic Grab finalization).
+   * Called when user clicks "Done" after dragging objects.
+   *
+   * @param sessionId - The session ID
+   * @param background - Base64 clean background image
+   * @param layers - Array of layers with new positions {id, cutout, x, y, scale}
+   * @param harmonize - Apply AI lighting harmonization (optional, adds ~3-5 sec)
+   */
+  compositeLayers: async (
+    sessionId: string,
+    background: string,
+    layers: Array<{
+      id: string;
+      cutout: string;  // Base64 PNG with transparency
+      x: number;       // Normalized position (0-1)
+      y: number;
+      scale?: number;
+      rotation?: number;
+      opacity?: number;
+      z_index?: number;
+    }>,
+    harmonize: boolean = false
+  ) => {
+    try {
+      console.log('[compositeLayers] Starting layer compositing...', {
+        sessionId,
+        backgroundLength: background?.length || 0,
+        layersCount: layers?.length || 0,
+        harmonize,
+      });
+
+      const response = await api.post(
+        `/api/visualization/sessions/${sessionId}/composite-layers`,
+        {
+          background,
+          layers,
+          harmonize
+        },
+        {
+          timeout: harmonize ? 60000 : 30000, // Longer timeout if harmonizing
+        }
+      );
+
+      console.log('[compositeLayers] Compositing complete:', {
+        hasImage: !!response.data?.image,
+        layersComposited: response.data?.layers_composited,
+        time: response.data?.processing_time,
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('[compositeLayers] API error:', {
+        message: error?.message,
+        status: error?.response?.status,
+        data: error?.response?.data,
+      });
+      throw error;
+    }
+  },
+
+  /**
+   * Segment object at a clicked point using SAM 2 (click-to-select).
+   * Returns a layer with cutout, mask, and position data for dragging.
+   *
+   * @param sessionId - The session ID
+   * @param imageBase64 - The visualization image
+   * @param point - Normalized click coordinates {x: 0-1, y: 0-1}
+   * @param label - Optional label for the object
+   * @param products - Optional list of products for matching
+   */
+  segmentAtPoint: async (
+    sessionId: string,
+    imageBase64: string,
+    point: { x: number; y: number },
+    label: string = 'object',
+    products?: Array<{ id: number; name: string; image_url?: string }>
+  ): Promise<{
+    layer: {
+      id: string;
+      label: string;
+      cutout: string;
+      mask: string;
+      bbox: { x: number; y: number; width: number; height: number };
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      scale: number;
+      area: number;
+      stability_score: number;
+      product_id?: number;
+    };
+    inpainted_background?: string;
+    matched_product_id?: number;
+    session_id: string;
+    status: string;
+  }> => {
+    try {
+      console.log('[segmentAtPoint] Starting SAM 2 segmentation...', {
+        sessionId,
+        point,
+        label,
+        imageLength: imageBase64?.length || 0,
+        productsCount: products?.length || 0,
+      });
+
+      const response = await api.post(
+        `/api/visualization/sessions/${sessionId}/segment-at-point`,
+        {
+          image_base64: imageBase64,
+          point,
+          label,
+          products: products || undefined,
+        },
+        {
+          timeout: 300000, // 5 minute timeout for SAM (Replicate cold starts can be slow)
+        }
+      );
+
+      console.log('[segmentAtPoint] Segmentation complete:', {
+        hasLayer: !!response.data?.layer,
+        layerId: response.data?.layer?.id,
+        area: response.data?.layer?.area,
+        matchedProductId: response.data?.matched_product_id,
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('[segmentAtPoint] API error:', {
+        message: error?.message,
+        status: error?.response?.status,
+        data: error?.response?.data,
+      });
+      throw error;
+    }
+  },
+
+  /**
+   * Segment object using multiple click points (grouped selection).
+   * Use for selecting sofa + pillows, or table + objects as one unit.
+   *
+   * @param sessionId - The session ID
+   * @param imageBase64 - The visualization image
+   * @param points - Array of normalized click coordinates
+   * @param label - Label for the combined object
+   */
+  segmentAtPoints: async (
+    sessionId: string,
+    imageBase64: string,
+    points: Array<{ x: number; y: number }>,
+    label: string = 'object'
+  ): Promise<{
+    layer: {
+      id: string;
+      label: string;
+      cutout: string;
+      mask: string;
+      bbox: { x: number; y: number; width: number; height: number };
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      scale: number;
+      area: number;
+      stability_score: number;
+    };
+    session_id: string;
+    status: string;
+  }> => {
+    try {
+      console.log('[segmentAtPoints] Starting multi-point segmentation...', {
+        sessionId,
+        pointsCount: points.length,
+        label,
+      });
+
+      const response = await api.post(
+        `/api/visualization/sessions/${sessionId}/segment-at-points`,
+        {
+          image_base64: imageBase64,
+          points,
+          label,
+        },
+        {
+          timeout: 300000, // 5 minute timeout for SAM (Replicate cold starts can be slow)
+        }
+      );
+
+      console.log('[segmentAtPoints] Segmentation complete:', {
+        hasLayer: !!response.data?.layer,
+        layerId: response.data?.layer?.id,
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('[segmentAtPoints] API error:', {
+        message: error?.message,
+        status: error?.response?.status,
+        data: error?.response?.data,
+      });
+      throw error;
+    }
+  },
+
+  /**
+   * Finalize object movement using Gemini re-visualization.
+   * Called when user clicks "Done" after dragging an object.
+   *
+   * @param sessionId - The session ID
+   * @param originalImage - Original visualization image
+   * @param mask - Mask of original object location
+   * @param cutout - The extracted object PNG
+   * @param originalPosition - Where object was
+   * @param newPosition - Where object is now
+   * @param scale - Scale factor applied
+   * @param inpaintedBackground - Optional clean background with object removed
+   * @param productId - Optional product ID to fetch clean product image from DB
+   */
+  finalizeMove: async (
+    sessionId: string,
+    originalImage: string,
+    mask: string,
+    cutout: string,
+    originalPosition: { x: number; y: number },
+    newPosition: { x: number; y: number },
+    scale: number = 1.0,
+    inpaintedBackground?: string | null,
+    productId?: number | null
+  ): Promise<{
+    image: string;
+    session_id: string;
+    status: string;
+    dimensions: { width: number; height: number };
+  }> => {
+    try {
+      console.log('[finalizeMove] Finalizing object move...', {
+        sessionId,
+        originalPosition,
+        newPosition,
+        scale,
+        hasInpaintedBackground: !!inpaintedBackground,
+        productId,
+      });
+
+      const response = await api.post(
+        `/api/visualization/sessions/${sessionId}/finalize-move`,
+        {
+          original_image: originalImage,
+          mask,
+          cutout,
+          inpainted_background: inpaintedBackground || undefined,
+          product_id: productId || undefined,
+          original_position: originalPosition,
+          new_position: newPosition,
+          scale,
+        },
+        {
+          timeout: 90000, // 90 seconds for Gemini re-visualization
+        }
+      );
+
+      console.log('[finalizeMove] Move finalized:', {
+        hasImage: !!response.data?.image,
+        dimensions: response.data?.dimensions,
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('[finalizeMove] API error:', {
+        message: error?.message,
+        status: error?.response?.status,
+        data: error?.response?.data,
+      });
+      throw error;
+    }
+  },
 };
 
 // Admin Curated Looks API
@@ -693,6 +1008,7 @@ export interface AdminCuratedLookSummary {
   title: string;
   style_theme: string;
   style_description: string | null;
+  style_labels: string[];
   room_type: string;
   visualization_image: string | null;
   total_price: number;
@@ -719,6 +1035,7 @@ export interface AdminCuratedLook {
   title: string;
   style_theme: string;
   style_description: string | null;
+  style_labels: string[];
   room_type: string;
   room_image: string | null;
   visualization_image: string | null;
@@ -744,6 +1061,7 @@ export interface AdminCuratedLookCreate {
   title: string;
   style_theme: string;
   style_description?: string;
+  style_labels?: string[];
   room_type: 'living_room' | 'bedroom';
   room_image?: string;
   visualization_image?: string;
@@ -885,6 +1203,8 @@ export const adminCuratedAPI = {
     minPrice?: number;
     maxPrice?: number;
     colors?: string;
+    styles?: string;
+    materials?: string;
     limit?: number;
   }): Promise<{ products: any[] }> => {
     try {
@@ -896,6 +1216,8 @@ export const adminCuratedAPI = {
           min_price: params.minPrice,
           max_price: params.maxPrice,
           colors: params.colors,
+          styles: params.styles,
+          materials: params.materials,
           limit: params.limit
         }
       });
@@ -909,11 +1231,19 @@ export const adminCuratedAPI = {
 
 // Get pre-curated looks from database (public endpoint)
 // imageQuality: 'thumbnail' (400px), 'medium' (1200px - for landing page), 'full' (original)
-export const getCuratedLooks = async (roomType?: string, imageQuality: 'thumbnail' | 'medium' | 'full' = 'thumbnail'): Promise<CuratedLooksResponse> => {
+// style: Filter by style label (modern, modern_luxury, indian_contemporary, etc.)
+export const getCuratedLooks = async (
+  roomType?: string,
+  imageQuality: 'thumbnail' | 'medium' | 'full' = 'thumbnail',
+  style?: string
+): Promise<CuratedLooksResponse> => {
   try {
     const params: Record<string, any> = { image_quality: imageQuality };
     if (roomType) {
       params.room_type = roomType;
+    }
+    if (style) {
+      params.style = style;
     }
     const response = await api.get('/api/curated/looks', { params });
     return response.data;
