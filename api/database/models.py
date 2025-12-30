@@ -630,3 +630,65 @@ class AnalyticsEvent(Base):
 
     def __repr__(self):
         return f"<AnalyticsEvent(id={self.id}, event_type='{self.event_type}', session_id={self.session_id})>"
+
+
+class PrecomputedMaskStatus(enum.Enum):
+    """Status for background mask pre-computation jobs"""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class PrecomputedMask(Base):
+    """
+    Pre-computed segmentation masks for Edit Position feature optimization.
+
+    These masks are generated in the background after each visualization completes,
+    so when users click "Edit Position", the masks are already available for instant retrieval.
+    """
+
+    __tablename__ = "precomputed_masks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String(36), ForeignKey("chat_sessions.id"), nullable=False, index=True)
+
+    # Cache key components - used to match requests to cached data
+    visualization_hash = Column(String(64), nullable=False, index=True)  # SHA-256 of image (first 1000 chars + length)
+    product_hash = Column(String(64), nullable=False, index=True)  # Hash of product IDs
+
+    # Status tracking
+    status = Column(
+        Enum(PrecomputedMaskStatus, values_callable=lambda x: [e.value for e in x], name="precomputedmaskstatus"),
+        default=PrecomputedMaskStatus.PENDING,
+        nullable=False,
+        index=True,
+    )
+    error_message = Column(Text, nullable=True)
+
+    # Pre-computed data
+    clean_background = Column(Text, nullable=True)  # Base64 clean room image (furniture removed)
+    layers_data = Column(JSON, nullable=True)  # Array of layer objects with cutouts, masks, positions
+    extraction_method = Column(String(50), nullable=True)  # "hybrid_gemini_sam" or "sam_direct"
+
+    # Metadata
+    image_dimensions = Column(JSON, nullable=True)  # {"width": int, "height": int}
+    processing_time = Column(Float, nullable=True)  # Time taken to generate masks in seconds
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    session = relationship("ChatSession", backref="precomputed_masks")
+
+    # Indexes for efficient lookup
+    __table_args__ = (
+        Index("idx_precomputed_mask_session_viz", "session_id", "visualization_hash"),
+        Index("idx_precomputed_mask_lookup", "session_id", "visualization_hash", "product_hash"),
+        Index("idx_precomputed_mask_status", "status", "created_at"),
+    )
+
+    def __repr__(self):
+        return f"<PrecomputedMask(id={self.id}, session_id={self.session_id[:8]}..., status='{self.status.value}')>"

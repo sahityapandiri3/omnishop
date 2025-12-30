@@ -3332,6 +3332,47 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         else:
             message = "Visualization generated successfully. Note: This shows a design concept with your selected products."
 
+        # BACKGROUND MASK PRE-COMPUTATION (Silent - no UI indication)
+        # This runs after visualization completes so user sees result immediately
+        # Masks will be ready by the time they click "Edit Position"
+        try:
+            from services.mask_precomputation_service import mask_precomputation_service
+            from database.session import AsyncSessionLocal
+
+            async def precompute_masks_background():
+                """Background task to pre-compute masks for Edit Position."""
+                async with AsyncSessionLocal() as bg_db:
+                    try:
+                        # Convert products to the format expected by the service
+                        products_for_cache = [
+                            {"id": p.get("id") or p.get("product_id"), "name": p.get("name", "")}
+                            for p in accumulated_products
+                        ]
+
+                        job_id = await mask_precomputation_service.trigger_precomputation(
+                            bg_db,
+                            session_id,
+                            viz_result.rendered_image,
+                            products_for_cache,
+                        )
+                        if job_id:
+                            await mask_precomputation_service.process_precomputation(
+                                bg_db,
+                                job_id,
+                                viz_result.rendered_image,
+                                products_for_cache,
+                            )
+                    except Exception as e:
+                        logger.warning(f"[Precompute] Background task failed: {e}")
+
+            # Fire and forget - don't await
+            asyncio.create_task(precompute_masks_background())
+            logger.info(f"[Precompute] Triggered background mask pre-computation for session {session_id}")
+
+        except Exception as precompute_error:
+            # Never fail the main request due to precomputation
+            logger.warning(f"[Precompute] Failed to trigger: {precompute_error}")
+
         return {
             "visualization": {
                 "rendered_image": viz_result.rendered_image,

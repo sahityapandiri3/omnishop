@@ -291,7 +291,9 @@ async def upload_room_image(file: UploadFile = File(...)):
 
 
 @router.post("/sessions/{session_id}/extract-layers")
-async def extract_furniture_layers(session_id: str, request: ExtractLayersRequest):
+async def extract_furniture_layers(
+    session_id: str, request: ExtractLayersRequest, db: AsyncSession = Depends(get_db)
+):
     """
     Extract all objects as draggable layers for Magic Grab editing.
 
@@ -300,6 +302,9 @@ async def extract_furniture_layers(session_id: str, request: ExtractLayersReques
     2. Each object is extracted as a transparent PNG cutout
     3. Gemini generates a clean background (furniture removed)
     4. Frontend receives layers for real-time drag-and-drop editing
+
+    OPTIMIZED: First checks for pre-computed masks from background processing.
+    Falls back to real-time computation if cache miss.
 
     Args:
         session_id: The session ID for this visualization
@@ -311,6 +316,43 @@ async def extract_furniture_layers(session_id: str, request: ExtractLayersReques
     """
     try:
         logger.info(f"[ExtractLayers] Starting Magic Grab extraction for session {session_id}")
+
+        # CHECK CACHE FIRST - pre-computed masks from background processing
+        try:
+            from services.mask_precomputation_service import mask_precomputation_service
+
+            # Convert products to cache key format
+            products_for_cache = [
+                {"id": p.get("id") or p.get("product_id"), "name": p.get("name", "")} for p in request.products
+            ]
+
+            cached_result = await mask_precomputation_service.get_cached_masks(
+                db,
+                session_id,
+                request.visualization_image,
+                products_for_cache,
+            )
+
+            if cached_result:
+                logger.info(f"[ExtractLayers] CACHE HIT - returning pre-computed masks instantly!")
+                return {
+                    "session_id": session_id,
+                    "background": cached_result["background"],
+                    "layers": cached_result["layers"],
+                    "total_layers": len(cached_result["layers"]),
+                    "extraction_method": cached_result["extraction_method"],
+                    "image_dimensions": cached_result["image_dimensions"],
+                    "extraction_time": cached_result["processing_time"],
+                    "extraction_timestamp": datetime.utcnow().isoformat(),
+                    "status": "success",
+                    "cached": True,
+                    "cache_job_id": cached_result.get("cache_job_id"),
+                }
+
+            logger.info(f"[ExtractLayers] CACHE MISS - computing in real-time")
+
+        except Exception as cache_error:
+            logger.warning(f"[ExtractLayers] Cache check failed, proceeding with real-time: {cache_error}")
 
         sam_succeeded = False
 
@@ -1402,9 +1444,19 @@ async def delete_all_furniture_positions(session_id: str, db: AsyncSession = Dep
         result = await db.execute(delete_stmt)
         await db.commit()
 
+        # Also invalidate pre-computed masks for this session
+        masks_invalidated = 0
+        try:
+            from services.mask_precomputation_service import mask_precomputation_service
+
+            masks_invalidated = await mask_precomputation_service.invalidate_session_masks(db, session_id)
+        except Exception as invalidate_error:
+            logger.warning(f"[ExtractLayers] Failed to invalidate masks: {invalidate_error}")
+
         return {
             "session_id": session_id,
             "positions_deleted": result.rowcount,
+            "masks_invalidated": masks_invalidated,
             "status": "success",
             "timestamp": datetime.utcnow().isoformat(),
         }
