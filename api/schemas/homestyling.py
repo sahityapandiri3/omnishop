@@ -51,6 +51,16 @@ class TierType(str, Enum):
     PREMIUM = "premium"  # 6 views (coming soon)
 
 
+class BudgetTier(str, Enum):
+    """Budget tiers for curated looks filtering"""
+
+    ESSENTIAL = "essential"  # < ₹2L
+    VALUE = "value"  # ₹2L – ₹4L
+    MID = "mid"  # ₹4L – ₹8L
+    PREMIUM = "premium"  # ₹8L – ₹15L
+    ULTRA_LUXURY = "ultra_luxury"  # ₹15L+
+
+
 # Request schemas
 class CreateSessionRequest(BaseModel):
     """Request to create a new home styling session"""
@@ -58,6 +68,7 @@ class CreateSessionRequest(BaseModel):
     room_type: Optional[RoomType] = None
     style: Optional[StyleType] = None
     color_palette: Optional[List[ColorPalette]] = None
+    budget_tier: Optional[BudgetTier] = None
 
 
 class UpdatePreferencesRequest(BaseModel):
@@ -66,6 +77,7 @@ class UpdatePreferencesRequest(BaseModel):
     room_type: Optional[RoomType] = None
     style: Optional[StyleType] = None
     color_palette: Optional[List[ColorPalette]] = None
+    budget_tier: Optional[BudgetTier] = None
 
 
 class UploadImageRequest(BaseModel):
@@ -118,6 +130,7 @@ class HomeStylingSessionSchema(BaseModel):
     room_type: Optional[str] = None
     style: Optional[str] = None
     color_palette: List[str] = []
+    budget_tier: Optional[str] = None
     original_room_image: Optional[str] = None
     clean_room_image: Optional[str] = None
     selected_tier: Optional[str] = None

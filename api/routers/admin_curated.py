@@ -22,7 +22,31 @@ from sqlalchemy.orm import selectinload
 
 from core.auth import require_admin
 from core.database import get_db
-from database.models import Category, CuratedLook, CuratedLookProduct, Product, ProductAttribute, User
+from database.models import BudgetTier, Category, CuratedLook, CuratedLookProduct, Product, ProductAttribute, User
+
+
+def calculate_budget_tier(total_price: float) -> str:
+    """
+    Calculate budget tier based on total price.
+
+    Thresholds (in INR):
+    - Essential: < ₹2L (< 200,000)
+    - Value: ₹2L – ₹4L (200,000 - 400,000)
+    - Mid: ₹4L – ₹8L (400,000 - 800,000)
+    - Premium: ₹8L – ₹15L (800,000 - 1,500,000)
+    - Ultra-Luxury: ₹15L+ (> 1,500,000)
+    """
+    if total_price < 200000:
+        return BudgetTier.ESSENTIAL.value
+    elif total_price < 400000:
+        return BudgetTier.VALUE.value
+    elif total_price < 800000:
+        return BudgetTier.MID.value
+    elif total_price < 1500000:
+        return BudgetTier.PREMIUM.value
+    else:
+        return BudgetTier.ULTRA_LUXURY.value
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/curated", tags=["admin-curated"])
@@ -214,6 +238,7 @@ async def fetch_curated_look_with_products(look_id: int, db: AsyncSession) -> Cu
         room_image=look.room_image,
         visualization_image=look.visualization_image,
         total_price=look.total_price or 0,
+        budget_tier=look.budget_tier.value if look.budget_tier else None,
         is_published=look.is_published,
         display_order=look.display_order or 0,
         products=products,
@@ -447,6 +472,7 @@ async def list_curated_looks(
                 room_type=look.room_type,
                 visualization_image=look.visualization_image,
                 total_price=look.total_price or 0,
+                budget_tier=look.budget_tier.value if look.budget_tier else None,
                 is_published=look.is_published,
                 display_order=look.display_order or 0,
                 product_count=len(look.products) if look.products else 0,
@@ -495,7 +521,7 @@ async def create_curated_look(
     )
 
     try:
-        # Create the look
+        # Create the look (budget_tier will be auto-calculated after products are added)
         look = CuratedLook(
             title=look_data.title,
             style_theme=look_data.style_theme,
@@ -540,8 +566,9 @@ async def create_curated_look(
                 if product.price:
                     total_price += product.price * quantity
 
-        # Update total price
+        # Update total price and auto-calculate budget tier
         look.total_price = total_price
+        look.budget_tier = calculate_budget_tier(total_price)
         await db.commit()
         await db.refresh(look)
 
@@ -571,7 +598,7 @@ async def update_curated_look(
         if not look:
             raise HTTPException(status_code=404, detail="Curated look not found")
 
-        # Update metadata fields if provided
+        # Update metadata fields if provided (budget_tier is auto-calculated, not manual)
         if look_data.title is not None:
             look.title = look_data.title
         if look_data.style_theme is not None:
@@ -627,8 +654,9 @@ async def update_curated_look(
                     if product.price:
                         total_price += product.price * quantity
 
-            # Update total price
+            # Update total price and auto-calculate budget tier
             look.total_price = total_price
+            look.budget_tier = calculate_budget_tier(total_price)
 
         look.updated_at = datetime.utcnow()
         await db.commit()
@@ -687,8 +715,9 @@ async def update_curated_look_products(
                 if product.price:
                     total_price += product.price
 
-        # Update total price
+        # Update total price and auto-calculate budget tier
         look.total_price = total_price
+        look.budget_tier = calculate_budget_tier(total_price)
         look.updated_at = datetime.utcnow()
         await db.commit()
 

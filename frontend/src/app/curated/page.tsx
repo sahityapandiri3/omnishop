@@ -11,6 +11,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 
 type RoomType = 'all' | 'living_room' | 'bedroom';
 type StyleOption = 'modern' | 'modern_luxury' | 'indian_contemporary';
+type BudgetOption = 'all' | 'essential' | 'value' | 'mid' | 'premium' | 'ultra_luxury';
 
 function CuratedPageContent() {
   const router = useRouter();
@@ -22,6 +23,7 @@ function CuratedPageContent() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [roomTypeFilter, setRoomTypeFilter] = useState<RoomType>('all');
   const [selectedStyles, setSelectedStyles] = useState<StyleOption[]>([]);
+  const [budgetFilter, setBudgetFilter] = useState<BudgetOption>('all');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
 
   // Fetch curated looks when filter changes
@@ -33,7 +35,8 @@ function CuratedPageContent() {
         const roomType = roomTypeFilter === 'all' ? undefined : roomTypeFilter;
         // Pass comma-separated styles if multiple selected, or undefined if none
         const style = selectedStyles.length > 0 ? selectedStyles.join(',') : undefined;
-        const result = await getCuratedLooks(roomType, 'thumbnail', style);
+        const budget = budgetFilter === 'all' ? undefined : budgetFilter;
+        const result = await getCuratedLooks(roomType, 'thumbnail', style, budget);
         setLooksData(result);
       } catch (err: any) {
         console.error('Error fetching looks:', err);
@@ -44,7 +47,7 @@ function CuratedPageContent() {
     };
 
     fetchLooks();
-  }, [roomTypeFilter, selectedStyles]);
+  }, [roomTypeFilter, selectedStyles, budgetFilter]);
 
   const handleViewDetails = useCallback((look: CuratedLook) => {
     setSelectedLook(look);
@@ -121,6 +124,15 @@ function CuratedPageContent() {
     { value: 'indian_contemporary', label: 'Indian Contemporary' },
   ];
 
+  const budgetOptions: { value: BudgetOption; label: string; shortLabel: string }[] = [
+    { value: 'all', label: 'All Budgets', shortLabel: 'All' },
+    { value: 'essential', label: '< ₹2L', shortLabel: '< 2L' },
+    { value: 'value', label: '₹2L – 4L', shortLabel: '2-4L' },
+    { value: 'mid', label: '₹4L – 8L', shortLabel: '4-8L' },
+    { value: 'premium', label: '₹8L – 15L', shortLabel: '8-15L' },
+    { value: 'ultra_luxury', label: '₹15L+', shortLabel: '15L+' },
+  ];
+
   const toggleStyle = (style: StyleOption) => {
     setSelectedStyles(prev =>
       prev.includes(style)
@@ -146,8 +158,9 @@ function CuratedPageContent() {
 
           {/* Filters + Create Your Own */}
           <div className="flex flex-col gap-3 mb-6">
-            {/* Room Type Filter */}
-            <div className="flex justify-center">
+            {/* Room Type + Budget Filter Row */}
+            <div className="flex justify-center items-center gap-3 flex-wrap">
+              {/* Room Type Filter */}
               <div className="bg-white rounded-lg p-1 shadow-sm border border-neutral-200 inline-flex gap-1">
                 {roomTypes.map((type) => (
                   <button
@@ -163,6 +176,19 @@ function CuratedPageContent() {
                   </button>
                 ))}
               </div>
+
+              {/* Budget Filter Dropdown */}
+              <select
+                value={budgetFilter}
+                onChange={(e) => setBudgetFilter(e.target.value as BudgetOption)}
+                className="bg-white rounded-lg px-3 py-1.5 text-xs font-medium shadow-sm border border-neutral-200 text-neutral-600 hover:border-neutral-300 focus:ring-2 focus:ring-primary-500 focus:border-transparent cursor-pointer"
+              >
+                {budgetOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Style Filter - Multi-select capsules */}
@@ -255,15 +281,16 @@ function CuratedPageContent() {
               </div>
               <h2 className="text-base font-semibold text-neutral-800 mb-2">No Looks Available</h2>
               <p className="text-xs text-neutral-500 mb-4">
-                {roomTypeFilter !== 'all' || selectedStyles.length > 0
+                {roomTypeFilter !== 'all' || selectedStyles.length > 0 || budgetFilter !== 'all'
                   ? `No looks found for the selected filters.`
                   : 'Check back soon for new curated looks!'}
               </p>
-              {(roomTypeFilter !== 'all' || selectedStyles.length > 0) && (
+              {(roomTypeFilter !== 'all' || selectedStyles.length > 0 || budgetFilter !== 'all') && (
                 <button
                   onClick={() => {
                     setRoomTypeFilter('all');
                     setSelectedStyles([]);
+                    setBudgetFilter('all');
                   }}
                   className="text-primary-600 hover:text-primary-700 text-sm font-medium"
                 >
@@ -292,6 +319,7 @@ function CuratedPageContent() {
                 {looksData.looks.length} {looksData.looks.length === 1 ? 'look' : 'looks'}
                 {roomTypeFilter !== 'all' && ` • ${roomTypeFilter.replace('_', ' ')}`}
                 {selectedStyles.length > 0 && ` • ${selectedStyles.map(s => s.replace('_', ' ')).join(', ')}`}
+                {budgetFilter !== 'all' && ` • ${budgetOptions.find(b => b.value === budgetFilter)?.label}`}
               </div>
             </>
           )}

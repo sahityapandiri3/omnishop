@@ -25,6 +25,38 @@ class UserRole(enum.Enum):
     SUPER_ADMIN = "super_admin"
 
 
+class BudgetTier(enum.Enum):
+    """Budget tiers for curated looks"""
+
+    ESSENTIAL = "essential"  # < ₹2L
+    VALUE = "value"  # ₹2L – ₹4L
+    MID = "mid"  # ₹4L – ₹8L
+    PREMIUM = "premium"  # ₹8L – ₹15L
+    ULTRA_LUXURY = "ultra_luxury"  # ₹15L+
+
+
+class Store(Base):
+    """Store information with budget tier classification"""
+
+    __tablename__ = "stores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(50), unique=True, nullable=False, index=True)  # e.g., "modernquests", "josmo"
+    display_name = Column(String(100), nullable=True)  # e.g., "Modern Quests", "Josmo"
+    budget_tier = Column(
+        Enum(BudgetTier, values_callable=lambda x: [e.value for e in x], name="budgettier"),
+        nullable=True,
+        index=True,
+    )  # essential, value, mid, premium, ultra_luxury
+    website_url = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<Store(id={self.id}, name='{self.name}', tier='{self.budget_tier}')>"
+
+
 class Category(Base):
     """Product categories with hierarchical structure"""
 
@@ -63,7 +95,7 @@ class Product(Base):
     sku = Column(String(100), nullable=True, index=True)
 
     # Source information
-    source_website = Column(String(50), nullable=False, index=True)
+    source_website = Column(String(50), nullable=False, index=True)  # References stores.name
     source_url = Column(Text, nullable=False)
     scraped_at = Column(DateTime, default=datetime.utcnow)
     last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -445,6 +477,11 @@ class CuratedLook(Base):
 
     # Metadata
     total_price = Column(Float, default=0)
+    budget_tier = Column(
+        Enum(BudgetTier, values_callable=lambda x: [e.value for e in x], name="budgettier"),
+        nullable=True,
+        index=True,
+    )
     is_published = Column(Boolean, default=False, index=True)
     display_order = Column(Integer, default=0)
 
@@ -538,6 +575,11 @@ class HomeStylingSession(Base):
     room_type = Column(String(50), nullable=True)  # "living_room", "bedroom"
     style = Column(String(50), nullable=True)  # "modern", "modern_luxury", "indian_contemporary"
     color_palette = Column(JSON, default=list)  # ["warm", "neutral", "cool", "bold"]
+    budget_tier = Column(
+        Enum(BudgetTier, values_callable=lambda x: [e.value for e in x], name="budgettier"),
+        nullable=True,
+        index=True,
+    )  # User's budget preference for curated looks
 
     # Images
     original_room_image = Column(Text, nullable=True)  # Base64 encoded

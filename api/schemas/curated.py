@@ -24,6 +24,16 @@ class GenerationStatus(str, Enum):
     failed = "failed"
 
 
+class BudgetTier(str, Enum):
+    """Budget tiers for curated looks"""
+
+    essential = "essential"  # < ₹2L
+    value = "value"  # ₹2L – ₹4L
+    mid = "mid"  # ₹4L – ₹8L
+    premium = "premium"  # ₹8L – ₹15L
+    ultra_luxury = "ultra_luxury"  # ₹15L+
+
+
 # Product schemas for curated looks
 class CuratedLookProductBase(BaseModel):
     """Base schema for a product in a curated look"""
@@ -73,6 +83,7 @@ class CuratedLookCreate(CuratedLookBase):
 
     room_image: Optional[str] = None  # Base64 encoded
     visualization_image: Optional[str] = None  # Base64 encoded
+    budget_tier: Optional[BudgetTier] = None  # Budget tier for filtering
     is_published: bool = False
     display_order: int = 0
     product_ids: List[int] = []  # Products to include with types
@@ -90,6 +101,7 @@ class CuratedLookUpdate(BaseModel):
     room_type: Optional[RoomType] = None
     room_image: Optional[str] = None
     visualization_image: Optional[str] = None
+    budget_tier: Optional[BudgetTier] = None  # Budget tier for filtering
     is_published: Optional[bool] = None
     display_order: Optional[int] = None
     # Product updates (optional - if provided, replaces all products)
@@ -118,6 +130,7 @@ class CuratedLookSchema(BaseModel):
     room_image: Optional[str] = None
     visualization_image: Optional[str] = None
     total_price: float = 0
+    budget_tier: Optional[str] = None  # Budget tier for filtering
     is_published: bool = False
     display_order: int = 0
     products: List[CuratedLookProductSchema] = []
@@ -139,6 +152,7 @@ class CuratedLookSummarySchema(BaseModel):
     room_type: str
     visualization_image: Optional[str] = None
     total_price: float = 0
+    budget_tier: Optional[str] = None  # Budget tier for filtering
     is_published: bool = False
     display_order: int = 0
     product_count: int = 0

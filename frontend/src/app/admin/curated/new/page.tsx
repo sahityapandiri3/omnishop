@@ -134,6 +134,23 @@ export default function CreateCuratedLookPage() {
   const [styleDescription, setStyleDescription] = useState('');
   const [styleLabels, setStyleLabels] = useState<string[]>([]);
   const [roomType, setRoomType] = useState<'living_room' | 'bedroom'>('living_room');
+  // Budget tier options (auto-calculated based on total price)
+  const BUDGET_TIER_OPTIONS = [
+    { value: 'essential', label: 'Essential', range: '< ₹2L' },
+    { value: 'value', label: 'Value', range: '₹2L – ₹4L' },
+    { value: 'mid', label: 'Mid', range: '₹4L – ₹8L' },
+    { value: 'premium', label: 'Premium', range: '₹8L – ₹15L' },
+    { value: 'ultra_luxury', label: 'Ultra-Luxury', range: '₹15L+' },
+  ];
+
+  // Auto-calculate budget tier based on total price
+  const calculateBudgetTier = (price: number): { value: string; label: string; range: string } => {
+    if (price < 200000) return BUDGET_TIER_OPTIONS[0]; // Essential
+    if (price < 400000) return BUDGET_TIER_OPTIONS[1]; // Value
+    if (price < 800000) return BUDGET_TIER_OPTIONS[2]; // Mid
+    if (price < 1500000) return BUDGET_TIER_OPTIONS[3]; // Premium
+    return BUDGET_TIER_OPTIONS[4]; // Ultra-Luxury
+  };
 
   // Available style labels for multi-select
   const STYLE_LABEL_OPTIONS = [
@@ -286,6 +303,7 @@ export default function CreateCuratedLookPage() {
       setStyleDescription(look.style_description || '');
       setStyleLabels(look.style_labels || []);
       setRoomType(look.room_type as 'living_room' | 'bedroom');
+      // budget_tier is auto-calculated based on total price, no need to load it
 
       // Pre-populate room image
       if (look.room_image) {
@@ -851,6 +869,7 @@ export default function CreateCuratedLookPage() {
         style_description: styleDescription,
         style_labels: styleLabels,
         room_type: roomType,
+        // budget_tier is auto-calculated on the backend based on total price
         room_image: roomImageData || undefined,
         visualization_image: vizImageData,
         is_published: true,
@@ -904,6 +923,7 @@ export default function CreateCuratedLookPage() {
         style_description: styleDescription,
         style_labels: styleLabels,
         room_type: roomType,
+        // budget_tier is auto-calculated on the backend based on total price
         room_image: roomImageData || undefined,
         visualization_image: vizImageData || undefined,
         is_published: false,  // Key difference: saved as draft
@@ -2722,6 +2742,20 @@ export default function CreateCuratedLookPage() {
                     <option value="dining_room">Dining Room</option>
                     <option value="office">Office</option>
                   </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Budget Tier (auto-calculated)</label>
+                  <div className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50">
+                    {(() => {
+                      const tier = calculateBudgetTier(totalPrice);
+                      return (
+                        <span className="flex items-center justify-between">
+                          <span className="font-medium text-gray-800">{tier.label}</span>
+                          <span className="text-xs text-gray-500">{tier.range}</span>
+                        </span>
+                      );
+                    })()}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Style Labels (for filtering)</label>

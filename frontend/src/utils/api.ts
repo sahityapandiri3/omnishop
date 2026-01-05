@@ -1303,10 +1303,12 @@ export const adminCuratedAPI = {
 // Get pre-curated looks from database (public endpoint)
 // imageQuality: 'thumbnail' (400px), 'medium' (1200px - for landing page), 'full' (original)
 // style: Filter by style label (modern, modern_luxury, indian_contemporary, etc.)
+// budgetTier: Filter by budget tier (essential, value, mid, premium, ultra_luxury)
 export const getCuratedLooks = async (
   roomType?: string,
   imageQuality: 'thumbnail' | 'medium' | 'full' = 'thumbnail',
-  style?: string
+  style?: string,
+  budgetTier?: string
 ): Promise<CuratedLooksResponse> => {
   try {
     const params: Record<string, any> = { image_quality: imageQuality };
@@ -1315,6 +1317,9 @@ export const getCuratedLooks = async (
     }
     if (style) {
       params.style = style;
+    }
+    if (budgetTier) {
+      params.budget_tier = budgetTier;
     }
     const response = await api.get('/api/curated/looks', { params });
     return response.data;

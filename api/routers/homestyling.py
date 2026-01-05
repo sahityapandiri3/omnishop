@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from schemas.homestyling import (
+    BudgetTier,
     CreateSessionRequest,
     HomeStylingSessionSchema,
     HomeStylingViewSchema,
@@ -24,8 +25,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.database import get_db
+from database.models import AnalyticsEvent
+from database.models import BudgetTier as BudgetTierModel
 from database.models import (
-    AnalyticsEvent,
     CuratedLook,
     CuratedLookProduct,
     HomeStylingSession,
@@ -72,6 +74,7 @@ async def create_session(
             room_type=request.room_type.value if request.room_type else None,
             style=request.style.value if request.style else None,
             color_palette=[c.value for c in request.color_palette] if request.color_palette else [],
+            budget_tier=BudgetTierModel(request.budget_tier.value) if request.budget_tier else None,
             status=HomeStylingSessionStatus.PREFERENCES,
         )
         db.add(session)
@@ -86,6 +89,7 @@ async def create_session(
             room_type=session.room_type,
             style=session.style,
             color_palette=session.color_palette or [],
+            budget_tier=session.budget_tier.value if session.budget_tier else None,
             original_room_image=None,  # Don't return large images in list responses
             clean_room_image=None,
             selected_tier=session.selected_tier.value if session.selected_tier else None,
@@ -172,6 +176,7 @@ async def get_session(
             room_type=session.room_type,
             style=session.style,
             color_palette=session.color_palette or [],
+            budget_tier=session.budget_tier.value if session.budget_tier else None,
             original_room_image=session.original_room_image if include_images else None,
             clean_room_image=session.clean_room_image if include_images else None,
             selected_tier=session.selected_tier.value if session.selected_tier else None,
@@ -211,6 +216,8 @@ async def update_preferences(
             session.style = request.style.value
         if request.color_palette is not None:
             session.color_palette = [c.value for c in request.color_palette]
+        if request.budget_tier is not None:
+            session.budget_tier = BudgetTierModel(request.budget_tier.value)
 
         await db.commit()
         await db.refresh(session)
@@ -223,6 +230,7 @@ async def update_preferences(
             room_type=session.room_type,
             style=session.style,
             color_palette=session.color_palette or [],
+            budget_tier=session.budget_tier.value if session.budget_tier else None,
             original_room_image=None,
             clean_room_image=None,
             selected_tier=session.selected_tier.value if session.selected_tier else None,
@@ -418,14 +426,25 @@ async def generate_views(
 
         # Find matching curated looks WITH their products
         # STRICT style matching - only get looks that have the user's selected style
-        logger.info(f"Finding curated looks for room_type='{session.room_type}', style='{session.style}'")
+        # Also filter by budget tier if set
+        budget_filter_msg = f", budget_tier='{session.budget_tier.value}'" if session.budget_tier else ""
+        logger.info(f"Finding curated looks for room_type='{session.room_type}', style='{session.style}'{budget_filter_msg}")
 
         looks_query = (
             select(CuratedLook)
             .where(CuratedLook.is_published.is_(True))
             .where(CuratedLook.room_type == session.room_type)
             .where(CuratedLook.style_labels.cast(JSONB).contains([session.style]))
-            .options(selectinload(CuratedLook.products).selectinload(CuratedLookProduct.product).selectinload(Product.images))
+        )
+
+        # Filter by budget tier if user has set one
+        if session.budget_tier:
+            looks_query = looks_query.where(CuratedLook.budget_tier == session.budget_tier.value)
+
+        looks_query = (
+            looks_query.options(
+                selectinload(CuratedLook.products).selectinload(CuratedLookProduct.product).selectinload(Product.images)
+            )
             .order_by(func.random())
             .limit(session.views_count)
         )
@@ -433,13 +452,15 @@ async def generate_views(
         looks_result = await db.execute(looks_query)
         looks = looks_result.scalars().all()
 
-        logger.info(f"Found {len(looks)} curated looks matching style '{session.style}'")
+        logger.info(f"Found {len(looks)} curated looks matching style '{session.style}'{budget_filter_msg}")
 
         if not looks:
             session.status = HomeStylingSessionStatus.FAILED
             await db.commit()
+            budget_msg = f" and {session.budget_tier.value} budget" if session.budget_tier else ""
             raise HTTPException(
-                status_code=404, detail=f"No curated looks found for {session.room_type} with {session.style} style"
+                status_code=404,
+                detail=f"No curated looks found for {session.room_type} with {session.style} style{budget_msg}",
             )
 
         # Get the user's clean room image (furniture removed)

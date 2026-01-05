@@ -114,7 +114,7 @@ async def warm_curated_looks_cache(db_session_factory) -> None:
 
                 thumbnail = None
                 if look.visualization_image:
-                    thumbnail = create_thumbnail(look.visualization_image, max_width=400, quality=60)
+                    thumbnail = create_thumbnail(look.visualization_image, max_width=800, quality=80)
 
                 looks.append(
                     CuratedLook(
@@ -150,8 +150,12 @@ async def warm_curated_looks_cache(db_session_factory) -> None:
         logger.error(f"❌ Failed to warm curated looks cache: {e}", exc_info=True)
 
 
-def create_thumbnail(base64_image: str, max_width: int = 400, quality: int = 60) -> str:
-    """Create a compressed thumbnail from a base64 image."""
+def create_thumbnail(base64_image: str, max_width: int = 800, quality: int = 80) -> str:
+    """
+    Create a compressed thumbnail from a base64 image.
+
+    Higher default quality (80%) and resolution (800px) for crisp display on modern screens.
+    """
     try:
         # Decode base64
         image_data = base64.b64decode(base64_image)
@@ -168,7 +172,7 @@ def create_thumbnail(base64_image: str, max_width: int = 400, quality: int = 60)
         if image.mode in ("RGBA", "P"):
             image = image.convert("RGB")
 
-        # Save as compressed JPEG
+        # Save as compressed JPEG with higher quality for crisp display
         buffer = io.BytesIO()
         image.save(buffer, format="JPEG", quality=quality, optimize=True)
         buffer.seek(0)
@@ -313,6 +317,9 @@ def get_primary_image_url(product: Product) -> Optional[str]:
 async def get_curated_looks(
     room_type: Optional[str] = Query(None, description="Filter by room type (living_room, bedroom)"),
     style: Optional[str] = Query(None, description="Filter by style label (modern, modern_luxury, indian_contemporary, etc.)"),
+    budget_tier: Optional[str] = Query(
+        None, description="Filter by budget tier (essential, value, mid, premium, ultra_luxury)"
+    ),
     include_images: bool = Query(False, description="Include large base64 images (room_image, visualization_image)"),
     image_quality: str = Query("thumbnail", description="Image quality: thumbnail (400px), medium (1200px), full"),
     db: AsyncSession = Depends(get_db),
@@ -332,7 +339,7 @@ async def get_curated_looks(
     """
     try:
         # Build cache key based on query parameters
-        cache_key = f"looks:{room_type or 'all'}:{style or 'all'}:{image_quality}"
+        cache_key = f"looks:{room_type or 'all'}:{style or 'all'}:{budget_tier or 'all'}:{image_quality}"
 
         # Check cache first
         cached_response = _curated_looks_cache.get(cache_key)
@@ -375,6 +382,28 @@ async def get_curated_looks(
                 style_conditions = [CuratedLookModel.style_labels.cast(JSONB).contains([s]) for s in style_list]
                 query = query.where(or_(*style_conditions))
 
+        # Apply budget tier filter if provided (filter by price range)
+        if budget_tier:
+            # Budget tier price ranges (in INR):
+            # - Essential: < ₹2L (< 200,000)
+            # - Value: ₹2L – ₹4L (200,000 - 400,000)
+            # - Mid: ₹4L – ₹8L (400,000 - 800,000)
+            # - Premium: ₹8L – ₹15L (800,000 - 1,500,000)
+            # - Ultra-Luxury: ₹15L+ (> 1,500,000)
+            if budget_tier == "essential":
+                query = query.where(CuratedLookModel.total_price < 200000)
+            elif budget_tier == "value":
+                query = query.where(CuratedLookModel.total_price >= 200000)
+                query = query.where(CuratedLookModel.total_price < 400000)
+            elif budget_tier == "mid":
+                query = query.where(CuratedLookModel.total_price >= 400000)
+                query = query.where(CuratedLookModel.total_price < 800000)
+            elif budget_tier == "premium":
+                query = query.where(CuratedLookModel.total_price >= 800000)
+                query = query.where(CuratedLookModel.total_price < 1500000)
+            elif budget_tier == "ultra_luxury":
+                query = query.where(CuratedLookModel.total_price >= 1500000)
+
         result = await db.execute(query)
         looks_from_db = result.scalars().unique().all()
 
@@ -411,11 +440,11 @@ async def get_curated_looks(
                     # Return full-quality image (original)
                     visualization = look.visualization_image
                 elif image_quality == "medium":
-                    # Return medium-quality image for landing page (1200px, 80% quality)
-                    visualization = create_thumbnail(look.visualization_image, max_width=1200, quality=80)
+                    # Return medium-quality image for landing page (1200px, 85% quality)
+                    visualization = create_thumbnail(look.visualization_image, max_width=1200, quality=85)
                 else:
-                    # Return compressed thumbnail for listing/grid views (400px, 60% quality)
-                    visualization = create_thumbnail(look.visualization_image, max_width=400, quality=60)
+                    # Return crisp thumbnail for listing/grid views (800px, 80% quality for retina displays)
+                    visualization = create_thumbnail(look.visualization_image, max_width=800, quality=80)
 
             if look.room_image and image_quality in ("full", "medium"):
                 if image_quality == "full":
