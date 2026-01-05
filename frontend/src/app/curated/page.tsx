@@ -181,7 +181,7 @@ function CuratedPageContent() {
               <select
                 value={budgetFilter}
                 onChange={(e) => setBudgetFilter(e.target.value as BudgetOption)}
-                className="bg-white rounded-lg px-3 py-1.5 text-xs font-medium shadow-sm border border-neutral-200 text-neutral-600 hover:border-neutral-300 focus:ring-2 focus:ring-primary-500 focus:border-transparent cursor-pointer"
+                className="bg-white rounded-lg pl-3 pr-8 py-1.5 text-xs font-medium shadow-sm border border-neutral-200 text-neutral-600 hover:border-neutral-300 focus:ring-2 focus:ring-primary-500 focus:border-transparent cursor-pointer"
               >
                 {budgetOptions.map((option) => (
                   <option key={option.value} value={option.value}>
