@@ -647,12 +647,19 @@ class PrecomputedMask(Base):
 
     These masks are generated in the background after each visualization completes,
     so when users click "Edit Position", the masks are already available for instant retrieval.
+
+    Supports both:
+    - Design studio visualizations (linked via session_id)
+    - Admin curated looks (linked via curated_look_id)
     """
 
     __tablename__ = "precomputed_masks"
 
     id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(String(36), ForeignKey("chat_sessions.id"), nullable=False, index=True)
+
+    # Either session_id OR curated_look_id should be set (not both)
+    session_id = Column(String(36), ForeignKey("chat_sessions.id"), nullable=True, index=True)
+    curated_look_id = Column(Integer, ForeignKey("curated_looks.id"), nullable=True, index=True)
 
     # Cache key components - used to match requests to cached data
     visualization_hash = Column(String(64), nullable=False, index=True)  # SHA-256 of image (first 1000 chars + length)
@@ -682,13 +689,17 @@ class PrecomputedMask(Base):
 
     # Relationships
     session = relationship("ChatSession", backref="precomputed_masks")
+    curated_look = relationship("CuratedLook", backref="precomputed_masks")
 
     # Indexes for efficient lookup
     __table_args__ = (
         Index("idx_precomputed_mask_session_viz", "session_id", "visualization_hash"),
+        Index("idx_precomputed_mask_curated_viz", "curated_look_id", "visualization_hash"),
         Index("idx_precomputed_mask_lookup", "session_id", "visualization_hash", "product_hash"),
         Index("idx_precomputed_mask_status", "status", "created_at"),
     )
 
     def __repr__(self):
-        return f"<PrecomputedMask(id={self.id}, session_id={self.session_id[:8]}..., status='{self.status.value}')>"
+        if self.session_id:
+            return f"<PrecomputedMask(id={self.id}, session_id={self.session_id[:8]}..., status='{self.status.value}')>"
+        return f"<PrecomputedMask(id={self.id}, curated_look_id={self.curated_look_id}, status='{self.status.value}')>"

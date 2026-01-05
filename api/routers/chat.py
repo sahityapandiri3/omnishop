@@ -2753,6 +2753,8 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         is_incremental = request.get("is_incremental", False)  # Smart re-visualization flag
         force_reset = request.get("force_reset", False)  # Force fresh visualization
         custom_positions = request.get("custom_positions", [])  # Optional furniture positions for edit mode
+        curated_look_id = request.get("curated_look_id")  # For curated look editing
+        logger.info(f"[Visualize] Received request with curated_look_id={curated_look_id}, session_id={session_id}")
 
         if not base_image:
             raise HTTPException(status_code=400, detail="Image is required")
@@ -3143,13 +3145,15 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     # Create multiple entries with numbered names for distinct placement
                     for i in range(qty):
                         expanded_product = product.copy()
-                        if qty > 1:
-                            # Add instance number to help AI place them distinctly
-                            original_name = product.get("full_name") or product.get("name", "item")
-                            expanded_product["name"] = f"{original_name} #{i+1}"
-                            expanded_product["full_name"] = f"{original_name} #{i+1}"
-                            expanded_product["instance_number"] = i + 1
-                            expanded_product["total_instances"] = qty
+                        # CRITICAL: Set quantity to 1 for each expanded instance
+                        # Otherwise the visualization code will create copies of copies!
+                        expanded_product["quantity"] = 1
+                        # Add instance number to help AI place them distinctly
+                        original_name = product.get("full_name") or product.get("name", "item")
+                        expanded_product["name"] = f"{original_name} #{i+1}"
+                        expanded_product["full_name"] = f"{original_name} #{i+1}"
+                        expanded_product["instance_number"] = i + 1
+                        expanded_product["total_instances"] = qty
                         expanded.append(expanded_product)
             return expanded
 
@@ -3336,8 +3340,14 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         # This runs after visualization completes so user sees result immediately
         # Masks will be ready by the time they click "Edit Position"
         try:
+            import asyncio as asyncio_module
+
             from services.mask_precomputation_service import mask_precomputation_service
-            from database.session import AsyncSessionLocal
+
+            from core.database import AsyncSessionLocal
+
+            # Capture curated_look_id for use in background task
+            _curated_look_id = curated_look_id
 
             async def precompute_masks_background():
                 """Background task to pre-compute masks for Edit Position."""
@@ -3345,16 +3355,24 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     try:
                         # Convert products to the format expected by the service
                         products_for_cache = [
-                            {"id": p.get("id") or p.get("product_id"), "name": p.get("name", "")}
-                            for p in accumulated_products
+                            {"id": p.get("id") or p.get("product_id"), "name": p.get("name", "")} for p in accumulated_products
                         ]
 
-                        job_id = await mask_precomputation_service.trigger_precomputation(
-                            bg_db,
-                            session_id,
-                            viz_result.rendered_image,
-                            products_for_cache,
-                        )
+                        # Use curated look method if curated_look_id is provided
+                        if _curated_look_id:
+                            job_id = await mask_precomputation_service.trigger_precomputation_for_curated_look(
+                                bg_db,
+                                _curated_look_id,
+                                viz_result.rendered_image,
+                                products_for_cache,
+                            )
+                        else:
+                            job_id = await mask_precomputation_service.trigger_precomputation(
+                                bg_db,
+                                session_id,
+                                viz_result.rendered_image,
+                                products_for_cache,
+                            )
                         if job_id:
                             await mask_precomputation_service.process_precomputation(
                                 bg_db,
@@ -3366,8 +3384,11 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                         logger.warning(f"[Precompute] Background task failed: {e}")
 
             # Fire and forget - don't await
-            asyncio.create_task(precompute_masks_background())
-            logger.info(f"[Precompute] Triggered background mask pre-computation for session {session_id}")
+            asyncio_module.create_task(precompute_masks_background())
+            if curated_look_id:
+                logger.info(f"[Precompute] Triggered background mask pre-computation for curated look {curated_look_id}")
+            else:
+                logger.info(f"[Precompute] Triggered background mask pre-computation for session {session_id}")
 
         except Exception as precompute_error:
             # Never fail the main request due to precomputation
@@ -5509,23 +5530,30 @@ async def _get_category_based_recommendations(
 
             logger.info(f"[CATEGORY RECS] Final matching category IDs for {category_id}: {matching_category_ids}")
 
-            # Step 2: Build product query with category-first filtering
+            # Step 2: Build product query with HYBRID filtering
+            # Always use BOTH category matching AND keyword matching (OR logic)
+            # This ensures products are found even if they're miscategorized
+            # e.g., wall art products in "Decor & Accessories" instead of "Wall Art" category
+            keyword_conditions = []
+            for keyword in keywords:
+                keyword_conditions.append(Product.name.ilike(f"%{keyword}%"))
+
             if matching_category_ids:
-                # Primary filter: products in matching categories
+                # HYBRID filter: products in matching categories OR products with keyword in name
+                category_condition = Product.category_id.in_(matching_category_ids)
+                keyword_condition = or_(*keyword_conditions) if keyword_conditions else False
+
                 query = (
                     select(Product)
                     .join(Category, Product.category_id == Category.id, isouter=True)
                     .options(selectinload(Product.images), selectinload(Product.attributes))
-                    .where(Product.is_available.is_(True), Product.category_id.in_(matching_category_ids))
+                    .where(Product.is_available.is_(True), or_(category_condition, keyword_condition))
                 )
-                logger.info(f"[CATEGORY RECS] Using category-first filtering with {len(matching_category_ids)} category IDs")
+                logger.info(
+                    f"[CATEGORY RECS] Using HYBRID filtering: {len(matching_category_ids)} category IDs + keyword matching"
+                )
             else:
-                # Fallback: no matching categories found, use keyword matching on product name
-                # This ensures we still return results even if category names don't match
-                keyword_conditions = []
-                for keyword in keywords:
-                    keyword_conditions.append(Product.name.ilike(f"%{keyword}%"))
-
+                # Fallback: no matching categories found, use keyword matching on product name only
                 query = (
                     select(Product)
                     .join(Category, Product.category_id == Category.id, isouter=True)

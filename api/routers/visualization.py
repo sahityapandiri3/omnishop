@@ -52,6 +52,7 @@ class ExtractLayersRequest(BaseModel):
     visualization_image: str
     products: List[Dict[str, Any]]
     use_sam: bool = True  # Use SAM for precise segmentation (vs bounding box crops)
+    curated_look_id: Optional[int] = None  # For cache lookup by curated look
 
 
 class CompositeLayersRequest(BaseModel):
@@ -77,6 +78,7 @@ class SegmentAtPointRequest(BaseModel):
     point: Dict[str, float]  # {"x": 0.3, "y": 0.5} normalized coords
     label: Optional[str] = "object"  # Optional label for the object
     products: Optional[List[ProductInfo]] = None  # Products in the visualization for matching
+    curated_look_id: Optional[int] = None  # For curated looks cache lookup
 
 
 class SegmentAtPointsRequest(BaseModel):
@@ -98,6 +100,41 @@ class FinalizeMoveRequest(BaseModel):
     original_position: Dict[str, float]  # {"x": 0.2, "y": 0.3} where object was
     new_position: Dict[str, float]  # {"x": 0.5, "y": 0.4} where object is now
     scale: float = 1.0  # Scale factor applied to object
+
+
+class ProductPosition(BaseModel):
+    """Position data for a single product"""
+
+    product_id: int
+    x: float  # Normalized x position (0-1)
+    y: float  # Normalized y position (0-1)
+    scale: float = 1.0
+
+
+class RevisualizeWithPositionsRequest(BaseModel):
+    """Request model for full scene re-visualization with custom positions"""
+
+    room_image: str  # Clean room image (without furniture)
+    products: List[Dict[str, Any]]  # All products with their info
+    positions: List[ProductPosition]  # Positions for all products
+    curated_look_id: Optional[int] = None
+
+
+class ProductInfo(BaseModel):
+    """Product information for edit reference"""
+
+    id: int
+    name: str
+    quantity: int = 1
+    image_url: Optional[str] = None
+
+
+class EditWithInstructionsRequest(BaseModel):
+    """Request model for text-based image editing"""
+
+    image: str  # Current visualization image (base64)
+    instructions: str  # User's text instructions (e.g., "Place the flower vase on the bench")
+    products: Optional[List[ProductInfo]] = None  # Products in the scene for reference
 
 
 @router.post("/analyze-room")
@@ -291,9 +328,7 @@ async def upload_room_image(file: UploadFile = File(...)):
 
 
 @router.post("/sessions/{session_id}/extract-layers")
-async def extract_furniture_layers(
-    session_id: str, request: ExtractLayersRequest, db: AsyncSession = Depends(get_db)
-):
+async def extract_furniture_layers(session_id: str, request: ExtractLayersRequest, db: AsyncSession = Depends(get_db)):
     """
     Extract all objects as draggable layers for Magic Grab editing.
 
@@ -326,20 +361,61 @@ async def extract_furniture_layers(
                 {"id": p.get("id") or p.get("product_id"), "name": p.get("name", "")} for p in request.products
             ]
 
-            cached_result = await mask_precomputation_service.get_cached_masks(
-                db,
-                session_id,
-                request.visualization_image,
-                products_for_cache,
-            )
+            cached_result = None
+
+            # Try curated_look_id first if provided (for curated looks)
+            if request.curated_look_id:
+                logger.info(f"[ExtractLayers] Checking cache for curated_look_id={request.curated_look_id}")
+                cached_result = await mask_precomputation_service.get_cached_masks_for_curated_look(
+                    db,
+                    request.curated_look_id,
+                    request.visualization_image,
+                    products_for_cache,
+                )
+
+            # Fallback to session-based lookup
+            if not cached_result:
+                cached_result = await mask_precomputation_service.get_cached_masks(
+                    db,
+                    session_id,
+                    request.visualization_image,
+                    products_for_cache,
+                )
 
             if cached_result:
                 logger.info(f"[ExtractLayers] CACHE HIT - returning pre-computed masks instantly!")
+
+                # Normalize layer field names for frontend compatibility
+                # Cached layers use: bbox, cutout, mask
+                # Frontend expects: bounding_box, layer_image
+                normalized_layers = []
+                for layer in cached_result.get("layers", []):
+                    normalized_layers.append(
+                        {
+                            "id": layer.get("id"),
+                            "product_id": layer.get("product_id"),
+                            "product_name": layer.get("product_name"),
+                            "layer_image": layer.get("cutout") or layer.get("layer_image"),  # Use cutout as layer_image
+                            "bounding_box": layer.get("bbox") or layer.get("bounding_box"),  # Use bbox as bounding_box
+                            "center": layer.get("center", {"x": layer.get("x", 0.5), "y": layer.get("y", 0.5)}),
+                            "mask": layer.get("mask"),
+                            "cutout": layer.get("cutout"),
+                            "bbox": layer.get("bbox"),
+                            "x": layer.get("x", layer.get("center", {}).get("x", 0.5)),
+                            "y": layer.get("y", layer.get("center", {}).get("y", 0.5)),
+                            "width": layer.get("width", layer.get("bbox", {}).get("width", 0.1)),
+                            "height": layer.get("height", layer.get("bbox", {}).get("height", 0.1)),
+                            "scale": layer.get("scale", 1.0),
+                            "stability_score": layer.get("stability_score", 0.9),
+                            "area": layer.get("area", 0.05),
+                        }
+                    )
+
                 return {
                     "session_id": session_id,
                     "background": cached_result["background"],
-                    "layers": cached_result["layers"],
-                    "total_layers": len(cached_result["layers"]),
+                    "layers": normalized_layers,
+                    "total_layers": len(normalized_layers),
                     "extraction_method": cached_result["extraction_method"],
                     "image_dimensions": cached_result["image_dimensions"],
                     "extraction_time": cached_result["processing_time"],
@@ -1499,6 +1575,7 @@ async def segment_at_point(session_id: str, request: SegmentAtPointRequest):
     import json
     import re
 
+    import httpx
     import numpy as np
     from google import genai
     from google.genai import types
@@ -1523,35 +1600,168 @@ async def segment_at_point(session_id: str, request: SegmentAtPointRequest):
         # Convert click point to pixel coordinates
         click_x = int(request.point["x"] * width)
         click_y = int(request.point["y"] * height)
+        click_norm_x = request.point["x"]
+        click_norm_y = request.point["y"]
+
+        # ============================================================
+        # CHECK PRE-COMPUTED LAYERS FIRST (instant response if found)
+        # ============================================================
+        try:
+            from services.mask_precomputation_service import mask_precomputation_service
+
+            from core.database import AsyncSessionLocal
+
+            async with AsyncSessionLocal() as cache_db:
+                # Use simpler image-based lookup (doesn't require exact product hash match)
+                cached_result = await mask_precomputation_service.get_cached_layers_by_image(
+                    cache_db,
+                    request.image_base64,
+                    session_id=session_id,
+                    curated_look_id=request.curated_look_id,
+                )
+
+                if cached_result and cached_result.get("layers"):
+                    # Find the SMALLEST layer bbox that contains the click point
+                    # (Smaller bbox = more precise match for the clicked object)
+                    best_match = None
+                    best_match_area = float("inf")
+                    margin = 0.02  # 2% margin for easier selection
+
+                    for layer in cached_result["layers"]:
+                        layer_bbox = layer.get("bbox", {})
+                        layer_x = layer_bbox.get("x", 0)
+                        layer_y = layer_bbox.get("y", 0)
+                        layer_w = layer_bbox.get("width", 0)
+                        layer_h = layer_bbox.get("height", 0)
+
+                        # Check if click is inside this layer's bbox
+                        if (
+                            layer_x - margin <= click_norm_x <= layer_x + layer_w + margin
+                            and layer_y - margin <= click_norm_y <= layer_y + layer_h + margin
+                        ):
+                            # Calculate bbox area - prefer smaller bboxes (more precise)
+                            bbox_area = layer_w * layer_h
+                            if bbox_area < best_match_area:
+                                best_match = layer
+                                best_match_area = bbox_area
+                                logger.debug(
+                                    f"[{session_id}] Found candidate layer: {layer.get('product_name')} (area={bbox_area:.4f})"
+                                )
+
+                    if best_match:
+                        layer = best_match
+                        layer_bbox = layer.get("bbox", {})
+                        layer_x = layer_bbox.get("x", 0)
+                        layer_y = layer_bbox.get("y", 0)
+                        layer_w = layer_bbox.get("width", 0)
+                        layer_h = layer_bbox.get("height", 0)
+
+                        logger.info(
+                            f"[{session_id}] CACHE HIT - Using pre-computed layer for product {layer.get('product_id')} ({layer.get('product_name')}) [smallest bbox area={best_match_area:.4f}]"
+                        )
+
+                        # Do real-time inpainting for just this product's area
+                        # (Don't use pre-computed background which has ALL furniture removed)
+                        try:
+                            from services.google_ai_service import google_ai_service
+
+                            # Get the product's bbox in pixel coordinates for targeted inpainting
+                            img_dims = cached_result.get("image_dimensions", {})
+                            img_w = img_dims.get("width", 1024)
+                            img_h = img_dims.get("height", 1024)
+
+                            product_bbox_px = {
+                                "x": int(layer_x * img_w),
+                                "y": int(layer_y * img_h),
+                                "width": int(layer_w * img_w),
+                                "height": int(layer_h * img_h),
+                            }
+
+                            # Inpaint just this product's area
+                            inpainted_bg = await google_ai_service.inpaint_product_area(
+                                request.image_base64, product_bbox_px, layer.get("product_name", "furniture")
+                            )
+                            logger.info(f"[{session_id}] Real-time inpainting completed for cached layer")
+                        except Exception as inpaint_err:
+                            logger.warning(f"[{session_id}] Real-time inpainting failed, using original image: {inpaint_err}")
+                            inpainted_bg = request.image_base64
+
+                        # Return the pre-computed layer with real-time inpainted background
+                        return {
+                            "session_id": session_id,
+                            "layer": {
+                                "id": layer.get("id", f"cached_{layer.get('product_id', 'unknown')}"),
+                                "cutout": layer.get("cutout"),
+                                "mask": layer.get("mask"),
+                                "bbox": layer_bbox,
+                                "x": layer.get("x", layer_x + layer_w / 2),
+                                "y": layer.get("y", layer_y + layer_h / 2),
+                                "width": layer_w,
+                                "height": layer_h,
+                            },
+                            "matched_product_id": layer.get("product_id"),
+                            "matched_product_name": layer.get("product_name"),
+                            "inpainted_background": inpainted_bg,
+                            "extraction_method": "precomputed_cache",
+                            "cached": True,
+                        }
+
+                    logger.info(
+                        f"[{session_id}] Cache exists but click point ({click_norm_x:.2f}, {click_norm_y:.2f}) not in any layer bbox"
+                    )
+        except Exception as cache_err:
+            logger.debug(f"[{session_id}] Pre-computed layer check failed: {cache_err}")
+
+        # ============================================================
+        # NO CACHE HIT - Fall back to Gemini + SAM extraction
+        # ============================================================
+        logger.info(f"[{session_id}] No pre-computed layer found, using Gemini + SAM")
 
         # Step 1: Use Gemini to identify what specific object is at the click point
-        # and get a bounding box for just that object (not the table it's on)
-        identify_prompt = f"""Look at this interior room image.
+        # and get a bounding box for the COMPLETE object
+        identify_prompt = f"""Look at this interior room image. There is a RED CIRCLE marker showing exactly where I clicked.
 
-I clicked at position ({click_x}, {click_y}) in a {width}x{height} image.
+I clicked at position ({click_x}, {click_y}) in a {width}x{height} image. The RED CIRCLE shows the exact click location.
 
-TASK: Identify the SPECIFIC OBJECT at exactly that click point.
+TASK: Identify ONLY the object that is DIRECTLY at the RED CIRCLE marker. Return the bounding box for that COMPLETE object.
 
-IMPORTANT RULES:
-- If clicking on a small item ON a table (vase, sculpture, book, plant), identify ONLY that small item, NOT the table
-- If clicking on the table surface itself (not on an item), identify the table
-- If clicking on a sofa cushion/pillow, identify the cushion, not the whole sofa
-- If clicking on a lamp, identify the lamp
+⚠️ CRITICAL: Look ONLY at what the RED CIRCLE is touching. Do NOT identify nearby objects.
+
+OBJECT IDENTIFICATION RULES:
+1. FLOOR LAMPS / STANDING LAMPS - If the red circle is on a tall standing lamp:
+   - Identify it as "floor lamp" or "standing lamp"
+   - Bbox should include the ENTIRE lamp from base to top
+
+2. CHAIRS - If the red circle is on a chair:
+   - Include the ENTIRE chair (back, seat, legs, armrest)
+   - Bbox from top of back to bottom of legs
+
+3. SOFAS - If the red circle is on a sofa:
+   - Include the ENTIRE sofa (all cushions, back, armrests, legs)
+
+4. TABLES - If the red circle is on a table:
+   - Include the ENTIRE table (top, legs, base)
+
+5. CHANDELIERS / PENDANT LIGHTS - If the red circle is on a hanging light:
+   - Include the ENTIRE light fixture
+
+6. SMALL DECOR (vases, plants, sculptures) - If the red circle is on small decor ON furniture:
+   - Include ONLY the decor item, NOT the furniture it sits on
 
 Return a JSON object with:
 {{
-  "object_name": "the specific object at the click point",
-  "object_type": "decor|furniture|accessory",
-  "is_small_item": true/false,
+  "object_name": "specific name of the object AT the red circle (e.g., 'white floor lamp', 'cane accent chair', 'velvet sofa')",
+  "object_type": "furniture|lighting|decor|accessory",
+  "is_small_item": true if small decor placed on furniture, false otherwise,
   "estimated_bbox": {{
     "x": left edge (0-{width}),
     "y": top edge (0-{height}),
-    "width": object width in pixels,
-    "height": object height in pixels
+    "width": FULL object width in pixels,
+    "height": FULL object height in pixels
   }}
 }}
 
-The bbox should tightly fit ONLY the clicked object, not anything it's sitting on."""
+IMPORTANT: The bbox MUST be for the object the RED CIRCLE is ON, not nearby objects."""
 
         # Draw a marker on the image to show Gemini where the click was
         marked_image = pil_image.copy()
@@ -1601,12 +1811,24 @@ The bbox should tightly fit ONLY the clicked object, not anything it's sitting o
 
         if object_info and object_info.get("estimated_bbox"):
             bbox = object_info["estimated_bbox"]
-            # Add some padding to the bbox
-            pad = 30
-            crop_x1 = max(0, bbox["x"] - pad)
-            crop_y1 = max(0, bbox["y"] - pad)
-            crop_x2 = min(width, bbox["x"] + bbox["width"] + pad)
-            crop_y2 = min(height, bbox["y"] + bbox["height"] + pad)
+            is_furniture = object_info.get("object_type") == "furniture" or not object_info.get("is_small_item", True)
+
+            # Add padding - MORE for furniture to ensure full object capture
+            # Furniture often has legs that extend beyond the main body
+            if is_furniture:
+                # For furniture: add 20% of object size as padding, minimum 50px
+                pad_x = max(50, int(bbox["width"] * 0.2))
+                pad_y = max(50, int(bbox["height"] * 0.3))  # More vertical padding for legs
+                logger.info(f"[{session_id}] Furniture detected - using extended padding: x={pad_x}, y={pad_y}")
+            else:
+                # For small decor items: smaller padding
+                pad_x = 30
+                pad_y = 30
+
+            crop_x1 = max(0, bbox["x"] - pad_x)
+            crop_y1 = max(0, bbox["y"] - pad_y)
+            crop_x2 = min(width, bbox["x"] + bbox["width"] + pad_x)
+            crop_y2 = min(height, bbox["y"] + bbox["height"] + pad_y)
 
             # Create cropped image for SAM
             cropped_image = pil_image.crop((crop_x1, crop_y1, crop_x2, crop_y2))
@@ -1623,10 +1845,72 @@ The bbox should tightly fit ONLY the clicked object, not anything it's sitting o
 
             logger.info(f"[{session_id}] Using cropped region ({crop_x1},{crop_y1})-({crop_x2},{crop_y2}) for SAM")
 
-            # Call SAM on the cropped region
-            result = await sam_service.segment_at_point(
-                image_base64=crop_b64, point=relative_point, label=object_info.get("object_name", request.label or "object")
-            )
+            # For furniture, use multiple points to capture the full object
+            # Adapt point placement based on furniture shape (aspect ratio)
+            if is_furniture:
+                # Generate points within the INTERIOR of the furniture bounding box
+                # The bbox is relative to the full image, convert to crop coordinates
+                bbox_left = (bbox["x"] - crop_x1) / crop_width
+                bbox_right = (bbox["x"] + bbox["width"] - crop_x1) / crop_width
+                bbox_top = (bbox["y"] - crop_y1) / crop_height
+                bbox_bottom = (bbox["y"] + bbox["height"] - crop_y1) / crop_height
+                bbox_center_x = (bbox_left + bbox_right) / 2
+                bbox_center_y = (bbox_top + bbox_bottom) / 2
+
+                # Calculate aspect ratio to determine point placement strategy
+                aspect_ratio = bbox["width"] / bbox["height"] if bbox["height"] > 0 else 1.0
+
+                if aspect_ratio < 0.6:
+                    # TALL/VERTICAL furniture (floor lamps, standing mirrors, coat racks)
+                    # Use vertical spread but avoid very bottom (where floor/carpet is)
+                    logger.info(f"[{session_id}] Detected TALL furniture (aspect ratio {aspect_ratio:.2f})")
+                    multi_points = [
+                        relative_point,  # Original click point
+                        {"x": bbox_center_x, "y": bbox_center_y},  # Center
+                        {"x": bbox_center_x, "y": bbox_top + (bbox_bottom - bbox_top) * 0.15},  # Upper region
+                        {"x": bbox_center_x, "y": bbox_top + (bbox_bottom - bbox_top) * 0.35},  # Upper-middle
+                        # Bottom point at 75% height - captures lower parts but avoids floor
+                        {"x": bbox_center_x, "y": bbox_top + (bbox_bottom - bbox_top) * 0.75},
+                    ]
+                    point_strategy = "vertical"
+                else:
+                    # WIDE/NORMAL furniture (chairs, sofas, tables, beds)
+                    # Use GRID approach: horizontal spread at MULTIPLE heights
+                    # This captures both tabletops and bases, chair seats and backs
+                    logger.info(f"[{session_id}] Detected WIDE furniture (aspect ratio {aspect_ratio:.2f})")
+
+                    # Heights: 25% (upper), 50% (center), 75% (lower but not bottom)
+                    upper_y = bbox_top + (bbox_bottom - bbox_top) * 0.25
+                    lower_y = bbox_top + (bbox_bottom - bbox_top) * 0.75
+
+                    multi_points = [
+                        relative_point,  # Original click point
+                        {"x": bbox_center_x, "y": bbox_center_y},  # Center
+                        # Upper row (for tabletops, chair backs)
+                        {"x": bbox_left + (bbox_right - bbox_left) * 0.25, "y": upper_y},
+                        {"x": bbox_left + (bbox_right - bbox_left) * 0.75, "y": upper_y},
+                        # Lower row (for table bases, chair legs)
+                        {"x": bbox_left + (bbox_right - bbox_left) * 0.25, "y": lower_y},
+                        {"x": bbox_left + (bbox_right - bbox_left) * 0.75, "y": lower_y},
+                    ]
+                    point_strategy = "grid"
+
+                # Clamp all points to valid range
+                multi_points = [{"x": max(0.05, min(0.95, p["x"])), "y": max(0.05, min(0.95, p["y"]))} for p in multi_points]
+
+                logger.info(f"[{session_id}] Using {len(multi_points)} {point_strategy} points for furniture segmentation")
+
+                # Call SAM with multiple points
+                result = await sam_service.segment_at_points(
+                    image_base64=crop_b64, points=multi_points, label=object_info.get("object_name", request.label or "object")
+                )
+            else:
+                # For small items, single point is fine
+                result = await sam_service.segment_at_point(
+                    image_base64=crop_b64,
+                    point=relative_point,
+                    label=object_info.get("object_name", request.label or "object"),
+                )
 
             # Adjust bbox back to full image coordinates
             full_bbox = {
@@ -1642,20 +1926,10 @@ The bbox should tightly fit ONLY the clicked object, not anything it's sitting o
             }
 
             # Step 3: Match cutout to a product if products list provided
+            # Uses visual comparison with product images for accurate matching
             matched_product_id = None
             if request.products and len(request.products) > 0:
                 logger.info(f"[{session_id}] Matching cutout to {len(request.products)} products")
-
-                # Build product list for Gemini
-                product_list = "\n".join([f"- ID {p.id}: {p.name}" for p in request.products])
-
-                match_prompt = f"""Look at this image of a furniture/decor item that was extracted from a room visualization.
-
-Identify which product from this list it most likely is:
-{product_list}
-
-Return ONLY the product ID number that best matches. Just the number, nothing else.
-If none match well, return 0."""
 
                 # Decode cutout for matching
                 cutout_data = result.cutout
@@ -1664,35 +1938,81 @@ If none match well, return 0."""
                 cutout_bytes = base64.b64decode(cutout_data)
                 cutout_pil = Image.open(io.BytesIO(cutout_bytes)).convert("RGBA")
 
-                def _match_product():
-                    response = client.models.generate_content(
-                        model="gemini-2.0-flash-exp",
-                        contents=[match_prompt, cutout_pil],
-                        config=types.GenerateContentConfig(temperature=0.1),
-                    )
-                    if response.text:
-                        return response.text.strip()
-                    return None
+                # Fetch product images for visual comparison
+                product_images = []
+                for p in request.products:
+                    if p.image_url:
+                        try:
+                            async with httpx.AsyncClient(timeout=10.0) as http_client:
+                                img_response = await http_client.get(p.image_url)
+                                if img_response.status_code == 200:
+                                    p_img = Image.open(io.BytesIO(img_response.content)).convert("RGB")
+                                    # Resize to consistent size for comparison
+                                    p_img.thumbnail((200, 200))
+                                    product_images.append((p.id, p.name, p_img))
+                                    logger.debug(f"[{session_id}] Loaded image for product {p.id}: {p.name}")
+                        except Exception as img_err:
+                            logger.debug(f"[{session_id}] Failed to load image for product {p.id}: {img_err}")
+                            product_images.append((p.id, p.name, None))
+                    else:
+                        product_images.append((p.id, p.name, None))
 
-                try:
-                    match_result = await asyncio.wait_for(loop.run_in_executor(None, _match_product), timeout=15)
-                    if match_result:
-                        # Extract number from response
-                        match_num = re.search(r"\d+", match_result)
-                        if match_num:
-                            matched_id = int(match_num.group())
-                            if matched_id > 0 and any(p.id == matched_id for p in request.products):
-                                matched_product_id = matched_id
-                                matched_name = next((p.name for p in request.products if p.id == matched_id), "unknown")
-                                logger.info(f"[{session_id}] Matched to product {matched_product_id}: {matched_name}")
-                except Exception as match_err:
-                    logger.warning(f"[{session_id}] Product matching failed: {match_err}")
+                if product_images:
+                    # Build prompt with visual comparison
+                    product_list = "\n".join([f"- ID {pid}: {pname}" for pid, pname, _ in product_images])
 
-            # Step 4: Inpaint the original location using Gemini
+                    # Build content with cutout and product images
+                    contents = [
+                        f"""I'm showing you a furniture/decor item extracted from a room visualization (first image),
+followed by product images from our catalog. Match the extracted item to the correct product.
+
+Products in the visualization:
+{product_list}
+
+Look at the extracted item and compare it visually to each product image.
+Consider shape, style, color, and overall appearance.
+
+Return ONLY the product ID number that best matches the extracted item. Just the number, nothing else.
+If none match well, return 0.""",
+                        cutout_pil,  # The extracted item
+                    ]
+
+                    # Add product images that we successfully loaded
+                    for pid, pname, pimg in product_images:
+                        if pimg:
+                            contents.append(f"Product ID {pid} ({pname}):")
+                            contents.append(pimg)
+
+                    def _match_product():
+                        response = client.models.generate_content(
+                            model="gemini-2.0-flash-exp",
+                            contents=contents,
+                            config=types.GenerateContentConfig(temperature=0.1),
+                        )
+                        if response.text:
+                            return response.text.strip()
+                        return None
+
+                    try:
+                        match_result = await asyncio.wait_for(loop.run_in_executor(None, _match_product), timeout=20)
+                        if match_result:
+                            # Extract number from response
+                            match_num = re.search(r"\d+", match_result)
+                            if match_num:
+                                matched_id = int(match_num.group())
+                                if matched_id > 0 and any(p.id == matched_id for p in request.products):
+                                    matched_product_id = matched_id
+                                    matched_name = next((p.name for p in request.products if p.id == matched_id), "unknown")
+                                    logger.info(f"[{session_id}] Matched to product {matched_product_id}: {matched_name}")
+                                else:
+                                    logger.warning(f"[{session_id}] Gemini returned ID {matched_id} but not in product list")
+                    except Exception as match_err:
+                        logger.warning(f"[{session_id}] Product matching failed: {match_err}")
+
+            # Step 4: Get clean background (try cache first, then inpaint)
             # This creates a clean background for the user to drag over
-            logger.info(f"[{session_id}] Inpainting original object location with Gemini")
 
-            # Decode the mask from SAM result and create full-image mask
+            # Decode the mask from SAM result and create full-image mask (needed for both paths)
             mask_data = result.mask
             if mask_data.startswith("data:"):
                 mask_data = mask_data.split(",", 1)[1]
@@ -1710,8 +2030,46 @@ If none match well, return 0."""
 
             full_mask = full_mask.filter(ImageFilter.MaxFilter(7))
 
-            object_name = object_info.get("object_name", "object")
-            inpaint_prompt = f"""Edit this interior room image.
+            # CHECK CACHE for pre-computed clean background
+            inpainted_b64 = None
+            try:
+                from services.mask_precomputation_service import mask_precomputation_service
+
+                from core.database import AsyncSessionLocal
+
+                async with AsyncSessionLocal() as cache_db:
+                    cached_result = None
+
+                    # First try curated_look_id cache (if provided)
+                    if request.curated_look_id:
+                        cached_result = await mask_precomputation_service.get_cached_masks_for_curated_look(
+                            cache_db, request.curated_look_id, request.image_base64
+                        )
+                        if cached_result and cached_result.get("background"):
+                            inpainted_b64 = cached_result["background"]
+                            logger.info(
+                                f"[{session_id}] CACHE HIT (curated look {request.curated_look_id}) - Using pre-computed clean background (saved ~3s)"
+                            )
+
+                    # Fall back to session_id cache
+                    if not inpainted_b64:
+                        cached_result = await mask_precomputation_service.get_cached_masks(
+                            cache_db, session_id, request.image_base64, []
+                        )
+                        if cached_result and cached_result.get("background"):
+                            inpainted_b64 = cached_result["background"]
+                            logger.info(
+                                f"[{session_id}] CACHE HIT (session) - Using pre-computed clean background (saved ~3s)"
+                            )
+            except Exception as cache_err:
+                logger.debug(f"[{session_id}] Cache check failed: {cache_err}")
+
+            # If no cached background, do inpainting with Gemini
+            if not inpainted_b64:
+                logger.info(f"[{session_id}] CACHE MISS - Inpainting original object location with Gemini")
+
+                object_name = object_info.get("object_name", "object")
+                inpaint_prompt = f"""Edit this interior room image.
 
 TASK: Remove the {object_name} that has been selected (shown by the white area in the mask).
 Fill the area where the {object_name} was with matching background - continue the floor, wall, or surface pattern naturally.
@@ -1724,59 +2082,59 @@ IMPORTANT:
 
 Generate the room image with the {object_name} cleanly removed."""
 
-            def _run_inpaint():
-                """Run Gemini inpainting to remove the object"""
-                # Use gemini-3-pro-image-preview which supports image generation
-                response = client.models.generate_content(
-                    model="gemini-3-pro-image-preview",
-                    contents=[inpaint_prompt, pil_image, full_mask.convert("RGB")],
-                    config=types.GenerateContentConfig(
-                        response_modalities=["IMAGE"],
-                        temperature=0.3,
-                    ),
-                )
+                def _run_inpaint():
+                    """Run Gemini inpainting to remove the object"""
+                    # Use gemini-3-pro-image-preview which supports image generation
+                    response = client.models.generate_content(
+                        model="gemini-3-pro-image-preview",
+                        contents=[inpaint_prompt, pil_image, full_mask.convert("RGB")],
+                        config=types.GenerateContentConfig(
+                            response_modalities=["IMAGE"],
+                            temperature=0.3,
+                        ),
+                    )
 
-                inpainted_image = None
-                parts = None
-                if hasattr(response, "parts") and response.parts:
-                    parts = response.parts
-                elif hasattr(response, "candidates") and response.candidates:
-                    candidate = response.candidates[0]
-                    if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
-                        parts = candidate.content.parts
+                    inpainted_image = None
+                    parts = None
+                    if hasattr(response, "parts") and response.parts:
+                        parts = response.parts
+                    elif hasattr(response, "candidates") and response.candidates:
+                        candidate = response.candidates[0]
+                        if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
+                            parts = candidate.content.parts
 
-                if parts:
-                    for part in parts:
-                        if hasattr(part, "inline_data") and part.inline_data is not None:
-                            image_bytes = part.inline_data.data
-                            if isinstance(image_bytes, bytes):
-                                first_hex = image_bytes[:4].hex()
-                                if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
-                                    inpainted_image = Image.open(io.BytesIO(image_bytes))
-                                else:
-                                    decoded = base64.b64decode(image_bytes)
-                                    inpainted_image = Image.open(io.BytesIO(decoded))
-                return inpainted_image
+                    if parts:
+                        for part in parts:
+                            if hasattr(part, "inline_data") and part.inline_data is not None:
+                                image_bytes = part.inline_data.data
+                                if isinstance(image_bytes, bytes):
+                                    first_hex = image_bytes[:4].hex()
+                                    if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                        inpainted_image = Image.open(io.BytesIO(image_bytes))
+                                    else:
+                                        decoded = base64.b64decode(image_bytes)
+                                        inpainted_image = Image.open(io.BytesIO(decoded))
+                    return inpainted_image
 
-            inpainted_background = None
-            inpainted_b64 = None
-            try:
-                inpainted_background = await asyncio.wait_for(loop.run_in_executor(None, _run_inpaint), timeout=60)
-                if inpainted_background:
-                    # Resize to match original if needed
-                    if inpainted_background.size != (width, height):
-                        inpainted_background = inpainted_background.resize((width, height), Image.LANCZOS)
+                try:
+                    inpainted_background = await asyncio.wait_for(loop.run_in_executor(None, _run_inpaint), timeout=60)
+                    if inpainted_background:
+                        # Resize to match original if needed
+                        if inpainted_background.size != (width, height):
+                            inpainted_background = inpainted_background.resize((width, height), Image.LANCZOS)
 
-                    # Convert to base64
-                    inpaint_buffer = io.BytesIO()
-                    inpainted_background.convert("RGB").save(inpaint_buffer, format="PNG")
-                    inpaint_buffer.seek(0)
-                    inpainted_b64 = f"data:image/png;base64,{base64.b64encode(inpaint_buffer.getvalue()).decode()}"
-                    logger.info(f"[{session_id}] Inpainting successful")
-                else:
-                    logger.warning(f"[{session_id}] Inpainting returned no image")
-            except Exception as inpaint_error:
-                logger.warning(f"[{session_id}] Inpainting failed: {inpaint_error}, continuing without inpainted background")
+                        # Convert to base64
+                        inpaint_buffer = io.BytesIO()
+                        inpainted_background.convert("RGB").save(inpaint_buffer, format="PNG")
+                        inpaint_buffer.seek(0)
+                        inpainted_b64 = f"data:image/png;base64,{base64.b64encode(inpaint_buffer.getvalue()).decode()}"
+                        logger.info(f"[{session_id}] Inpainting successful")
+                    else:
+                        logger.warning(f"[{session_id}] Inpainting returned no image")
+                except Exception as inpaint_error:
+                    logger.warning(
+                        f"[{session_id}] Inpainting failed: {inpaint_error}, continuing without inpainted background"
+                    )
 
             return {
                 "layer": {
@@ -1983,7 +2341,6 @@ async def finalize_move(session_id: str, request: FinalizeMoveRequest, db: Async
     import io
 
     import httpx
-    import numpy as np
     from google import genai
     from google.genai import types
     from PIL import Image
@@ -2054,115 +2411,86 @@ async def finalize_move(session_id: str, request: FinalizeMoveRequest, db: Async
             inpainted_image = Image.open(io.BytesIO(inpainted_bytes)).convert("RGB")
             logger.info(f"[{session_id}] Using pre-inpainted background for re-visualization")
 
-        # Initialize Gemini client early for location detection
+        # Initialize Gemini client
         client = genai.Client(api_key=settings.google_ai_api_key)
 
-        # Step 1: Use Gemini to detect the semantic location from coordinates
-        # This helps generate more realistic placement instructions
-        def _detect_semantic_location():
-            """Ask Gemini to identify what's at the target location in the room."""
-            background_to_analyze = inpainted_image if inpainted_image else original_image
-
-            location_prompt = f"""Look at this room image. I want to place a "{product_name}" at the location marked by coordinates ({request.new_position['x']:.0%} from left, {request.new_position['y']:.0%} from top).
-
-Analyze what surface or area is at that location and describe it semantically. For example:
-- "on the coffee table in the center of the room"
-- "on the floor next to the left side of the sofa"
-- "in the empty corner near the window"
-- "on the console table against the wall"
-- "on the floor in front of the TV unit"
-
-Return ONLY a short phrase describing WHERE to place the item (e.g., "on the coffee table", "in the left corner near the sofa", "on the floor beside the armchair").
-Do not include any other text."""
-
-            response = client.models.generate_content(
-                model="gemini-2.0-flash-exp",
-                contents=[location_prompt, background_to_analyze],
-                config=types.GenerateContentConfig(temperature=0.2),
-            )
-
-            if response.text:
-                return response.text.strip().strip('"').strip("'")
-            return None
-
-        # Run location detection
-        loop = asyncio.get_event_loop()
-        try:
-            semantic_location = await asyncio.wait_for(loop.run_in_executor(None, _detect_semantic_location), timeout=30)
-            logger.info(f"[{session_id}] Detected semantic location: {semantic_location}")
-        except Exception as loc_err:
-            logger.warning(f"[{session_id}] Failed to detect semantic location: {loc_err}")
-            # Fallback to basic position description
-            x, y = request.new_position["x"], request.new_position["y"]
-            h_pos = "left side" if x < 0.33 else "right side" if x > 0.66 else "center"
-            v_pos = "top/back" if y < 0.33 else "bottom/front" if y > 0.66 else "middle"
-            semantic_location = f"the {v_pos} {h_pos} of the room"
-
-        # Build a simple, clear prompt for Gemini - use EXACT coordinates only
-        # Convert normalized coords to pixel position for clarity
+        # Convert normalized coords to pixel position
         pixel_x = int(request.new_position["x"] * width)
         pixel_y = int(request.new_position["y"] * height)
-        logger.info(f"[{session_id}] Placing product at pixel ({pixel_x}, {pixel_y}) in {width}x{height} image")
-
-        # Calculate original position in pixels
         orig_pixel_x = int(request.original_position["x"] * width)
         orig_pixel_y = int(request.original_position["y"] * height)
+        logger.info(f"[{session_id}] Moving from ({orig_pixel_x}, {orig_pixel_y}) to ({pixel_x}, {pixel_y})")
 
-        revisualize_prompt = f"""MOVE this product from its current position to a new position in the room.
+        # HYBRID APPROACH: Precise positioning with PIL, then Gemini harmonization
+        # Step 1: Composite cutout onto inpainted background at exact position
+        # Step 2: Have Gemini harmonize/blend the composited image
 
-PRODUCT: {product_name}
-ORIGINAL POSITION: approximately ({orig_pixel_x}, {orig_pixel_y}) pixels - REMOVE the product from here
-NEW POSITION: ({pixel_x}, {pixel_y}) pixels - PLACE the product here
+        def _create_precise_composite():
+            """Create a precise composite with cutout at exact new position"""
+            # Use inpainted background if available, otherwise original
+            base_image = inpainted_image if inpainted_image else original_image.copy()
+            base_image = base_image.convert("RGBA")
+
+            # Prepare cutout
+            cutout_to_paste = product_image.convert("RGBA")
+
+            # Apply scale if needed
+            if request.scale != 1.0:
+                new_w = int(cutout_to_paste.width * request.scale)
+                new_h = int(cutout_to_paste.height * request.scale)
+                cutout_to_paste = cutout_to_paste.resize((new_w, new_h), Image.LANCZOS)
+
+            # Calculate paste position (center the cutout at the new position)
+            paste_x = int(pixel_x - cutout_to_paste.width / 2)
+            paste_y = int(pixel_y - cutout_to_paste.height / 2)
+
+            # Clamp to image bounds
+            paste_x = max(0, min(width - cutout_to_paste.width, paste_x))
+            paste_y = max(0, min(height - cutout_to_paste.height, paste_y))
+
+            logger.info(f"[{session_id}] Compositing cutout at ({paste_x}, {paste_y}), size {cutout_to_paste.size}")
+
+            # Paste with alpha mask for transparency
+            base_image.paste(cutout_to_paste, (paste_x, paste_y), cutout_to_paste)
+
+            return base_image.convert("RGB")
+
+        # Create the precise composite first
+        composited_image = _create_precise_composite()
+        logger.info(f"[{session_id}] Created precise composite at position ({pixel_x}, {pixel_y})")
+
+        revisualize_prompt = f"""HARMONIZE this interior design image.
+
+The "{product_name}" has been placed in the room. Your task is to make it look natural:
 
 INSTRUCTIONS:
-1. REMOVE the product from its original location at ({orig_pixel_x}, {orig_pixel_y}) - fill that area with the appropriate room background (floor, wall, etc.)
-2. PLACE the product at the new location ({pixel_x}, {pixel_y}) - the CENTER of the product should be at these coordinates
-3. Keep the EXACT same camera angle and room view
-4. Keep ALL OTHER furniture exactly as is
-5. Match lighting and shadows naturally
+1. KEEP the {product_name} EXACTLY where it is currently placed - DO NOT move it
+2. Adjust lighting and shadows on the {product_name} to match the room's lighting
+3. Blend edges naturally with the surrounding floor/furniture
+4. Ensure the product looks like it naturally belongs in this position
+5. Keep ALL other furniture and elements exactly as they are
+
+CRITICAL: The {product_name} position is CORRECT. Do NOT change its location. Only harmonize lighting and shadows.
 
 QUALITY REQUIREMENTS:
 - Output at MAXIMUM resolution: {width}x{height} pixels
 - Generate HIGHEST QUALITY photorealistic output
-- Preserve all fine details from the input image
-- NO compression, NO quality reduction, NO blurring
-- The output should be indistinguishable from the input in quality
-
-The second image shows what the product looks like. Move it from the old position to the new position."""
+- Preserve all fine details from the input image"""
 
         def _run_revisualize():
-            """Run the re-visualization"""
-            # ALWAYS use original image to preserve quality
-            # Don't use inpainted background as it's already degraded from Gemini processing
-            background_to_use = original_image
-            logger.info(f"[{session_id}] Using ORIGINAL image for best quality ({background_to_use.size})")
-            logger.info(f"[{session_id}] Product image: {product_image.size}, mode={product_image.mode}")
+            """Run the re-visualization with Gemini harmonization"""
+            # Use the pre-composited image where object is already at the new position
+            background_to_use = composited_image
+            logger.info(f"[{session_id}] Using PRE-COMPOSITED image for Gemini harmonization ({background_to_use.size})")
 
-            # Convert background to RGB (remove any alpha channel)
-            if background_to_use.mode != "RGB":
-                background_to_use = background_to_use.convert("RGB")
-
-            # Convert product image to RGB (remove transparency which confuses Gemini)
-            product_rgb = product_image
-            if product_rgb.mode == "RGBA":
-                # Create white background and paste the product on it
-                white_bg = Image.new("RGB", product_rgb.size, (255, 255, 255))
-                white_bg.paste(product_rgb, mask=product_rgb.split()[3])  # Use alpha as mask
-                product_rgb = white_bg
-            elif product_rgb.mode != "RGB":
-                product_rgb = product_rgb.convert("RGB")
-
-            # Build contents list with text labels (same structure as generate_add_visualization)
+            # Only send the composited image - product is already placed at the correct position
+            # Gemini just needs to harmonize lighting/shadows, not move anything
             contents = [
                 revisualize_prompt,
-                "Room image (place product here):",
+                "Room image with product already placed (harmonize this):",
                 background_to_use,
-                f"Product reference image ({product_name}):",
-                product_rgb,
             ]
 
-            # Send prompt, background image, and product image (from DB or cutout)
-            # Use gemini-3-pro-image-preview which supports image generation
             response = client.models.generate_content(
                 model="gemini-3-pro-image-preview",
                 contents=contents,
@@ -2178,7 +2506,7 @@ The second image shows what the product looks like. Move it from the old positio
                 parts = response.parts
             elif hasattr(response, "candidates") and response.candidates:
                 candidate = response.candidates[0]
-                if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
+                if hasattr(candidate.content, "parts"):
                     parts = candidate.content.parts
 
             if parts:
@@ -2195,17 +2523,13 @@ The second image shows what the product looks like. Move it from the old positio
                         logger.info("Gemini re-visualization successful")
             return result_image
 
-        # Run Gemini visualization with timeout
         loop = asyncio.get_event_loop()
         result = await asyncio.wait_for(loop.run_in_executor(None, _run_revisualize), timeout=90)
 
         if result:
-            # Resize to match original dimensions
             if result.size != (width, height):
-                logger.info(f"[{session_id}] Resizing from {result.size} to {width}x{height}")
                 result = result.resize((width, height), Image.LANCZOS)
 
-            # Convert to base64 PNG
             result_buffer = io.BytesIO()
             result.convert("RGB").save(result_buffer, format="PNG", optimize=False)
             result_buffer.seek(0)
@@ -2223,6 +2547,146 @@ The second image shows what the product looks like. Move it from the old positio
     except Exception as e:
         logger.error(f"[{session_id}] Error in re-visualization: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to finalize move: {str(e)}")
+
+
+@router.post("/sessions/{session_id}/revisualize-with-positions")
+async def revisualize_with_positions(
+    session_id: str,
+    request: RevisualizeWithPositionsRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Re-visualize the entire scene with products at specified positions.
+
+    This is the proper way to handle furniture repositioning:
+    1. Takes the clean room image (without any furniture)
+    2. Takes all products with their positions
+    3. Generates a complete re-visualization with all products at their specified positions
+
+    This approach is more reliable than trying to edit an existing visualization.
+    """
+    import httpx
+    from services.google_ai_service import VisualizationRequest, google_ai_service
+    from sqlalchemy import select
+
+    from database.models import Product, ProductImage
+
+    try:
+        logger.info(f"[{session_id}] Re-visualizing with {len(request.positions)} product positions")
+
+        # Build position lookup by product_id
+        position_map = {pos.product_id: pos for pos in request.positions}
+
+        # Fetch product details from database
+        product_ids = [pos.product_id for pos in request.positions]
+        products_query = select(Product).where(Product.id.in_(product_ids))
+        products_result = await db.execute(products_query)
+        db_products = {p.id: p for p in products_result.scalars().all()}
+
+        # Fetch product images
+        images_query = select(ProductImage).where(ProductImage.product_id.in_(product_ids))
+        images_result = await db.execute(images_query)
+        product_images = {}
+        for img in images_result.scalars().all():
+            if img.product_id not in product_images:
+                product_images[img.product_id] = []
+            product_images[img.product_id].append(img)
+
+        # Build products list with images for visualization
+        products_to_place = []
+        custom_positions = []
+
+        for idx, pos in enumerate(request.positions):
+            product = db_products.get(pos.product_id)
+            if not product:
+                logger.warning(f"Product {pos.product_id} not found in database")
+                continue
+
+            # Get product image URL
+            image_url = None
+            if pos.product_id in product_images:
+                imgs = sorted(product_images[pos.product_id], key=lambda x: x.display_order)
+                if imgs:
+                    image_url = imgs[0].large_url or imgs[0].medium_url or imgs[0].original_url
+
+            # Fetch product image as base64
+            product_image_b64 = None
+            if image_url:
+                try:
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        img_response = await client.get(image_url)
+                        img_response.raise_for_status()
+                        import base64
+
+                        product_image_b64 = f"data:image/jpeg;base64,{base64.b64encode(img_response.content).decode()}"
+                except Exception as e:
+                    logger.warning(f"Failed to fetch product image for {product.name}: {e}")
+
+            # Build product info
+            product_info = {
+                "id": product.id,
+                "name": product.name,
+                "price": product.price,
+                "product_type": product.product_type,
+                "quantity": 1,
+            }
+            if product_image_b64:
+                product_info["image"] = product_image_b64
+
+            products_to_place.append(product_info)
+
+            # Build custom position (normalized x,y to position description)
+            # Convert normalized coordinates to position description for Gemini
+            x_pos = "left" if pos.x < 0.33 else "right" if pos.x > 0.66 else "center"
+            y_pos = "front" if pos.y > 0.66 else "back" if pos.y < 0.33 else "middle"
+            position_desc = f"{y_pos}-{x_pos}"
+
+            custom_positions.append(
+                {
+                    "product_index": idx,
+                    "position": position_desc,
+                    "normalized_x": pos.x,
+                    "normalized_y": pos.y,
+                }
+            )
+
+            logger.info(f"Product {product.name}: position ({pos.x:.2f}, {pos.y:.2f}) -> {position_desc}")
+
+        if not products_to_place:
+            raise HTTPException(status_code=400, detail="No valid products found")
+
+        # Generate visualization using existing service
+        viz_request = VisualizationRequest(
+            base_image=request.room_image,
+            products_to_place=products_to_place,
+            placement_positions=custom_positions,
+            lighting_conditions="natural daylight",
+            render_quality="high",
+            style_consistency=True,
+            user_style_description="",
+            exclusive_products=True,  # Only show specified products
+        )
+
+        logger.info(f"[{session_id}] Calling visualization service with {len(products_to_place)} products")
+        viz_result = await google_ai_service.generate_room_visualization(viz_request)
+
+        if viz_result and viz_result.rendered_image:
+            logger.info(f"[{session_id}] Re-visualization complete")
+            return {
+                "image": viz_result.rendered_image,
+                "session_id": session_id,
+                "status": "success",
+                "processing_time": viz_result.processing_time,
+                "quality_score": viz_result.quality_score,
+            }
+
+        raise ValueError("Visualization service failed to generate image")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[{session_id}] Error in revisualize-with-positions: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Re-visualization failed: {str(e)}")
 
 
 async def _fallback_composite(
@@ -2378,3 +2842,177 @@ The goal is to make it look like there was never anything in that spot."""
     except Exception as e:
         logger.error(f"Gemini inpainting failed: {e}, returning original image")
         return image
+
+
+@router.post("/sessions/{session_id}/edit-with-instructions")
+async def edit_with_instructions(
+    session_id: str,
+    request: EditWithInstructionsRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Edit a visualization using text-based instructions.
+
+    Takes the current visualization image and a user instruction (e.g., "Place the flower vase on the bench")
+    and uses Gemini to edit the image according to the instructions while keeping everything else the same.
+
+    This is the preferred approach for repositioning furniture as it:
+    1. Uses the existing visualization (preserves room context and lighting)
+    2. Lets Gemini understand spatial context from the text instruction
+    3. Keeps all other elements exactly as they are
+    4. Includes product reference images so Gemini preserves exact product appearance
+    """
+    import asyncio
+    import base64
+    import io
+
+    import httpx
+    from google import genai
+    from google.genai import types
+    from PIL import Image
+
+    from core.config import settings
+
+    try:
+        logger.info(f"[{session_id}] Editing visualization with instructions: {request.instructions[:100]}...")
+
+        # Parse the input image
+        image_data = request.image
+        if image_data.startswith("data:"):
+            image_data = image_data.split(",", 1)[1]
+        image_bytes = base64.b64decode(image_data)
+        input_image = Image.open(io.BytesIO(image_bytes))
+        width, height = input_image.size
+
+        logger.info(f"[{session_id}] Input image size: {width}x{height}")
+
+        # Fetch product reference images
+        product_images = []
+        product_list_text = ""
+        if request.products:
+            logger.info(f"[{session_id}] Fetching {len(request.products)} product reference images...")
+            product_list_text = "\n\nPRODUCTS IN THIS SCENE (these must appear EXACTLY as shown in reference images):\n"
+            async with httpx.AsyncClient(timeout=15.0) as http_client:
+                for product in request.products:
+                    product_list_text += f"- {product.name} (quantity: {product.quantity})\n"
+                    if product.image_url:
+                        try:
+                            img_response = await http_client.get(product.image_url)
+                            img_response.raise_for_status()
+                            prod_img = Image.open(io.BytesIO(img_response.content))
+                            product_images.append((product.name, prod_img))
+                            logger.info(f"[{session_id}] Fetched reference image for: {product.name}")
+                        except Exception as e:
+                            logger.warning(f"[{session_id}] Failed to fetch image for {product.name}: {e}")
+
+        # Build the prompt for Gemini
+        edit_prompt = f"""You are an interior design image editor. RELOCATE furniture in this room image.
+
+INSTRUCTION: {request.instructions}
+{product_list_text}
+WHAT "MOVE" MEANS:
+- MOVE = RELOCATE = Take the item FROM its current position and PUT it at the new position
+- The item must NO LONGER EXIST at its original location
+- The original location should show the floor/wall/background that was behind it
+- DO NOT DUPLICATE - there should be exactly ONE of each item (unless quantity specifies more)
+
+ABSOLUTE RULES - VIOLATION IS FAILURE:
+1. NEVER ADD NEW ITEMS - if there is 1 bench, there must still be exactly 1 bench
+2. NEVER DUPLICATE - moving an item means it disappears from original spot
+3. The item being moved must VANISH from its original position (show background there instead)
+4. Total item count BEFORE edit must EQUAL total item count AFTER edit
+5. Products must look IDENTICAL to reference images (same design, color, texture)
+6. Output the ENTIRE room, same dimensions, same perspective
+
+EXAMPLE:
+- "Move the bench to the right" means:
+  - Find the bench in the image
+  - REMOVE it from its current position (show floor/background where it was)
+  - Place the SAME bench (not a copy) at a position to the right
+  - Result: Still only 1 bench, now on the right side
+
+QUALITY: Maximum resolution {width}x{height}, photorealistic, natural lighting."""
+
+        # Initialize Gemini client
+        client = genai.Client(api_key=settings.google_ai_api_key)
+
+        def _run_edit():
+            """Run the edit with Gemini"""
+            # Build contents list with room image and product reference images
+            contents = [
+                edit_prompt,
+                "Current room image to edit:",
+                input_image,
+            ]
+
+            # Add product reference images
+            if product_images:
+                contents.append("\n\nPRODUCT REFERENCE IMAGES (products must look EXACTLY like these):")
+                for name, img in product_images:
+                    contents.append(f"\n{name}:")
+                    contents.append(img)
+
+            response = client.models.generate_content(
+                model="gemini-3-pro-image-preview",
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_modalities=["IMAGE"],
+                    temperature=0.4,
+                ),
+            )
+
+            result_image = None
+            parts = None
+
+            if hasattr(response, "parts") and response.parts:
+                parts = response.parts
+            elif hasattr(response, "candidates") and response.candidates:
+                candidate = response.candidates[0]
+                if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
+                    parts = candidate.content.parts
+
+            if parts:
+                for part in parts:
+                    if hasattr(part, "inline_data") and part.inline_data is not None:
+                        img_data = part.inline_data.data
+                        if isinstance(img_data, bytes):
+                            first_hex = img_data[:4].hex()
+                            if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                result_image = Image.open(io.BytesIO(img_data))
+                            else:
+                                decoded = base64.b64decode(img_data)
+                                result_image = Image.open(io.BytesIO(decoded))
+                        logger.info(f"[{session_id}] Gemini edit successful")
+
+            return result_image
+
+        # Run with timeout
+        loop = asyncio.get_event_loop()
+        result = await asyncio.wait_for(loop.run_in_executor(None, _run_edit), timeout=90)
+
+        if result:
+            # Resize to match original if needed
+            if result.size != (width, height):
+                logger.info(f"[{session_id}] Resizing result from {result.size} to {width}x{height}")
+                result = result.resize((width, height), Image.LANCZOS)
+
+            # Convert to base64
+            result_buffer = io.BytesIO()
+            result.convert("RGB").save(result_buffer, format="PNG", optimize=False)
+            result_buffer.seek(0)
+            result_b64 = f"data:image/png;base64,{base64.b64encode(result_buffer.getvalue()).decode()}"
+
+            logger.info(f"[{session_id}] Edit with instructions completed successfully")
+
+            return {
+                "image": result_b64,
+                "session_id": session_id,
+                "status": "success",
+                "dimensions": {"width": width, "height": height},
+            }
+
+        raise ValueError("Gemini failed to generate edited image")
+
+    except Exception as e:
+        logger.error(f"[{session_id}] Error in edit-with-instructions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to apply edit instructions: {str(e)}")

@@ -27,6 +27,7 @@ interface EditPositionEditorProps {
   onCancel: () => void;
   onRevisualize: (positions: FurniturePosition[]) => Promise<void>;
   onPositionsChange?: (positions: FurniturePosition[]) => void;
+  curatedLookId?: number;  // For pre-computed mask cache lookup
 }
 
 export const EditPositionEditor: React.FC<EditPositionEditorProps> = ({
@@ -38,6 +39,7 @@ export const EditPositionEditor: React.FC<EditPositionEditorProps> = ({
   onCancel,
   onRevisualize,
   onPositionsChange,
+  curatedLookId,
 }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState('Extracting furniture layers...');
@@ -64,13 +66,15 @@ export const EditPositionEditor: React.FC<EditPositionEditorProps> = ({
         name: p.name,
       }));
 
-      console.log('[EditPositionEditor] Extracting layers for products:', productsForApi);
+      console.log('[EditPositionEditor] Extracting layers for products:', productsForApi, 'curatedLookId:', curatedLookId);
 
       // Call the extract layers API
       const result = await furniturePositionAPI.extractLayers(
         sessionId,
         visualizationImage,
-        productsForApi
+        productsForApi,
+        true,  // useSam
+        curatedLookId
       );
 
       console.log('[EditPositionEditor] Extraction result:', {

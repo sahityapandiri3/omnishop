@@ -354,6 +354,7 @@ export const visualizeRoom = async (sessionId: string, data: {
   user_action: string;
   detected_furniture?: any[];
   furniture_ids_to_replace?: string[];
+  curated_look_id?: number;
 }) => {
   try {
     const response = await api.post(`/api/chat/sessions/${sessionId}/visualize`, data);
@@ -683,7 +684,8 @@ export const furniturePositionAPI = {
     sessionId: string,
     visualizationImage: string,
     products: any[],
-    useSam: boolean = true
+    useSam: boolean = true,
+    curatedLookId?: number
   ) => {
     try {
       console.log('[extractLayers] Starting Magic Grab extraction...', {
@@ -691,6 +693,7 @@ export const furniturePositionAPI = {
         imageLength: visualizationImage?.length || 0,
         productsCount: products?.length || 0,
         useSam,
+        curatedLookId,
       });
 
       const response = await api.post(
@@ -698,7 +701,8 @@ export const furniturePositionAPI = {
         {
           visualization_image: visualizationImage,
           products: products,
-          use_sam: useSam  // Use SAM for precise segmentation
+          use_sam: useSam,  // Use SAM for precise segmentation
+          curated_look_id: curatedLookId,  // For cache lookup
         },
         {
           timeout: 300000, // 5 minute timeout for SAM (Replicate cold starts can be slow)
@@ -794,13 +798,15 @@ export const furniturePositionAPI = {
    * @param point - Normalized click coordinates {x: 0-1, y: 0-1}
    * @param label - Optional label for the object
    * @param products - Optional list of products for matching
+   * @param curatedLookId - Optional curated look ID for cache lookup
    */
   segmentAtPoint: async (
     sessionId: string,
     imageBase64: string,
     point: { x: number; y: number },
     label: string = 'object',
-    products?: Array<{ id: number; name: string; image_url?: string }>
+    products?: Array<{ id: number; name: string; image_url?: string }>,
+    curatedLookId?: number
   ): Promise<{
     layer: {
       id: string;
@@ -838,6 +844,7 @@ export const furniturePositionAPI = {
           point,
           label,
           products: products || undefined,
+          curated_look_id: curatedLookId || undefined,
         },
         {
           timeout: 300000, // 5 minute timeout for SAM (Replicate cold starts can be slow)
@@ -994,6 +1001,69 @@ export const furniturePositionAPI = {
       return response.data;
     } catch (error: any) {
       console.error('[finalizeMove] API error:', {
+        message: error?.message,
+        status: error?.response?.status,
+        data: error?.response?.data,
+      });
+      throw error;
+    }
+  },
+
+  /**
+   * Re-visualize the entire scene with products at specified positions.
+   * This is the proper way to handle furniture repositioning - regenerates
+   * the entire visualization from scratch with all products at their new positions.
+   *
+   * @param sessionId - Session ID
+   * @param roomImage - Clean room image (without furniture)
+   * @param positions - Array of {product_id, x, y, scale} for all products
+   * @param curatedLookId - Optional curated look ID
+   */
+  revisualizeWithPositions: async (
+    sessionId: string,
+    roomImage: string,
+    positions: Array<{ product_id: number; x: number; y: number; scale?: number }>,
+    curatedLookId?: number
+  ): Promise<{
+    image: string;
+    session_id: string;
+    status: string;
+    processing_time?: number;
+    quality_score?: number;
+  }> => {
+    try {
+      console.log('[revisualizeWithPositions] Starting full scene re-visualization...', {
+        sessionId,
+        positionCount: positions.length,
+        curatedLookId,
+      });
+
+      const response = await api.post(
+        `/api/visualization/sessions/${sessionId}/revisualize-with-positions`,
+        {
+          room_image: roomImage,
+          products: positions.map(p => ({ id: p.product_id })),
+          positions: positions.map(p => ({
+            product_id: p.product_id,
+            x: p.x,
+            y: p.y,
+            scale: p.scale || 1.0,
+          })),
+          curated_look_id: curatedLookId,
+        },
+        {
+          timeout: 120000, // 2 minutes for full re-visualization
+        }
+      );
+
+      console.log('[revisualizeWithPositions] Re-visualization complete:', {
+        hasImage: !!response.data?.image,
+        processingTime: response.data?.processing_time,
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('[revisualizeWithPositions] API error:', {
         message: error?.message,
         status: error?.response?.status,
         data: error?.response?.data,

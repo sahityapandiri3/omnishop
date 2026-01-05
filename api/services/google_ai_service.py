@@ -1036,6 +1036,105 @@ FAILURE IS NOT ACCEPTABLE: Every single piece of furniture AND floor covering MU
             logger.error(f"Error in furniture removal: {e}", exc_info=True)
             return None
 
+    async def inpaint_product_area(
+        self, image_base64: str, bbox: Dict[str, int], product_name: str = "furniture", max_retries: int = 3
+    ) -> str:
+        """
+        Inpaint just the area where a specific product is located.
+        This removes only ONE product, keeping all other furniture intact.
+
+        Args:
+            image_base64: Base64 encoded visualization image
+            bbox: Bounding box of the product to remove {"x", "y", "width", "height"} in pixels
+            product_name: Name of product being removed (for prompt context)
+            max_retries: Number of retry attempts
+
+        Returns: base64 encoded image with just that product's area inpainted
+        """
+        try:
+            # Remove data URL prefix if present
+            if image_base64.startswith("data:image"):
+                image_base64 = image_base64.split(",")[1]
+
+            image_bytes = base64.b64decode(image_base64)
+            pil_image = Image.open(io.BytesIO(image_bytes))
+            pil_image = ImageOps.exif_transpose(pil_image)
+            if pil_image.mode != "RGB":
+                pil_image = pil_image.convert("RGB")
+
+            img_width, img_height = pil_image.size
+
+            # Expand bbox slightly for better inpainting context
+            padding = 20
+            x1 = max(0, bbox["x"] - padding)
+            y1 = max(0, bbox["y"] - padding)
+            x2 = min(img_width, bbox["x"] + bbox["width"] + padding)
+            y2 = min(img_height, bbox["y"] + bbox["height"] + padding)
+
+            prompt = f"""Remove ONLY the {product_name} from this specific area of the image.
+
+CRITICAL INSTRUCTIONS:
+1. ONLY modify the area around coordinates ({bbox["x"]}, {bbox["y"]}) to ({bbox["x"] + bbox["width"]}, {bbox["y"] + bbox["height"]})
+2. Keep ALL other furniture and objects EXACTLY as they are
+3. Fill the removed area with appropriate floor/wall texture to match surroundings
+4. The result should look natural - as if the {product_name} was never there
+5. DO NOT remove or modify any other furniture in the room
+
+The area to inpaint is approximately {bbox["width"]}x{bbox["height"]} pixels starting at ({bbox["x"]}, {bbox["y"]}).
+Everything outside this area must remain IDENTICAL to the input image."""
+
+            model = "gemini-3-pro-image-preview"
+
+            for attempt in range(max_retries):
+                try:
+                    async with asyncio.timeout(60):
+                        response = await asyncio.get_event_loop().run_in_executor(
+                            None,
+                            lambda: self.client.models.generate_content(
+                                model=model,
+                                contents=[prompt, pil_image],
+                                config=types.GenerateContentConfig(
+                                    response_modalities=["IMAGE", "TEXT"],
+                                    temperature=0.2,
+                                ),
+                            ),
+                        )
+
+                        if response.candidates:
+                            for part in response.candidates[0].content.parts:
+                                if hasattr(part, "inline_data") and part.inline_data:
+                                    image_data = part.inline_data.data
+                                    mime_type = part.inline_data.mime_type or "image/jpeg"
+
+                                    if isinstance(image_data, bytes):
+                                        first_hex = image_data[:4].hex()
+                                        if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                            image_b64 = base64.b64encode(image_data).decode("utf-8")
+                                        else:
+                                            image_b64 = image_data.decode("utf-8")
+                                    else:
+                                        image_b64 = image_data
+
+                                    result = f"data:{mime_type};base64,{image_b64}"
+                                    logger.info(f"[Inpaint] Successfully inpainted area for {product_name}")
+                                    return result
+
+                except asyncio.TimeoutError:
+                    logger.warning(f"[Inpaint] Attempt {attempt + 1} timed out")
+                except Exception as e:
+                    logger.warning(f"[Inpaint] Attempt {attempt + 1} failed: {e}")
+
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2**attempt)
+
+            # Fallback: return original image if inpainting fails
+            logger.warning(f"[Inpaint] All attempts failed, returning original image")
+            return f"data:image/jpeg;base64,{image_base64}"
+
+        except Exception as e:
+            logger.error(f"[Inpaint] Error: {e}")
+            return f"data:image/jpeg;base64,{image_base64}"
+
     async def generate_add_visualization(
         self, room_image: str, product_name: str, product_image: Optional[str] = None, product_color: Optional[str] = None
     ) -> str:
@@ -1609,19 +1708,37 @@ The room structure, walls, and camera angle MUST be identical to the input image
             multiple_instance_instruction = ""
 
             # Base instruction to prevent adding extra furniture (applies to ALL cases)
-            no_extra_furniture_warning = """
-🚫🚫🚫 CRITICAL: DO NOT ADD EXTRA FURNITURE 🚫🚫🚫
+            # Build explicit list of product names for reference
+            allowed_product_names = ", ".join([entry[0] for entry in product_entries])
+            no_extra_furniture_warning = f"""
+🚫🚫🚫 ABSOLUTELY CRITICAL: DO NOT ADD ANY EXTRA FURNITURE 🚫🚫🚫
 ═══════════════════════════════════════════════════════════════════════
-⛔ ADD ONLY THE SPECIFIC PRODUCTS LISTED BELOW ⛔
-⛔ DO NOT add sofas, chairs, tables, or any other furniture not in the list ⛔
-⛔ DO NOT "complete" or "design" the room ⛔
-⛔ DO NOT add items you think would look nice ⛔
-⛔ DO NOT add matching or complementary pieces not specified ⛔
+
+⛔⛔⛔ FORBIDDEN - DO NOT ADD ANY OF THESE: ⛔⛔⛔
+- NO extra chairs (accent chairs, armchairs, dining chairs, single seaters)
+- NO extra cushions or pillows beyond what's listed
+- NO extra sofas or sectionals
+- NO extra tables (coffee tables, side tables, dining tables)
+- NO extra lamps or lighting
+- NO extra plants or planters beyond what's listed
+- NO extra rugs or carpets
+- NO extra wall art or decorations beyond what's listed
+- NO extra stools, benches, or ottomans beyond what's listed
+
+🎯 ONLY THESE SPECIFIC PRODUCTS ARE ALLOWED: {allowed_product_names}
+
+⚠️ CRITICAL RULES:
+1. ADD ONLY the EXACT products listed below - NOTHING ELSE
+2. The room may ALREADY have furniture - DO NOT duplicate what you see
+3. DO NOT "complete" or "design" the room - it's already complete
+4. DO NOT add items you think would look nice or match
+5. If you see similar furniture in the image, DO NOT add more of it
 
 YOUR ONLY TASK: Add EXACTLY the products listed below - NOTHING MORE.
-The room is ALREADY COMPLETE - it does NOT need additional furniture.
+The room is ALREADY DESIGNED - it does NOT need additional furniture.
 
 ⛔ ADDING ANY UNLISTED FURNITURE = AUTOMATIC FAILURE ⛔
+⛔ ADDING DUPLICATES OF EXISTING ITEMS = AUTOMATIC FAILURE ⛔
 ═══════════════════════════════════════════════════════════════════════
 
 """
@@ -2328,7 +2445,27 @@ DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
                         [f"   - {name}: {count} copies (ALL {count} must appear)" for name, count in instance_counts.items()]
                     )
 
+                    # Build explicit list of allowed product names
+                    allowed_names_list = ", ".join(product_names)
                     multiple_instance_instruction = f"""
+🚫🚫🚫 ABSOLUTELY CRITICAL: DO NOT ADD ANY EXTRA FURNITURE 🚫🚫🚫
+═══════════════════════════════════════════════════════════════════════
+
+⛔⛔⛔ FORBIDDEN - DO NOT ADD ANY OF THESE: ⛔⛔⛔
+- NO extra chairs (accent chairs, armchairs, dining chairs, single seaters)
+- NO extra cushions or pillows beyond what's listed below
+- NO extra sofas or sectionals
+- NO extra tables (coffee tables, side tables, dining tables)
+- NO extra lamps or lighting beyond what's listed
+- NO extra plants or planters beyond what's listed
+- NO extra rugs, wall art, or decorations beyond what's listed
+
+🎯 ONLY THESE SPECIFIC PRODUCTS ARE ALLOWED: {allowed_names_list}
+
+⛔ ADDING ANY UNLISTED FURNITURE = AUTOMATIC FAILURE ⛔
+⛔ ADDING DUPLICATES OF EXISTING ITEMS = AUTOMATIC FAILURE ⛔
+═══════════════════════════════════════════════════════════════════════
+
 🪑🪑🪑 CRITICAL: MULTIPLE INSTANCES OF SAME PRODUCT 🪑🪑🪑
 ═══════════════════════════════════════════════════════════════
 ⚠️⚠️⚠️ YOU MUST PLACE ALL NUMBERED INSTANCES - DO NOT SKIP ANY ⚠️⚠️⚠️
@@ -2350,6 +2487,8 @@ Products with numbered names (e.g., "Cushion Cover #1", "Cushion Cover #2", "Cus
 
 ❌ WRONG: Placing only 1 cushion when 3 are requested
 ✅ CORRECT: Placing all 3 cushions (#1, #2, #3) on the sofa
+
+⛔ DO NOT add ANY furniture not in the list above ⛔
 ═══════════════════════════════════════════════════════════════
 
 """

@@ -84,6 +84,7 @@ interface DraggableFurnitureCanvasProps {
   onFinalImage?: (image: string) => void;  // Called with final image after Done
   onPendingMoveChange?: (hasPending: boolean, moveData?: PendingMoveData) => void;  // Called when pending move changes
   curatedProducts?: CuratedProduct[];  // Products in visualization for matching
+  curatedLookId?: number;  // For curated looks cache optimization
 
   // Common props
   containerWidth?: number;
@@ -421,6 +422,7 @@ export const DraggableFurnitureCanvas: React.FC<DraggableFurnitureCanvasProps> =
   onFinalImage,
   onPendingMoveChange,
   curatedProducts,
+  curatedLookId,
 
   // Common props
   containerWidth = 800,
@@ -462,12 +464,24 @@ export const DraggableFurnitureCanvas: React.FC<DraggableFurnitureCanvasProps> =
   // Sync with prop changes
   useEffect(() => {
     if (initialLayers) {
-      setLayers(initialLayers);
+      // Only update if values actually changed (prevent infinite loops from new array references)
+      setLayers(prev => {
+        if (JSON.stringify(prev) === JSON.stringify(initialLayers)) {
+          return prev;
+        }
+        return initialLayers;
+      });
     }
   }, [initialLayers]);
 
   useEffect(() => {
-    setPositions(furniturePositions);
+    // Only update if values actually changed (prevent infinite loops from new array references)
+    setPositions(prev => {
+      if (JSON.stringify(prev) === JSON.stringify(furniturePositions)) {
+        return prev;
+      }
+      return furniturePositions;
+    });
   }, [furniturePositions]);
 
   // Track previous visualization image to detect changes
@@ -628,6 +642,11 @@ export const DraggableFurnitureCanvas: React.FC<DraggableFurnitureCanvasProps> =
     const pos = stage.getPointerPosition();
     if (!pos) return;
 
+    // DEBUG: Log raw and calculated coordinates
+    console.log('[DraggableCanvas] Raw click position:', pos);
+    console.log('[DraggableCanvas] imageDimensions:', imageDimensions);
+    console.log('[DraggableCanvas] containerWidth:', containerWidth, 'containerHeight:', containerHeight);
+
     // Calculate normalized coordinates relative to the actual image (accounting for offset and aspect ratio)
     let normalizedX: number;
     let normalizedY: number;
@@ -637,21 +656,27 @@ export const DraggableFurnitureCanvas: React.FC<DraggableFurnitureCanvasProps> =
       const imgX = pos.x - imageDimensions.offsetX;
       const imgY = pos.y - imageDimensions.offsetY;
 
+      console.log('[DraggableCanvas] imgX:', imgX, 'imgY:', imgY);
+
       if (imgX < 0 || imgY < 0 || imgX > imageDimensions.displayWidth || imgY > imageDimensions.displayHeight) {
         // Click is outside the image area
+        console.log('[DraggableCanvas] Click outside image bounds, ignoring');
         return;
       }
 
       // Normalize relative to the actual image dimensions
       normalizedX = imgX / imageDimensions.displayWidth;
       normalizedY = imgY / imageDimensions.displayHeight;
+      console.log('[DraggableCanvas] Normalized (with dimensions):', normalizedX, normalizedY);
     } else {
       // Fallback to container dimensions
       normalizedX = pos.x / containerWidth;
       normalizedY = pos.y / containerHeight;
+      console.log('[DraggableCanvas] Normalized (fallback):', normalizedX, normalizedY);
     }
 
     // Set the click point and move to selected phase
+    console.log('[DraggableCanvas] Setting clickPoint to:', { x: normalizedX, y: normalizedY });
     setClickPoint({ x: normalizedX, y: normalizedY });
     setClickSelectPhase('selected');
     setErrorMessage(null);
@@ -672,13 +697,14 @@ export const DraggableFurnitureCanvas: React.FC<DraggableFurnitureCanvasProps> =
       setOriginalImage(visualizationImage);
 
       // Call SAM 2 to segment at the click point, passing products for matching
-      console.log('[DraggableCanvas] Calling segmentAtPoint with products:', curatedProducts?.length || 0, curatedProducts);
+      console.log('[DraggableCanvas] Calling segmentAtPoint with products:', curatedProducts?.length || 0, 'curatedLookId:', curatedLookId);
       const result = await furniturePositionAPI.segmentAtPoint(
         sessionId,
         visualizationImage,
         clickPoint,
         'object',
-        curatedProducts  // Pass products for Gemini to match
+        curatedProducts,  // Pass products for Gemini to match
+        curatedLookId  // Pass curated look ID for cache lookup
       );
 
       // Create the active layer from result

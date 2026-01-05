@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
+import { Panel, Group } from 'react-resizable-panels';
+import { PanelResizeHandle } from '@/components/ui/PanelResizeHandle';
 import { adminCuratedAPI, getAvailableStores, visualizeRoom, startChatSession, startFurnitureRemoval, checkFurnitureRemovalStatus, furniturePositionAPI, generateAngleView } from '@/utils/api';
 import { FurniturePosition, MagicGrabLayer, PendingMoveData } from '@/components/DraggableFurnitureCanvas';
 import { AngleSelector, ViewingAngle } from '@/components/AngleSelector';
@@ -232,10 +234,29 @@ export default function CreateCuratedLookPage() {
   const [pendingMoveData, setPendingMoveData] = useState<PendingMoveData | null>(null);
   const [preEditVisualization, setPreEditVisualization] = useState<string | null>(null);
 
+  // Special instructions for edit mode (text-based repositioning)
+  const [editSpecialInstructions, setEditSpecialInstructions] = useState('');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasProductsRef = useRef<HTMLDivElement>(null);
   const visualizationRef = useRef<HTMLDivElement>(null);
   const furnitureRemovalIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Memoize curatedProducts to prevent infinite re-renders in DraggableFurnitureCanvas
+  const curatedProductsForCanvas = useMemo(() =>
+    selectedProducts.map(p => ({
+      id: p.id,
+      name: p.name,
+      image_url: p.images?.[0]?.medium_url || p.images?.[0]?.original_url
+    })),
+    [selectedProducts]
+  );
+
+  // Memoize curatedLookId to prevent re-renders
+  const curatedLookIdForCanvas = useMemo(() =>
+    existingLookId ? parseInt(existingLookId) : undefined,
+    [existingLookId]
+  );
 
   // Initialize on mount
   useEffect(() => {
@@ -691,6 +712,7 @@ export default function CreateCuratedLookPage() {
         image: imageData,
         products: productsForViz,
         user_action: 'admin_curated_visualization',
+        curated_look_id: existingLookId ? parseInt(existingLookId) : undefined,
       });
 
       if (result.visualization) {
@@ -1119,7 +1141,8 @@ export default function CreateCuratedLookPage() {
           is_incremental: isIncremental,
           force_reset: forceReset,
           user_uploaded_new_image: changeInfo.type === 'initial',
-          action: 'add'  // Always add products in curated looks editor (skip furniture replacement clarification)
+          action: 'add',  // Always add products in curated looks editor (skip furniture replacement clarification)
+          curated_look_id: existingLookId ? parseInt(existingLookId) : undefined,  // For precomputation cache
         }),
       });
 
@@ -1145,7 +1168,8 @@ export default function CreateCuratedLookPage() {
             force_reset: forceReset,
             user_uploaded_new_image: changeInfo.type === 'initial',
             action: 'add',
-            existing_furniture: data.existing_furniture
+            existing_furniture: data.existing_furniture,
+            curated_look_id: existingLookId ? parseInt(existingLookId) : undefined,  // For precomputation cache
           }),
         });
         if (!retryResponse.ok) {
@@ -1278,18 +1302,15 @@ export default function CreateCuratedLookPage() {
       return;
     }
 
-    // NEW: Click-to-Select mode - no pre-extraction needed
-    // SAM is called only when user clicks "Drag" button after selecting an object
-    console.log('[AdminCurated] Entering Click-to-Select edit mode...');
+    // Text-based edit mode - user types instructions, no dragging needed
+    console.log('[AdminCurated] Entering text-based edit mode...');
 
     // Store the current visualization for potential revert
     setPreEditVisualization(visualizationImage);
-    setPendingMoveData(null);
 
-    setUseMagicGrabMode(true);  // Enable click-to-select (reusing this flag)
     setIsEditingPositions(true);
-    setHasUnsavedPositions(false);
-    console.log('[AdminCurated] Click-to-Select ready - click on objects to select them');
+    setEditSpecialInstructions(''); // Clear any previous instructions
+    console.log('[AdminCurated] Edit mode ready - type instructions to reposition items');
   };
 
   // Handle final image from click-to-select mode
@@ -1389,12 +1410,13 @@ export default function CreateCuratedLookPage() {
       });
 
       // Call the layer extraction API (Magic Grab) to get actual positions and cropped layers
-      console.log('[AdminCurated] Extracting furniture layers via Magic Grab...');
+      console.log('[AdminCurated] Extracting furniture layers via Magic Grab... curatedLookId:', existingLookId);
       const result = await furniturePositionAPI.extractLayers(
         sessionId,
         visualizationImage,
         expandedProductsForApi,
-        true  // useSam = true for Magic Grab (falls back to Gemini if SAM unavailable)
+        true,  // useSam = true for Magic Grab (falls back to Gemini if SAM unavailable)
+        existingLookId ? parseInt(existingLookId) : undefined  // curated_look_id for cache lookup
       );
 
       console.log('[AdminCurated] Layer extraction result:', {
@@ -1553,23 +1575,14 @@ export default function CreateCuratedLookPage() {
     }
   };
 
-  // Exit edit mode without saving - revert to pre-edit visualization
+  // Exit edit mode - keep current visualization (changes are applied via Apply button)
   const handleExitEditMode = () => {
-    console.log('[AdminCurated] Exiting edit mode (reverting to pre-edit state)');
-
-    // Revert to pre-edit visualization if available
-    if (preEditVisualization) {
-      setVisualizationImage(preEditVisualization);
-    }
+    console.log('[AdminCurated] Exiting edit mode');
 
     // Clean up edit mode state
     setIsEditingPositions(false);
-    setHasUnsavedPositions(false);
-    setPendingMoveData(null);
+    setEditSpecialInstructions('');
     setPreEditVisualization(null);
-    setUseMagicGrabMode(false);
-    setMagicGrabBackground(null);
-    setMagicGrabLayers([]);
   };
 
   // Save and exit edit mode - keep current visualization
@@ -1633,6 +1646,8 @@ export default function CreateCuratedLookPage() {
         }
       });
 
+      // Use force_reset: true to regenerate from clean room image with all products
+      // This gives better results than trying to modify an existing visualization
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`,
         {
@@ -1644,7 +1659,8 @@ export default function CreateCuratedLookPage() {
             analysis: { design_style: 'modern', color_palette: [], room_type: 'living_room' },
             custom_positions: furniturePositions,
             is_incremental: false,
-            force_reset: false,
+            force_reset: true,  // IMPORTANT: Start fresh from clean room to properly place products
+            curated_look_id: existingLookId ? parseInt(existingLookId) : undefined,  // For precomputation cache
           }),
         }
       );
@@ -1661,6 +1677,62 @@ export default function CreateCuratedLookPage() {
       setHasUnsavedPositions(false);
     } catch (error: any) {
       setError(error.message || 'Failed to re-visualize with new positions.');
+    } finally {
+      setIsVisualizing(false);
+    }
+  };
+
+  // Re-visualize using text-based instructions (Gemini edits existing visualization)
+  const handleRevisualizeWithInstructions = async () => {
+    if (!sessionId || !visualizationImage) {
+      setError('No session or visualization image found.');
+      return;
+    }
+
+    if (!editSpecialInstructions.trim()) {
+      setError('Please enter special instructions for how to reposition items.');
+      return;
+    }
+
+    setIsVisualizing(true);
+    try {
+      // Build product list with names and image URLs for Gemini reference
+      const products = selectedProducts.map(p => ({
+        id: p.id,
+        name: p.name,
+        quantity: p.quantity || 1,
+        image_url: p.images?.[0]?.large_url || p.images?.[0]?.medium_url || p.images?.[0]?.original_url || p.image_url,
+      }));
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/visualization/sessions/${sessionId}/edit-with-instructions`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: visualizationImage,
+            instructions: editSpecialInstructions.trim(),
+            products: products,  // Include product info so Gemini knows what products should look like
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to apply edit instructions');
+      }
+
+      const data = await response.json();
+
+      if (!data.image) throw new Error('No edited image was generated');
+
+      setVisualizationImage(data.image);
+      setNeedsRevisualization(false);
+      setIsEditingPositions(false);
+      setHasUnsavedPositions(false);
+      setEditSpecialInstructions(''); // Clear instructions after successful edit
+    } catch (error: any) {
+      setError(error.message || 'Failed to apply edit instructions.');
     } finally {
       setIsVisualizing(false);
     }
@@ -1765,28 +1837,40 @@ export default function CreateCuratedLookPage() {
         </div>
       )}
 
-      {/* Three Panel Layout */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Panel 1: Filters (15%) */}
-        <div className="w-[15%] border-r border-gray-200 bg-white flex flex-col">
-          <div className="p-3 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50 flex justify-between items-center">
-            <div>
-              <h2 className="font-semibold text-gray-900 text-sm">Filters</h2>
-              {activeFiltersCount > 0 && (
-                <p className="text-xs text-purple-600">{activeFiltersCount} filter(s) active</p>
-              )}
-            </div>
-            {activeFiltersCount > 0 && (
-              <button
-                onClick={clearFilters}
-                className="text-xs text-gray-500 hover:text-gray-700"
-              >
-                Clear all
-              </button>
-            )}
-          </div>
+      {/* Three Panel Layout - Resizable */}
+      <div className="flex-1 overflow-hidden">
+        <Group
+          orientation="horizontal"
+          id="omnishop-curated-panels"
+          className="h-full"
+        >
+          {/* Panel 1: Filters */}
+          <Panel
+            id="filters-panel"
+            defaultSize={15}
+            minSize={10}
+            maxSize={25}
+            className="bg-white overflow-hidden border-r border-gray-200"
+          >
+            <div className="h-full flex flex-col">
+              <div className="p-3 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50 flex justify-between items-center">
+                <div>
+                  <h2 className="font-semibold text-gray-900 text-sm">Filters</h2>
+                  {activeFiltersCount > 0 && (
+                    <p className="text-xs text-purple-600">{activeFiltersCount} filter(s) active</p>
+                  )}
+                </div>
+                {activeFiltersCount > 0 && (
+                  <button
+                    onClick={clearFilters}
+                    className="text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
 
-          <div className="flex-1 overflow-y-auto p-3 space-y-4">
+              <div className="flex-1 overflow-y-auto p-3 space-y-4">
             {/* Search Bar */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
@@ -2012,25 +2096,35 @@ export default function CreateCuratedLookPage() {
               )}
             </button>
           </div>
-        </div>
-
-        {/* Panel 2: Product Discovery (40%) */}
-        <div className="w-[40%] border-r border-gray-200 bg-white flex flex-col">
-          <div className="p-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50">
-            <div className="flex justify-between items-center">
-              <h2 className="font-semibold text-gray-900 text-sm">Products</h2>
-              {discoveredProducts.length > 0 && (
-                <span className="text-xs text-purple-600 font-medium">
-                  {discoveredProducts.length} found
-                </span>
-              )}
             </div>
-            <p className="text-xs text-gray-500 mt-1">Click to add to canvas</p>
-          </div>
+          </Panel>
 
-          {/* Product Grid */}
-          <div className="flex-1 overflow-y-auto p-3">
-            {searching ? (
+          <PanelResizeHandle id="filters-products-handle" />
+
+          {/* Panel 2: Product Discovery */}
+          <Panel
+            id="products-panel"
+            defaultSize={40}
+            minSize={25}
+            maxSize={50}
+            className="bg-white overflow-hidden border-r border-gray-200"
+          >
+            <div className="h-full flex flex-col">
+              <div className="p-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50">
+                <div className="flex justify-between items-center">
+                  <h2 className="font-semibold text-gray-900 text-sm">Products</h2>
+                  {discoveredProducts.length > 0 && (
+                    <span className="text-xs text-purple-600 font-medium">
+                      {discoveredProducts.length} found
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Click to add to canvas</p>
+              </div>
+
+              {/* Product Grid */}
+              <div className="flex-1 overflow-y-auto p-3">
+                {searching ? (
               <div className="flex items-center justify-center h-32">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
               </div>
@@ -2162,10 +2256,20 @@ export default function CreateCuratedLookPage() {
               </div>
             )}
           </div>
-        </div>
+            </div>
+          </Panel>
 
-        {/* Panel 3: Canvas & Visualization (45%) - Matching User Panel Design */}
-        <div className="w-[45%] bg-white flex flex-col overflow-hidden">
+          <PanelResizeHandle id="products-canvas-handle" />
+
+          {/* Panel 3: Canvas & Visualization */}
+          <Panel
+            id="canvas-panel"
+            defaultSize={45}
+            minSize={30}
+            maxSize={60}
+            className="bg-white overflow-hidden"
+          >
+            <div className="h-full flex flex-col overflow-hidden">
           {/* Hidden file input - always in DOM */}
           <input
             ref={fileInputRef}
@@ -2508,40 +2612,18 @@ export default function CreateCuratedLookPage() {
 
                 {/* Image/Canvas Container */}
                 <div className={`relative aspect-video bg-gray-100 rounded-lg overflow-hidden ${needsRevisualization ? 'ring-2 ring-amber-400' : ''} ${isEditingPositions ? 'ring-2 ring-purple-400' : ''}`}>
-                  {isEditingPositions ? (
-                    useMagicGrabMode ? (
-                      // Click-to-Select mode - click on objects, then drag
-                      <DraggableFurnitureCanvas
-                        mode="click-to-select"
-                        visualizationImage={visualizationImage}
-                        sessionId={sessionId || ''}
-                        onFinalImage={handleClickToSelectFinalImage}
-                        onPendingMoveChange={handlePendingMoveChange}
-                        containerWidth={800}
-                        containerHeight={450}
-                      />
+                  <img
+                    src={isEditingPositions ? visualizationImage : (angleImages[currentAngle] || visualizationImage)}
+                    alt={`Visualization result${isEditingPositions ? ' - Edit Mode' : ` - ${currentAngle} view`}`}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute bottom-2 left-2 flex items-center gap-2">
+                    {isEditingPositions ? (
+                      <span className="bg-purple-500 text-white px-2 py-0.5 rounded-full text-xs font-medium">
+                        Edit Mode
+                      </span>
                     ) : (
-                      // Legacy mode - marker-based positioning
-                      <DraggableFurnitureCanvas
-                        mode="legacy"
-                        visualizationImage={visualizationImage}
-                        baseRoomLayer={baseRoomLayer}
-                        furnitureLayers={furnitureLayers}
-                        furniturePositions={furniturePositions}
-                        onPositionsChange={handlePositionsChange}
-                        products={selectedProducts}
-                        containerWidth={800}
-                        containerHeight={450}
-                      />
-                    )
-                  ) : (
-                    <>
-                      <img
-                        src={angleImages[currentAngle] || visualizationImage}
-                        alt={`Visualization result - ${currentAngle} view`}
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute bottom-2 left-2 flex items-center gap-2">
+                      <>
                         <span className="bg-green-500 text-white px-2 py-0.5 rounded-full text-xs font-medium">
                           AI Visualization
                         </span>
@@ -2550,51 +2632,52 @@ export default function CreateCuratedLookPage() {
                             {currentAngle} View
                           </span>
                         )}
+                      </>
+                    )}
+                  </div>
+                  {loadingAngle && !isEditingPositions && (
+                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                      <div className="bg-white rounded-lg px-4 py-3 flex items-center gap-3 shadow-lg">
+                        <svg className="animate-spin h-5 w-5 text-purple-600" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        <span className="text-sm font-medium text-gray-700">Generating {loadingAngle} view...</span>
                       </div>
-                      {loadingAngle && (
-                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                          <div className="bg-white rounded-lg px-4 py-3 flex items-center gap-3 shadow-lg">
-                            <svg className="animate-spin h-5 w-5 text-purple-600" viewBox="0 0 24 24" fill="none">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                            </svg>
-                            <span className="text-sm font-medium text-gray-700">Generating {loadingAngle} view...</span>
-                          </div>
-                        </div>
-                      )}
-                    </>
+                    </div>
                   )}
                 </div>
 
-                {/* Edit Mode Actions - Save & Exit / Exit buttons */}
+                {/* Edit Mode Actions - Special Instructions + Exit button */}
                 {isEditingPositions && (
-                  <div className="mt-3 flex items-center justify-center gap-2">
-                    <button
-                      onClick={handleSaveAndExitEditMode}
-                      className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors flex items-center gap-1"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Save & Exit
-                    </button>
-                    <button
-                      onClick={handleExitEditMode}
-                      className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 text-sm font-medium transition-colors"
-                    >
-                      Exit
-                    </button>
-                  </div>
-                )}
+                  <div className="mt-3 space-y-3">
+                    {/* Special Instructions Input */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Special Instructions
+                      </label>
+                      <textarea
+                        value={editSpecialInstructions}
+                        onChange={(e) => setEditSpecialInstructions(e.target.value)}
+                        placeholder="e.g., 'Place the flower vase on the bench' or 'Move the lamp to the left corner'"
+                        rows={2}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Describe how you want to reposition items
+                      </p>
+                    </div>
 
-                {/* Pending Move Indicator */}
-                {pendingMoveData && isEditingPositions && (
-                  <p className="text-xs text-purple-600 mt-2 text-center flex items-center justify-center gap-1">
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clipRule="evenodd" />
-                    </svg>
-                    Object moved - click Re-visualize to apply
-                  </p>
+                    {/* Exit button */}
+                    <div className="flex items-center justify-center">
+                      <button
+                        onClick={handleExitEditMode}
+                        className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 text-sm font-medium transition-colors"
+                      >
+                        Exit Edit Mode
+                      </button>
+                    </div>
+                  </div>
                 )}
 
                 {!needsRevisualization && !isEditingPositions && (
@@ -2680,10 +2763,10 @@ export default function CreateCuratedLookPage() {
           {/* Visualize & Publish Buttons - Fixed at bottom (Smart states from CanvasPanel) */}
           <div className="p-4 border-t border-gray-200 flex-shrink-0 space-y-2">
             {/* Visualize Button with Smart States */}
-            {isEditingPositions && useMagicGrabMode && pendingMoveData ? (
-              /* State: Click-to-Select Edit Mode with pending move (Purple, Enabled) */
+            {isEditingPositions && editSpecialInstructions.trim() ? (
+              /* State: Edit Mode with Special Instructions (Purple, Enabled) */
               <button
-                onClick={handleEditModeRevisualize}
+                onClick={handleRevisualizeWithInstructions}
                 disabled={isVisualizing}
                 className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
               >
@@ -2693,38 +2776,14 @@ export default function CreateCuratedLookPage() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Re-visualizing...
+                    Applying Instructions...
                   </>
                 ) : (
                   <>
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                     </svg>
-                    Re-visualize
-                  </>
-                )}
-              </button>
-            ) : isEditingPositions && hasUnsavedPositions ? (
-              /* State: Legacy Edit Mode with Unsaved Positions (Purple, Enabled) */
-              <button
-                onClick={handleRevisualizeWithPositions}
-                disabled={isVisualizing}
-                className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
-              >
-                {isVisualizing ? (
-                  <>
-                    <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Re-visualizing...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    Re-visualize with New Positions
+                    Apply Edit Instructions
                   </>
                 )}
               </button>
@@ -2840,7 +2899,9 @@ export default function CreateCuratedLookPage() {
               <p className="text-xs text-amber-600 text-center">Enter a title to publish</p>
             )}
           </div>
-        </div>
+            </div>
+          </Panel>
+        </Group>
       </div>
 
       {/* Product Detail Modal */}

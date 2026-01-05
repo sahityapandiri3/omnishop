@@ -120,9 +120,21 @@ SEARCH_SYNONYMS = {
     # Wall art and paintings
     "painting": ["painting", "wall art", "artwork", "canvas art", "art print"],
     "paintings": ["painting", "wall art", "artwork", "canvas art", "art print"],
-    "wall art": ["wall art", "painting", "artwork", "canvas art", "art print"],
+    "wall art": ["wall art", "painting", "artwork", "canvas art", "art print", "wall decor"],
+    "wall decor": ["wall decor", "wall art", "painting", "artwork", "canvas art"],
     "artwork": ["artwork", "wall art", "painting", "canvas art", "art print"],
     "art": ["art", "wall art", "painting", "artwork", "art print"],
+    # Storage furniture - drawers, dressers, chests
+    "drawer": ["drawer", "drawers", "chest of drawers", "dresser", "chest"],
+    "drawers": ["drawer", "drawers", "chest of drawers", "dresser", "chest"],
+    "draws": ["drawer", "drawers", "chest of drawers", "dresser", "chest"],  # Common misspelling
+    "chest of drawers": ["chest of drawers", "drawer", "drawers", "dresser", "chest"],
+    "chest of draws": ["chest of drawers", "drawer", "drawers", "dresser", "chest"],  # Common misspelling
+    "dresser": ["dresser", "drawer", "drawers", "chest of drawers", "chest"],
+    "dressers": ["dresser", "drawer", "drawers", "chest of drawers", "chest"],
+    "storage": ["storage", "cabinet", "cupboard", "drawer", "shelf", "shelves"],
+    "storage unit": ["storage", "cabinet", "cupboard", "drawer", "shelf"],
+    "storage units": ["storage", "cabinet", "cupboard", "drawer", "shelf"],
 }
 
 
@@ -265,12 +277,22 @@ async def search_products_for_look(
                 # Use PostgreSQL regex with word boundaries (\y) for accurate matching
                 name_conditions.append(Product.name.op("~*")(rf"\y{escaped_term}\y"))
 
+            # Broad terms that should NOT match in description (too many false positives)
+            # e.g., "decor" matches rugs with "perfect for home decor" in description
+            BROAD_TERMS = {"decor", "art", "furniture", "home", "living", "style", "design"}
+
             # Also match original query in brand and description with word boundaries
+            # Skip description matching for broad terms to avoid false positives
             escaped_query = re.escape(query)
+            query_lower = query.lower().strip()
+
             original_query_conditions = [
                 Product.brand.op("~*")(rf"\y{escaped_query}\y"),
-                Product.description.op("~*")(rf"\y{escaped_query}\y"),
             ]
+
+            # Only match description for specific (non-broad) terms
+            if query_lower not in BROAD_TERMS:
+                original_query_conditions.append(Product.description.op("~*")(rf"\y{escaped_query}\y"))
 
             # Combine: (synonym matches in name) OR (original query in brand/description)
             all_conditions = name_conditions + original_query_conditions
@@ -524,6 +546,7 @@ async def create_curated_look(
         await db.refresh(look)
 
         # Return the created look with full details
+        # Note: Pre-computation happens after /visualize endpoint, not here
         return await fetch_curated_look_with_products(look.id, db)
 
     except Exception as e:
@@ -611,6 +634,7 @@ async def update_curated_look(
         await db.commit()
         await db.refresh(look)
 
+        # Note: Pre-computation happens after /visualize endpoint, not here
         return await fetch_curated_look_with_products(look_id, db)
 
     except HTTPException:
@@ -766,3 +790,78 @@ async def unpublish_curated_look(
         await db.rollback()
         logger.error(f"Error unpublishing curated look {look_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error unpublishing curated look")
+
+
+@router.post("/{look_id}/precompute-masks")
+async def precompute_masks_for_curated_look(
+    look_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Manually trigger mask precomputation for a curated look.
+    This pre-computes SAM segmentation masks for instant "Edit Position" functionality.
+    """
+    from services.mask_precomputation_service import mask_precomputation_service
+
+    try:
+        # Get the curated look with products
+        query = (
+            select(CuratedLook)
+            .options(selectinload(CuratedLook.products).selectinload(CuratedLookProduct.product))
+            .where(CuratedLook.id == look_id)
+        )
+        result = await db.execute(query)
+        look = result.scalar_one_or_none()
+
+        if not look:
+            raise HTTPException(status_code=404, detail="Curated look not found")
+
+        if not look.visualization_image:
+            raise HTTPException(status_code=400, detail="Curated look has no visualization image")
+
+        # Build products list
+        products = []
+        for clp in look.products:
+            if clp.product:
+                products.append({"id": clp.product.id, "name": clp.product.name})
+
+        logger.info(f"[PrecomputeMasks] Starting precomputation for look {look_id} with {len(products)} products")
+
+        # Delete any existing masks for this look (force refresh)
+        await mask_precomputation_service.invalidate_curated_look_masks(db, look_id)
+
+        # Trigger precomputation
+        job_id = await mask_precomputation_service.trigger_precomputation_for_curated_look(
+            db, look_id, look.visualization_image, products
+        )
+
+        if not job_id:
+            raise HTTPException(status_code=500, detail="Failed to create precomputation job")
+
+        # Process synchronously (blocking) so we can return results
+        await mask_precomputation_service.process_precomputation(db, job_id, look.visualization_image, products)
+
+        # Get results
+        from database.models import PrecomputedMask
+
+        result = await db.execute(select(PrecomputedMask).where(PrecomputedMask.id == job_id))
+        mask_record = result.scalar_one_or_none()
+
+        if mask_record:
+            layer_count = len(mask_record.layers_data) if mask_record.layers_data else 0
+            return {
+                "message": "Precomputation completed",
+                "look_id": look_id,
+                "job_id": job_id,
+                "status": mask_record.status.value,
+                "layer_count": layer_count,
+                "processing_time": mask_record.processing_time,
+            }
+
+        return {"message": "Precomputation triggered", "job_id": job_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error precomputing masks for look {look_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error precomputing masks: {str(e)}")

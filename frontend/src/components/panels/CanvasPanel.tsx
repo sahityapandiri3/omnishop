@@ -76,6 +76,7 @@ interface CanvasPanelProps {
   onVisualizationHistoryChange?: (history: any[]) => void;  // Callback when history changes
   onVisualizationImageChange?: (image: string | null) => void;  // Callback when visualization image changes
   isProcessingFurniture?: boolean;  // Show furniture removal overlay on room image
+  curatedLookId?: number;  // Curated look ID for precomputation cache
 }
 
 /**
@@ -96,6 +97,7 @@ export default function CanvasPanel({
   onVisualizationHistoryChange,
   onVisualizationImageChange,
   isProcessingFurniture = false,
+  curatedLookId,
 }: CanvasPanelProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isVisualizing, setIsVisualizing] = useState(false);
@@ -314,6 +316,16 @@ export default function CanvasPanel({
       console.log('[CanvasPanel] Curated visualization initialized successfully');
     }
   }, [initialVisualizationImage, visualizationResult, products]); // Include visualizationResult to prevent re-running after set
+
+  // Keep visualizedProducts in sync when products change and we have a visualization
+  // This handles the case where products load after the initial visualization is set
+  useEffect(() => {
+    if (visualizationResult && products.length > 0 && visualizedProducts.length === 0) {
+      console.log('[CanvasPanel] Syncing visualizedProducts with products (was empty):', products.length);
+      setVisualizedProducts([...products]);
+      setVisualizedProductIds(new Set(products.map(p => String(p.id))));
+    }
+  }, [products, visualizationResult, visualizedProducts.length]);
 
   // Handle file upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -600,7 +612,8 @@ export default function CanvasPanel({
             },
             is_incremental: isIncremental,
             force_reset: forceReset,
-            user_uploaded_new_image: changeInfo.type === 'initial'
+            user_uploaded_new_image: changeInfo.type === 'initial',
+            curated_look_id: curatedLookId,  // Pass curated look ID for precomputation cache
           }),
         },
         2,  // maxRetries: 2 retries (3 total attempts)
@@ -1119,6 +1132,7 @@ export default function CanvasPanel({
             custom_positions: furniturePositions,  // Pass custom positions
             is_incremental: false,
             force_reset: false,
+            curated_look_id: curatedLookId,  // Pass curated look ID for precomputation cache
           }),
         },
         2,  // maxRetries
@@ -1744,8 +1758,9 @@ export default function CanvasPanel({
                     onPendingMoveChange={handlePendingMoveChange}
                     containerWidth={800}
                     containerHeight={450}
-                    curatedProducts={products.map(p => {
-                      // Get image URL from images array or direct image_url
+                    curatedProducts={(visualizedProducts.length > 0 ? visualizedProducts : products).map(p => {
+                      // Use visualizedProducts (products IN the visualization) for matching
+                      // Fall back to current products if visualizedProducts is empty
                       const primaryImage = p.images?.find(img => img.is_primary) || p.images?.[0];
                       const imageUrl = primaryImage?.medium_url || primaryImage?.original_url || p.image_url;
                       return {
