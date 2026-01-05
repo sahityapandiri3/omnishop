@@ -317,9 +317,7 @@ def get_primary_image_url(product: Product) -> Optional[str]:
 async def get_curated_looks(
     room_type: Optional[str] = Query(None, description="Filter by room type (living_room, bedroom)"),
     style: Optional[str] = Query(None, description="Filter by style label (modern, modern_luxury, indian_contemporary, etc.)"),
-    budget_tier: Optional[str] = Query(
-        None, description="Filter by budget tier (essential, value, mid, premium, ultra_luxury)"
-    ),
+    budget_tier: Optional[str] = Query(None, description="Filter by budget tier (pocket_friendly, mid_tier, premium, luxury)"),
     include_images: bool = Query(False, description="Include large base64 images (room_image, visualization_image)"),
     image_quality: str = Query("thumbnail", description="Image quality: thumbnail (400px), medium (1200px), full"),
     db: AsyncSession = Depends(get_db),
@@ -385,23 +383,19 @@ async def get_curated_looks(
         # Apply budget tier filter if provided (filter by price range)
         if budget_tier:
             # Budget tier price ranges (in INR):
-            # - Essential: < ₹2L (< 200,000)
-            # - Value: ₹2L – ₹4L (200,000 - 400,000)
-            # - Mid: ₹4L – ₹8L (400,000 - 800,000)
+            # - Pocket-friendly: < ₹2L (< 200,000)
+            # - Mid-tier: ₹2L – ₹8L (200,000 - 800,000)
             # - Premium: ₹8L – ₹15L (800,000 - 1,500,000)
-            # - Ultra-Luxury: ₹15L+ (> 1,500,000)
-            if budget_tier == "essential":
+            # - Luxury: ₹15L+ (>= 1,500,000)
+            if budget_tier == "pocket_friendly":
                 query = query.where(CuratedLookModel.total_price < 200000)
-            elif budget_tier == "value":
+            elif budget_tier == "mid_tier":
                 query = query.where(CuratedLookModel.total_price >= 200000)
-                query = query.where(CuratedLookModel.total_price < 400000)
-            elif budget_tier == "mid":
-                query = query.where(CuratedLookModel.total_price >= 400000)
                 query = query.where(CuratedLookModel.total_price < 800000)
             elif budget_tier == "premium":
                 query = query.where(CuratedLookModel.total_price >= 800000)
                 query = query.where(CuratedLookModel.total_price < 1500000)
-            elif budget_tier == "ultra_luxury":
+            elif budget_tier == "luxury":
                 query = query.where(CuratedLookModel.total_price >= 1500000)
 
         result = await db.execute(query)

@@ -17,17 +17,17 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 # Store data with budget tiers
-# Budget tiers: essential (<2L), value (2-4L), mid (4-8L), premium (8-15L), ultra_luxury (15L+)
+# Budget tiers: pocket_friendly (<2L), mid_tier (2-8L), premium (8-15L), luxury (15L+)
 STORES = [
-    # Mid-range stores (for ₹4L – ₹8L looks)
-    {"name": "modernquests", "display_name": "Modern Quests", "budget_tier": "mid"},
-    {"name": "masonhome", "display_name": "Mason Home", "budget_tier": "mid"},
-    {"name": "fleck", "display_name": "Fleck", "budget_tier": "mid"},
-    {"name": "nicobar", "display_name": "Nicobar", "budget_tier": "mid"},
-    {"name": "palasa", "display_name": "Palasa", "budget_tier": "mid"},
-    {"name": "ellementry", "display_name": "Ellementry", "budget_tier": "mid"},
-    {"name": "objectry", "display_name": "Objectry", "budget_tier": "mid"},
-    {"name": "pelicanessentials", "display_name": "Pelican Essentials", "budget_tier": "mid"},
+    # Mid-tier stores (for ₹2L – ₹8L looks)
+    {"name": "modernquests", "display_name": "Modern Quests", "budget_tier": "mid_tier"},
+    {"name": "masonhome", "display_name": "Mason Home", "budget_tier": "mid_tier"},
+    {"name": "fleck", "display_name": "Fleck", "budget_tier": "mid_tier"},
+    {"name": "nicobar", "display_name": "Nicobar", "budget_tier": "mid_tier"},
+    {"name": "palasa", "display_name": "Palasa", "budget_tier": "mid_tier"},
+    {"name": "ellementry", "display_name": "Ellementry", "budget_tier": "mid_tier"},
+    {"name": "objectry", "display_name": "Objectry", "budget_tier": "mid_tier"},
+    {"name": "pelicanessentials", "display_name": "Pelican Essentials", "budget_tier": "mid_tier"},
     # Premium stores (for ₹8L – ₹15L looks)
     {"name": "thehouseofthings", "display_name": "The House of Things", "budget_tier": "premium"},
     {"name": "phantomhands", "display_name": "Phantom Hands", "budget_tier": "premium"},
@@ -48,7 +48,7 @@ def upgrade() -> None:
         sa.Column("display_name", sa.String(100), nullable=True),
         sa.Column(
             "budget_tier",
-            sa.Enum("essential", "value", "mid", "premium", "ultra_luxury", name="budgettier", create_type=False),
+            sa.Enum("pocket_friendly", "mid_tier", "premium", "luxury", name="budgettier", create_type=False),
             nullable=True,
         ),
         sa.Column("website_url", sa.String(255), nullable=True),

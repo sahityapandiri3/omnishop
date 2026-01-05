@@ -26,13 +26,12 @@ class UserRole(enum.Enum):
 
 
 class BudgetTier(enum.Enum):
-    """Budget tiers for curated looks"""
+    """Budget tiers for curated looks and stores"""
 
-    ESSENTIAL = "essential"  # < ₹2L
-    VALUE = "value"  # ₹2L – ₹4L
-    MID = "mid"  # ₹4L – ₹8L
+    POCKET_FRIENDLY = "pocket_friendly"  # Under ₹2L
+    MID_TIER = "mid_tier"  # ₹2L – ₹8L
     PREMIUM = "premium"  # ₹8L – ₹15L
-    ULTRA_LUXURY = "ultra_luxury"  # ₹15L+
+    LUXURY = "luxury"  # ₹15L+
 
 
 class Store(Base):

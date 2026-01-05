@@ -25,13 +25,12 @@ class GenerationStatus(str, Enum):
 
 
 class BudgetTier(str, Enum):
-    """Budget tiers for curated looks"""
+    """Budget tiers for curated looks and stores"""
 
-    essential = "essential"  # < ₹2L
-    value = "value"  # ₹2L – ₹4L
-    mid = "mid"  # ₹4L – ₹8L
+    pocket_friendly = "pocket_friendly"  # Under ₹2L
+    mid_tier = "mid_tier"  # ₹2L – ₹8L
     premium = "premium"  # ₹8L – ₹15L
-    ultra_luxury = "ultra_luxury"  # ₹15L+
+    luxury = "luxury"  # ₹15L+
 
 
 # Product schemas for curated looks

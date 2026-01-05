@@ -11,7 +11,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 
 type RoomType = 'all' | 'living_room' | 'bedroom';
 type StyleOption = 'modern' | 'modern_luxury' | 'indian_contemporary';
-type BudgetOption = 'all' | 'essential' | 'value' | 'mid' | 'premium' | 'ultra_luxury';
+type BudgetOption = 'all' | 'pocket_friendly' | 'mid_tier' | 'premium' | 'luxury';
 
 function CuratedPageContent() {
   const router = useRouter();
@@ -126,11 +126,10 @@ function CuratedPageContent() {
 
   const budgetOptions: { value: BudgetOption; label: string; shortLabel: string }[] = [
     { value: 'all', label: 'All Budgets', shortLabel: 'All' },
-    { value: 'essential', label: '< ₹2L', shortLabel: '< 2L' },
-    { value: 'value', label: '₹2L – 4L', shortLabel: '2-4L' },
-    { value: 'mid', label: '₹4L – 8L', shortLabel: '4-8L' },
+    { value: 'pocket_friendly', label: '< ₹2L', shortLabel: '< 2L' },
+    { value: 'mid_tier', label: '₹2L – 8L', shortLabel: '2-8L' },
     { value: 'premium', label: '₹8L – 15L', shortLabel: '8-15L' },
-    { value: 'ultra_luxury', label: '₹15L+', shortLabel: '15L+' },
+    { value: 'luxury', label: '₹15L+', shortLabel: '15L+' },
   ];
 
   const toggleStyle = (style: StyleOption) => {

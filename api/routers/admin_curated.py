@@ -30,22 +30,19 @@ def calculate_budget_tier(total_price: float) -> str:
     Calculate budget tier based on total price.
 
     Thresholds (in INR):
-    - Essential: < ₹2L (< 200,000)
-    - Value: ₹2L – ₹4L (200,000 - 400,000)
-    - Mid: ₹4L – ₹8L (400,000 - 800,000)
+    - Pocket-friendly: < ₹2L (< 200,000)
+    - Mid-tier: ₹2L – ₹8L (200,000 - 800,000)
     - Premium: ₹8L – ₹15L (800,000 - 1,500,000)
-    - Ultra-Luxury: ₹15L+ (> 1,500,000)
+    - Luxury: ₹15L+ (>= 1,500,000)
     """
     if total_price < 200000:
-        return BudgetTier.ESSENTIAL.value
-    elif total_price < 400000:
-        return BudgetTier.VALUE.value
+        return BudgetTier.POCKET_FRIENDLY.value
     elif total_price < 800000:
-        return BudgetTier.MID.value
+        return BudgetTier.MID_TIER.value
     elif total_price < 1500000:
         return BudgetTier.PREMIUM.value
     else:
-        return BudgetTier.ULTRA_LUXURY.value
+        return BudgetTier.LUXURY.value
 
 
 logger = logging.getLogger(__name__)
