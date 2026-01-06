@@ -48,7 +48,7 @@ def upgrade() -> None:
         sa.Column("display_name", sa.String(100), nullable=True),
         sa.Column(
             "budget_tier",
-            sa.Enum("pocket_friendly", "mid_tier", "premium", "luxury", name="budgettier", create_type=False),
+            sa.String(50),
             nullable=True,
         ),
         sa.Column("website_url", sa.String(255), nullable=True),
