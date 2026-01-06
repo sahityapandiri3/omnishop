@@ -147,6 +147,39 @@ async def lifespan(app: FastAPI):
 
     logger.info("=" * 60)
 
+    # Ensure budget_tier column exists (fix for production)
+    if AsyncSessionLocal:
+        try:
+            from sqlalchemy import text
+            async with AsyncSessionLocal() as session:
+                # Check if column exists
+                result = await session.execute(text("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'curated_looks' AND column_name = 'budget_tier'
+                """))
+                column_exists = result.fetchone() is not None
+
+                if not column_exists:
+                    logger.info("🔧 Adding missing budget_tier column to curated_looks...")
+                    # Create enum type if not exists
+                    await session.execute(text("""
+                        DO $$ BEGIN
+                            CREATE TYPE budgettier AS ENUM ('pocket_friendly', 'mid_tier', 'premium', 'luxury');
+                        EXCEPTION
+                            WHEN duplicate_object THEN null;
+                        END $$;
+                    """))
+                    # Add column
+                    await session.execute(text("""
+                        ALTER TABLE curated_looks ADD COLUMN IF NOT EXISTS budget_tier VARCHAR(50)
+                    """))
+                    await session.commit()
+                    logger.info("✅ Added budget_tier column to curated_looks")
+                else:
+                    logger.info("✅ budget_tier column already exists")
+        except Exception as e:
+            logger.error(f"❌ Failed to check/add budget_tier column: {e}")
+
     # Start background cleanup task for furniture removal jobs
     cleanup_task = None
     if furniture_cleanup_available:
