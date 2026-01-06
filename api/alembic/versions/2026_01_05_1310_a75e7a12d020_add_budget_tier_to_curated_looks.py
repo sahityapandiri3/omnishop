@@ -19,8 +19,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Create the enum type first
-    budgettier_enum = sa.Enum("essential", "value", "mid", "premium", "ultra_luxury", name="budgettier")
+    # Create the enum type first with correct values
+    budgettier_enum = sa.Enum("pocket_friendly", "mid_tier", "premium", "luxury", name="budgettier")
     budgettier_enum.create(op.get_bind(), checkfirst=True)
 
     # Add the column
@@ -34,5 +34,5 @@ def downgrade() -> None:
     op.drop_column("curated_looks", "budget_tier")
 
     # Drop the enum type
-    budgettier_enum = sa.Enum("essential", "value", "mid", "premium", "ultra_luxury", name="budgettier")
+    budgettier_enum = sa.Enum("pocket_friendly", "mid_tier", "premium", "luxury", name="budgettier")
     budgettier_enum.drop(op.get_bind(), checkfirst=True)

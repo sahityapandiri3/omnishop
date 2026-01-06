@@ -476,12 +476,11 @@ class CuratedLook(Base):
 
     # Metadata
     total_price = Column(Float, default=0)
-    # budget_tier temporarily removed - column missing in prod DB
-    # budget_tier = Column(
-    #     Enum(BudgetTier, values_callable=lambda x: [e.value for e in x], name="budgettier"),
-    #     nullable=True,
-    #     index=True,
-    # )
+    budget_tier = Column(
+        Enum(BudgetTier, values_callable=lambda x: [e.value for e in x], name="budgettier"),
+        nullable=True,
+        index=True,
+    )
     is_published = Column(Boolean, default=False, index=True)
     display_order = Column(Integer, default=0)
 
