@@ -22,24 +22,57 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# Category name normalization map (handles singular/plural and variations)
+CATEGORY_NORMALIZATIONS = {
+    'Rug': 'Rugs',
+    'Carpet': 'Rugs',
+    'Sofa Set': 'Sofa',
+    'Sofas': 'Sofa',
+    'Beds': 'Bed',
+    'Tables': 'Table',
+    'Chairs': 'Chair',
+    'Lamps': 'Lamp',
+    'Lights': 'Lighting',
+    'Light': 'Lighting',
+}
+
+
 def get_or_create_category(session, category_name: str):
     """Get or create a category by name"""
     if not category_name:
         return None
 
-    category = session.query(Category).filter_by(name=category_name).first()
-    if not category:
-        # Create slug from name
-        slug = re.sub(r'[^\w\s-]', '', category_name.lower())
-        slug = re.sub(r'[-\s]+', '-', slug).strip('-')
+    # Normalize category name
+    normalized_name = CATEGORY_NORMALIZATIONS.get(category_name, category_name)
 
-        category = Category(
-            name=category_name,
-            slug=slug
-        )
-        session.add(category)
-        session.flush()
-        logger.info(f"Created category: {category_name}")
+    # Try to find existing category by name
+    category = session.query(Category).filter_by(name=normalized_name).first()
+    if category:
+        return category
+
+    # Also try the original name in case it exists
+    if normalized_name != category_name:
+        category = session.query(Category).filter_by(name=category_name).first()
+        if category:
+            return category
+
+    # Create slug from name
+    slug = re.sub(r'[^\w\s-]', '', normalized_name.lower())
+    slug = re.sub(r'[-\s]+', '-', slug).strip('-')
+
+    # Check if slug already exists
+    existing_by_slug = session.query(Category).filter_by(slug=slug).first()
+    if existing_by_slug:
+        return existing_by_slug
+
+    # Create new category
+    category = Category(
+        name=normalized_name,
+        slug=slug
+    )
+    session.add(category)
+    session.flush()
+    logger.info(f"Created category: {normalized_name}")
 
     return category
 
@@ -162,6 +195,7 @@ def import_json_file(json_path: str, source_website: str, display_name: str):
             except Exception as e:
                 error_count += 1
                 logger.error(f"Error importing product {i + 1}: {e}")
+                session.rollback()  # Rollback to recover from error
                 continue
 
         session.commit()
