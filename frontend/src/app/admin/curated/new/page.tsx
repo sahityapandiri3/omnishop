@@ -394,7 +394,8 @@ export default function CreateCuratedLookPage() {
 
   const loadStores = async () => {
     try {
-      const response = await getAvailableStores();
+      // Force refresh to always get latest stores from server
+      const response = await getAvailableStores(true);
       setStores(response.stores);
     } catch (err) {
       console.error('Error loading stores:', err);

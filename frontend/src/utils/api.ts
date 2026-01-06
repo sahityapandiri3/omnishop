@@ -432,27 +432,40 @@ interface StoresCache {
   timestamp: number;
 }
 
-export const getAvailableStores = async (): Promise<{ stores: string[] }> => {
+export const clearStoresCache = (): void => {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    localStorage.removeItem(STORES_CACHE_KEY);
+    console.log('[Stores Cache] Cache cleared');
+  }
+};
+
+export const getAvailableStores = async (forceRefresh = false): Promise<{ stores: string[] }> => {
   try {
     // Check if we're in a browser environment
     if (typeof window !== 'undefined' && window.localStorage) {
-      // Try to get cached data
-      const cached = localStorage.getItem(STORES_CACHE_KEY);
+      // Force refresh clears the cache
+      if (forceRefresh) {
+        localStorage.removeItem(STORES_CACHE_KEY);
+        console.log('[Stores Cache] Force refresh requested, clearing cache');
+      } else {
+        // Try to get cached data
+        const cached = localStorage.getItem(STORES_CACHE_KEY);
 
-      if (cached) {
-        try {
-          const cacheData: StoresCache = JSON.parse(cached);
-          const age = Date.now() - cacheData.timestamp;
+        if (cached) {
+          try {
+            const cacheData: StoresCache = JSON.parse(cached);
+            const age = Date.now() - cacheData.timestamp;
 
-          // If cache is less than 24 hours old, return it
-          if (age < STORES_CACHE_TTL) {
-            console.log('[Stores Cache] Using cached stores data (age:', Math.round(age / 1000 / 60), 'minutes)');
-            return { stores: cacheData.stores };
-          } else {
-            console.log('[Stores Cache] Cache expired, fetching fresh data');
+            // If cache is less than 24 hours old, return it
+            if (age < STORES_CACHE_TTL) {
+              console.log('[Stores Cache] Using cached stores data (age:', Math.round(age / 1000 / 60), 'minutes)');
+              return { stores: cacheData.stores };
+            } else {
+              console.log('[Stores Cache] Cache expired, fetching fresh data');
+            }
+          } catch (e) {
+            console.warn('[Stores Cache] Failed to parse cached data, fetching fresh');
           }
-        } catch (e) {
-          console.warn('[Stores Cache] Failed to parse cached data, fetching fresh');
         }
       }
     }
