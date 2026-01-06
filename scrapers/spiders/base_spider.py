@@ -389,12 +389,20 @@ class BaseProductSpider(scrapy.Spider):
         if 'mirror' in name_lower:
             return 'Mirror'
 
+        # Wall Art detection (before generic decor)
+        if any(term in name_lower for term in ['wall art', 'canvas art', 'painting', 'wall painting', 'canvas painting', 'art print', 'wall hanging', 'metal wall', 'wall plate']):
+            return 'Wall Art'
+
+        # Sculpture / Showpiece detection
+        if any(term in name_lower for term in ['sculpture', 'showpiece', 'figurine', 'statue', 'idol']):
+            return 'Sculpture'
+
         # Rug / Carpet detection
-        if 'rug' in name_lower or 'carpet' in name_lower:
+        if 'rug' in name_lower or 'carpet' in name_lower or 'dhurrie' in name_lower or 'runner' in name_lower:
             return 'Rugs'
 
         # Planter detection
-        if 'planter' in name_lower or 'plant pot' in name_lower or 'flower pot' in name_lower:
+        if 'planter' in name_lower or 'plant pot' in name_lower or 'flower pot' in name_lower or 'plant stand' in name_lower:
             return 'Planter'
 
         # Vase detection
@@ -420,6 +428,18 @@ class BaseProductSpider(scrapy.Spider):
         # Throw / Blanket detection
         if 'throw' in name_lower or 'blanket' in name_lower:
             return 'Throw'
+
+        # Photo Frame detection
+        if 'photo frame' in name_lower or 'picture frame' in name_lower:
+            return 'Photo Frame'
+
+        # Candle / Candle Holder detection
+        if 'candle' in name_lower:
+            return 'Decor & Accessories'
+
+        # Decorative items
+        if any(term in name_lower for term in ['decorative', 'decor', 'tray', 'bowl', 'bookend']):
+            return 'Decor & Accessories'
 
         # Table (generic) - after all specific table types
         if 'table' in name_lower:
