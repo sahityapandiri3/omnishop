@@ -19,6 +19,12 @@ depends_on: Union[str, Sequence[str], None] = None
 # Store data with budget tiers
 # Budget tiers: pocket_friendly (<2L), mid_tier (2-8L), premium (8-15L), luxury (15L+)
 STORES = [
+    # Pocket-friendly stores (for <₹2L looks)
+    {"name": "woodenstreet", "display_name": "Wooden Street", "budget_tier": "pocket_friendly"},
+    {"name": "urbanladder", "display_name": "Urban Ladder", "budget_tier": "pocket_friendly"},
+    {"name": "durian", "display_name": "Durian", "budget_tier": "pocket_friendly"},
+    {"name": "homecentre", "display_name": "Home Centre", "budget_tier": "pocket_friendly"},
+    {"name": "pepperfry", "display_name": "Pepperfry", "budget_tier": "pocket_friendly"},
     # Mid-tier stores (for ₹2L – ₹8L looks)
     {"name": "modernquests", "display_name": "Modern Quests", "budget_tier": "mid_tier"},
     {"name": "masonhome", "display_name": "Mason Home", "budget_tier": "mid_tier"},
@@ -40,56 +46,61 @@ STORES = [
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Create stores table (budgettier enum already exists from curated_looks migration)
-    op.create_table(
-        "stores",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("name", sa.String(50), nullable=False),
-        sa.Column("display_name", sa.String(100), nullable=True),
-        sa.Column(
-            "budget_tier",
-            sa.String(50),
-            nullable=True,
-        ),
-        sa.Column("website_url", sa.String(255), nullable=True),
-        sa.Column("is_active", sa.Boolean(), nullable=True, default=True),
-        sa.Column("created_at", sa.DateTime(), nullable=True),
-        sa.Column("updated_at", sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(op.f("ix_stores_name"), "stores", ["name"], unique=True)
-    op.create_index(op.f("ix_stores_budget_tier"), "stores", ["budget_tier"], unique=False)
-    op.create_index(op.f("ix_stores_is_active"), "stores", ["is_active"], unique=False)
-
-    # Insert store data
-    stores_table = sa.table(
-        "stores",
-        sa.column("name", sa.String),
-        sa.column("display_name", sa.String),
-        sa.column("budget_tier", sa.String),
-        sa.column("is_active", sa.Boolean),
-        sa.column("created_at", sa.DateTime),
-        sa.column("updated_at", sa.DateTime),
-    )
-
+    from sqlalchemy import inspect
     from datetime import datetime
 
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    tables = inspector.get_table_names()
+
+    # Create stores table if it doesn't exist
+    if "stores" not in tables:
+        op.create_table(
+            "stores",
+            sa.Column("id", sa.Integer(), nullable=False),
+            sa.Column("name", sa.String(50), nullable=False),
+            sa.Column("display_name", sa.String(100), nullable=True),
+            sa.Column(
+                "budget_tier",
+                sa.String(50),
+                nullable=True,
+            ),
+            sa.Column("website_url", sa.String(255), nullable=True),
+            sa.Column("is_active", sa.Boolean(), nullable=True, default=True),
+            sa.Column("created_at", sa.DateTime(), nullable=True),
+            sa.Column("updated_at", sa.DateTime(), nullable=True),
+            sa.PrimaryKeyConstraint("id"),
+        )
+        op.create_index(op.f("ix_stores_name"), "stores", ["name"], unique=True)
+        op.create_index(op.f("ix_stores_budget_tier"), "stores", ["budget_tier"], unique=False)
+        op.create_index(op.f("ix_stores_is_active"), "stores", ["is_active"], unique=False)
+
+    # Insert store data (use upsert logic - insert if not exists)
     now = datetime.utcnow()
 
-    op.bulk_insert(
-        stores_table,
-        [
-            {
-                "name": store["name"],
-                "display_name": store["display_name"],
-                "budget_tier": store["budget_tier"],
-                "is_active": True,
-                "created_at": now,
-                "updated_at": now,
-            }
-            for store in STORES
-        ],
-    )
+    for store in STORES:
+        # Check if store already exists
+        result = conn.execute(
+            sa.text("SELECT id FROM stores WHERE name = :name"),
+            {"name": store["name"]}
+        )
+        exists = result.fetchone()
+
+        if not exists:
+            conn.execute(
+                sa.text("""
+                    INSERT INTO stores (name, display_name, budget_tier, is_active, created_at, updated_at)
+                    VALUES (:name, :display_name, :budget_tier, :is_active, :created_at, :updated_at)
+                """),
+                {
+                    "name": store["name"],
+                    "display_name": store["display_name"],
+                    "budget_tier": store["budget_tier"],
+                    "is_active": True,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
 
 
 def downgrade() -> None:

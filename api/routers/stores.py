@@ -7,11 +7,11 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
-from database.models import Product
+from database.models import Product, Store
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/stores", tags=["stores"])
@@ -41,10 +41,32 @@ async def _fetch_stores_from_db(db: AsyncSession) -> List[str]:
     """
     Fetch stores from database
     Internal function used by both the main endpoint and cache warming
+    Tries stores table first, falls back to products table if not available
     """
     logger.info("Fetching stores from database")
 
-    # Query for distinct source_website where products are available
+    # First, try to get stores from stores table
+    try:
+        # Check if stores table exists
+        check_result = await db.execute(
+            text("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stores')")
+        )
+        table_exists = check_result.scalar()
+
+        if table_exists:
+            # Query from stores table
+            query = select(Store.name).where(Store.is_active == True).order_by(Store.name)  # noqa: E712
+            result = await db.execute(query)
+            stores = [row[0] for row in result.fetchall() if row[0]]
+
+            if stores:
+                logger.info(f"Found {len(stores)} stores from stores table: {stores}")
+                return stores
+
+    except Exception as e:
+        logger.warning(f"Could not query stores table, falling back to products: {e}")
+
+    # Fallback: Query for distinct source_website where products are available
     query = select(Product.source_website).where(Product.is_available == True).distinct()  # noqa: E712
 
     result = await db.execute(query)
@@ -53,7 +75,7 @@ async def _fetch_stores_from_db(db: AsyncSession) -> List[str]:
     # Sort alphabetically for consistent ordering
     stores_sorted = sorted(stores)
 
-    logger.info(f"Found {len(stores_sorted)} available stores: {stores_sorted}")
+    logger.info(f"Found {len(stores_sorted)} available stores from products: {stores_sorted}")
     return stores_sorted
 
 
