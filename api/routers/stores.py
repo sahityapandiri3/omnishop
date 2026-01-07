@@ -3,7 +3,7 @@ Stores API routes for store/source management
 """
 import logging
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -17,10 +17,33 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/stores", tags=["stores"])
 
 
+class StoreInfo(BaseModel):
+    """Store information with display name and tier"""
+
+    name: str
+    display_name: str
+    budget_tier: Optional[str] = None
+
+
+class StoreCategory(BaseModel):
+    """A category of stores grouped by budget tier"""
+
+    tier: str
+    label: str
+    stores: List[StoreInfo]
+
+
 class StoresResponse(BaseModel):
     """Response model for stores list"""
 
     stores: List[str]
+
+
+class CategorizedStoresResponse(BaseModel):
+    """Response model for categorized stores"""
+
+    categories: List[StoreCategory]
+    all_stores: List[StoreInfo]
 
 
 class CacheWarmResponse(BaseModel):
@@ -33,8 +56,17 @@ class CacheWarmResponse(BaseModel):
 
 # Module-level cache for stores
 _stores_cache: Optional[List[str]] = None
+_categorized_cache: Optional[CategorizedStoresResponse] = None
 _cache_timestamp: Optional[datetime] = None
 _cache_ttl = timedelta(hours=24)  # Cache for 24 hours after deployment
+
+# Budget tier display labels and order
+TIER_CONFIG = {
+    "pocket_friendly": {"label": "Pocket Friendly", "order": 1},
+    "mid_tier": {"label": "Mid-Range", "order": 2},
+    "premium": {"label": "Premium", "order": 3},
+    "luxury": {"label": "Luxury", "order": 4},
+}
 
 
 async def _fetch_stores_from_db(db: AsyncSession) -> List[str]:
@@ -79,6 +111,51 @@ async def _fetch_stores_from_db(db: AsyncSession) -> List[str]:
     return stores_sorted
 
 
+async def _fetch_categorized_stores_from_db(db: AsyncSession) -> CategorizedStoresResponse:
+    """
+    Fetch stores from database with budget tier categorization.
+    Returns stores grouped by category.
+    """
+    logger.info("Fetching categorized stores from database")
+
+    # Get all active stores with their tier info
+    query = select(Store).where(Store.is_active == True).order_by(Store.budget_tier, Store.display_name)  # noqa: E712
+    result = await db.execute(query)
+    stores = result.scalars().all()
+
+    # Group stores by tier
+    tier_groups: Dict[str, List[StoreInfo]] = {}
+    all_stores: List[StoreInfo] = []
+
+    for store in stores:
+        store_info = StoreInfo(
+            name=store.name,
+            display_name=store.display_name or store.name.replace("_", " ").title(),
+            budget_tier=store.budget_tier.value if store.budget_tier else None,
+        )
+        all_stores.append(store_info)
+
+        tier_key = store.budget_tier.value if store.budget_tier else "other"
+        if tier_key not in tier_groups:
+            tier_groups[tier_key] = []
+        tier_groups[tier_key].append(store_info)
+
+    # Build categories in order
+    categories: List[StoreCategory] = []
+    for tier_key, config in sorted(TIER_CONFIG.items(), key=lambda x: x[1]["order"]):
+        if tier_key in tier_groups:
+            categories.append(
+                StoreCategory(tier=tier_key, label=config["label"], stores=tier_groups[tier_key])
+            )
+
+    # Add "Other" category for uncategorized stores
+    if "other" in tier_groups:
+        categories.append(StoreCategory(tier="other", label="Other", stores=tier_groups["other"]))
+
+    logger.info(f"Found {len(all_stores)} stores in {len(categories)} categories")
+    return CategorizedStoresResponse(categories=categories, all_stores=all_stores)
+
+
 def _is_cache_valid() -> bool:
     """Check if the cache is valid (not expired)"""
     if _stores_cache is None or _cache_timestamp is None:
@@ -117,6 +194,41 @@ async def get_available_stores(db: AsyncSession = Depends(get_db)):
 
     except Exception as e:
         logger.error(f"Error fetching available stores: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch stores: {str(e)}")
+
+
+@router.get("/categorized", response_model=CategorizedStoresResponse)
+async def get_categorized_stores(db: AsyncSession = Depends(get_db)):
+    """
+    Get stores grouped by budget tier category.
+
+    Returns stores organized into categories:
+    - Pocket Friendly: Budget-friendly stores
+    - Mid-Range: Mid-tier stores
+    - Premium: Premium/luxury stores
+
+    Uses 24-hour caching for performance.
+    """
+    global _categorized_cache, _cache_timestamp
+
+    try:
+        # Check if cache is valid
+        if _is_cache_valid() and _categorized_cache is not None:
+            logger.info(f"Returning cached categorized stores (cached at {_cache_timestamp})")
+            return _categorized_cache
+
+        # Cache miss or expired - fetch from database
+        logger.info("Cache miss or expired, fetching categorized stores from database")
+        categorized = await _fetch_categorized_stores_from_db(db)
+
+        # Update cache
+        _categorized_cache = categorized
+        _cache_timestamp = datetime.now()
+
+        return categorized
+
+    except Exception as e:
+        logger.error(f"Error fetching categorized stores: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch stores: {str(e)}")
 
 

@@ -7,7 +7,7 @@ import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import { Panel, Group } from 'react-resizable-panels';
 import { PanelResizeHandle } from '@/components/ui/PanelResizeHandle';
-import { adminCuratedAPI, getAvailableStores, visualizeRoom, startChatSession, startFurnitureRemoval, checkFurnitureRemovalStatus, furniturePositionAPI, generateAngleView } from '@/utils/api';
+import { adminCuratedAPI, getCategorizedStores, visualizeRoom, startChatSession, startFurnitureRemoval, checkFurnitureRemovalStatus, furniturePositionAPI, generateAngleView, StoreCategory } from '@/utils/api';
 import { FurniturePosition, MagicGrabLayer, PendingMoveData } from '@/components/DraggableFurnitureCanvas';
 import { AngleSelector, ViewingAngle } from '@/components/AngleSelector';
 
@@ -97,6 +97,7 @@ export default function CreateCuratedLookPage() {
   // Filter state
   const [categories, setCategories] = useState<Category[]>([]);
   const [stores, setStores] = useState<string[]>([]);
+  const [storeCategories, setStoreCategories] = useState<StoreCategory[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
   const [minPrice, setMinPrice] = useState<string>('');
@@ -402,9 +403,11 @@ export default function CreateCuratedLookPage() {
 
   const loadStores = async () => {
     try {
-      // Force refresh to always get latest stores from server
-      const response = await getAvailableStores(true);
-      setStores(response.stores);
+      // Force refresh to always get latest stores from server (categorized)
+      const response = await getCategorizedStores(true);
+      setStoreCategories(response.categories);
+      // Also maintain flat list for backwards compatibility
+      setStores(response.all_stores.map(s => s.name));
     } catch (err) {
       console.error('Error loading stores:', err);
     }
@@ -1984,7 +1987,7 @@ export default function CreateCuratedLookPage() {
               </div>
             </div>
 
-            {/* Store Filter */}
+            {/* Store Filter - Categorized by Budget Tier */}
             <div>
               <div className="flex justify-between items-center mb-2">
                 <label className="block text-sm font-medium text-gray-700">Stores</label>
@@ -1995,20 +1998,34 @@ export default function CreateCuratedLookPage() {
                   {selectedStores.length === stores.length ? 'Deselect all' : 'Select all'}
                 </button>
               </div>
-              <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                {stores.map((store) => (
-                  <label
-                    key={store}
-                    className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1.5 rounded"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedStores.includes(store)}
-                      onChange={() => toggleStore(store)}
-                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                    />
-                    <span className="text-sm text-gray-700 capitalize">{store}</span>
-                  </label>
+              <div className="space-y-3 max-h-60 overflow-y-auto">
+                {storeCategories.map((category) => (
+                  <div key={category.tier}>
+                    {/* Category Header */}
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                        {category.label}
+                      </span>
+                      <span className="text-xs text-gray-400">({category.stores.length})</span>
+                    </div>
+                    {/* Stores in this category */}
+                    <div className="space-y-1 pl-2 border-l-2 border-gray-200">
+                      {category.stores.map((store) => (
+                        <label
+                          key={store.name}
+                          className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1.5 rounded"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedStores.includes(store.name)}
+                            onChange={() => toggleStore(store.name)}
+                            className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                          />
+                          <span className="text-sm text-gray-700">{store.display_name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>

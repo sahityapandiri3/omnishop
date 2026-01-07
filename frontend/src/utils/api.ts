@@ -425,6 +425,7 @@ export const checkFurnitureRemovalStatus = async (jobId: string): Promise<{ job_
 
 // Stores API with localStorage caching
 const STORES_CACHE_KEY = 'omnishop_stores_cache';
+const CATEGORIZED_STORES_CACHE_KEY = 'omnishop_categorized_stores_cache';
 const STORES_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
 interface StoresCache {
@@ -432,9 +433,33 @@ interface StoresCache {
   timestamp: number;
 }
 
+// Types for categorized stores
+export interface StoreInfo {
+  name: string;
+  display_name: string;
+  budget_tier: string | null;
+}
+
+export interface StoreCategory {
+  tier: string;
+  label: string;
+  stores: StoreInfo[];
+}
+
+export interface CategorizedStoresResponse {
+  categories: StoreCategory[];
+  all_stores: StoreInfo[];
+}
+
+interface CategorizedStoresCache {
+  data: CategorizedStoresResponse;
+  timestamp: number;
+}
+
 export const clearStoresCache = (): void => {
   if (typeof window !== 'undefined' && window.localStorage) {
     localStorage.removeItem(STORES_CACHE_KEY);
+    localStorage.removeItem(CATEGORIZED_STORES_CACHE_KEY);
     console.log('[Stores Cache] Cache cleared');
   }
 };
@@ -491,6 +516,62 @@ export const getAvailableStores = async (forceRefresh = false): Promise<{ stores
     return storesData;
   } catch (error) {
     console.error('Error fetching available stores:', error);
+    throw error;
+  }
+};
+
+export const getCategorizedStores = async (forceRefresh = false): Promise<CategorizedStoresResponse> => {
+  try {
+    // Check if we're in a browser environment
+    if (typeof window !== 'undefined' && window.localStorage) {
+      // Force refresh clears the cache
+      if (forceRefresh) {
+        localStorage.removeItem(CATEGORIZED_STORES_CACHE_KEY);
+        console.log('[Categorized Stores Cache] Force refresh requested, clearing cache');
+      } else {
+        // Try to get cached data
+        const cached = localStorage.getItem(CATEGORIZED_STORES_CACHE_KEY);
+
+        if (cached) {
+          try {
+            const cacheData: CategorizedStoresCache = JSON.parse(cached);
+            const age = Date.now() - cacheData.timestamp;
+
+            // If cache is less than 24 hours old, return it
+            if (age < STORES_CACHE_TTL) {
+              console.log('[Categorized Stores Cache] Using cached data (age:', Math.round(age / 1000 / 60), 'minutes)');
+              return cacheData.data;
+            } else {
+              console.log('[Categorized Stores Cache] Cache expired, fetching fresh data');
+            }
+          } catch (e) {
+            console.warn('[Categorized Stores Cache] Failed to parse cached data, fetching fresh');
+          }
+        }
+      }
+    }
+
+    // Fetch from API
+    const response = await api.get('/api/stores/categorized');
+    const categorizedData: CategorizedStoresResponse = response.data;
+
+    // Cache the result
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const cacheData: CategorizedStoresCache = {
+          data: categorizedData,
+          timestamp: Date.now(),
+        };
+        localStorage.setItem(CATEGORIZED_STORES_CACHE_KEY, JSON.stringify(cacheData));
+        console.log('[Categorized Stores Cache] Cached fresh data');
+      } catch (e) {
+        console.warn('[Categorized Stores Cache] Failed to cache data:', e);
+      }
+    }
+
+    return categorizedData;
+  } catch (error) {
+    console.error('Error fetching categorized stores:', error);
     throw error;
   }
 };
@@ -1294,6 +1375,8 @@ export const adminCuratedAPI = {
   }): Promise<{
     products: any[];
     total: number;
+    total_primary: number;
+    total_related: number;
     page: number;
     page_size: number;
     has_more: boolean;

@@ -6,7 +6,7 @@ import ChatPanel from '@/components/panels/ChatPanel';
 import ProductDiscoveryPanel from '@/components/panels/ProductDiscoveryPanel';
 import CanvasPanel from '@/components/panels/CanvasPanel';
 import { ResizablePanelLayout } from '@/components/panels/ResizablePanelLayout';
-import { checkFurnitureRemovalStatus, startFurnitureRemoval, getAvailableStores, projectsAPI, restoreDesignStateFromRecovery } from '@/utils/api';
+import { checkFurnitureRemovalStatus, startFurnitureRemoval, getCategorizedStores, projectsAPI, restoreDesignStateFromRecovery, CategorizedStoresResponse, StoreCategory } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigationGuard } from '@/hooks/useNavigationGuard';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
@@ -45,6 +45,7 @@ function DesignPageContent() {
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
   const [showStoreModal, setShowStoreModal] = useState(false);
   const [availableStores, setAvailableStores] = useState<string[]>([]);
+  const [storeCategories, setStoreCategories] = useState<StoreCategory[]>([]);
 
   // Project state (for logged-in users)
   const searchParams = useSearchParams();
@@ -304,11 +305,13 @@ function DesignPageContent() {
       }
     }
 
-    // Fetch available stores for the modal
+    // Fetch available stores for the modal (categorized by budget tier)
     const fetchStores = async () => {
       try {
-        const response = await getAvailableStores();
-        setAvailableStores(response.stores);
+        const response = await getCategorizedStores();
+        setStoreCategories(response.categories);
+        // Also maintain flat list for backwards compatibility
+        setAvailableStores(response.all_stores.map(s => s.name));
       } catch (error) {
         console.error('[DesignPage] Failed to fetch available stores:', error);
       }
@@ -1706,49 +1709,65 @@ function DesignPageContent() {
                 </p>
               </div>
 
-              {/* Store Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {availableStores.map((store) => {
-                  const isSelected = selectedStores.includes(store);
-                  return (
-                    <button
-                      key={store}
-                      onClick={() => {
-                        const updated = isSelected
-                          ? selectedStores.filter((s) => s !== store)
-                          : [...selectedStores, store];
-                        handleStoreSelectionChange(updated);
-                      }}
-                      className={`
-                        p-4 rounded-lg border-2 transition-all duration-200
-                        ${
-                          isSelected
-                            ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 shadow-md'
-                            : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:border-primary-300 dark:hover:border-primary-700 hover:bg-primary-50 dark:hover:bg-primary-900/10'
-                        }
-                      `}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium capitalize text-left">
-                          {store.replace(/([A-Z])/g, ' $1').trim()}
-                        </span>
-                        {isSelected && (
-                          <svg
-                            className="w-5 h-5 text-primary-600 dark:text-primary-400 flex-shrink-0"
-                            fill="currentColor"
-                            viewBox="0 0 20 20"
+              {/* Store Categories */}
+              <div className="space-y-6">
+                {storeCategories.map((category) => (
+                  <div key={category.tier}>
+                    {/* Category Header */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <h4 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+                        {category.label}
+                      </h4>
+                      <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                        ({category.stores.length} stores)
+                      </span>
+                    </div>
+                    {/* Store Grid for this category */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {category.stores.map((store) => {
+                        const isSelected = selectedStores.includes(store.name);
+                        return (
+                          <button
+                            key={store.name}
+                            onClick={() => {
+                              const updated = isSelected
+                                ? selectedStores.filter((s) => s !== store.name)
+                                : [...selectedStores, store.name];
+                              handleStoreSelectionChange(updated);
+                            }}
+                            className={`
+                              p-4 rounded-lg border-2 transition-all duration-200
+                              ${
+                                isSelected
+                                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 shadow-md'
+                                  : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:border-primary-300 dark:hover:border-primary-700 hover:bg-primary-50 dark:hover:bg-primary-900/10'
+                              }
+                            `}
                           >
-                            <path
-                              fillRule="evenodd"
-                              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-left">
+                                {store.display_name}
+                              </span>
+                              {isSelected && (
+                                <svg
+                                  className="w-5 h-5 text-primary-600 dark:text-primary-400 flex-shrink-0"
+                                  fill="currentColor"
+                                  viewBox="0 0 20 20"
+                                >
+                                  <path
+                                    fillRule="evenodd"
+                                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                    clipRule="evenodd"
+                                  />
+                                </svg>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
