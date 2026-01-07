@@ -461,6 +461,7 @@ async def search_products_for_look(
                 semantic_product_ids = {}
 
         # Step 2: Build keyword search query (for products without embeddings or as fallback)
+        logger.info(f"[SEARCH] Building keyword search for query='{query}', source_website='{source_website}'")
         search_query = select(Product).options(selectinload(Product.images)).where(Product.is_available.is_(True))
 
         # Apply text search if query provided (with synonym expansion for name only)
@@ -572,6 +573,7 @@ async def search_products_for_look(
 
         result = await db.execute(search_query)
         keyword_products = result.scalars().unique().all()
+        logger.info(f"[SEARCH] Keyword search returned {len(keyword_products)} products")
 
         # STEP 3: Merge semantic and keyword results
         # Priority: semantic matches first (sorted by similarity), then keyword-only matches
