@@ -113,6 +113,8 @@ export default function CreateCuratedLookPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [totalProducts, setTotalProducts] = useState(0);
+  const [totalPrimary, setTotalPrimary] = useState(0);
+  const [totalRelated, setTotalRelated] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const productsContainerRef = useRef<HTMLDivElement>(null);
 
@@ -439,7 +441,7 @@ export default function CreateCuratedLookPage() {
   const buildSearchParams = (page: number = 1) => ({
     query: searchQuery || undefined,
     categoryId: selectedCategory || undefined,
-    sourceWebsite: selectedStores.length === 1 ? selectedStores[0] : undefined,
+    sourceWebsite: selectedStores.length > 0 ? selectedStores.join(',') : undefined,
     minPrice: minPrice ? parseFloat(minPrice) : undefined,
     maxPrice: maxPrice ? parseFloat(maxPrice) : undefined,
     colors: selectedColors.length > 0 ? selectedColors.join(',') : undefined,
@@ -458,17 +460,12 @@ export default function CreateCuratedLookPage() {
 
       const response = await adminCuratedAPI.searchProducts(buildSearchParams(1));
 
-      // Apply client-side filtering for multiple stores (if needed)
-      let products = response.products;
-      if (selectedStores.length > 1) {
-        products = products.filter((p: any) =>
-          selectedStores.includes(p.source_website) || selectedStores.includes(p.source)
-        );
-      }
-
-      setDiscoveredProducts(products);
+      // Backend now handles multi-store filtering
+      setDiscoveredProducts(response.products);
       setHasMore(response.has_more);
       setTotalProducts(response.total);
+      setTotalPrimary(response.total_primary || 0);
+      setTotalRelated(response.total_related || 0);
     } catch (err) {
       console.error('Error searching products:', err);
     } finally {
@@ -485,15 +482,8 @@ export default function CreateCuratedLookPage() {
       const nextPage = currentPage + 1;
       const response = await adminCuratedAPI.searchProducts(buildSearchParams(nextPage));
 
-      // Apply client-side filtering for multiple stores (if needed)
-      let products = response.products;
-      if (selectedStores.length > 1) {
-        products = products.filter((p: any) =>
-          selectedStores.includes(p.source_website) || selectedStores.includes(p.source)
-        );
-      }
-
-      setDiscoveredProducts(prev => [...prev, ...products]);
+      // Backend now handles multi-store filtering
+      setDiscoveredProducts(prev => [...prev, ...response.products]);
       setCurrentPage(nextPage);
       setHasMore(response.has_more);
     } catch (err) {
@@ -2200,8 +2190,17 @@ export default function CreateCuratedLookPage() {
               </div>
             ) : discoveredProducts.length > 0 ? (
               <>
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                {discoveredProducts.map((product, index) => {
+              {/* Separate products into primary matches and related */}
+              {(() => {
+                const primaryProducts = discoveredProducts.filter((p: any) => p.is_primary_match);
+                const relatedProducts = discoveredProducts.filter((p: any) => !p.is_primary_match);
+
+                // Debug logging
+                console.log(`[Products] Total: ${discoveredProducts.length}, Primary: ${primaryProducts.length}, Related: ${relatedProducts.length}, totalPrimary: ${totalPrimary}, totalRelated: ${totalRelated}`);
+
+                const renderProductGrid = (products: any[], keyPrefix: string) => (
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                    {products.map((product: any, index: number) => {
                   const quantity = getProductQuantity(product.id);
                   const isInCanvas = quantity > 0;
                   const imageUrl = getProductImage(product);
@@ -2314,8 +2313,53 @@ export default function CreateCuratedLookPage() {
                       </div>
                     </div>
                   );
-                })}
-              </div>
+                    })}
+                  </div>
+                );
+
+                return (
+                  <>
+                    {/* Primary Matches Section */}
+                    {primaryProducts.length > 0 && (
+                      <>
+                        <div className="mb-2">
+                          <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-1 rounded">
+                            Best Matches ({totalPrimary > 0 ? totalPrimary : primaryProducts.length})
+                          </span>
+                        </div>
+                        {renderProductGrid(primaryProducts, 'primary')}
+                      </>
+                    )}
+
+                    {/* More Products Section */}
+                    {relatedProducts.length > 0 && (
+                      <>
+                        <div className={`mb-2 ${primaryProducts.length > 0 ? 'mt-4 pt-3 border-t border-gray-200' : ''}`}>
+                          <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-1 rounded">
+                            {primaryProducts.length > 0 ? 'More Products' : 'Products'} ({totalRelated > 0 ? totalRelated : relatedProducts.length})
+                          </span>
+                        </div>
+                        {renderProductGrid(relatedProducts, 'related')}
+                      </>
+                    )}
+
+                    {/* Show More Products header even if none loaded yet (but we know they exist) */}
+                    {relatedProducts.length === 0 && totalRelated > 0 && primaryProducts.length > 0 && (
+                      <div className="mb-2 mt-4 pt-3 border-t border-gray-200">
+                        <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-1 rounded">
+                          More Products ({totalRelated})
+                        </span>
+                        <p className="text-xs text-gray-400 mt-1">Scroll down to load more...</p>
+                      </div>
+                    )}
+
+                    {/* Fallback if no is_primary_match flag (backwards compatibility) */}
+                    {primaryProducts.length === 0 && relatedProducts.length === 0 && discoveredProducts.length > 0 && (
+                      renderProductGrid(discoveredProducts, 'all')
+                    )}
+                  </>
+                );
+              })()}
               {/* Infinite scroll loading indicator */}
               {loadingMore && (
                 <div className="flex items-center justify-center py-4">

@@ -66,7 +66,7 @@ router = APIRouter(prefix="/admin/curated", tags=["admin-curated"])
 def normalize_singular_plural(word: str) -> list:
     """
     Returns both singular and plural forms of a word.
-    Handles common English patterns.
+    Handles common English patterns and hyphenated words.
     """
     word = word.lower().strip()
     forms = [word]
@@ -80,6 +80,23 @@ def normalize_singular_plural(word: str) -> list:
 
     if word in irregulars:
         return [word]
+
+    # Handle hyphenated words (e.g., "l-shaped" -> "l-shape", "l shaped", "l shape")
+    if "-" in word:
+        # Add space-separated version: "l-shaped" -> "l shaped"
+        space_version = word.replace("-", " ")
+        forms.append(space_version)
+
+        # If ends in "-shaped", also add "-shape" version: "l-shaped" -> "l-shape", "l shape"
+        if word.endswith("-shaped"):
+            no_d_version = word[:-1]  # "l-shaped" -> "l-shape"
+            forms.append(no_d_version)
+            forms.append(no_d_version.replace("-", " "))  # "l-shape" -> "l shape"
+        elif word.endswith("ed"):
+            # Generic -ed handling for hyphenated words
+            no_d_version = word[:-1]
+            forms.append(no_d_version)
+            forms.append(no_d_version.replace("-", " "))
 
     # If word ends in 's', try to get singular
     if word.endswith("ies"):
@@ -115,10 +132,14 @@ def normalize_singular_plural(word: str) -> list:
 SEARCH_SYNONYMS = {
     "carpet": ["rug", "carpet", "runner", "mat", "floor covering"],
     "rug": ["rug", "carpet", "runner", "mat", "floor covering"],
-    "sofa": ["sofa", "couch", "settee"],
-    "sofas": ["sofa", "couch", "settee"],
-    "couch": ["sofa", "couch", "settee"],
-    "couches": ["sofa", "couch", "settee"],
+    "sofa": ["sofa", "couch", "settee", "sectional"],
+    "sofas": ["sofa", "couch", "settee", "sectional"],
+    "couch": ["sofa", "couch", "settee", "sectional"],
+    "couches": ["sofa", "couch", "settee", "sectional"],
+    # L-shaped / corner sofa synonyms
+    "l-shaped": ["l-shaped", "l-shape", "l shaped", "l shape", "corner"],
+    "l-shape": ["l-shaped", "l-shape", "l shaped", "l shape", "corner"],
+    "corner": ["corner", "l-shaped", "l-shape", "l shaped", "l shape"],
     "cupboard": ["cupboard", "cabinet", "wardrobe", "armoire"],
     "cabinet": ["cupboard", "cabinet", "wardrobe", "armoire"],
     "lamp": ["lamp", "floor lamp", "standing lamp", "table lamp"],
@@ -268,7 +289,7 @@ def expand_search_query_grouped(query: str) -> List[List[str]]:
 async def semantic_search_products(
     query_text: str,
     db: AsyncSession,
-    source_website: Optional[str] = None,
+    source_websites: Optional[List[str]] = None,
     category_id: Optional[int] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
@@ -294,8 +315,8 @@ async def semantic_search_products(
     query = select(Product.id, Product.embedding).where(Product.is_available.is_(True)).where(Product.embedding.isnot(None))
 
     # Apply filters
-    if source_website:
-        query = query.where(Product.source_website == source_website)
+    if source_websites:
+        query = query.where(Product.source_website.in_(source_websites))
 
     if category_id:
         query = query.where(Product.category_id == category_id)
@@ -427,7 +448,7 @@ async def get_product_categories(
 async def search_products_for_look(
     query: Optional[str] = Query(None, min_length=1),
     category_id: Optional[int] = Query(None),
-    source_website: Optional[str] = Query(None),
+    source_website: Optional[str] = Query(None, description="Comma-separated list of stores to filter by"),
     min_price: Optional[float] = Query(None),
     max_price: Optional[float] = Query(None),
     colors: Optional[str] = Query(None, description="Comma-separated list of colors"),
@@ -444,6 +465,13 @@ async def search_products_for_look(
         semantic_product_ids: Dict[int, float] = {}
         search_groups = []
 
+        # Parse comma-separated stores into a list
+        source_websites: Optional[List[str]] = None
+        if source_website:
+            source_websites = [s.strip() for s in source_website.split(",") if s.strip()]
+            if not source_websites:
+                source_websites = None
+
         # Step 1: Try semantic search first (for products with embeddings)
         # Get all semantic matches (we'll paginate the combined results later)
         if query and use_semantic:
@@ -451,7 +479,7 @@ async def search_products_for_look(
                 semantic_product_ids = await semantic_search_products(
                     query_text=query,
                     db=db,
-                    source_website=source_website,
+                    source_websites=source_websites,
                     category_id=category_id,
                     min_price=min_price,
                     max_price=max_price,
@@ -465,7 +493,7 @@ async def search_products_for_look(
         # Step 2: Build keyword search query (for products without embeddings or as fallback)
         search_query = select(Product).options(selectinload(Product.images)).where(Product.is_available.is_(True))
 
-        logger.info(f"[SEARCH DEBUG] query='{query}', source_website='{source_website}', page={page}")
+        logger.info(f"[SEARCH DEBUG] query='{query}', source_websites={source_websites}, page={page}")
 
         # Apply text search if query provided (with synonym expansion for name only)
         if query:
@@ -513,9 +541,9 @@ async def search_products_for_look(
         if category_id:
             search_query = search_query.where(Product.category_id == category_id)
 
-        # Filter by store if specified
-        if source_website:
-            search_query = search_query.where(Product.source_website == source_website)
+        # Filter by store(s) if specified
+        if source_websites:
+            search_query = search_query.where(Product.source_website.in_(source_websites))
 
         # Filter by price range
         if min_price is not None:
@@ -583,6 +611,33 @@ async def search_products_for_look(
         semantic_scores: Dict[int, float] = {}
         seen_product_ids = set()
 
+        # Helper: Check if product name matches ALL search groups (for primary match)
+        def name_matches_all_groups(product_name: str, groups: List[List[str]]) -> bool:
+            """Check if product name contains at least one term from EACH group."""
+            if not groups:
+                return True
+            name_lower = product_name.lower()
+            # Normalize: "L - Shaped" -> "l-shaped"
+            name_normalized = re.sub(r"\s*-\s*", "-", name_lower)
+            name_spaced = re.sub(r"-", " ", name_lower)  # Also try with spaces
+
+            for group in groups:
+                group_matched = False
+                for term in group:
+                    term_normalized = re.sub(r"\s*-\s*", "-", term.lower())
+                    # Check various forms
+                    if term_normalized in name_normalized or term_normalized in name_spaced:
+                        group_matched = True
+                        break
+                    # Also check with spaces
+                    term_spaced = re.sub(r"-", " ", term.lower())
+                    if term_spaced in name_lower or term_spaced in name_spaced:
+                        group_matched = True
+                        break
+                if not group_matched:
+                    return False
+            return True
+
         if semantic_product_ids:
             # First, include all products from semantic search with high similarity (>= 0.3)
             semantic_threshold = 0.3
@@ -603,7 +658,29 @@ async def search_products_for_look(
                 seen_product_ids.add(p.id)
 
         total_results = len(ordered_product_ids)
-        logger.info(f"[SEARCH] Total results: {total_results} products (semantic + keyword)")
+
+        # Calculate total_primary and total_related by fetching ALL product names
+        # This is needed for accurate counts across pagination
+        total_primary = 0
+        total_related = 0
+        if ordered_product_ids and search_groups:
+            # Fetch just names for all products (efficient - no images/full data)
+            names_query = select(Product.id, Product.name).where(Product.id.in_(ordered_product_ids))
+            names_result = await db.execute(names_query)
+            all_products_names = {row[0]: row[1] for row in names_result.fetchall()}
+
+            for product_id in ordered_product_ids:
+                name = all_products_names.get(product_id, "")
+                if name_matches_all_groups(name, search_groups):
+                    total_primary += 1
+                else:
+                    total_related += 1
+
+            logger.info(f"[SEARCH] Total counts: {total_primary} primary, {total_related} related (out of {total_results})")
+        else:
+            # No search query - all are primary matches
+            total_primary = total_results
+            total_related = 0
 
         # STEP 4: Apply pagination
         start_idx = (page - 1) * page_size
@@ -622,6 +699,12 @@ async def search_products_for_look(
             for product_id in page_product_ids:
                 if product_id in products_map:
                     p = products_map[product_id]
+                    similarity = semantic_scores.get(product_id, 0)
+
+                    # Primary match = product name contains ALL search terms (using synonym groups)
+                    # This is more accurate than similarity threshold for specific queries like "L-shaped sofa"
+                    is_primary = name_matches_all_groups(p.name, search_groups) if search_groups else True
+
                     product_data = {
                         "id": p.id,
                         "name": p.name,
@@ -632,17 +715,24 @@ async def search_products_for_look(
                         "brand": p.brand,
                         "category_id": p.category_id,
                         "description": p.description,
+                        "is_primary_match": is_primary,
+                        "similarity_score": round(similarity, 3) if similarity > 0 else None,
                     }
-                    # Add similarity score if from semantic search
-                    if product_id in semantic_scores:
-                        product_data["similarity_score"] = round(semantic_scores[product_id], 3)
                     final_products.append(product_data)
         else:
             final_products = []
 
+        # Count primary matches in this page
+        page_primary_count = sum(1 for p in final_products if p.get("is_primary_match"))
+        logger.info(
+            f"[SEARCH] Page {page}: {len(final_products)} products, {page_primary_count} primary (name matches all search terms)"
+        )
+
         return {
             "products": final_products,
             "total": total_results,
+            "total_primary": total_primary,
+            "total_related": total_related,
             "page": page,
             "page_size": page_size,
             "has_more": has_more,
