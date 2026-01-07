@@ -4,7 +4,7 @@ Admin API routes for managing curated looks
 import logging
 import re
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from schemas.curated import (
@@ -16,7 +16,7 @@ from schemas.curated import (
     CuratedLookSummarySchema,
     CuratedLookUpdate,
 )
-from sqlalchemy import case, delete, func, or_, select
+from sqlalchemy import and_, case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -162,7 +162,8 @@ SEARCH_SYNONYMS = {
 def expand_search_query(query: str) -> list:
     """Expand a search query to include synonyms and singular/plural forms.
 
-    For multi-word queries like "l-shaped sofa", preserves all terms and expands each.
+    For single-word queries, returns flat list of synonyms.
+    For multi-word queries, returns flat list but search logic handles AND between words.
     """
     query_lower = query.lower().strip()
 
@@ -206,6 +207,49 @@ def expand_search_query(query: str) -> list:
     result = list(all_terms)
     logger.info(f"Multi-word query '{query}' expanded to: {result}")
     return result
+
+
+def expand_search_query_grouped(query: str) -> List[List[str]]:
+    """Expand a search query and return GROUPED synonyms for AND logic.
+
+    Returns list of lists: [[synonyms for word1], [synonyms for word2], ...]
+    Search should match: (any of group1) AND (any of group2) AND ...
+
+    Example: "L-shaped sofa" -> [["l-shaped", "l-shapeds"], ["sofa", "couch", "settee"]]
+    """
+    query_lower = query.lower().strip()
+    words = query_lower.split()
+
+    if len(words) == 1:
+        # Single word - return as single group
+        for key, synonyms in SEARCH_SYNONYMS.items():
+            if key == query_lower or query_lower == key:
+                return [synonyms]
+
+        word_forms = normalize_singular_plural(query_lower)
+        for form in word_forms:
+            for key, synonyms in SEARCH_SYNONYMS.items():
+                if key == form or form == key:
+                    return [synonyms]
+
+        return [word_forms]
+
+    # Multi-word query - create groups for each word
+    groups = []
+    for word in words:
+        matched = False
+        for key, synonyms in SEARCH_SYNONYMS.items():
+            if key == word or word == key:
+                groups.append(list(synonyms))
+                matched = True
+                break
+
+        if not matched:
+            word_forms = normalize_singular_plural(word)
+            groups.append(word_forms)
+
+    logger.info(f"Multi-word query '{query}' grouped to: {groups}")
+    return groups
 
 
 def get_primary_image_url(product: Product) -> Optional[str]:
@@ -313,23 +357,27 @@ async def search_products_for_look(
 
         # Apply text search if query provided (with synonym expansion for name only)
         if query:
-            search_terms = expand_search_query(query)
-            logger.info(f"Search query '{query}' expanded to: {search_terms}")
+            # Use grouped expansion for AND logic between word groups
+            search_groups = expand_search_query_grouped(query)
+            logger.info(f"Search query '{query}' expanded to groups: {search_groups}")
 
-            # Build search conditions using word boundaries for accurate matching
-            # This prevents "bed" from matching "bedspread", "bedding", etc.
-            name_conditions = []
-            for term in search_terms:
-                escaped_term = re.escape(term)
-                # Use PostgreSQL regex with word boundaries (\y) for accurate matching
-                name_conditions.append(Product.name.op("~*")(rf"\y{escaped_term}\y"))
+            # Build AND conditions: product must match at least one term from EACH group
+            # Example: "L-shaped sofa" -> must match (l-shaped OR l-shapeds) AND (sofa OR couch OR settee)
+            and_conditions = []
+            for group in search_groups:
+                group_conditions = []
+                for term in group:
+                    escaped_term = re.escape(term)
+                    # Use PostgreSQL regex with word boundaries (\y) for accurate matching
+                    group_conditions.append(Product.name.op("~*")(rf"\y{escaped_term}\y"))
+                if group_conditions:
+                    # OR within each group
+                    and_conditions.append(or_(*group_conditions))
 
             # Broad terms that should NOT match in description (too many false positives)
-            # e.g., "decor" matches rugs with "perfect for home decor" in description
             BROAD_TERMS = {"decor", "art", "furniture", "home", "living", "style", "design"}
 
             # Also match original query in brand and description with word boundaries
-            # Skip description matching for broad terms to avoid false positives
             escaped_query = re.escape(query)
             query_lower = query.lower().strip()
 
@@ -341,9 +389,12 @@ async def search_products_for_look(
             if query_lower not in BROAD_TERMS:
                 original_query_conditions.append(Product.description.op("~*")(rf"\y{escaped_query}\y"))
 
-            # Combine: (synonym matches in name) OR (original query in brand/description)
-            all_conditions = name_conditions + original_query_conditions
-            if all_conditions:
+            # Final condition: (all AND conditions from groups) OR (original query in brand/description)
+            if and_conditions:
+                # AND between all groups
+                grouped_condition = and_(*and_conditions)
+                # OR with brand/description match for full phrase
+                all_conditions = [grouped_condition] + original_query_conditions
                 search_query = search_query.where(or_(*all_conditions))
 
         # Filter by category if specified
@@ -392,9 +443,9 @@ async def search_products_for_look(
         # This ensures "paintings" shows actual paintings first, not rugs that mention paintings
         if query:
             escaped_query = re.escape(query)
-            # Build name match condition for ALL expanded search terms
-            # e.g., for "paintings" -> check "painting", "wall art", "artwork", etc in name
-            name_match_conditions = [Product.name.op("~*")(rf"\y{re.escape(term)}\y") for term in search_terms]
+            # Build name match condition for ALL expanded search terms (flatten the groups)
+            all_search_terms = [term for group in search_groups for term in group]
+            name_match_conditions = [Product.name.op("~*")(rf"\y{re.escape(term)}\y") for term in all_search_terms]
             # Case expression to prioritize matches by field:
             # - Priority 0: Name matches ANY synonym (most relevant - actual paintings/wall art)
             # - Priority 1: Brand matches
