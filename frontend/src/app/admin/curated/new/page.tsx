@@ -109,6 +109,12 @@ export default function CreateCuratedLookPage() {
   const [discoveredProducts, setDiscoveredProducts] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searching, setSearching] = useState(false);
+  // Pagination state for infinite scroll
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const productsContainerRef = useRef<HTMLDivElement>(null);
 
   // Canvas state
   const [selectedProducts, setSelectedProducts] = useState<any[]>([]);
@@ -429,30 +435,31 @@ export default function CreateCuratedLookPage() {
     }
   };
 
-  // Search products with filters
+  // Build search params helper
+  const buildSearchParams = (page: number = 1) => ({
+    query: searchQuery || undefined,
+    categoryId: selectedCategory || undefined,
+    sourceWebsite: selectedStores.length === 1 ? selectedStores[0] : undefined,
+    minPrice: minPrice ? parseFloat(minPrice) : undefined,
+    maxPrice: maxPrice ? parseFloat(maxPrice) : undefined,
+    colors: selectedColors.length > 0 ? selectedColors.join(',') : undefined,
+    styles: selectedProductStyles.length > 0 ? selectedProductStyles.join(',') : undefined,
+    materials: selectedMaterials.length > 0 ? selectedMaterials.join(',') : undefined,
+    page,
+    pageSize: 50,
+  });
+
+  // Search products with filters (first page)
   const handleSearch = async () => {
     try {
       setSearching(true);
+      setCurrentPage(1);
+      setDiscoveredProducts([]);
 
-      // Build search params - server now handles price, color, style, and material filtering
-      const searchParams: any = {
-        query: searchQuery || undefined,
-        categoryId: selectedCategory || undefined,
-        sourceWebsite: selectedStores.length === 1 ? selectedStores[0] : undefined,
-        minPrice: minPrice ? parseFloat(minPrice) : undefined,
-        maxPrice: maxPrice ? parseFloat(maxPrice) : undefined,
-        colors: selectedColors.length > 0 ? selectedColors.join(',') : undefined,
-        styles: selectedProductStyles.length > 0 ? selectedProductStyles.join(',') : undefined,
-        materials: selectedMaterials.length > 0 ? selectedMaterials.join(',') : undefined,
-        limit: 500  // High limit to show all matching products
-      };
-
-      const response = await adminCuratedAPI.searchProducts(searchParams);
+      const response = await adminCuratedAPI.searchProducts(buildSearchParams(1));
 
       // Apply client-side filtering for multiple stores (if needed)
       let products = response.products;
-
-      // Filter by selected stores if multiple
       if (selectedStores.length > 1) {
         products = products.filter((p: any) =>
           selectedStores.includes(p.source_website) || selectedStores.includes(p.source)
@@ -460,10 +467,48 @@ export default function CreateCuratedLookPage() {
       }
 
       setDiscoveredProducts(products);
+      setHasMore(response.has_more);
+      setTotalProducts(response.total);
     } catch (err) {
       console.error('Error searching products:', err);
     } finally {
       setSearching(false);
+    }
+  };
+
+  // Load more products for infinite scroll
+  const loadMoreProducts = async () => {
+    if (loadingMore || !hasMore) return;
+
+    try {
+      setLoadingMore(true);
+      const nextPage = currentPage + 1;
+      const response = await adminCuratedAPI.searchProducts(buildSearchParams(nextPage));
+
+      // Apply client-side filtering for multiple stores (if needed)
+      let products = response.products;
+      if (selectedStores.length > 1) {
+        products = products.filter((p: any) =>
+          selectedStores.includes(p.source_website) || selectedStores.includes(p.source)
+        );
+      }
+
+      setDiscoveredProducts(prev => [...prev, ...products]);
+      setCurrentPage(nextPage);
+      setHasMore(response.has_more);
+    } catch (err) {
+      console.error('Error loading more products:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  // Scroll handler for infinite scroll
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    // Load more when user scrolls to bottom (with 200px threshold)
+    if (scrollHeight - scrollTop - clientHeight < 200 && !loadingMore && hasMore) {
+      loadMoreProducts();
     }
   };
 
@@ -2134,9 +2179,9 @@ export default function CreateCuratedLookPage() {
               <div className="p-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50">
                 <div className="flex justify-between items-center">
                   <h2 className="font-semibold text-gray-900 text-sm">Products</h2>
-                  {discoveredProducts.length > 0 && (
+                  {totalProducts > 0 && (
                     <span className="text-xs text-purple-600 font-medium">
-                      {discoveredProducts.length} found
+                      {discoveredProducts.length} of {totalProducts} found
                     </span>
                   )}
                 </div>
@@ -2144,20 +2189,25 @@ export default function CreateCuratedLookPage() {
               </div>
 
               {/* Product Grid */}
-              <div className="flex-1 overflow-y-auto p-3">
+              <div
+                ref={productsContainerRef}
+                className="flex-1 overflow-y-auto p-3"
+                onScroll={handleScroll}
+              >
                 {searching ? (
               <div className="flex items-center justify-center h-32">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
               </div>
             ) : discoveredProducts.length > 0 ? (
+              <>
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                {discoveredProducts.map((product) => {
+                {discoveredProducts.map((product, index) => {
                   const quantity = getProductQuantity(product.id);
                   const isInCanvas = quantity > 0;
                   const imageUrl = getProductImage(product);
                   return (
                     <div
-                      key={product.id}
+                      key={`${product.id}-${index}`}
                       className={`group rounded-lg border-2 overflow-hidden transition-all ${
                         isInCanvas
                           ? 'border-green-500 bg-green-50'
@@ -2266,6 +2316,19 @@ export default function CreateCuratedLookPage() {
                   );
                 })}
               </div>
+              {/* Infinite scroll loading indicator */}
+              {loadingMore && (
+                <div className="flex items-center justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
+                  <span className="ml-2 text-sm text-gray-500">Loading more...</span>
+                </div>
+              )}
+              {hasMore && !loadingMore && (
+                <div className="text-center py-3">
+                  <span className="text-xs text-gray-400">Scroll for more</span>
+                </div>
+              )}
+              </>
             ) : (
               <div className="flex items-center justify-center h-full text-center text-gray-400">
                 <div>

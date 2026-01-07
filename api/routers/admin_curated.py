@@ -434,16 +434,18 @@ async def search_products_for_look(
     styles: Optional[str] = Query(None, description="Comma-separated list of primary_style values"),
     materials: Optional[str] = Query(None, description="Comma-separated list of materials"),
     use_semantic: bool = Query(True, description="Use semantic search (embeddings) when available"),
-    limit: int = Query(500, ge=1, le=1000),
+    page: int = Query(1, ge=1, description="Page number for pagination"),
+    page_size: int = Query(50, ge=1, le=200, description="Number of products per page"),
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Search for products to add to a curated look. Uses semantic search + keyword fallback."""
+    """Search for products to add to a curated look. Uses semantic search + keyword fallback with pagination."""
     try:
         semantic_product_ids: Dict[int, float] = {}
         search_groups = []
 
         # Step 1: Try semantic search first (for products with embeddings)
+        # Get all semantic matches (we'll paginate the combined results later)
         if query and use_semantic:
             try:
                 semantic_product_ids = await semantic_search_products(
@@ -453,7 +455,7 @@ async def search_products_for_look(
                     category_id=category_id,
                     min_price=min_price,
                     max_price=max_price,
-                    limit=limit,
+                    limit=10000,  # Get all semantic matches, pagination happens later
                 )
                 logger.info(f"[SEARCH] Semantic search returned {len(semantic_product_ids)} products")
             except Exception as e:
@@ -461,8 +463,9 @@ async def search_products_for_look(
                 semantic_product_ids = {}
 
         # Step 2: Build keyword search query (for products without embeddings or as fallback)
-        logger.info(f"[SEARCH] Building keyword search for query='{query}', source_website='{source_website}'")
         search_query = select(Product).options(selectinload(Product.images)).where(Product.is_available.is_(True))
+
+        logger.info(f"[SEARCH DEBUG] query='{query}', source_website='{source_website}', page={page}")
 
         # Apply text search if query provided (with synonym expansion for name only)
         if query:
@@ -568,57 +571,58 @@ async def search_products_for_look(
         else:
             search_query = search_query.order_by(Product.price.desc().nullslast())
 
-        # Limit results
-        search_query = search_query.limit(limit)
+        # Get all keyword matches (no limit - we paginate combined results)
+        search_query = search_query.limit(10000)
 
         result = await db.execute(search_query)
         keyword_products = result.scalars().unique().all()
-        logger.info(f"[SEARCH] Keyword search returned {len(keyword_products)} products")
 
-        # STEP 3: Merge semantic and keyword results
+        # STEP 3: Merge semantic and keyword results into ordered list of product IDs
         # Priority: semantic matches first (sorted by similarity), then keyword-only matches
-        final_products = []
+        ordered_product_ids: List[int] = []
+        semantic_scores: Dict[int, float] = {}
         seen_product_ids = set()
 
         if semantic_product_ids:
             # First, include all products from semantic search with high similarity (>= 0.3)
-            semantic_threshold = 0.3  # Minimum similarity score to include
+            semantic_threshold = 0.3
             semantic_sorted = sorted(semantic_product_ids.items(), key=lambda x: x[1], reverse=True)
 
-            # Get semantic product details from DB
-            semantic_ids = [pid for pid, score in semantic_sorted if score >= semantic_threshold]
-            if semantic_ids:
-                semantic_query = select(Product).options(selectinload(Product.images)).where(Product.id.in_(semantic_ids))
-                semantic_result = await db.execute(semantic_query)
-                semantic_products_map = {p.id: p for p in semantic_result.scalars().unique().all()}
-
-                # Add semantic results in order of similarity
-                for product_id, similarity in semantic_sorted:
-                    if similarity >= semantic_threshold and product_id in semantic_products_map:
-                        p = semantic_products_map[product_id]
-                        final_products.append(
-                            {
-                                "id": p.id,
-                                "name": p.name,
-                                "price": p.price,
-                                "image_url": get_primary_image_url(p),
-                                "source_website": p.source_website,
-                                "source_url": p.source_url,
-                                "brand": p.brand,
-                                "category_id": p.category_id,
-                                "description": p.description,
-                                "similarity_score": round(similarity, 3),
-                            }
-                        )
-                        seen_product_ids.add(product_id)
+            for product_id, similarity in semantic_sorted:
+                if similarity >= semantic_threshold:
+                    ordered_product_ids.append(product_id)
+                    semantic_scores[product_id] = similarity
+                    seen_product_ids.add(product_id)
 
             logger.info(f"[SEARCH] Added {len(seen_product_ids)} semantic results (threshold={semantic_threshold})")
 
         # Add keyword-only results (products without embeddings or below semantic threshold)
         for p in keyword_products:
             if p.id not in seen_product_ids:
-                final_products.append(
-                    {
+                ordered_product_ids.append(p.id)
+                seen_product_ids.add(p.id)
+
+        total_results = len(ordered_product_ids)
+        logger.info(f"[SEARCH] Total results: {total_results} products (semantic + keyword)")
+
+        # STEP 4: Apply pagination
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        page_product_ids = ordered_product_ids[start_idx:end_idx]
+        has_more = end_idx < total_results
+
+        # STEP 5: Fetch product details for this page
+        if page_product_ids:
+            products_query = select(Product).options(selectinload(Product.images)).where(Product.id.in_(page_product_ids))
+            products_result = await db.execute(products_query)
+            products_map = {p.id: p for p in products_result.scalars().unique().all()}
+
+            # Build response in the correct order
+            final_products = []
+            for product_id in page_product_ids:
+                if product_id in products_map:
+                    p = products_map[product_id]
+                    product_data = {
                         "id": p.id,
                         "name": p.name,
                         "price": p.price,
@@ -629,15 +633,20 @@ async def search_products_for_look(
                         "category_id": p.category_id,
                         "description": p.description,
                     }
-                )
-                seen_product_ids.add(p.id)
+                    # Add similarity score if from semantic search
+                    if product_id in semantic_scores:
+                        product_data["similarity_score"] = round(semantic_scores[product_id], 3)
+                    final_products.append(product_data)
+        else:
+            final_products = []
 
-        logger.info(f"[SEARCH] Final results: {len(final_products)} products (semantic + keyword)")
-
-        # Limit final results
-        final_products = final_products[:limit]
-
-        return {"products": final_products}
+        return {
+            "products": final_products,
+            "total": total_results,
+            "page": page,
+            "page_size": page_size,
+            "has_more": has_more,
+        }
 
     except Exception as e:
         logger.error(f"Error searching products: {e}", exc_info=True)

@@ -1278,7 +1278,7 @@ export const adminCuratedAPI = {
   },
 
   /**
-   * Search products for adding to a look
+   * Search products for adding to a look (with pagination)
    */
   searchProducts: async (params: {
     query?: string;
@@ -1289,8 +1289,15 @@ export const adminCuratedAPI = {
     colors?: string;
     styles?: string;
     materials?: string;
-    limit?: number;
-  }): Promise<{ products: any[] }> => {
+    page?: number;
+    pageSize?: number;
+  }): Promise<{
+    products: any[];
+    total: number;
+    page: number;
+    page_size: number;
+    has_more: boolean;
+  }> => {
     try {
       const response = await api.get('/api/admin/curated/search/products', {
         params: {
@@ -1302,7 +1309,8 @@ export const adminCuratedAPI = {
           colors: params.colors,
           styles: params.styles,
           materials: params.materials,
-          limit: params.limit
+          page: params.page || 1,
+          page_size: params.pageSize || 50,
         }
       });
       return response.data;
