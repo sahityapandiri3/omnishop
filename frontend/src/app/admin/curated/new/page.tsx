@@ -7,7 +7,7 @@ import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import { Panel, Group } from 'react-resizable-panels';
 import { PanelResizeHandle } from '@/components/ui/PanelResizeHandle';
-import { adminCuratedAPI, getCategorizedStores, visualizeRoom, startChatSession, startFurnitureRemoval, checkFurnitureRemovalStatus, furniturePositionAPI, generateAngleView, StoreCategory } from '@/utils/api';
+import { adminCuratedAPI, getCategorizedStores, visualizeRoom, startChatSession, startFurnitureRemoval, checkFurnitureRemovalStatus, furniturePositionAPI, generateAngleView, StoreCategory, getRecoveredCurationState, clearRecoveredCurationState } from '@/utils/api';
 import { FurniturePosition, MagicGrabLayer, PendingMoveData } from '@/components/DraggableFurnitureCanvas';
 import { AngleSelector, ViewingAngle } from '@/components/AngleSelector';
 
@@ -284,12 +284,61 @@ export default function CreateCuratedLookPage() {
     [existingLookId]
   );
 
-  // Initialize on mount
+  // Initialize on mount and restore state if recovered from session expiry
   useEffect(() => {
+    // Check for recovered state first (from 401 redirect)
+    const recoveredState = getRecoveredCurationState();
+    if (recoveredState) {
+      console.log('[Curation] Restoring state from session recovery');
+
+      // Restore all state
+      if (recoveredState.selectedProducts) setSelectedProducts(recoveredState.selectedProducts);
+      if (recoveredState.roomImage) setRoomImage(recoveredState.roomImage);
+      if (recoveredState.visualizationImage) setVisualizationImage(recoveredState.visualizationImage);
+      if (recoveredState.title) setTitle(recoveredState.title);
+      if (recoveredState.styleTheme) setStyleTheme(recoveredState.styleTheme);
+      if (recoveredState.styleDescription) setStyleDescription(recoveredState.styleDescription);
+      if (recoveredState.styleLabels) setStyleLabels(recoveredState.styleLabels);
+      if (recoveredState.roomType) setRoomType(recoveredState.roomType);
+      if (recoveredState.preparedRoomImage) setPreparedRoomImage(recoveredState.preparedRoomImage);
+      if (recoveredState.furniturePositions) setFurniturePositions(recoveredState.furniturePositions);
+
+      // Clear recovery data after restoring
+      clearRecoveredCurationState();
+      console.log('[Curation] State restored successfully');
+    }
+
     initSession();
     loadCategories();
     loadStores();
   }, []);
+
+  // Continuously save curation state to sessionStorage for recovery after 401
+  useEffect(() => {
+    // Don't save empty state or during initial load
+    if (!roomImage && selectedProducts.length === 0 && !title) {
+      return;
+    }
+
+    const state = {
+      selectedProducts,
+      roomImage,
+      visualizationImage,
+      title,
+      styleTheme,
+      styleDescription,
+      styleLabels,
+      roomType,
+      preparedRoomImage,
+      furniturePositions,
+    };
+
+    try {
+      sessionStorage.setItem('curation_page_state', JSON.stringify(state));
+    } catch (e) {
+      console.warn('[Curation] Failed to save state to sessionStorage:', e);
+    }
+  }, [selectedProducts, roomImage, visualizationImage, title, styleTheme, styleDescription, styleLabels, roomType, preparedRoomImage, furniturePositions]);
 
   // Load existing curated look if style_from or edit parameter is present
   useEffect(() => {
@@ -923,6 +972,8 @@ export default function CreateCuratedLookPage() {
         : await adminCuratedAPI.create(lookData);
 
       console.log('[Publish] Success:', result, existingLookId ? '(updated existing)' : '(created new)');
+      // Clear saved state on successful publish
+      sessionStorage.removeItem('curation_page_state');
       router.push('/admin/curated');
     } catch (err: any) {
       console.error('Error saving look:', err);
@@ -977,6 +1028,8 @@ export default function CreateCuratedLookPage() {
         : await adminCuratedAPI.create(lookData);
 
       console.log('[SaveDraft] Success:', result, existingLookId ? '(updated existing)' : '(created new)');
+      // Clear saved state on successful save
+      sessionStorage.removeItem('curation_page_state');
       router.push('/admin/curated');
     } catch (err: any) {
       console.error('Error saving draft:', err);

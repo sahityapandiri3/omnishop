@@ -10,15 +10,14 @@ import json
 import logging
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from google import genai
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from core.config import settings
-from database.models import Product, ProductAttribute, Category
+from database.models import Category, Product, ProductAttribute
 
 logger = logging.getLogger(__name__)
 
@@ -52,11 +51,7 @@ class EmbeddingService:
         else:
             logger.warning("Google AI API key not configured - embedding service disabled")
 
-    async def generate_embedding(
-        self,
-        text: str,
-        task_type: str = "RETRIEVAL_DOCUMENT"
-    ) -> Optional[List[float]]:
+    async def generate_embedding(self, text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> Optional[List[float]]:
         """
         Generate embedding for text using Google text-embedding-004.
 
@@ -82,10 +77,7 @@ class EmbeddingService:
             result = self.client.models.embed_content(
                 model=self.MODEL_NAME,
                 contents=truncated_text,
-                config={
-                    "task_type": task_type,
-                    "output_dimensionality": self.EMBEDDING_DIMENSION
-                }
+                config={"task_type": task_type, "output_dimensionality": self.EMBEDDING_DIMENSION},
             )
 
             if result and result.embeddings:
@@ -117,19 +109,16 @@ class EmbeddingService:
         # Check cache
         if cache_key in self._query_cache:
             cached = self._query_cache[cache_key]
-            if time.time() - cached['timestamp'] < self.QUERY_CACHE_TTL:
+            if time.time() - cached["timestamp"] < self.QUERY_CACHE_TTL:
                 logger.debug(f"Query embedding cache hit for: {query[:50]}...")
-                return cached['embedding']
+                return cached["embedding"]
 
         # Generate new embedding
         embedding = await self.generate_embedding(query, task_type="RETRIEVAL_QUERY")
 
         if embedding:
             # Cache the result
-            self._query_cache[cache_key] = {
-                'embedding': embedding,
-                'timestamp': time.time()
-            }
+            self._query_cache[cache_key] = {"embedding": embedding, "timestamp": time.time()}
 
             # Prune cache if too large
             if len(self._query_cache) > self.MAX_CACHE_SIZE:
@@ -143,11 +132,8 @@ class EmbeddingService:
             return
 
         # Sort by timestamp and remove oldest 20%
-        sorted_keys = sorted(
-            self._query_cache.keys(),
-            key=lambda k: self._query_cache[k]['timestamp']
-        )
-        keys_to_remove = sorted_keys[:int(len(sorted_keys) * 0.2)]
+        sorted_keys = sorted(self._query_cache.keys(), key=lambda k: self._query_cache[k]["timestamp"])
+        keys_to_remove = sorted_keys[: int(len(sorted_keys) * 0.2)]
 
         for key in keys_to_remove:
             del self._query_cache[key]
@@ -155,10 +141,7 @@ class EmbeddingService:
         logger.info(f"Pruned {len(keys_to_remove)} entries from query cache")
 
     def build_product_embedding_text(
-        self,
-        product: Product,
-        category_name: Optional[str] = None,
-        attributes: Optional[Dict[str, str]] = None
+        self, product: Product, category_name: Optional[str] = None, attributes: Optional[Dict[str, str]] = None
     ) -> str:
         """
         Build the text representation of a product for embedding.
@@ -194,21 +177,31 @@ class EmbeddingService:
                 style_text += f", {product.secondary_style}"
             parts.append(style_text)
 
-        # Attributes (colors, materials, etc.)
+        # Attributes (colors, materials, alignment, etc.)
         if attributes:
             attr_parts = []
-            if 'color_primary' in attributes:
+            if "color_primary" in attributes:
                 attr_parts.append(f"Color: {attributes['color_primary']}")
-            if 'color_secondary' in attributes:
+            if "color_secondary" in attributes:
                 attr_parts.append(f"Secondary color: {attributes['color_secondary']}")
-            if 'material_primary' in attributes:
+            if "material_primary" in attributes:
                 attr_parts.append(f"Material: {attributes['material_primary']}")
-            if 'material_secondary' in attributes:
+            if "material_secondary" in attributes:
                 attr_parts.append(f"Secondary material: {attributes['material_secondary']}")
-            if 'texture' in attributes:
+            if "texture" in attributes:
                 attr_parts.append(f"Texture: {attributes['texture']}")
-            if 'pattern' in attributes:
+            if "pattern" in attributes:
                 attr_parts.append(f"Pattern: {attributes['pattern']}")
+            # Sofa alignment (left/right for sectional sofas)
+            if "sofa_alignment" in attributes:
+                alignment = attributes["sofa_alignment"]
+                # Expand for better semantic matching
+                alignment_text = {
+                    "left": "Left aligned, left facing, left arm, LHS",
+                    "right": "Right aligned, right facing, right arm, RHS",
+                    "reversible": "Reversible, interchangeable, configurable",
+                }.get(alignment, alignment)
+                attr_parts.append(f"Alignment: {alignment_text}")
 
             if attr_parts:
                 parts.append(" | ".join(attr_parts))
@@ -219,11 +212,7 @@ class EmbeddingService:
 
         return "\n".join(parts)
 
-    async def generate_product_embedding(
-        self,
-        product: Product,
-        db: AsyncSession
-    ) -> Optional[Tuple[List[float], str]]:
+    async def generate_product_embedding(self, product: Product, db: AsyncSession) -> Optional[Tuple[List[float], str]]:
         """
         Generate embedding for a single product.
 
@@ -238,26 +227,18 @@ class EmbeddingService:
             # Get category name
             category_name = None
             if product.category_id:
-                result = await db.execute(
-                    select(Category.name).where(Category.id == product.category_id)
-                )
+                result = await db.execute(select(Category.name).where(Category.id == product.category_id))
                 category_row = result.first()
                 if category_row:
                     category_name = category_row[0]
 
             # Get attributes
-            result = await db.execute(
-                select(ProductAttribute).where(ProductAttribute.product_id == product.id)
-            )
+            result = await db.execute(select(ProductAttribute).where(ProductAttribute.product_id == product.id))
             attributes_rows = result.scalars().all()
             attributes = {attr.attribute_name: attr.attribute_value for attr in attributes_rows}
 
             # Build embedding text
-            embedding_text = self.build_product_embedding_text(
-                product,
-                category_name=category_name,
-                attributes=attributes
-            )
+            embedding_text = self.build_product_embedding_text(product, category_name=category_name, attributes=attributes)
 
             # Generate embedding
             embedding = await self.generate_embedding(embedding_text, task_type="RETRIEVAL_DOCUMENT")
@@ -272,10 +253,7 @@ class EmbeddingService:
             return None
 
     async def batch_generate_embeddings(
-        self,
-        product_ids: List[int],
-        db: AsyncSession,
-        progress_callback: Optional[callable] = None
+        self, product_ids: List[int], db: AsyncSession, progress_callback: Optional[Callable[[int, int], None]] = None
     ) -> Dict[str, int]:
         """
         Generate embeddings for multiple products in batches.
@@ -292,12 +270,10 @@ class EmbeddingService:
         total = len(product_ids)
 
         for i in range(0, total, self.BATCH_SIZE):
-            batch_ids = product_ids[i:i + self.BATCH_SIZE]
+            batch_ids = product_ids[i : i + self.BATCH_SIZE]
 
             # Fetch products
-            result = await db.execute(
-                select(Product).where(Product.id.in_(batch_ids))
-            )
+            result = await db.execute(select(Product).where(Product.id.in_(batch_ids)))
             products = result.scalars().all()
 
             for product in products:
@@ -335,11 +311,7 @@ class EmbeddingService:
         logger.info(f"Batch embedding complete: {stats}")
         return stats
 
-    async def update_product_embedding(
-        self,
-        product_id: int,
-        db: AsyncSession
-    ) -> bool:
+    async def update_product_embedding(self, product_id: int, db: AsyncSession) -> bool:
         """
         Update embedding for a single product (e.g., after attribute change).
 
@@ -351,9 +323,7 @@ class EmbeddingService:
             True if successful, False otherwise
         """
         try:
-            result = await db.execute(
-                select(Product).where(Product.id == product_id)
-            )
+            result = await db.execute(select(Product).where(Product.id == product_id))
             product = result.scalar_one_or_none()
 
             if not product:
@@ -377,11 +347,7 @@ class EmbeddingService:
             logger.error(f"Error updating embedding for product {product_id}: {e}")
             return False
 
-    def compute_cosine_similarity(
-        self,
-        embedding1: List[float],
-        embedding2: List[float]
-    ) -> float:
+    def compute_cosine_similarity(self, embedding1: List[float], embedding2: List[float]) -> float:
         """
         Compute cosine similarity between two embeddings.
 

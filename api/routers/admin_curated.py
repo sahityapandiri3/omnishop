@@ -136,10 +136,12 @@ SEARCH_SYNONYMS = {
     "sofas": ["sofa", "couch", "settee", "sectional"],
     "couch": ["sofa", "couch", "settee", "sectional"],
     "couches": ["sofa", "couch", "settee", "sectional"],
-    # L-shaped / corner sofa synonyms
-    "l-shaped": ["l-shaped", "l-shape", "l shaped", "l shape", "corner"],
-    "l-shape": ["l-shaped", "l-shape", "l shaped", "l shape", "corner"],
-    "corner": ["corner", "l-shaped", "l-shape", "l shaped", "l shape"],
+    # L-shaped / corner / sectional sofa synonyms
+    "l-shaped": ["l-shaped", "l-shape", "l shaped", "l shape", "corner", "sectional"],
+    "l-shape": ["l-shaped", "l-shape", "l shaped", "l shape", "corner", "sectional"],
+    "corner": ["corner", "l-shaped", "l-shape", "l shaped", "l shape", "sectional"],
+    "sectional": ["sectional", "l-shaped", "l-shape", "l shaped", "l shape", "corner", "chaise"],
+    "sectionals": ["sectional", "l-shaped", "l-shape", "l shaped", "l shape", "corner", "chaise"],
     "cupboard": ["cupboard", "cabinet", "wardrobe", "armoire"],
     "cabinet": ["cupboard", "cabinet", "wardrobe", "armoire"],
     "lamp": ["lamp", "floor lamp", "standing lamp", "table lamp"],
@@ -639,17 +641,26 @@ async def search_products_for_look(
             return True
 
         if semantic_product_ids:
-            # First, include all products from semantic search with high similarity (>= 0.3)
+            # First, include products from semantic search that ALSO match keyword search
+            # This prevents "carpet" search from returning cushions/curtains just because they're semantically similar
             semantic_threshold = 0.3
             semantic_sorted = sorted(semantic_product_ids.items(), key=lambda x: x[1], reverse=True)
 
+            # Get the set of keyword-matching product IDs
+            keyword_product_ids = {p.id for p in keyword_products}
+
             for product_id, similarity in semantic_sorted:
                 if similarity >= semantic_threshold:
-                    ordered_product_ids.append(product_id)
-                    semantic_scores[product_id] = similarity
-                    seen_product_ids.add(product_id)
+                    # Only include semantic results that also match keyword search
+                    # OR have very high similarity (>= 0.5) for genuine semantic matches
+                    if product_id in keyword_product_ids or similarity >= 0.5:
+                        ordered_product_ids.append(product_id)
+                        semantic_scores[product_id] = similarity
+                        seen_product_ids.add(product_id)
 
-            logger.info(f"[SEARCH] Added {len(seen_product_ids)} semantic results (threshold={semantic_threshold})")
+            logger.info(
+                f"[SEARCH] Added {len(seen_product_ids)} semantic results (threshold={semantic_threshold}, keyword-filtered)"
+            )
 
         # Add keyword-only results (products without embeddings or below semantic threshold)
         for p in keyword_products:

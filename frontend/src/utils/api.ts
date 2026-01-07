@@ -47,6 +47,63 @@ export const clearRedirectState = () => {
   resetRedirectFlag();
 };
 
+// Session storage keys for curation page state
+const CURATION_RECOVERY_KEY = 'omnishop_curation_recovery';
+
+// Function to save curation page state before 401 redirect
+export const saveCurationStateForRecovery = () => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    // Get current curation state from sessionStorage
+    const curationState = sessionStorage.getItem('curation_page_state');
+
+    if (curationState) {
+      const recoveryData = {
+        curationState,
+        timestamp: Date.now(),
+      };
+
+      localStorage.setItem(CURATION_RECOVERY_KEY, JSON.stringify(recoveryData));
+      console.log('[API] Saved curation state for recovery');
+    }
+  } catch (e) {
+    console.warn('[API] Failed to save curation state for recovery:', e);
+  }
+};
+
+// Function to get recovered curation state after login
+export const getRecoveredCurationState = () => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const data = localStorage.getItem(CURATION_RECOVERY_KEY);
+    if (!data) return null;
+
+    const recoveryData = JSON.parse(data);
+
+    // Check if recovery data is less than 1 hour old
+    const ageMs = Date.now() - recoveryData.timestamp;
+    if (ageMs > 60 * 60 * 1000) {
+      console.log('[API] Curation recovery data expired, discarding');
+      localStorage.removeItem(CURATION_RECOVERY_KEY);
+      return null;
+    }
+
+    return recoveryData.curationState ? JSON.parse(recoveryData.curationState) : null;
+  } catch (e) {
+    console.warn('[API] Failed to get recovered curation state:', e);
+    return null;
+  }
+};
+
+// Function to clear recovered curation state
+export const clearRecoveredCurationState = () => {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(CURATION_RECOVERY_KEY);
+  }
+};
+
 // Function to save design state before 401 redirect
 export const saveDesignStateForRecovery = () => {
   if (typeof window === 'undefined') return;
@@ -203,6 +260,11 @@ api.interceptors.response.use(
           // Save design state before redirecting (if on design page)
           if (currentPath.startsWith('/design')) {
             saveDesignStateForRecovery();
+          }
+
+          // Save curation state before redirecting (if on curation page)
+          if (currentPath.startsWith('/admin/curated')) {
+            saveCurationStateForRecovery();
           }
 
           localStorage.removeItem('auth_token');

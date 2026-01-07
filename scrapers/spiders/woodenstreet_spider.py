@@ -385,7 +385,45 @@ class WoodenStreetSpider(BaseProductSpider):
         """Extract product attributes from the page"""
         attributes = {}
 
-        # Extract specifications from table
+        # Extract specifications from JSON data (Wooden Street stores specs in JSON)
+        # Look for dimensions array with dimensionlabel/dimensiondata structure
+        scripts = response.css('script::text').getall()
+        for script in scripts:
+            # Look for dimensions array in JavaScript
+            if 'dimensionlabel' in script and 'dimensiondata' in script:
+                try:
+                    # Try to find and parse the dimensions array
+                    import re
+                    # Match array of dimension objects
+                    dim_matches = re.findall(
+                        r'\{"dimensionlabel"\s*:\s*"([^"]+)"\s*,\s*"dimensiondata"\s*:\s*"([^"]+)"\}',
+                        script
+                    )
+                    for label, data in dim_matches:
+                        key = label.strip().lower().replace(' ', '_').replace(':', '')
+                        value = data.strip()
+                        if key and value and len(value) < 200:
+                            attributes[key] = value
+                except Exception as e:
+                    self.logger.debug(f"Error parsing dimensions JSON: {e}")
+
+        # Also try extracting from page content with different patterns
+        page_text = response.text
+        if 'dimensionlabel' in page_text:
+            try:
+                dim_matches = re.findall(
+                    r'"dimensionlabel"\s*:\s*"([^"]+)"\s*,\s*"dimensiondata"\s*:\s*"([^"]+)"',
+                    page_text
+                )
+                for label, data in dim_matches:
+                    key = label.strip().lower().replace(' ', '_').replace(':', '')
+                    value = data.strip()
+                    if key and value and len(value) < 200 and key not in attributes:
+                        attributes[key] = value
+            except Exception as e:
+                self.logger.debug(f"Error parsing page dimensions: {e}")
+
+        # Extract specifications from table (fallback)
         spec_rows = response.css('.specifications tr, .spec-table tr, .product-specs tr, .ws-specs tr')
         for row in spec_rows:
             key = row.css('td:first-child::text, th::text').get()

@@ -137,8 +137,13 @@ class BaseProductSpider(scrapy.Spider):
         # Images
         item['image_urls'] = image_urls or []
 
-        # Additional attributes
-        item['attributes'] = attributes or {}
+        # Additional attributes - enrich with sofa alignment if applicable
+        enriched_attributes = self.enrich_attributes_with_alignment(
+            attributes or {},
+            name,
+            description
+        )
+        item['attributes'] = enriched_attributes
 
         # Availability (default to available)
         item['is_available'] = kwargs.get('is_available', True)
@@ -489,3 +494,191 @@ class BaseProductSpider(scrapy.Spider):
                         dimensions['height'] = match.group(1)
 
         return dimensions
+
+    def extract_sofa_alignment(self, product_name: str, description: str = None) -> Optional[str]:
+        """
+        Extract sofa alignment (left/right) from product name or description.
+
+        This is relevant for sectional sofas, L-shaped sofas, and sofas with chaise.
+
+        Args:
+            product_name: The product's name/title
+            description: Optional product description
+
+        Returns:
+            'left', 'right', 'reversible', or None
+        """
+        import re
+
+        if not product_name:
+            return None
+
+        # Combine name and description for searching
+        text = f"{product_name} {description or ''}".lower()
+
+        # Check for reversible first (higher priority)
+        reversible_patterns = [
+            r'\breversible\b',
+            r'\binterchangeable\b',
+        ]
+        for pattern in reversible_patterns:
+            if re.search(pattern, text):
+                return 'reversible'
+
+        # Check for right alignment
+        right_patterns = [
+            r'\bright[\s-]*align',      # "right aligned", "right-aligned"
+            r'\bright[\s-]*facing\b',   # "right facing"
+            r'\bright[\s-]*arm\b',      # "right arm"
+            r'\bright[\s-]*chaise\b',   # "right chaise"
+            r'\brhs\b',                 # "RHS"
+            r'\bright[\s-]*corner\b',   # "right corner"
+            r'\bright[\s-]*hand\b',     # "right hand"
+            r'\bright[\s-]*longchair\b',  # "right longchair"
+            r'\bright[\s-]*sectional\b',  # "right sectional"
+            r'\bright[\s-]*l[\s-]*shape', # "right L-shape"
+            r'\bl[\s-]*shape[d]?[\s-]*right\b', # "L-shaped right"
+        ]
+        for pattern in right_patterns:
+            if re.search(pattern, text):
+                return 'right'
+
+        # Check for left alignment
+        left_patterns = [
+            r'\bleft[\s-]*align',       # "left aligned", "left-aligned"
+            r'\bleft[\s-]*facing\b',    # "left facing"
+            r'\bleft[\s-]*arm\b',       # "left arm"
+            r'\bleft[\s-]*chaise\b',    # "left chaise"
+            r'\blhs\b',                 # "LHS"
+            r'\bleft[\s-]*corner\b',    # "left corner"
+            r'\bleft[\s-]*hand\b',      # "left hand"
+            r'\bleft[\s-]*longchair\b', # "left longchair"
+            r'\bleft[\s-]*sectional\b', # "left sectional"
+            r'\bleft[\s-]*l[\s-]*shape', # "left L-shape"
+            r'\bl[\s-]*shape[d]?[\s-]*left\b', # "L-shaped left"
+        ]
+        for pattern in left_patterns:
+            if re.search(pattern, text):
+                return 'left'
+
+        return None
+
+    def is_sectional_sofa(self, product_name: str, description: str = None) -> bool:
+        """
+        Check if a product is a sectional/L-shape sofa.
+
+        Args:
+            product_name: The product's name/title
+            description: Optional product description
+
+        Returns:
+            True if the product is a sectional sofa
+        """
+        import re
+
+        text = f"{product_name} {description or ''}".lower()
+
+        sectional_patterns = [
+            r'\bl[\s-]*shape',          # "L-shape", "L shape"
+            r'\bsectional\b',           # "sectional"
+            r'\bcorner\s+sofa\b',       # "corner sofa"
+            r'\bmodular\s+sofa\b',      # "modular sofa"
+            r'\bchaise\b',              # has chaise
+        ]
+
+        # Must also be a sofa
+        is_sofa = bool(re.search(r'\bsofa\b|\bcouch\b|\bsettee\b', text))
+
+        if not is_sofa:
+            return False
+
+        for pattern in sectional_patterns:
+            if re.search(pattern, text):
+                return True
+
+        return False
+
+    def extract_alignment_from_specifications(self, attributes: Dict[str, str]) -> Optional[str]:
+        """
+        Extract sofa alignment from product specifications/attributes.
+
+        Looks for common specification keys like 'configuration', 'orientation',
+        'chaise position', 'arm position', etc.
+
+        Args:
+            attributes: Product attributes dict from specifications
+
+        Returns:
+            'left', 'right', 'reversible', or None
+        """
+        import re
+
+        if not attributes:
+            return None
+
+        # Keys that might contain alignment info
+        alignment_keys = [
+            'configuration', 'orientation', 'chaise_position', 'chaise position',
+            'arm_position', 'arm position', 'facing', 'direction', 'type',
+            'sofa_type', 'sofa type', 'shape', 'layout', 'seating_configuration',
+            'seating configuration', 'corner_type', 'corner type', 'aligned'
+        ]
+
+        for key in attributes:
+            key_lower = key.lower()
+            # Check if this key might contain alignment info
+            if any(ak in key_lower for ak in alignment_keys) or 'align' in key_lower or 'facing' in key_lower:
+                value = attributes[key].lower()
+
+                # Check for reversible
+                if 'reversible' in value or 'interchangeable' in value:
+                    return 'reversible'
+
+                # Check for right
+                if re.search(r'\bright\b', value):
+                    return 'right'
+
+                # Check for left
+                if re.search(r'\bleft\b', value):
+                    return 'left'
+
+        return None
+
+    def enrich_attributes_with_alignment(
+        self,
+        attributes: Dict[str, str],
+        product_name: str,
+        description: str = None
+    ) -> Dict[str, str]:
+        """
+        Enrich product attributes with sofa alignment if applicable.
+
+        Checks multiple sources in order of priority:
+        1. Product name (most reliable)
+        2. Product specifications/attributes
+        3. Product description
+
+        Args:
+            attributes: Existing product attributes dict (from specifications)
+            product_name: The product's name/title
+            description: Optional product description
+
+        Returns:
+            Updated attributes dict with sofa_alignment if applicable
+        """
+        if self.is_sectional_sofa(product_name, description):
+            # Try extracting from name first (most reliable)
+            alignment = self.extract_sofa_alignment(product_name, None)
+
+            # If not found in name, try specifications
+            if not alignment:
+                alignment = self.extract_alignment_from_specifications(attributes)
+
+            # If still not found, try description
+            if not alignment and description:
+                alignment = self.extract_sofa_alignment(product_name, description)
+
+            if alignment:
+                attributes['sofa_alignment'] = alignment
+
+        return attributes
