@@ -1,10 +1,11 @@
 """
 Admin API routes for managing curated looks
 """
+import json
 import logging
 import re
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from schemas.curated import (
@@ -16,6 +17,7 @@ from schemas.curated import (
     CuratedLookSummarySchema,
     CuratedLookUpdate,
 )
+from services.embedding_service import EmbeddingService
 from sqlalchemy import and_, case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -23,6 +25,17 @@ from sqlalchemy.orm import selectinload
 from core.auth import require_admin
 from core.database import get_db
 from database.models import BudgetTier, Category, CuratedLook, CuratedLookProduct, Product, ProductAttribute, User
+
+# Global embedding service instance
+_embedding_service: Optional[EmbeddingService] = None
+
+
+def get_embedding_service() -> EmbeddingService:
+    """Get or create the embedding service singleton."""
+    global _embedding_service
+    if _embedding_service is None:
+        _embedding_service = EmbeddingService()
+    return _embedding_service
 
 
 def calculate_budget_tier(total_price: float) -> str:
@@ -252,6 +265,80 @@ def expand_search_query_grouped(query: str) -> List[List[str]]:
     return groups
 
 
+async def semantic_search_products(
+    query_text: str,
+    db: AsyncSession,
+    source_website: Optional[str] = None,
+    category_id: Optional[int] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    limit: int = 500,
+) -> Dict[int, float]:
+    """
+    Perform semantic search using embeddings.
+
+    Returns dict mapping product_id to similarity score (0.0 to 1.0).
+    Only searches products that have embeddings.
+    """
+    embedding_service = get_embedding_service()
+
+    # Get query embedding
+    query_embedding = await embedding_service.get_query_embedding(query_text)
+    if not query_embedding:
+        logger.warning(f"[SEMANTIC SEARCH] Failed to generate embedding for: {query_text[:50]}...")
+        return {}
+
+    logger.info(f"[SEMANTIC SEARCH] Generated query embedding for: {query_text[:50]}...")
+
+    # Build query for products with embeddings
+    query = select(Product.id, Product.embedding).where(Product.is_available.is_(True)).where(Product.embedding.isnot(None))
+
+    # Apply filters
+    if source_website:
+        query = query.where(Product.source_website == source_website)
+
+    if category_id:
+        query = query.where(Product.category_id == category_id)
+
+    if min_price is not None:
+        query = query.where(Product.price >= min_price)
+
+    if max_price is not None:
+        query = query.where(Product.price <= max_price)
+
+    # Execute query
+    result = await db.execute(query)
+    rows = result.fetchall()
+
+    logger.info(f"[SEMANTIC SEARCH] Found {len(rows)} products with embeddings")
+
+    if not rows:
+        return {}
+
+    # Calculate similarity scores
+    similarity_scores: Dict[int, float] = {}
+
+    for product_id, embedding_json in rows:
+        try:
+            product_embedding = json.loads(embedding_json)
+            similarity = embedding_service.compute_cosine_similarity(query_embedding, product_embedding)
+            similarity_scores[product_id] = similarity
+        except (json.JSONDecodeError, Exception) as e:
+            logger.debug(f"[SEMANTIC SEARCH] Error processing product {product_id}: {e}")
+            continue
+
+    # Sort by similarity and take top N
+    sorted_scores = sorted(similarity_scores.items(), key=lambda x: x[1], reverse=True)[:limit]
+
+    result_dict = dict(sorted_scores)
+
+    if result_dict:
+        top_score = sorted_scores[0][1] if sorted_scores else 0
+        logger.info(f"[SEMANTIC SEARCH] Top similarity score: {top_score:.3f}, returning {len(result_dict)} products")
+
+    return result_dict
+
+
 def get_primary_image_url(product: Product) -> Optional[str]:
     """Get the primary image URL for a product"""
     if not product.images:
@@ -346,13 +433,34 @@ async def search_products_for_look(
     colors: Optional[str] = Query(None, description="Comma-separated list of colors"),
     styles: Optional[str] = Query(None, description="Comma-separated list of primary_style values"),
     materials: Optional[str] = Query(None, description="Comma-separated list of materials"),
+    use_semantic: bool = Query(True, description="Use semantic search (embeddings) when available"),
     limit: int = Query(500, ge=1, le=1000),
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Search for products to add to a curated look. Can search by text query or filter by category."""
+    """Search for products to add to a curated look. Uses semantic search + keyword fallback."""
     try:
-        # Build search query
+        semantic_product_ids: Dict[int, float] = {}
+        search_groups = []
+
+        # Step 1: Try semantic search first (for products with embeddings)
+        if query and use_semantic:
+            try:
+                semantic_product_ids = await semantic_search_products(
+                    query_text=query,
+                    db=db,
+                    source_website=source_website,
+                    category_id=category_id,
+                    min_price=min_price,
+                    max_price=max_price,
+                    limit=limit,
+                )
+                logger.info(f"[SEARCH] Semantic search returned {len(semantic_product_ids)} products")
+            except Exception as e:
+                logger.warning(f"[SEARCH] Semantic search failed, falling back to keyword: {e}")
+                semantic_product_ids = {}
+
+        # Step 2: Build keyword search query (for products without embeddings or as fallback)
         search_query = select(Product).options(selectinload(Product.images)).where(Product.is_available.is_(True))
 
         # Apply text search if query provided (with synonym expansion for name only)
@@ -463,25 +571,71 @@ async def search_products_for_look(
         search_query = search_query.limit(limit)
 
         result = await db.execute(search_query)
-        products = result.scalars().unique().all()
+        keyword_products = result.scalars().unique().all()
 
-        # Convert to response format
-        return {
-            "products": [
-                {
-                    "id": p.id,
-                    "name": p.name,
-                    "price": p.price,
-                    "image_url": get_primary_image_url(p),
-                    "source_website": p.source_website,
-                    "source_url": p.source_url,
-                    "brand": p.brand,
-                    "category_id": p.category_id,
-                    "description": p.description,
-                }
-                for p in products
-            ]
-        }
+        # STEP 3: Merge semantic and keyword results
+        # Priority: semantic matches first (sorted by similarity), then keyword-only matches
+        final_products = []
+        seen_product_ids = set()
+
+        if semantic_product_ids:
+            # First, include all products from semantic search with high similarity (>= 0.3)
+            semantic_threshold = 0.3  # Minimum similarity score to include
+            semantic_sorted = sorted(semantic_product_ids.items(), key=lambda x: x[1], reverse=True)
+
+            # Get semantic product details from DB
+            semantic_ids = [pid for pid, score in semantic_sorted if score >= semantic_threshold]
+            if semantic_ids:
+                semantic_query = select(Product).options(selectinload(Product.images)).where(Product.id.in_(semantic_ids))
+                semantic_result = await db.execute(semantic_query)
+                semantic_products_map = {p.id: p for p in semantic_result.scalars().unique().all()}
+
+                # Add semantic results in order of similarity
+                for product_id, similarity in semantic_sorted:
+                    if similarity >= semantic_threshold and product_id in semantic_products_map:
+                        p = semantic_products_map[product_id]
+                        final_products.append(
+                            {
+                                "id": p.id,
+                                "name": p.name,
+                                "price": p.price,
+                                "image_url": get_primary_image_url(p),
+                                "source_website": p.source_website,
+                                "source_url": p.source_url,
+                                "brand": p.brand,
+                                "category_id": p.category_id,
+                                "description": p.description,
+                                "similarity_score": round(similarity, 3),
+                            }
+                        )
+                        seen_product_ids.add(product_id)
+
+            logger.info(f"[SEARCH] Added {len(seen_product_ids)} semantic results (threshold={semantic_threshold})")
+
+        # Add keyword-only results (products without embeddings or below semantic threshold)
+        for p in keyword_products:
+            if p.id not in seen_product_ids:
+                final_products.append(
+                    {
+                        "id": p.id,
+                        "name": p.name,
+                        "price": p.price,
+                        "image_url": get_primary_image_url(p),
+                        "source_website": p.source_website,
+                        "source_url": p.source_url,
+                        "brand": p.brand,
+                        "category_id": p.category_id,
+                        "description": p.description,
+                    }
+                )
+                seen_product_ids.add(p.id)
+
+        logger.info(f"[SEARCH] Final results: {len(final_products)} products (semantic + keyword)")
+
+        # Limit final results
+        final_products = final_products[:limit]
+
+        return {"products": final_products}
 
     except Exception as e:
         logger.error(f"Error searching products: {e}", exc_info=True)
