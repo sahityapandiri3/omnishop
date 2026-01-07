@@ -158,3 +158,18 @@ async def get_furniture_removal_status(job_id: str):
     except Exception as e:
         logger.error(f"Error checking furniture removal status: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to check status: {str(e)}")
+
+
+@router.post("/clear-cache")
+async def clear_furniture_removal_cache():
+    """
+    Clear all cached furniture removal results.
+    Use this when cached results are stale or incorrect.
+    """
+    try:
+        count = furniture_removal_service.clear_all_cache()
+        stats = furniture_removal_service.get_job_stats()
+        return {"message": f"Cleared {count} cached results", "current_stats": stats}
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to clear cache: {str(e)}")

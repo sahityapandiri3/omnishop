@@ -160,27 +160,52 @@ SEARCH_SYNONYMS = {
 
 
 def expand_search_query(query: str) -> list:
-    """Expand a search query to include synonyms and singular/plural forms"""
+    """Expand a search query to include synonyms and singular/plural forms.
+
+    For multi-word queries like "l-shaped sofa", preserves all terms and expands each.
+    """
     query_lower = query.lower().strip()
 
-    # First, check if the query matches any synonym key directly
-    for key, synonyms in SEARCH_SYNONYMS.items():
-        if key in query_lower or query_lower in key:
-            return synonyms
+    # Split query into words for multi-word searches
+    words = query_lower.split()
 
-    # If not found in synonyms, try singular/plural forms
-    word_forms = normalize_singular_plural(query_lower)
-
-    # Check if any form matches synonyms
-    for form in word_forms:
+    # For single-word queries, use original logic
+    if len(words) == 1:
+        # Check if query matches any synonym key directly
         for key, synonyms in SEARCH_SYNONYMS.items():
-            if key == form or form == key:
+            if key == query_lower or query_lower == key:
                 return synonyms
 
-    # No synonym match - return all singular/plural forms for direct search
-    # This ensures "sculpture" and "sculptures" both match products with either form
-    logger.info(f"No synonym match for '{query}', using singular/plural forms: {word_forms}")
-    return word_forms
+        # Try singular/plural forms
+        word_forms = normalize_singular_plural(query_lower)
+        for form in word_forms:
+            for key, synonyms in SEARCH_SYNONYMS.items():
+                if key == form or form == key:
+                    return synonyms
+
+        logger.info(f"No synonym match for '{query}', using singular/plural forms: {word_forms}")
+        return word_forms
+
+    # For multi-word queries, collect all terms and their synonyms
+    all_terms = set()
+
+    for word in words:
+        # Check for direct synonym match
+        matched = False
+        for key, synonyms in SEARCH_SYNONYMS.items():
+            if key == word or word == key:
+                all_terms.update(synonyms)
+                matched = True
+                break
+
+        # If no synonym match, add the word itself (and its singular/plural forms)
+        if not matched:
+            word_forms = normalize_singular_plural(word)
+            all_terms.update(word_forms)
+
+    result = list(all_terms)
+    logger.info(f"Multi-word query '{query}' expanded to: {result}")
+    return result
 
 
 def get_primary_image_url(product: Product) -> Optional[str]:

@@ -806,6 +806,74 @@ RESPOND WITH JSON ONLY - NO OTHER TEXT."""
                 suggestion=None,
             )
 
+    async def validate_furniture_removed(self, image_base64: str) -> Dict[str, Any]:
+        """
+        Validate that furniture was successfully removed from the image.
+        Used to verify furniture removal was successful.
+        Returns: dict with 'has_furniture' boolean and 'detected_items' list
+        """
+        try:
+            # Remove data URL prefix if present
+            if image_base64.startswith("data:image"):
+                image_base64 = image_base64.split(",")[1]
+
+            image_bytes = base64.b64decode(image_base64)
+            pil_image = Image.open(io.BytesIO(image_bytes))
+
+            if pil_image.mode != "RGB":
+                pil_image = pil_image.convert("RGB")
+
+            prompt = """Analyze this room image and detect ANY furniture or movable objects.
+
+IMPORTANT: Be very strict and thorough. Look for:
+1. SEATING: Sofas, couches, sectionals, chairs, armchairs, ottomans, recliners
+2. TABLES: Coffee tables, side tables, dining tables, console tables
+3. BEDS: Beds, mattresses, headboards
+4. LAMPS: Floor lamps, standing lamps, table lamps
+5. PLANTS: Potted plants, indoor trees
+6. FLOOR COVERINGS: Carpets, rugs, mats
+
+Respond in JSON format:
+{
+  "has_furniture": true/false,
+  "has_sofa": true/false,
+  "has_carpet": true/false,
+  "detected_items": ["list of detected items"],
+  "confidence": 0.0-1.0
+}
+
+Be VERY strict - if you see ANY furniture at all, set has_furniture to true."""
+
+            def _run_detect():
+                response = self.genai_client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[prompt, pil_image],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.1,
+                    ),
+                )
+                return response.text
+
+            loop = asyncio.get_event_loop()
+            response_text = await asyncio.wait_for(loop.run_in_executor(None, _run_detect), timeout=30)
+
+            # Parse JSON response
+            result = json.loads(response_text)
+            logger.info(f"Furniture detection result: {result}")
+            return result
+
+        except Exception as e:
+            logger.warning(f"Furniture detection failed: {e}")
+            # Default to assuming furniture might still be there
+            return {
+                "has_furniture": True,
+                "has_sofa": False,
+                "has_carpet": False,
+                "detected_items": ["unknown - detection failed"],
+                "confidence": 0.0,
+            }
+
     async def remove_furniture(self, image_base64: str, max_retries: int = 5) -> Optional[str]:
         """
         Remove all furniture from room image using Gemini 2.5 Flash Image model.
@@ -1000,6 +1068,38 @@ FAILURE IS NOT ACCEPTABLE: Every single piece of furniture AND floor covering MU
                             logger.error(f"Furniture removal streaming error on attempt {attempt + 1}: {stream_error}")
 
                     if generated_image:
+                        # Validate that furniture was actually removed
+                        logger.info(f"Validating furniture removal result for attempt {attempt + 1}...")
+                        try:
+                            detection_result = await self.validate_furniture_removed(generated_image)
+                            has_sofa = detection_result.get("has_sofa", False)
+                            has_furniture = detection_result.get("has_furniture", False)
+                            detected_items = detection_result.get("detected_items", [])
+                            confidence = detection_result.get("confidence", 0.0)
+
+                            # If sofa is still detected with high confidence, retry
+                            if has_sofa and confidence > 0.7:
+                                logger.warning(
+                                    f"Furniture still detected after removal (confidence: {confidence}): {detected_items}. "
+                                    f"Retrying with stricter approach..."
+                                )
+                                # Continue to next retry attempt
+                                if attempt < max_retries - 1:
+                                    await asyncio.sleep(2)
+                                    continue
+
+                            # If general furniture is detected but not sofa, log but still return
+                            # (some small items might be acceptable)
+                            if has_furniture and not has_sofa:
+                                logger.info(
+                                    f"Minor furniture items detected but no sofa (confidence: {confidence}): {detected_items}. "
+                                    f"Proceeding with result."
+                                )
+
+                            logger.info(f"Furniture removal validation passed on attempt {attempt + 1}")
+                        except Exception as validation_error:
+                            logger.warning(f"Furniture validation failed, proceeding with result: {validation_error}")
+
                         return generated_image
 
                     logger.warning(f"Furniture removal attempt {attempt + 1} produced no image")

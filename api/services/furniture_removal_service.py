@@ -94,6 +94,22 @@ class FurnitureRemovalService:
         image_hash = hashlib.md5(image.encode()).hexdigest()
         self.cache[image_hash] = processed_image
 
+    def invalidate_cache(self, image: str) -> bool:
+        """Remove a specific image from cache. Returns True if removed, False if not found."""
+        image_hash = hashlib.md5(image.encode()).hexdigest()
+        if image_hash in self.cache:
+            del self.cache[image_hash]
+            logger.info(f"Invalidated cache for image hash {image_hash}")
+            return True
+        return False
+
+    def clear_all_cache(self) -> int:
+        """Clear all cached results. Returns number of entries cleared."""
+        count = len(self.cache)
+        self.cache.clear()
+        logger.info(f"Cleared all {count} cache entries")
+        return count
+
     def cleanup_old_jobs(self, max_age_hours: int = 24) -> int:
         """
         Remove jobs older than max_age_hours
