@@ -71,12 +71,14 @@ interface CanvasPanelProps {
   onClearCanvas: () => void;
   onRoomImageUpload: (imageData: string) => void;
   onSetProducts: (products: Product[]) => void;
+  onViewProductDetails?: (product: Product) => void;  // Callback to view product details
   initialVisualizationImage?: string | null;  // Pre-loaded visualization from curated looks
   initialVisualizationHistory?: any[];  // Pre-loaded history from saved project
   onVisualizationHistoryChange?: (history: any[]) => void;  // Callback when history changes
   onVisualizationImageChange?: (image: string | null) => void;  // Callback when visualization image changes
   isProcessingFurniture?: boolean;  // Show furniture removal overlay on room image
   curatedLookId?: number;  // Curated look ID for precomputation cache
+  projectId?: string | null;  // Project ID for design page room analysis cache
 }
 
 /**
@@ -92,12 +94,14 @@ export default function CanvasPanel({
   onClearCanvas,
   onRoomImageUpload,
   onSetProducts,
+  onViewProductDetails,
   initialVisualizationImage,
   initialVisualizationHistory,
   onVisualizationHistoryChange,
   onVisualizationImageChange,
   isProcessingFurniture = false,
   curatedLookId,
+  projectId,
 }: CanvasPanelProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isVisualizing, setIsVisualizing] = useState(false);
@@ -326,6 +330,56 @@ export default function CanvasPanel({
       setVisualizedProductIds(new Set(products.map(p => String(p.id))));
     }
   }, [products, visualizationResult, visualizedProducts.length]);
+
+  // Keep visualizedProducts in sync with canvas products (handles removal AND quantity changes)
+  // This ensures edit mode always uses current canvas state
+  useEffect(() => {
+    if (visualizedProducts.length === 0 || !visualizationResult) return;
+
+    // Build a map of current canvas products by ID
+    const currentProductMap = new Map(products.map(p => [String(p.id), p]));
+
+    // Check if sync is needed: product removed OR quantity changed
+    let needsSync = false;
+
+    // Check for removals
+    for (const vp of visualizedProducts) {
+      if (!currentProductMap.has(String(vp.id))) {
+        needsSync = true;
+        break;
+      }
+    }
+
+    // Check for quantity changes
+    if (!needsSync) {
+      for (const vp of visualizedProducts) {
+        const currentProduct = currentProductMap.get(String(vp.id));
+        if (currentProduct && (currentProduct.quantity || 1) !== (vp.quantity || 1)) {
+          needsSync = true;
+          break;
+        }
+      }
+    }
+
+    if (needsSync) {
+      // Sync visualizedProducts to match current canvas products
+      // Only include products that are still in the canvas, with updated quantities
+      const syncedProducts = visualizedProducts
+        .filter(vp => currentProductMap.has(String(vp.id)))
+        .map(vp => {
+          const currentProduct = currentProductMap.get(String(vp.id))!;
+          return { ...vp, quantity: currentProduct.quantity || 1 };
+        });
+
+      console.log('[CanvasPanel] Syncing visualizedProducts with canvas:', {
+        before: visualizedProducts.map(p => ({ name: p.name, qty: p.quantity || 1 })),
+        after: syncedProducts.map(p => ({ name: p.name, qty: p.quantity || 1 })),
+      });
+
+      setVisualizedProducts(syncedProducts);
+      setVisualizedProductIds(new Set(syncedProducts.map(p => String(p.id))));
+    }
+  }, [products, visualizedProducts, visualizationResult]);
 
   // Handle file upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -594,6 +648,10 @@ export default function CanvasPanel({
       // needs to know the complete state of all products in the scene.
       const allProductDetails = products.map(formatProductForApi);
 
+      // For incremental visualization, send the products already in the base image
+      // This allows the AI to know exactly what furniture to preserve
+      const visualizedProductDetails = visualizedProducts.map(formatProductForApi);
+
       // V1 Visualization API call with timeout and retry
       const requestStartTime = Date.now();
       const response = await fetchWithRetry(
@@ -605,6 +663,7 @@ export default function CanvasPanel({
             image: baseImage,
             products: productDetails,  // Products to visualize in this request (may be subset for incremental)
             all_products: allProductDetails,  // All products currently in the scene (for backend history)
+            visualized_products: isIncremental ? visualizedProductDetails : [],  // Products already in base image (for incremental)
             analysis: {
               design_style: 'modern',
               color_palette: [],
@@ -614,6 +673,7 @@ export default function CanvasPanel({
             force_reset: forceReset,
             user_uploaded_new_image: changeInfo.type === 'initial',
             curated_look_id: curatedLookId,  // Pass curated look ID for precomputation cache
+            project_id: projectId,  // Pass project ID for room analysis cache
           }),
         },
         2,  // maxRetries: 2 retries (3 total attempts)
@@ -1505,25 +1565,64 @@ export default function CanvasPanel({
                         </div>
                       )}
                       {/* Quantity badge */}
-                      {qty > 1 && (
-                        <div className="absolute top-0.5 left-0.5 w-5 h-5 bg-primary-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
-                          {qty}
+                      <div className="absolute top-0.5 left-0.5 bg-primary-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                        {qty}x
+                      </div>
+                      {/* Hover overlay with actions */}
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1.5">
+                        {/* Quantity controls */}
+                        <div className="flex items-center gap-1 bg-white rounded-lg px-1.5 py-0.5">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRemoveProduct(product.id);
+                            }}
+                            className="w-5 h-5 bg-neutral-200 hover:bg-neutral-300 rounded text-xs font-bold flex items-center justify-center"
+                            title={qty > 1 ? "Decrease quantity" : "Remove"}
+                          >
+                            -
+                          </button>
+                          <span className="w-4 text-center font-semibold text-xs">{qty}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onIncrementQuantity(product.id);
+                            }}
+                            className="w-5 h-5 bg-primary-600 hover:bg-primary-700 text-white rounded text-xs font-bold flex items-center justify-center"
+                            title="Increase quantity"
+                          >
+                            +
+                          </button>
                         </div>
-                      )}
-                      {/* Remove all button */}
-                      <button
-                        onClick={() => onRemoveProduct(product.id, true)}
-                        className="absolute top-0.5 right-0.5 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="Remove all"
-                      >
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path
-                            fillRule="evenodd"
-                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                      </button>
+                        {/* Remove button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRemoveProduct(product.id, true);
+                          }}
+                          className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-[10px] font-medium rounded-lg flex items-center gap-1"
+                        >
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          Remove
+                        </button>
+                        {/* View Details button */}
+                        {onViewProductDetails && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onViewProductDetails(product);
+                            }}
+                            className="px-2 py-1 bg-white/90 hover:bg-white text-neutral-800 text-[10px] font-medium rounded-lg flex items-center gap-1"
+                          >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            View Details
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="p-1">
                       <p className="text-[10px] font-medium text-neutral-900 dark:text-white line-clamp-1">
@@ -1535,26 +1634,6 @@ export default function CanvasPanel({
                           {qty > 1 && <span className="text-neutral-400 font-normal"> (₹{product.price.toLocaleString()} x {qty})</span>}
                         </p>
                       )}
-                      {/* Quantity controls */}
-                      <div className="flex items-center justify-center gap-1 mt-1">
-                        <button
-                          onClick={() => onRemoveProduct(product.id)}
-                          className="w-5 h-5 bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-700 dark:text-neutral-300 rounded flex items-center justify-center text-xs font-bold"
-                          title={qty > 1 ? "Decrease quantity" : "Remove"}
-                        >
-                          −
-                        </button>
-                        <span className="w-5 text-center text-[10px] font-semibold text-neutral-900 dark:text-white">
-                          {qty}
-                        </span>
-                        <button
-                          onClick={() => onIncrementQuantity(product.id)}
-                          className="w-5 h-5 bg-primary-100 dark:bg-primary-900/30 hover:bg-primary-200 dark:hover:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded flex items-center justify-center text-xs font-bold"
-                          title="Increase quantity"
-                        >
-                          +
-                        </button>
-                      </div>
                     </div>
                   </div>
                 );
@@ -1647,6 +1726,48 @@ export default function CanvasPanel({
             </div>
           )}
         </div>
+
+        {/* Visualization In Progress - Shimmer Preview */}
+        {isVisualizing && !visualizationResult && roomImage && (
+          <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-neutral-900 dark:text-white">
+                Generating Visualization...
+              </h3>
+            </div>
+            <div className="relative aspect-video bg-neutral-100 dark:bg-neutral-700 rounded-lg overflow-hidden">
+              {/* Room image as preview background */}
+              {isBase64Image(roomImage) ? (
+                <img
+                  src={formatImageSrc(roomImage)}
+                  alt="Room preview"
+                  className="w-full h-full object-cover opacity-60"
+                />
+              ) : (
+                <Image
+                  src={roomImage}
+                  alt="Room preview"
+                  fill
+                  className="object-cover opacity-60"
+                />
+              )}
+              {/* Shimmer overlay animation */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"
+                   style={{ backgroundSize: '200% 100%' }} />
+              {/* Progress indicator */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/20">
+                <div className="bg-black/60 backdrop-blur-sm rounded-xl px-6 py-4 flex flex-col items-center">
+                  <svg className="animate-spin h-8 w-8 text-white mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span className="text-white font-medium text-sm">{visualizationProgress || 'Placing furniture...'}</span>
+                  <span className="text-white/70 text-xs mt-1">Omni is styling your space</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Visualization Result with Outdated Warning */}
         {visualizationResult && (
@@ -1812,6 +1933,23 @@ export default function CanvasPanel({
                     <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 text-white text-xs font-medium rounded-md">
                       {currentAngle.charAt(0).toUpperCase() + currentAngle.slice(1)} View
                     </div>
+                  )}
+                  {/* Re-visualization shimmer overlay */}
+                  {isVisualizing && (
+                    <>
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"
+                           style={{ backgroundSize: '200% 100%' }} />
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/20">
+                        <div className="bg-black/60 backdrop-blur-sm rounded-xl px-6 py-4 flex flex-col items-center">
+                          <svg className="animate-spin h-8 w-8 text-white mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          <span className="text-white font-medium text-sm">{visualizationProgress || 'Updating visualization...'}</span>
+                          <span className="text-white/70 text-xs mt-1">Omni is updating your space</span>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </>
               )}

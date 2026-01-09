@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from schemas.chat import (
     BudgetAllocation,
     CategoryRecommendation,
@@ -28,7 +29,7 @@ from services.budget_allocator import validate_and_adjust_budget_allocations
 from services.chatgpt_service import chatgpt_service
 from services.conversation_context import conversation_context_manager
 from services.embedding_service import get_embedding_service
-from services.google_ai_service import VisualizationRequest, VisualizationResult, google_ai_service
+from services.google_ai_service import RoomAnalysis, VisualizationRequest, VisualizationResult, google_ai_service
 from services.ml_recommendation_model import ml_recommendation_model
 from services.nlp_processor import design_nlp_processor
 from services.ranking_service import get_ranking_service
@@ -38,7 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.database import get_db
-from database.models import Category, ChatLog, ChatMessage, ChatSession, Product, UserPreferences
+from database.models import Category, ChatLog, ChatMessage, ChatSession, CuratedLook, Product, Project, UserPreferences
 from utils.chat_logger import chat_logger
 
 logger = logging.getLogger(__name__)
@@ -2752,15 +2753,148 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         user_action = request.get("action")  # "replace_one", "replace_all", "add", or None
         is_incremental = request.get("is_incremental", False)  # Smart re-visualization flag
         force_reset = request.get("force_reset", False)  # Force fresh visualization
+        removal_mode = request.get("removal_mode", False)  # Product removal mode
+        products_to_remove = request.get("products_to_remove", [])  # Products to remove from visualization
         custom_positions = request.get("custom_positions", [])  # Optional furniture positions for edit mode
         curated_look_id = request.get("curated_look_id")  # For curated look editing
-        logger.info(f"[Visualize] Received request with curated_look_id={curated_look_id}, session_id={session_id}")
+        project_id = request.get("project_id")  # For design page project editing
+        visualized_products = request.get("visualized_products", [])  # Products already in base image (for incremental)
+        logger.info(
+            f"[Visualize] Received request with curated_look_id={curated_look_id}, project_id={project_id}, session_id={session_id}, removal_mode={removal_mode}, visualized_products={len(visualized_products)}"
+        )
+
+        # Workflow detection for centralized prompts
+        def detect_workflow_type() -> str:
+            """Detect which visualization workflow to use."""
+            if removal_mode and products_to_remove:
+                return "PRODUCT_REMOVAL"
+            if request.get("edit_instructions"):
+                return "EDIT_BY_INSTRUCTION"
+            if is_incremental and not force_reset:
+                return "INCREMENTAL_ADD"
+            return "BULK_INITIAL"
+
+        workflow_type = detect_workflow_type()
+        logger.info(f"[Visualize] Detected workflow: {workflow_type}")
+
+        # OPTIMIZATION: Try to load cached room_analysis from database
+        # This saves 4-13 seconds per visualization by avoiding redundant Gemini calls
+        cached_room_analysis: Optional[RoomAnalysis] = None
+        cached_existing_furniture: Optional[List[Dict]] = None
+
+        # Try CuratedLook first (admin curation flow)
+        if curated_look_id:
+            try:
+                result = await db.execute(select(CuratedLook).where(CuratedLook.id == int(curated_look_id)))
+                look = result.scalar_one_or_none()
+                if look and look.room_analysis:
+                    cached_room_analysis = RoomAnalysis.from_dict(look.room_analysis)
+                    cached_existing_furniture = cached_room_analysis.existing_furniture
+                    logger.info(
+                        f"[Visualize] Using cached room analysis from curated_look {curated_look_id} ({len(cached_existing_furniture)} furniture items)"
+                    )
+            except Exception as e:
+                logger.warning(f"[Visualize] Failed to load cached room analysis from curated_look: {e}")
+
+        # Try Project if no CuratedLook cache (design page flow)
+        if not cached_room_analysis and project_id:
+            try:
+                result = await db.execute(select(Project).where(Project.id == project_id))
+                project = result.scalar_one_or_none()
+                if project and project.room_analysis:
+                    cached_room_analysis = RoomAnalysis.from_dict(project.room_analysis)
+                    cached_existing_furniture = cached_room_analysis.existing_furniture
+                    logger.info(
+                        f"[Visualize] Using cached room analysis from project {project_id} ({len(cached_existing_furniture)} furniture items)"
+                    )
+            except Exception as e:
+                logger.warning(f"[Visualize] Failed to load cached room analysis from project: {e}")
 
         if not base_image:
             raise HTTPException(status_code=400, detail="Image is required")
 
-        if not products:
+        if not products and not removal_mode:
             raise HTTPException(status_code=400, detail="At least one product must be selected")
+
+        # Handle REMOVAL MODE - remove specific products from visualization while preserving others
+        if removal_mode and products_to_remove:
+            logger.info(f"[Visualize] REMOVAL MODE: Removing {len(products_to_remove)} products from visualization")
+
+            # Load dimensions for products to remove and remaining products
+            from services.google_ai_service import enrich_products_with_dimensions, load_product_dimensions
+
+            all_product_ids = []
+            for p in products_to_remove:
+                if p.get("id"):
+                    all_product_ids.append(p["id"])
+            for p in products or []:
+                if p.get("id"):
+                    all_product_ids.append(p["id"])
+
+            dimensions_map = await load_product_dimensions(db, all_product_ids)
+
+            # Enrich products to remove with dimensions and quantity info
+            products_to_remove_enriched = []
+            for p in products_to_remove:
+                enriched = {
+                    "id": p.get("id"),
+                    "name": p.get("name"),
+                    "full_name": p.get("full_name") or p.get("name"),
+                    "quantity": p.get("remove_count", 1),
+                    "furniture_type": p.get("furniture_type", "furniture"),
+                }
+                if p.get("id") and p["id"] in dimensions_map:
+                    enriched["dimensions"] = dimensions_map[p["id"]]
+                else:
+                    enriched["dimensions"] = {}
+                products_to_remove_enriched.append(enriched)
+
+            # Enrich remaining products with dimensions
+            remaining_products_enriched = enrich_products_with_dimensions([dict(p) for p in (products or [])], dimensions_map)
+
+            logger.info(
+                f"[Visualize] Products to remove (with dimensions): {[p.get('full_name') for p in products_to_remove_enriched]}"
+            )
+            logger.info(
+                f"[Visualize] Remaining products: {[p.get('full_name') or p.get('name') for p in remaining_products_enriched]}"
+            )
+
+            try:
+                # Call the removal function with enriched products (including dimensions)
+                cleaned_image = await google_ai_service.remove_products_from_visualization(
+                    base_image, products_to_remove_enriched, remaining_products_enriched
+                )
+
+                if cleaned_image:
+                    logger.info(f"[Visualize] Successfully removed products from visualization")
+
+                    # Update visualization history
+                    context = conversation_context_manager.get_or_create_context(session_id)
+                    context.visualization_history.append(cleaned_image)
+                    context.visualization_redo_stack = []
+
+                    # Return in same format as normal visualization for frontend compatibility
+                    return {
+                        "visualization": {
+                            "rendered_image": f"data:image/jpeg;base64,{cleaned_image}",
+                            "processing_time": 0.0,
+                            "quality_metrics": {
+                                "overall_quality": 0.85,
+                                "placement_accuracy": 0.90,
+                                "lighting_realism": 0.85,
+                            },
+                        },
+                        "products": products,  # Remaining products
+                        "removed_products": products_to_remove,
+                        "mode": "removal",
+                    }
+                else:
+                    logger.warning("[Visualize] Product removal failed, falling back to full re-visualization")
+                    # Fall through to normal visualization if removal fails
+
+            except Exception as e:
+                logger.error(f"[Visualize] Error in removal mode: {e}", exc_info=True)
+                # Fall through to normal visualization if removal fails
 
         # Handle force reset FIRST - this takes priority over incremental mode
         # force_reset means products were removed, so we must use the clean base image
@@ -2779,9 +2913,13 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         normalize_perspective = request.get("normalize_perspective", True)
         if normalize_perspective and (force_reset or not is_incremental):
             try:
-                # Quick room analysis to detect viewing angle
-                logger.info("Analyzing room image for perspective transformation...")
-                room_analysis = await google_ai_service.analyze_room_image(base_image)
+                # Use cached room analysis if available, otherwise call API
+                if cached_room_analysis:
+                    logger.info("[Visualize] Using cached room analysis for perspective check (saved 2-8s)")
+                    room_analysis = cached_room_analysis
+                else:
+                    logger.info("[Visualize] No cached room analysis - calling Gemini API...")
+                    room_analysis = await google_ai_service.analyze_room_image(base_image)
 
                 # Check if viewing angle needs transformation
                 camera_view = getattr(room_analysis, "camera_view_analysis", {}) or {}
@@ -2876,9 +3014,16 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         # Detect existing furniture in the room if not yet done
         existing_furniture = request.get("existing_furniture")
         if not existing_furniture:
-            logger.info("Detecting existing furniture in room image...")
-            objects = await google_ai_service.detect_objects_in_room(base_image)
-            existing_furniture = objects
+            # OPTIMIZATION: Use cached existing_furniture from room analysis if available
+            if cached_existing_furniture:
+                logger.info(
+                    f"[Visualize] Using cached existing furniture ({len(cached_existing_furniture)} items, saved 2-5s)"
+                )
+                existing_furniture = cached_existing_furniture
+            else:
+                logger.info("[Visualize] No cached furniture data - calling Gemini API...")
+                objects = await google_ai_service.detect_objects_in_room(base_image)
+                existing_furniture = objects
 
         # Check if selected product matches existing furniture category
         selected_product_types = set()
@@ -2972,7 +3117,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             elif user_action == "replace_all":
                 visualization_instruction = f"Replace ALL existing {product_type_display}s with the selected product. Remove all {product_type_display}s currently in the room and place only the new one."
             elif user_action == "add":
-                visualization_instruction = f"Add the selected {product_type_display} to the room. Keep all existing {product_type_display}s in their current positions."
+                visualization_instruction = f"Add ONLY the selected {product_type_display} to the room. CRITICAL: Do NOT add, duplicate, or re-render any existing furniture. The room already has furniture - leave ALL existing items EXACTLY as they appear in the input image. Only add the ONE new product specified."
             else:
                 visualization_instruction = "Place the selected product naturally in the room."
         else:
@@ -3171,6 +3316,22 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         expanded_products = expand_products_by_quantity(products)
         logger.info(f"Expanded {len(products)} products to {len(expanded_products)} items for visualization")
 
+        # Load dimensions for all products (for accurate scaling in prompts)
+        from services.google_ai_service import enrich_products_with_dimensions, load_product_dimensions
+
+        all_product_ids = [p.get("id") for p in expanded_products if p.get("id")]
+        if all_product_ids:
+            dimensions_map = await load_product_dimensions(db, all_product_ids)
+            expanded_products = enrich_products_with_dimensions(expanded_products, dimensions_map)
+            logger.info(f"[Dimensions] Loaded dimensions for {len(dimensions_map)} products")
+
+        # Also enrich new_products_to_visualize if any (for incremental mode)
+        if new_products_to_visualize:
+            new_product_ids = [p.get("id") for p in new_products_to_visualize if p.get("id")]
+            if new_product_ids:
+                new_dims_map = await load_product_dimensions(db, new_product_ids)
+                new_products_to_visualize = enrich_products_with_dimensions(new_products_to_visualize, new_dims_map)
+
         # Handle incremental visualization (add ONLY NEW products to existing visualization)
         if is_incremental:
             logger.info(
@@ -3182,11 +3343,16 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             try:
                 products_for_viz = new_products_to_visualize
                 product_details = [f"{p.get('name')} (qty={p.get('quantity', 1)})" for p in products_for_viz]
+                existing_product_details = [f"{p.get('name')} (qty={p.get('quantity', 1)})" for p in visualized_products]
                 logger.info(f"  Batch adding products: {', '.join(product_details)}")
+                logger.info(
+                    f"  Existing products in base image: {', '.join(existing_product_details) if existing_product_details else 'none'}"
+                )
 
                 current_image = await google_ai_service.generate_add_multiple_visualization(
                     room_image=base_image,  # Start with previous visualization (already has old products)
                     products=products_for_viz,  # Use expanded products for quantity support
+                    existing_products=visualized_products,  # Products already in base image to preserve
                 )
             except ValueError as e:
                 logger.error(f"Batch visualization error: {e}")
@@ -3336,63 +3502,71 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         else:
             message = "Visualization generated successfully. Note: This shows a design concept with your selected products."
 
-        # BACKGROUND MASK PRE-COMPUTATION (Silent - no UI indication)
+        # BACKGROUND MASK PRE-COMPUTATION (DISABLED)
+        # NOTE: SAM-based mask pre-computation is disabled as SAM segmentation is not used.
+        # This entire block is skipped. The mask precomputation service methods now return
+        # early without doing any work anyway, but we skip the block entirely for clarity.
+        #
+        # Original purpose:
         # This runs after visualization completes so user sees result immediately
         # Masks will be ready by the time they click "Edit Position"
-        try:
-            import asyncio as asyncio_module
+        _MASK_PRECOMPUTATION_ENABLED = False  # Set to True to re-enable SAM mask precomputation
+        if _MASK_PRECOMPUTATION_ENABLED:
+            try:
+                import asyncio as asyncio_module
 
-            from services.mask_precomputation_service import mask_precomputation_service
+                from services.mask_precomputation_service import mask_precomputation_service
 
-            from core.database import AsyncSessionLocal
+                from core.database import AsyncSessionLocal
 
-            # Capture curated_look_id for use in background task
-            _curated_look_id = curated_look_id
+                # Capture curated_look_id for use in background task
+                _curated_look_id = curated_look_id
 
-            async def precompute_masks_background():
-                """Background task to pre-compute masks for Edit Position."""
-                async with AsyncSessionLocal() as bg_db:
-                    try:
-                        # Convert products to the format expected by the service
-                        products_for_cache = [
-                            {"id": p.get("id") or p.get("product_id"), "name": p.get("name", "")} for p in accumulated_products
-                        ]
+                async def precompute_masks_background():
+                    """Background task to pre-compute masks for Edit Position."""
+                    async with AsyncSessionLocal() as bg_db:
+                        try:
+                            # Convert products to the format expected by the service
+                            products_for_cache = [
+                                {"id": p.get("id") or p.get("product_id"), "name": p.get("name", "")}
+                                for p in accumulated_products
+                            ]
 
-                        # Use curated look method if curated_look_id is provided
-                        if _curated_look_id:
-                            job_id = await mask_precomputation_service.trigger_precomputation_for_curated_look(
-                                bg_db,
-                                _curated_look_id,
-                                viz_result.rendered_image,
-                                products_for_cache,
-                            )
-                        else:
-                            job_id = await mask_precomputation_service.trigger_precomputation(
-                                bg_db,
-                                session_id,
-                                viz_result.rendered_image,
-                                products_for_cache,
-                            )
-                        if job_id:
-                            await mask_precomputation_service.process_precomputation(
-                                bg_db,
-                                job_id,
-                                viz_result.rendered_image,
-                                products_for_cache,
-                            )
-                    except Exception as e:
-                        logger.warning(f"[Precompute] Background task failed: {e}")
+                            # Use curated look method if curated_look_id is provided
+                            if _curated_look_id:
+                                job_id = await mask_precomputation_service.trigger_precomputation_for_curated_look(
+                                    bg_db,
+                                    _curated_look_id,
+                                    viz_result.rendered_image,
+                                    products_for_cache,
+                                )
+                            else:
+                                job_id = await mask_precomputation_service.trigger_precomputation(
+                                    bg_db,
+                                    session_id,
+                                    viz_result.rendered_image,
+                                    products_for_cache,
+                                )
+                            if job_id:
+                                await mask_precomputation_service.process_precomputation(
+                                    bg_db,
+                                    job_id,
+                                    viz_result.rendered_image,
+                                    products_for_cache,
+                                )
+                        except Exception as e:
+                            logger.warning(f"[Precompute] Background task failed: {e}")
 
-            # Fire and forget - don't await
-            asyncio_module.create_task(precompute_masks_background())
-            if curated_look_id:
-                logger.info(f"[Precompute] Triggered background mask pre-computation for curated look {curated_look_id}")
-            else:
-                logger.info(f"[Precompute] Triggered background mask pre-computation for session {session_id}")
+                # Fire and forget - don't await
+                asyncio_module.create_task(precompute_masks_background())
+                if curated_look_id:
+                    logger.info(f"[Precompute] Triggered background mask pre-computation for curated look {curated_look_id}")
+                else:
+                    logger.info(f"[Precompute] Triggered background mask pre-computation for session {session_id}")
 
-        except Exception as precompute_error:
-            # Never fail the main request due to precomputation
-            logger.warning(f"[Precompute] Failed to trigger: {precompute_error}")
+            except Exception as precompute_error:
+                # Never fail the main request due to precomputation
+                logger.warning(f"[Precompute] Failed to trigger: {precompute_error}")
 
         return {
             "visualization": {

@@ -39,6 +39,37 @@ class RoomAnalysis:
     # Camera view analysis for room-aware furniture placement
     camera_view_analysis: Dict[str, Any] = field(default_factory=dict)
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize RoomAnalysis to dictionary for database storage"""
+        return {
+            "room_type": self.room_type,
+            "dimensions": self.dimensions,
+            "lighting_conditions": self.lighting_conditions,
+            "color_palette": self.color_palette,
+            "existing_furniture": self.existing_furniture,
+            "architectural_features": self.architectural_features,
+            "style_assessment": self.style_assessment,
+            "confidence_score": self.confidence_score,
+            "scale_references": self.scale_references,
+            "camera_view_analysis": self.camera_view_analysis,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RoomAnalysis":
+        """Deserialize RoomAnalysis from dictionary (database retrieval)"""
+        return cls(
+            room_type=data.get("room_type", "unknown"),
+            dimensions=data.get("dimensions", {}),
+            lighting_conditions=data.get("lighting_conditions", "mixed"),
+            color_palette=data.get("color_palette", []),
+            existing_furniture=data.get("existing_furniture", []),
+            architectural_features=data.get("architectural_features", []),
+            style_assessment=data.get("style_assessment", "unknown"),
+            confidence_score=data.get("confidence_score", 0.0),
+            scale_references=data.get("scale_references", {}),
+            camera_view_analysis=data.get("camera_view_analysis", {}),
+        )
+
 
 @dataclass
 class SpatialAnalysis:
@@ -86,6 +117,511 @@ class SpaceFitnessResult:
     confidence: float  # 0.0 to 1.0 confidence in the assessment
     reason: str  # Explanation for the assessment
     suggestion: Optional[str] = None  # Alternative suggestion if doesn't fit
+
+
+class VisualizationPrompts:
+    """Centralized prompt components for all visualization workflows."""
+
+    SYSTEM_INTRO = """You are a professional interior styling visualizing tool. Your job is to take user inputs and produce realistic images of their styled spaces."""
+
+    @staticmethod
+    def get_system_intro() -> str:
+        """System introduction used at the start of EVERY prompt."""
+        return VisualizationPrompts.SYSTEM_INTRO
+
+    @staticmethod
+    def get_room_preservation_rules() -> str:
+        """Room preservation rules used by ALL workflows."""
+        return """
+═══════════════════════════════════════════════════════════════
+🏠 ROOM PRESERVATION RULES (MANDATORY FOR ALL OPERATIONS)
+═══════════════════════════════════════════════════════════════
+
+1. OUTPUT DIMENSIONS: Must EXACTLY match input image dimensions (pixel-for-pixel)
+2. ASPECT RATIO: Preserve exactly - no cropping, no letterboxing
+3. CAMERA ANGLE: Maintain identical viewing angle and perspective
+4. WALLS & FLOORS: Keep EXACT same colors, textures, and materials
+5. ARCHITECTURAL FEATURES: Preserve all windows, doors, columns, moldings
+6. LIGHTING: Match existing room lighting conditions
+7. EXISTING FURNITURE (unless explicitly removing): Keep in EXACT same position, size, color
+8. NO ZOOM: Never zoom in or crop - show full room view
+9. NO ADDITIONS: Never add furniture not explicitly requested
+10. PHOTOREALISM: Output must look like a real photograph
+"""
+
+    @staticmethod
+    def get_placement_guidelines() -> str:
+        """Product-type specific placement rules."""
+        return """
+═══════════════════════════════════════════════════════════════
+📐 PLACEMENT GUIDELINES BY PRODUCT TYPE
+═══════════════════════════════════════════════════════════════
+
+🪑 SOFAS:
+- Place DIRECTLY AGAINST the wall with MINIMAL GAP (2-4 inches max)
+- Position as the main seating piece, centered on the wall
+
+🪑 CHAIRS (accent, armchair, dining, recliner):
+- Position on sides of existing sofa (if present), angled for conversation
+- Maintain 18-30 inches spacing from sofa
+- If no sofa, place along a wall or in natural seating position
+
+🔲 CENTER TABLE / COFFEE TABLE:
+- Place DIRECTLY IN FRONT OF the sofa or seating area
+- Centered in the "coffee table zone" (14-18 inches from sofa)
+
+🔲 OTTOMAN:
+- Place IN FRONT OF the sofa, 14-18 inches from sofa's front edge
+- Used as footrest or extra seating, NOT as sofa replacement
+
+🔲 SIDE TABLE / END TABLE:
+- Place DIRECTLY ADJACENT to sofa's SIDE (at the armrest)
+- Must be FLUSH with sofa's side, at ARM'S REACH from seated person
+
+🔲 CONSOLE TABLE / ENTRYWAY TABLE:
+- Place AGAINST AN EMPTY WALL (not in seating area)
+- Typical placement: behind sofa, in entryways, hallways
+- NEVER removes or replaces seating furniture
+
+📦 STORAGE UNITS / CABINETS / BOOKSHELVES / BAR COUNTERS:
+- Place DIRECTLY AGAINST A WALL with back touching the wall
+- Ensure NO OBSTRUCTIONS in front (maintain 36+ inches clearance)
+- Do not obstruct pathways or block other furniture
+- Bar counters should have open space in front for stools/standing
+
+🪟 CURTAINS / DRAPES / WINDOW TREATMENTS:
+- Apply ONLY to VISIBLE WINDOWS in the room
+- Curtains should hang from above window frame to floor or sill
+- Width should cover window plus 4-8 inches on each side
+- Match curtain style to room aesthetic
+
+💡 LAMPS:
+- Table lamps: on existing tables (side, console, nightstand)
+- Floor lamps: in corners or beside seating
+
+🛏️ BEDS:
+- Place against a wall (headboard against wall)
+
+🪴 FLOOR PLANTERS / TALL PLANTS:
+- Place in FAR CORNERS, next to furniture, or tucked beside items
+- Should occupy LESS than 5-10% of visible image area
+- Keep proportionally SMALL (2-3 feet tall MAX)
+
+🛋️ CUSHIONS / PILLOWS:
+- Place DIRECTLY ON the sofa/chair (on seat or against backrest)
+- Arrange naturally - slightly angled, varied positions
+
+🧶 THROWS / BLANKETS:
+- Drape over arm of sofa/chair OR fold on seat
+- Furniture underneath must NOT move
+
+💐 TABLETOP DECOR (vases, flowers, decorative objects):
+- Place ON table surfaces (coffee, side, console, dining tables)
+- Preferred surfaces: coffee table → side table → console → shelf
+
+🗿 SCULPTURES / FIGURINES:
+- FIRST: Place on CENTER TABLE / COFFEE TABLE
+- SECOND: Side table if center table full
+- THIRD: Console table, shelf, or mantel
+
+🖼️ WALL ART / MIRRORS:
+- Mount on walls at appropriate eye level
+- Add alongside existing art (gallery style), don't replace
+"""
+
+    @staticmethod
+    def get_product_accuracy_rules() -> str:
+        """Rules for accurate product reproduction."""
+        return """
+═══════════════════════════════════════════════════════════════
+🎯 PRODUCT ACCURACY REQUIREMENTS
+═══════════════════════════════════════════════════════════════
+
+⚠️ CRITICAL: Products in output MUST match reference images EXACTLY
+
+✅ MUST DO:
+- Copy EXACT appearance from product reference image
+- Match exact color, pattern, texture, material
+- Preserve product proportions and dimensions
+- Show product's FRONT FACE towards camera
+- Scale products according to their PHYSICAL DIMENSIONS provided
+
+❌ MUST NOT:
+- Generate a "similar" or "inspired by" version
+- Change colors to "match the room better"
+- Alter product design or style
+- Show product from back or side
+- Ignore provided dimensions
+"""
+
+    @staticmethod
+    def format_product_with_dimensions(product: Dict[str, Any], index: int) -> str:
+        """
+        Format a single product with its dimensions for prompt inclusion.
+
+        Args:
+            product: Product dict with name, dimensions, furniture_type, etc.
+            index: Product index (1-based)
+
+        Returns:
+            Formatted string with product details and dimensions
+        """
+        name = product.get("full_name") or product.get("name", "furniture item")
+        furniture_type = product.get("furniture_type", "furniture")
+
+        # Extract dimensions from product attributes
+        dimensions = product.get("dimensions", {})
+        width = dimensions.get("width")
+        depth = dimensions.get("depth")
+        height = dimensions.get("height")
+
+        # Build dimension string
+        dim_parts = []
+        if width:
+            dim_parts.append(f'{width}" W')
+        if depth:
+            dim_parts.append(f'{depth}" D')
+        if height:
+            dim_parts.append(f'{height}" H')
+
+        dim_str = " x ".join(dim_parts) if dim_parts else "dimensions not specified"
+
+        return f"""Product {index}: {name}
+- Type: {furniture_type}
+- Dimensions: {dim_str}
+- Reference Image: Provided below"""
+
+    @staticmethod
+    def format_products_list(products: List[Dict[str, Any]]) -> str:
+        """Format multiple products with their dimensions."""
+        formatted = []
+        for idx, product in enumerate(products, 1):
+            formatted.append(VisualizationPrompts.format_product_with_dimensions(product, idx))
+        return "\n\n".join(formatted)
+
+    @staticmethod
+    def get_bulk_initial_prompt(products: List[Dict[str, Any]]) -> str:
+        """
+        Workflow 1: Initial/bulk visualization prompt.
+
+        Args:
+            products: List of product dicts with name, dimensions, furniture_type
+        """
+        product_count = len(products)
+        products_description = VisualizationPrompts.format_products_list(products)
+
+        return f"""{VisualizationPrompts.get_system_intro()}
+
+═══════════════════════════════════════════════════════════════
+🎨 TASK: INITIAL ROOM VISUALIZATION
+═══════════════════════════════════════════════════════════════
+
+You are placing {product_count} product(s) into this room for the FIRST TIME.
+
+PRODUCTS TO PLACE (with physical dimensions for proper scaling):
+{products_description}
+
+{VisualizationPrompts.get_room_preservation_rules()}
+
+📏 DIMENSION-BASED SCALING:
+- Use the provided dimensions (W x D x H in inches) to scale each product correctly
+- A 84" wide sofa should appear ~7 feet wide relative to room
+- A 28" wide chair should appear ~2.3 feet wide
+- Maintain proportional relationships between products
+
+{VisualizationPrompts.get_placement_guidelines()}
+
+{VisualizationPrompts.get_product_accuracy_rules()}
+
+YOUR TASK:
+1. Analyze the room layout and identify appropriate placement zones
+2. Place each product according to the placement guidelines above
+3. Scale products according to their PHYSICAL DIMENSIONS provided
+4. Ensure all products are visible and properly proportioned
+5. Maintain photorealistic quality matching room lighting
+"""
+
+    @staticmethod
+    def get_incremental_add_prompt(new_products: List[Dict[str, Any]], existing_products: List[Dict[str, Any]]) -> str:
+        """
+        Workflow 2: Incremental addition prompt.
+
+        Args:
+            new_products: Products being added (with dimensions)
+            existing_products: Products already in room (with dimensions)
+        """
+        new_products_description = VisualizationPrompts.format_products_list(new_products)
+        existing_description = (
+            VisualizationPrompts.format_products_list(existing_products) if existing_products else "No existing products"
+        )
+
+        return f"""{VisualizationPrompts.get_system_intro()}
+
+═══════════════════════════════════════════════════════════════
+➕ TASK: ADD PRODUCTS TO EXISTING VISUALIZATION
+═══════════════════════════════════════════════════════════════
+
+EXISTING PRODUCTS IN ROOM (DO NOT MODIFY - keep exact position/size):
+{existing_description}
+
+NEW PRODUCTS TO ADD (with physical dimensions for proper scaling):
+{new_products_description}
+
+{VisualizationPrompts.get_room_preservation_rules()}
+
+⚠️ CRITICAL PRESERVATION:
+- ALL existing products must remain in EXACT same position, size, and appearance
+- You are ONLY adding the new products listed above
+- Do NOT move, resize, or alter ANY existing furniture
+
+📏 DIMENSION-BASED SCALING FOR NEW PRODUCTS:
+- Use the provided dimensions (W x D x H in inches) to scale each new product correctly
+- New products should be proportionally correct relative to existing furniture
+- Example: If existing sofa is 84" wide and new chair is 28" wide, chair should be ~1/3 sofa width
+
+{VisualizationPrompts.get_placement_guidelines()}
+
+{VisualizationPrompts.get_product_accuracy_rules()}
+
+YOUR TASK:
+1. Keep ALL existing products exactly as they are (pixel-perfect)
+2. Find appropriate empty spaces for the new products
+3. Scale new products according to their PHYSICAL DIMENSIONS
+4. Place new products according to placement guidelines
+5. Maintain room lighting and photorealism
+"""
+
+    @staticmethod
+    def get_removal_prompt(products_to_remove: List[Dict[str, Any]], remaining_products: List[Dict[str, Any]]) -> str:
+        """
+        Workflow 3: Product removal prompt (supports partial quantity removal).
+
+        Args:
+            products_to_remove: Products being removed (with name, quantity, dimensions)
+            remaining_products: Products that should stay (with dimensions for reference)
+        """
+        # Format removal list
+        removal_lines = []
+        for product in products_to_remove:
+            name = product.get("full_name") or product.get("name", "furniture item")
+            qty = product.get("quantity", 1)
+            dims = product.get("dimensions", {})
+            dim_str = ""
+            if dims:
+                dim_parts = []
+                if dims.get("width"):
+                    dim_parts.append(f'{dims["width"]}" W')
+                if dims.get("depth"):
+                    dim_parts.append(f'{dims["depth"]}" D')
+                if dims.get("height"):
+                    dim_parts.append(f'{dims["height"]}" H')
+                dim_str = f" ({' x '.join(dim_parts)})" if dim_parts else ""
+
+            if qty > 1:
+                removal_lines.append(f"- {name}{dim_str} (remove {qty} copies)")
+            else:
+                removal_lines.append(f"- {name}{dim_str}")
+
+        removal_list = "\n".join(removal_lines)
+
+        # Format remaining products - include quantities for clarity
+        remaining_list = []
+        for product in remaining_products:
+            name = product.get("full_name") or product.get("name", "item")
+            qty = product.get("quantity", 1)
+            if qty > 1:
+                remaining_list.append(f"- {name} ({qty} copies - KEEP ALL {qty})")
+            else:
+                remaining_list.append(f"- {name} (KEEP THIS - DO NOT REMOVE)")
+        remaining_description = "\n".join(remaining_list) if remaining_list else "None - room should be empty after removal"
+
+        # Use a REMOVAL-SPECIFIC intro instead of the generic styling intro
+        return f"""You are an image inpainting tool. Your ONLY task is to REMOVE objects from images and fill the empty space with appropriate background.
+
+🚨🚨🚨 CRITICAL: THIS IS A REMOVAL/DELETION TASK - NOT A STYLING TASK 🚨🚨🚨
+
+═══════════════════════════════════════════════════════════════
+🗑️ TASK: DELETE/REMOVE FURNITURE FROM IMAGE
+═══════════════════════════════════════════════════════════════
+
+🗑️ ITEMS TO DELETE FROM THIS IMAGE (REMOVE THESE):
+{removal_list}
+
+⛔⛔⛔ ITEMS THAT MUST REMAIN - DO NOT REMOVE THESE: ⛔⛔⛔
+{remaining_description}
+
+🚨 IMPORTANT: Read the product names CAREFULLY. Some products have similar names but are DIFFERENT items:
+- Only remove items that EXACTLY match the "ITEMS TO DELETE" list above
+- If a product name is similar but NOT identical, DO NOT remove it
+- When in doubt, KEEP the item - only remove exact matches
+
+⚠️ WHAT YOU MUST DO:
+1. FIND the items listed under "ITEMS TO DELETE" in the image
+2. DELETE/ERASE them completely
+3. FILL the empty space with floor/wall texture (inpaint the background)
+4. The result should look like those items were NEVER there
+
+❌ WHAT YOU MUST NOT DO:
+- DO NOT remove items from the "MUST REMAIN" list
+- DO NOT add any new furniture
+- DO NOT rearrange existing furniture
+- DO NOT change anything except removing the specified items
+- DO NOT "style" or "decorate" the room
+
+📏 OUTPUT REQUIREMENTS:
+- Keep EXACT same image dimensions
+- Keep EXACT same camera angle
+- Keep EXACT same lighting
+- Only difference: the listed items are GONE, replaced with floor/wall
+
+Think of this as ERASING furniture and painting over with the background, like using Photoshop's content-aware fill.
+"""
+
+    @staticmethod
+    def get_edit_by_instruction_prompt(
+        instruction: str,
+        instruction_type: str,  # "placement", "brightness", "reference"
+        current_products: List[Dict[str, Any]],
+        reference_image_provided: bool = False,
+    ) -> str:
+        """
+        Workflow 4: Edit by instruction prompt.
+
+        Args:
+            instruction: User's edit instruction
+            instruction_type: Type of edit ("placement", "brightness", "reference")
+            current_products: Products in room (with dimensions for placement changes)
+            reference_image_provided: Whether a reference image is included
+        """
+        # Format current products with dimensions
+        products_description = (
+            VisualizationPrompts.format_products_list(current_products) if current_products else "No products in room"
+        )
+
+        type_specific = ""
+        if instruction_type == "placement":
+            type_specific = """
+📍 PLACEMENT MODIFICATION:
+- You may move products to new positions as instructed
+- Use the provided DIMENSIONS to maintain correct product scale when repositioning
+- Maintain proper placement rules (sofas against walls, etc.)
+- Products being moved should keep their exact size based on dimensions
+"""
+        elif instruction_type == "brightness":
+            type_specific = """
+💡 BRIGHTNESS/LIGHTING MODIFICATION:
+- Adjust room brightness as instructed
+- Maintain consistent lighting across all surfaces
+- Keep product colors accurate (don't wash out or darken)
+- Preserve shadows and highlights naturally
+- Products should remain at their current dimensions/scale
+"""
+        elif instruction_type == "reference":
+            type_specific = """
+🖼️ REFERENCE IMAGE MODIFICATION:
+- Use the provided reference image as style guide
+- Apply similar aesthetic, color palette, or arrangement
+- Maintain current product positions unless instructed otherwise
+- Keep room structure intact
+- Product dimensions must remain accurate
+"""
+
+        return f"""{VisualizationPrompts.get_system_intro()}
+
+═══════════════════════════════════════════════════════════════
+✏️ TASK: MODIFY VISUALIZATION BY INSTRUCTION
+═══════════════════════════════════════════════════════════════
+
+USER INSTRUCTION:
+"{instruction}"
+
+CURRENT PRODUCTS IN ROOM (with dimensions - preserve these sizes):
+{products_description}
+
+{type_specific}
+
+{VisualizationPrompts.get_room_preservation_rules()}
+
+📏 DIMENSION PRESERVATION:
+- When moving products, maintain their EXACT scale based on provided dimensions
+- A 84" wide sofa must remain 84" wide after repositioning
+- Product proportions relative to room must stay correct
+
+⚠️ MODIFICATION RULES:
+1. Apply ONLY the requested modification
+2. Keep all other aspects unchanged
+3. Products not mentioned in instruction stay in place at same scale
+4. Room structure (walls, floors, windows) remains fixed
+
+{VisualizationPrompts.get_product_accuracy_rules()}
+
+{"⚠️ REFERENCE IMAGE: A reference image is provided. Use it as a style guide." if reference_image_provided else ""}
+
+YOUR TASK:
+1. Understand the user's instruction
+2. Apply the modification precisely
+3. Preserve product dimensions when repositioning
+4. Maintain photorealism and lighting consistency
+"""
+
+
+# Dimension loading helper functions (module-level)
+async def load_product_dimensions(db, product_ids: List[int]) -> Dict[int, Dict[str, float]]:
+    """
+    Load dimensions (width, depth, height) for products from ProductAttribute table.
+
+    Args:
+        db: Database session
+        product_ids: List of product IDs to load dimensions for
+
+    Returns:
+        Dict mapping product_id -> {"width": float, "depth": float, "height": float}
+    """
+    from sqlalchemy import select
+
+    from database.models import ProductAttribute
+
+    if not product_ids:
+        return {}
+
+    dimensions = {pid: {} for pid in product_ids}
+
+    result = await db.execute(
+        select(ProductAttribute).where(
+            ProductAttribute.product_id.in_(product_ids), ProductAttribute.attribute_name.in_(["width", "depth", "height"])
+        )
+    )
+    attributes = result.scalars().all()
+
+    for attr in attributes:
+        try:
+            dimensions[attr.product_id][attr.attribute_name] = float(attr.attribute_value)
+        except (ValueError, TypeError):
+            pass
+
+    return dimensions
+
+
+def enrich_products_with_dimensions(
+    products: List[Dict[str, Any]], dimensions_map: Dict[int, Dict[str, float]]
+) -> List[Dict[str, Any]]:
+    """
+    Add dimensions to product dicts from the dimensions map.
+
+    Args:
+        products: List of product dicts (must have 'id' key)
+        dimensions_map: Dict mapping product_id -> dimensions dict
+
+    Returns:
+        Products with 'dimensions' key added
+    """
+    for product in products:
+        product_id = product.get("id")
+        if product_id and product_id in dimensions_map:
+            product["dimensions"] = dimensions_map[product_id]
+        elif "dimensions" not in product:
+            product["dimensions"] = {}
+    return products
 
 
 class GoogleAIStudioService:
@@ -344,6 +880,165 @@ For recommended_furniture_zone: Place furniture against solid walls, NOT windows
         except Exception as e:
             logger.error(f"Error in room analysis: {e}")
             return self._create_fallback_room_analysis()
+
+    async def analyze_room_with_furniture(self, image_data: str) -> RoomAnalysis:
+        """
+        Combined room analysis AND furniture detection in ONE API call.
+
+        This optimization combines analyze_room_image() + detect_objects_in_room()
+        into a single Gemini call, saving 2-5 seconds per visualization.
+
+        Returns RoomAnalysis with existing_furniture populated from detailed detection.
+        """
+        try:
+            processed_image = self._preprocess_image(image_data)
+
+            prompt = """Analyze this interior space image comprehensively. You MUST include BOTH room analysis AND detailed furniture detection.
+
+Return JSON in this EXACT format:
+
+{
+  "camera_view_analysis": {
+    "viewing_angle": "straight_on/diagonal_left/diagonal_right/corner",
+    "primary_wall": "back/left/right/none_visible",
+    "floor_center_location": "image_center/left_of_center/right_of_center/corner_area",
+    "recommended_furniture_zone": "against_back_wall/against_left_wall/against_right_wall/center_floor"
+  },
+  "room_type": "living_room/bedroom/kitchen/dining_room/office/etc",
+  "dimensions": {
+    "estimated_width_ft": 12.0,
+    "estimated_length_ft": 15.0,
+    "estimated_height_ft": 9.0,
+    "square_footage": 180.0
+  },
+  "lighting_conditions": "natural/artificial/mixed",
+  "color_palette": ["primary_color", "secondary_color", "accent_color"],
+  "style_assessment": "modern/traditional/minimalist/bohemian/industrial/etc",
+  "architectural_features": ["windows", "doors", "fireplace", "built-in_shelves", "etc"],
+  "scale_references": {
+    "door_visible": true,
+    "window_visible": true,
+    "camera_perspective": {
+      "angle": "eye_level/high_angle/low_angle"
+    }
+  },
+  "existing_furniture": [
+    {
+      "object_type": "sofa",
+      "position": "center-left/center/right/back-left/front-center/etc",
+      "size": "small/medium/large",
+      "style": "modern/traditional/etc",
+      "color": "gray/beige/blue/etc",
+      "material": "fabric/leather/wood/metal/etc",
+      "confidence": 0.95
+    }
+  ]
+}
+
+🚨 CRITICAL - VIEWING ANGLE DETECTION (camera_view_analysis.viewing_angle):
+- "corner" = TWO walls visible meeting at a corner
+- "diagonal_left" = Camera points toward left-back corner, RIGHT wall prominently visible
+- "diagonal_right" = Camera points toward right-back corner, LEFT wall prominently visible
+- "straight_on" = RARE - only if back wall is perfectly parallel and side walls barely visible
+
+📋 EXISTING FURNITURE - CRITICAL:
+List ALL furniture and decor objects visible in the room with detailed attributes:
+- Include sofas, chairs, tables, lamps, rugs, plants, shelves, beds, dressers, etc.
+- Include wall art, mirrors, curtains if visible
+- For each item: object_type, position, size, style, color, material, confidence (0-1)"""
+
+            payload = {
+                "contents": [
+                    {
+                        "parts": [
+                            {"text": prompt},
+                            {"inline_data": {"mime_type": "image/jpeg", "data": processed_image}},
+                        ]
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.3,
+                    "topK": 40,
+                    "topP": 0.95,
+                    "maxOutputTokens": 3072,  # Increased for furniture list
+                    "responseMimeType": "application/json",
+                },
+            }
+
+            result = await self._make_api_request("models/gemini-3-pro-preview:generateContent", payload)
+
+            content = result.get("candidates", [{}])[0].get("content", {})
+            text_response = content.get("parts", [{}])[0].get("text", "{}")
+
+            try:
+                import re
+
+                cleaned_response = re.sub(r",(\s*[}\]])", r"\1", text_response)
+                cleaned_response = re.sub(r"^```json\s*", "", cleaned_response)
+                cleaned_response = re.sub(r"\s*```$", "", cleaned_response)
+                analysis_data = json.loads(cleaned_response)
+
+                logger.info(f"Combined room analysis response keys: {list(analysis_data.keys())}")
+                furniture_count = len(analysis_data.get("existing_furniture", []))
+                logger.info(f"Detected {furniture_count} furniture items in combined analysis")
+
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse combined analysis JSON: {e}")
+                try:
+                    json_match = re.search(r"\{[\s\S]*\}", text_response)
+                    if json_match:
+                        cleaned = re.sub(r",(\s*[}\]])", r"\1", json_match.group())
+                        analysis_data = json.loads(cleaned)
+                        logger.info("Successfully parsed JSON after cleanup")
+                    else:
+                        raise json.JSONDecodeError("No JSON object found", text_response, 0)
+                except json.JSONDecodeError:
+                    logger.warning("Both JSON parsing attempts failed, using fallback")
+                    analysis_data = self._get_fallback_combined_analysis()
+
+            return RoomAnalysis(
+                room_type=analysis_data.get("room_type", "unknown"),
+                dimensions=analysis_data.get("dimensions", {}),
+                lighting_conditions=analysis_data.get("lighting_conditions", "mixed"),
+                color_palette=analysis_data.get("color_palette", []),
+                existing_furniture=analysis_data.get("existing_furniture", []),
+                architectural_features=analysis_data.get("architectural_features", []),
+                style_assessment=analysis_data.get("style_assessment", "unknown"),
+                confidence_score=0.85,
+                scale_references=analysis_data.get("scale_references", {}),
+                camera_view_analysis=analysis_data.get(
+                    "camera_view_analysis",
+                    {
+                        "viewing_angle": "straight_on",
+                        "primary_wall": "back",
+                        "floor_center_location": "image_center",
+                        "recommended_furniture_zone": "center_floor",
+                    },
+                ),
+            )
+
+        except Exception as e:
+            logger.error(f"Error in combined room analysis: {e}")
+            return self._create_fallback_room_analysis()
+
+    def _get_fallback_combined_analysis(self) -> Dict[str, Any]:
+        """Fallback data for combined room analysis when JSON parsing fails"""
+        return {
+            "room_type": "unknown",
+            "dimensions": {},
+            "lighting_conditions": "mixed",
+            "color_palette": [],
+            "existing_furniture": [],
+            "architectural_features": [],
+            "style_assessment": "unknown",
+            "scale_references": {},
+            "camera_view_analysis": {
+                "viewing_angle": "straight_on",
+                "primary_wall": "back",
+                "floor_center_location": "image_center",
+                "recommended_furniture_zone": "center_floor",
+            },
+        }
 
     async def perform_spatial_analysis(self, room_analysis: RoomAnalysis) -> SpatialAnalysis:
         """Perform spatial analysis for furniture placement"""
@@ -1187,10 +1882,11 @@ Everything outside this area must remain IDENTICAL to the input image."""
 
             for attempt in range(max_retries):
                 try:
-                    async with asyncio.timeout(60):
-                        response = await asyncio.get_event_loop().run_in_executor(
+                    # Use wait_for for Python < 3.11 compatibility
+                    response = await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(
                             None,
-                            lambda: self.client.models.generate_content(
+                            lambda: self.genai_client.models.generate_content(
                                 model=model,
                                 contents=[prompt, pil_image],
                                 config=types.GenerateContentConfig(
@@ -1198,26 +1894,28 @@ Everything outside this area must remain IDENTICAL to the input image."""
                                     temperature=0.2,
                                 ),
                             ),
-                        )
+                        ),
+                        timeout=60,
+                    )
 
-                        if response.candidates:
-                            for part in response.candidates[0].content.parts:
-                                if hasattr(part, "inline_data") and part.inline_data:
-                                    image_data = part.inline_data.data
-                                    mime_type = part.inline_data.mime_type or "image/jpeg"
+                    if response.candidates:
+                        for part in response.candidates[0].content.parts:
+                            if hasattr(part, "inline_data") and part.inline_data:
+                                image_data = part.inline_data.data
+                                mime_type = part.inline_data.mime_type or "image/jpeg"
 
-                                    if isinstance(image_data, bytes):
-                                        first_hex = image_data[:4].hex()
-                                        if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
-                                            image_b64 = base64.b64encode(image_data).decode("utf-8")
-                                        else:
-                                            image_b64 = image_data.decode("utf-8")
+                                if isinstance(image_data, bytes):
+                                    first_hex = image_data[:4].hex()
+                                    if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                        image_b64 = base64.b64encode(image_data).decode("utf-8")
                                     else:
-                                        image_b64 = image_data
+                                        image_b64 = image_data.decode("utf-8")
+                                else:
+                                    image_b64 = image_data
 
-                                    result = f"data:{mime_type};base64,{image_b64}"
-                                    logger.info(f"[Inpaint] Successfully inpainted area for {product_name}")
-                                    return result
+                                result = f"data:{mime_type};base64,{image_b64}"
+                                logger.info(f"[Inpaint] Successfully inpainted area for {product_name}")
+                                return result
 
                 except asyncio.TimeoutError:
                     logger.warning(f"[Inpaint] Attempt {attempt + 1} timed out")
@@ -1235,6 +1933,136 @@ Everything outside this area must remain IDENTICAL to the input image."""
             logger.error(f"[Inpaint] Error: {e}")
             return f"data:image/jpeg;base64,{image_base64}"
 
+    async def remove_products_from_visualization(
+        self,
+        image_base64: str,
+        products_to_remove: List[Dict[str, Any]],
+        remaining_products: Optional[List[Dict[str, Any]]] = None,
+        max_retries: int = 3,
+    ) -> Optional[str]:
+        """
+        Remove specific products from a visualization while preserving everything else.
+        Uses centralized VisualizationPrompts for consistent prompt structure.
+
+        Args:
+            image_base64: Base64 encoded visualization image
+            products_to_remove: List of product dicts with name, quantity, and dimensions
+            remaining_products: List of product dicts that should stay (with dimensions)
+            max_retries: Number of retry attempts
+
+        Returns: base64 encoded image with products removed, or None if failed
+        """
+        try:
+            # Extract product names for logging
+            product_names = [p.get("full_name") or p.get("name", "item") for p in products_to_remove]
+            logger.info(f"[RemoveProducts] Removing {len(products_to_remove)} products: {product_names}")
+
+            # Remove data URL prefix if present
+            if image_base64.startswith("data:image"):
+                image_base64 = image_base64.split(",")[1]
+
+            image_bytes = base64.b64decode(image_base64)
+            pil_image = Image.open(io.BytesIO(image_bytes))
+            pil_image = ImageOps.exif_transpose(pil_image)
+            if pil_image.mode != "RGB":
+                pil_image = pil_image.convert("RGB")
+
+            original_width, original_height = pil_image.size
+            logger.info(f"[RemoveProducts] Original image size: {original_width}x{original_height}")
+
+            # Use centralized prompt with dimensions
+            prompt = VisualizationPrompts.get_removal_prompt(
+                products_to_remove=products_to_remove, remaining_products=remaining_products or []
+            )
+
+            # Add resolution requirements
+            prompt += f"""
+
+🚨🚨🚨 IMAGE DIMENSION REQUIREMENTS 🚨🚨🚨
+- Output MUST be EXACTLY {original_width}x{original_height} pixels
+- DO NOT change the aspect ratio or crop the image
+- The result should look like the room was photographed without the removed items ever being there.
+"""
+
+            model = "gemini-3-pro-image-preview"
+
+            for attempt in range(max_retries):
+                try:
+                    logger.info(f"[RemoveProducts] Attempt {attempt + 1}/{max_retries}")
+
+                    # Use wait_for for Python < 3.11 compatibility
+                    response = await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(
+                            None,
+                            lambda: self.genai_client.models.generate_content(
+                                model=model,
+                                contents=[prompt, pil_image],
+                                config=types.GenerateContentConfig(
+                                    response_modalities=["IMAGE", "TEXT"],
+                                    temperature=0.2,
+                                ),
+                            ),
+                        ),
+                        timeout=90,
+                    )
+
+                    if response.candidates:
+                        for part in response.candidates[0].content.parts:
+                            if hasattr(part, "inline_data") and part.inline_data:
+                                image_data = part.inline_data.data
+
+                                if isinstance(image_data, bytes):
+                                    first_hex = image_data[:4].hex()
+                                    if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                        image_b64 = base64.b64encode(image_data).decode("utf-8")
+                                    else:
+                                        image_b64 = image_data.decode("utf-8")
+                                else:
+                                    image_b64 = image_data
+
+                                # Verify output dimensions
+                                try:
+                                    result_bytes = base64.b64decode(image_b64)
+                                    result_image = Image.open(io.BytesIO(result_bytes))
+                                    result_width, result_height = result_image.size
+                                    logger.info(
+                                        f"[RemoveProducts] Result size: {result_width}x{result_height} "
+                                        f"(original: {original_width}x{original_height})"
+                                    )
+
+                                    # Resize if dimensions don't match
+                                    if result_width != original_width or result_height != original_height:
+                                        logger.warning(
+                                            f"[RemoveProducts] Resizing output from {result_width}x{result_height} "
+                                            f"to {original_width}x{original_height}"
+                                        )
+                                        result_image = result_image.resize(
+                                            (original_width, original_height), Image.Resampling.LANCZOS
+                                        )
+                                        buffer = io.BytesIO()
+                                        result_image.save(buffer, format="JPEG", quality=95)
+                                        image_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                                except Exception as resize_error:
+                                    logger.warning(f"[RemoveProducts] Could not verify/resize output: {resize_error}")
+
+                                logger.info(f"[RemoveProducts] Successfully removed products on attempt {attempt + 1}")
+                                return image_b64
+
+                except asyncio.TimeoutError:
+                    logger.warning(f"[RemoveProducts] Attempt {attempt + 1} timed out")
+                except Exception as e:
+                    logger.warning(f"[RemoveProducts] Attempt {attempt + 1} failed: {e}")
+
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2**attempt)
+
+            logger.error(f"[RemoveProducts] All {max_retries} attempts failed")
+            return None
+
+        except Exception as e:
+            logger.error(f"[RemoveProducts] Error: {e}", exc_info=True)
+            return None
+
     async def generate_add_visualization(
         self, room_image: str, product_name: str, product_image: Optional[str] = None, product_color: Optional[str] = None
     ) -> str:
@@ -1249,7 +2077,8 @@ Everything outside this area must remain IDENTICAL to the input image."""
             product_color: Explicit color from product attributes (e.g., "beige", "cream", "walnut")
         """
         try:
-            processed_room = self._preprocess_image(room_image)
+            # Use editing preprocessor to preserve quality for visualization output
+            processed_room = self._preprocess_image_for_editing(room_image)
 
             # Download product image if URL provided
             product_image_data = None
@@ -1367,7 +2196,9 @@ THE PRODUCT COLOR IS: **{product_color.upper()}**
 
 """
 
-            prompt = f"""{zoom_warning}{small_item_warning}{planter_placement_hint}{color_emphasis}ADD the following product to this room in an appropriate location WITHOUT removing any existing furniture:
+            prompt = f"""{VisualizationPrompts.get_system_intro()}
+
+{zoom_warning}{small_item_warning}{planter_placement_hint}{color_emphasis}ADD the following product to this room in an appropriate location WITHOUT removing any existing furniture:
 
 Product to add: {product_name} (COLOR: {product_color if product_color else 'see reference image'})
 
@@ -1418,12 +2249,37 @@ ALL EXISTING FURNITURE MUST REMAIN THE EXACT SAME SIZE AND SCALE:
 ═══════════════════════════════════════════════════════════════
 
 🔒 CRITICAL PRESERVATION RULES:
-1. KEEP ALL EXISTING FURNITURE: Do NOT remove or replace any furniture currently in the room
-2. ⚠️ ESPECIALLY PRESERVE SOFAS: If there is a sofa/couch in the room, it MUST remain in the final image - NEVER remove a sofa unless explicitly told to replace it
-3. FIND APPROPRIATE SPACE: Identify a suitable empty space to place the new furniture
+1. KEEP ALL EXISTING FURNITURE: Do NOT remove, move, or replace any furniture currently in the room
+2. ⚠️ ESPECIALLY PRESERVE SOFAS: If there is a sofa/couch in the room, it MUST remain in its EXACT position
+3. 🎨 PRESERVE EXISTING COLORS: Do NOT change the color of ANY existing furniture or decor in the room
 4. PRESERVE THE ROOM: Keep the same walls, windows, floors, ceiling, lighting, and camera angle
-5. NATURAL PLACEMENT: Place the product naturally where it would logically fit in this room layout
-6. ROOM SIZE UNCHANGED: The room must look the EXACT same size - not bigger, not smaller
+5. ROOM SIZE UNCHANGED: The room must look the EXACT same size
+
+🚫🚫🚫 WALL & FLOOR COLOR PRESERVATION - ABSOLUTE REQUIREMENT 🚫🚫🚫
+⛔ DO NOT CHANGE THE WALL COLOR - walls must remain EXACTLY the same color as input
+⛔ DO NOT CHANGE THE FLOOR COLOR - flooring must remain EXACTLY the same color/material as input
+⛔ DO NOT add paint, wallpaper, or any wall treatment that wasn't there
+⛔ DO NOT change flooring material, color, or texture
+- If walls are white → output walls MUST be white
+- If walls are grey → output walls MUST be grey
+- If floor is wooden → output floor MUST be the SAME wooden color
+- The room's color scheme is FIXED - you are ONLY adding furniture - not bigger, not smaller
+
+🔒🔒🔒 PIXEL-LEVEL POSITION PRESERVATION - CRITICAL 🔒🔒🔒
+- Every piece of existing furniture must be at the EXACT SAME PIXEL COORDINATES as in the input
+- If a sofa's left edge starts at pixel X=100 in the input, it MUST start at X=100 in the output
+- DO NOT shift, nudge, or adjust the position of ANY existing furniture - not even by a few pixels
+- The silhouette/outline of every existing furniture piece must PERFECTLY OVERLAY the input image
+- Think of it as: existing furniture is "locked in place" - you can only ADD new items around them
+
+🚫🚫🚫 PLACEMENT RESTRICTIONS - VERY IMPORTANT 🚫🚫🚫
+1. ⚠️ ONLY place new items in VISIBLE EMPTY SPACES - spaces that are clearly visible and unobstructed
+2. ⛔ NEVER place furniture BEHIND other furniture (e.g., NO bookshelf behind a sofa - it would be hidden!)
+3. ⛔ NEVER place items where they would be COVERED or BLOCKED by existing furniture
+4. ✅ Place items NEXT TO existing furniture (beside the sofa, not behind it)
+5. ✅ Place items in OPEN FLOOR AREAS visible to the camera
+6. ✅ Place items AGAINST VISIBLE WALLS (not walls blocked by sofas/beds)
+7. Bookshelves, cabinets, and tall furniture must be placed against OPEN walls where they are FULLY VISIBLE
 
 🖼️ WALL ART / PAINTINGS RULE:
 - If adding wall art and room ALREADY has paintings → Place new art on a DIFFERENT wall or different position
@@ -1535,6 +2391,23 @@ PLACEMENT GUIDELINES:
 - 🚫 WRONG: Planter appearing large or prominent in the image
 - ✅ CORRECT: Full room view with tiny planter visible in corner/edge
 - The ENTIRE input room must be visible in the output - planter is just a small addition
+
+🛋️ CUSHIONS / PILLOWS / THROW PILLOWS / DECORATIVE PILLOWS:
+🚨🚨🚨 CRITICAL - CUSHIONS GO ON EXISTING FURNITURE, NOT BESIDE IT 🚨🚨🚨
+- ⚠️ Cushions and pillows must be placed DIRECTLY ON the sofa/couch/chair - sitting on the seat or leaning against the backrest
+- ⚠️ The sofa/furniture MUST REMAIN IN ITS EXACT POSITION - do NOT move the sofa to accommodate cushions
+- ⚠️ Cushions are SMALL accessories (typically 16-22 inches) that sit ON furniture
+- Place cushions in corners of the sofa, against armrests, or centered on seat cushions
+- Arrange cushions naturally as if someone just placed them - slightly angled, varied positions
+- 🚫 ABSOLUTELY FORBIDDEN: Moving, shifting, or repositioning the sofa when adding cushions
+- 🚫 WRONG: Placing cushions on the floor next to the sofa
+- 🚫 WRONG: Moving the sofa to a different position to "make room" for cushions
+- ✅ CORRECT: Cushions placed directly on the existing sofa, sofa stays in EXACT same position
+
+🧶 THROWS / BLANKETS / THROW BLANKETS:
+- Place draped over the arm of a sofa/chair OR folded on the seat
+- The furniture underneath MUST NOT MOVE - the throw just sits on top of it
+- 🚫 WRONG: Moving furniture to accommodate a throw
 
 💐 TABLETOP DECOR (vases, flower bunches, flower arrangements, decorative objects):
 🚨🚨🚨 CRITICAL - PLACE ON TABLE SURFACES, NOT ON FLOOR 🚨🚨🚨
@@ -1727,26 +2600,32 @@ The room structure, walls, and camera angle MUST be identical to the input image
             logger.error(f"Error generating ADD visualization: {e}")
             raise ValueError(f"Visualization generation failed: {e}")
 
-    async def generate_add_multiple_visualization(self, room_image: str, products: list[dict]) -> str:
+    async def generate_add_multiple_visualization(
+        self, room_image: str, products: list[dict], existing_products: Optional[list[dict]] = None
+    ) -> str:
         """
         Generate visualization with MULTIPLE products added to room in a SINGLE API call.
         This is more efficient than calling generate_add_visualization multiple times.
 
         Args:
             room_image: Base64 encoded room image
-            products: List of dicts with 'name' and optional 'image_url' keys
+            products: List of dicts with 'name' and optional 'image_url' keys (NEW products to add)
+            existing_products: List of dicts for products ALREADY in the room image that must be preserved
 
         Returns: base64 image data
         """
         if not products:
             return room_image
 
+        existing_products = existing_products or []
+
         # Calculate total items considering quantity
         total_items = sum(p.get("quantity", 1) for p in products)
 
-        # If only one item total (single product with quantity=1), use the single product method
-        # But if quantity > 1, we need the multiple method to handle placing multiple copies
-        if len(products) == 1 and total_items == 1:
+        # If only one item total (single product with quantity=1) AND no existing products to preserve,
+        # use the simpler single product method. If there are existing products, we need the full
+        # multi-product method to properly preserve them.
+        if len(products) == 1 and total_items == 1 and not existing_products:
             return await self.generate_add_visualization(
                 room_image=room_image,
                 product_name=products[0].get("full_name") or products[0].get("name"),
@@ -1756,7 +2635,8 @@ The room structure, walls, and camera angle MUST be identical to the input image
         logger.info(f"🛒 ADD MULTIPLE: {len(products)} products, {total_items} total items to place")
 
         try:
-            processed_room = self._preprocess_image(room_image)
+            # Use editing preprocessor to preserve quality for visualization output
+            processed_room = self._preprocess_image_for_editing(room_image)
 
             # Download all product images
             product_images_data = []
@@ -1767,7 +2647,19 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 name = product.get("full_name") or product.get("name")
                 quantity = product.get("quantity", 1)
                 total_items_to_add += quantity
-                product_entries.append((name, quantity))
+
+                # Extract dimensions for product
+                dimensions = product.get("dimensions", {})
+                dim_parts = []
+                if dimensions.get("width"):
+                    dim_parts.append(f'{dimensions["width"]}" W')
+                if dimensions.get("depth"):
+                    dim_parts.append(f'{dimensions["depth"]}" D')
+                if dimensions.get("height"):
+                    dim_parts.append(f'{dimensions["height"]}" H')
+                dim_str = " x ".join(dim_parts) if dim_parts else None
+
+                product_entries.append((name, quantity, dim_str))
 
                 image_url = product.get("image_url")
                 image_data = None
@@ -1778,33 +2670,67 @@ The room structure, walls, and camera angle MUST be identical to the input image
                         logger.warning(f"Failed to download product image for {name}: {e}")
                 product_images_data.append(image_data)
 
-            # Build product list for prompt with quantities - VERY EXPLICIT about counts
+            # Build product list for prompt with quantities and dimensions - VERY EXPLICIT about counts
             product_list_items = []
             item_number = 1
-            for name, qty in product_entries:
+            for name, qty, dim_str in product_entries:
+                dim_info = f" [{dim_str}]" if dim_str else ""
                 if qty > 1:
                     # List each copy as a separate numbered item to make it crystal clear
                     for copy_num in range(1, qty + 1):
-                        product_list_items.append(f"  {item_number}. {name} (copy {copy_num} of {qty})")
+                        product_list_items.append(f"  {item_number}. {name}{dim_info} (copy {copy_num} of {qty})")
                         item_number += 1
                 else:
-                    product_list_items.append(f"  {item_number}. {name}")
+                    product_list_items.append(f"  {item_number}. {name}{dim_info}")
                     item_number += 1
             product_list = "\n".join(product_list_items)
 
-            # Also build a summary showing counts per product type
+            # Also build a summary showing counts per product type with dimensions
             product_summary = []
-            for name, qty in product_entries:
-                product_summary.append(f"   • {name}: {qty} {'copies' if qty > 1 else 'copy'}")
+            for name, qty, dim_str in product_entries:
+                dim_info = f" ({dim_str})" if dim_str else ""
+                product_summary.append(f"   • {name}{dim_info}: {qty} {'copies' if qty > 1 else 'copy'}")
             product_summary_str = "\n".join(product_summary)
 
             logger.info(f"Product list for prompt ({total_items_to_add} items):\n{product_list}")
+
+            # Build list of EXISTING products that MUST be preserved (already in the base image)
+            existing_products_list = []
+            existing_products_warning = ""
+            if existing_products:
+                for ep in existing_products:
+                    ep_name = ep.get("full_name") or ep.get("name", "Unknown product")
+                    ep_qty = ep.get("quantity", 1)
+                    existing_products_list.append(f"   • {ep_name}: {ep_qty} {'copies' if ep_qty > 1 else 'copy'}")
+                existing_products_str = "\n".join(existing_products_list)
+                existing_products_warning = f"""
+🔒🔒🔒 CRITICAL: PRODUCTS ALREADY IN THIS IMAGE - DO NOT REMOVE OR REPLACE 🔒🔒🔒
+═══════════════════════════════════════════════════════════════════════════════
+
+The following products are ALREADY RENDERED in this image and MUST stay EXACTLY as they are:
+{existing_products_str}
+
+⛔⛔⛔ ABSOLUTE RULES FOR EXISTING PRODUCTS: ⛔⛔⛔
+1. DO NOT remove any of the above products
+2. DO NOT replace any of the above products with new products
+3. DO NOT move any of the above products to different locations
+4. DO NOT change the appearance, color, or style of existing products
+5. These products MUST remain EXACTLY where they are in the image
+
+🎯 YOUR TASK: Add NEW products while PRESERVING ALL existing products above.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+"""
+                logger.info(
+                    f"Existing products to preserve: {', '.join([ep.get('name', 'Unknown') for ep in existing_products])}"
+                )
 
             # Build product names list for legacy compatibility
             product_names = [entry[0] for entry in product_entries]
 
             # Check if any product has quantity > 1
-            has_multiple_copies = any(qty > 1 for _, qty in product_entries)
+            has_multiple_copies = any(qty > 1 for _, qty, _ in product_entries)
             multiple_instance_instruction = ""
 
             # Base instruction to prevent adding extra furniture (applies to ALL cases)
@@ -1951,7 +2877,9 @@ DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
 
             # Build prompt for ADD MULTIPLE action
             # Use total_items_to_add which accounts for quantities (e.g., 2 products with qty=3 each = 6 items)
-            prompt = f"""{multiple_instance_instruction}{planter_instruction}ADD the following items to this room in appropriate locations WITHOUT removing any existing furniture.
+            prompt = f"""{VisualizationPrompts.get_system_intro()}
+
+{existing_products_warning}{multiple_instance_instruction}{planter_instruction}ADD the following items to this room in appropriate locations WITHOUT removing any existing furniture.
 
 📦 ITEM COUNT SUMMARY (YOU MUST ADD EXACTLY THIS MANY):
 {product_summary_str}
@@ -1974,13 +2902,45 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 - The walls must be in the EXACT same positions
 
 🔒 CRITICAL PRESERVATION RULES:
-1. KEEP ALL EXISTING FURNITURE: Do NOT remove or replace any furniture currently in the room
-2. ⚠️ ESPECIALLY PRESERVE SOFAS: If there is a sofa/couch, it MUST remain
-3. FIND APPROPRIATE SPACE: Identify suitable empty spaces for each new item
+1. KEEP ALL EXISTING FURNITURE: Do NOT remove, move, or replace any furniture currently in the room
+2. ⚠️ ESPECIALLY PRESERVE SOFAS: If there is a sofa/couch, it MUST remain in its EXACT position
+3. 🎨 PRESERVE EXISTING COLORS: Do NOT change the color of ANY existing furniture or decor in the room
 4. PRESERVE THE ROOM: Keep the same walls, windows, floors, ceiling, lighting
-5. NATURAL PLACEMENT: Place products naturally where they would logically fit
-6. ROOM SIZE UNCHANGED: The room must look the EXACT same size
-7. ⛔ DO NOT ADD EXTRA ITEMS: Only add the items listed above. Do NOT add extra copies of items already in the room unless specifically requested. If the room has 2 lamps, keep exactly 2 lamps (not 3). Count preservation is critical.
+5. ROOM SIZE UNCHANGED: The room must look the EXACT same size
+6. ⛔ DO NOT ADD EXTRA ITEMS: Only add the items listed above. Do NOT add extra copies of items already in the room unless specifically requested
+
+🚫🚫🚫 WALL & FLOOR COLOR PRESERVATION - ABSOLUTE REQUIREMENT 🚫🚫🚫
+⛔ DO NOT CHANGE THE WALL COLOR - walls must remain EXACTLY the same color as input
+⛔ DO NOT CHANGE THE FLOOR COLOR - flooring must remain EXACTLY the same color/material as input
+⛔ DO NOT add paint, wallpaper, or any wall treatment that wasn't there
+⛔ DO NOT change flooring material, color, or texture
+- If walls are white → output walls MUST be white
+- If walls are grey → output walls MUST be grey
+- If floor is wooden → output floor MUST be the SAME wooden color
+- The room's color scheme is FIXED - you are ONLY adding furniture
+
+🔒🔒🔒 PIXEL-LEVEL POSITION PRESERVATION - CRITICAL 🔒🔒🔒
+- Every piece of existing furniture must be at the EXACT SAME PIXEL COORDINATES as in the input
+- If a sofa's left edge starts at pixel X=100 in the input, it MUST start at X=100 in the output
+- DO NOT shift, nudge, or adjust the position of ANY existing furniture - not even by a few pixels
+- The silhouette/outline of every existing furniture piece must PERFECTLY OVERLAY the input image
+- Think of it as: existing furniture is "locked in place" - you can only ADD new items around them
+
+🛋️ CUSHIONS / PILLOWS / THROWS - SPECIAL RULES:
+- Cushions go DIRECTLY ON the existing sofa/chair - on the seat or against the backrest
+- The sofa MUST NOT MOVE when adding cushions - cushions sit ON the furniture
+- 🚫 ABSOLUTELY FORBIDDEN: Moving the sofa to accommodate cushions
+- ✅ CORRECT: Cushions placed on sofa, sofa stays in EXACT same position
+
+🚫🚫🚫 PLACEMENT RESTRICTIONS - VERY IMPORTANT 🚫🚫🚫
+1. ⚠️ ONLY place new items in VISIBLE EMPTY SPACES - spaces that are clearly visible and unobstructed
+2. ⛔ NEVER place furniture BEHIND other furniture (e.g., NO bookshelf behind a sofa - it would be hidden!)
+3. ⛔ NEVER place items where they would be COVERED or BLOCKED by existing furniture
+4. ✅ Place items NEXT TO existing furniture (beside the sofa, not behind it)
+5. ✅ Place items in OPEN FLOOR AREAS visible to the camera
+6. ✅ Place items AGAINST VISIBLE WALLS (not walls blocked by sofas/beds)
+7. 🚫 If a space is blocked by existing furniture, DO NOT use that space
+8. Bookshelves, cabinets, and tall furniture must be placed against OPEN walls where they are FULLY VISIBLE
 
 🖼️ WALL ART / PAINTINGS - CRITICAL:
 - If the room ALREADY has wall art/paintings hanging → DO NOT REPLACE them
@@ -2072,7 +3032,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
             # Add all product reference images as PIL Images
             for i, (name, image_data) in enumerate(zip(product_names, product_images_data)):
                 # Get the quantity for this product
-                qty_for_product = next((qty for n, qty in product_entries if n == name), 1)
+                qty_for_product = next((qty for n, qty, _ in product_entries if n == name), 1)
                 if image_data:
                     if qty_for_product > 1:
                         contents.append(
@@ -2201,7 +3161,8 @@ The room structure, walls, and camera angle MUST be identical to the input image
             product_color: Explicit color from product attributes (e.g., "beige", "cream", "walnut")
         """
         try:
-            processed_room = self._preprocess_image(room_image)
+            # Use editing preprocessor to preserve quality for visualization output
+            processed_room = self._preprocess_image_for_editing(room_image)
 
             # Download product image if URL provided
             product_image_data = None
@@ -2459,40 +3420,41 @@ Generate a photorealistic image of the room with the {product_name} replacing th
                         f"[VIZ] Product {idx+1} '{product_name}': Downloaded {min(len(image_urls), 3)} of {len(image_urls)} reference images"
                     )
 
-            # Process the base image
-            processed_image = self._preprocess_image(visualization_request.base_image)
+            # Process the base image - use editing preprocessor to preserve quality
+            processed_image = self._preprocess_image_for_editing(visualization_request.base_image)
 
             # Use user's actual request as the primary directive
             user_request = visualization_request.user_style_description.strip()
 
             # Use comprehensive professional prompt template
             if products_description and product_images:
-                # Build detailed product list with descriptions
+                # Build detailed product list with descriptions and standardized dimensions
                 detailed_products = []
                 for idx, product in enumerate(visualization_request.products_to_place):
                     product_name = product.get("full_name") or product.get("name", "furniture item")
                     product_desc = product.get("description", "No description available")
+                    furniture_type = product.get("furniture_type", "furniture")
 
                     # Extract actual dimensions from product data (from product_attributes)
+                    # Use standardized format: W x D x H in inches
                     dimensions = product.get("dimensions", {})
-                    dimension_str = ""
-                    if dimensions:
-                        parts = []
-                        if dimensions.get("width"):
-                            parts.append(f"Width: {dimensions['width']} inches")
-                        if dimensions.get("depth"):
-                            parts.append(f"Depth: {dimensions['depth']} inches")
-                        if dimensions.get("height"):
-                            parts.append(f"Height: {dimensions['height']} inches")
-                        if parts:
-                            dimension_str = f"- 📐 ACTUAL DIMENSIONS: {', '.join(parts)}\n"
+                    dim_parts = []
+                    if dimensions.get("width"):
+                        dim_parts.append(f'{dimensions["width"]}" W')
+                    if dimensions.get("depth"):
+                        dim_parts.append(f'{dimensions["depth"]}" D')
+                    if dimensions.get("height"):
+                        dim_parts.append(f'{dimensions["height"]}" H')
+                    dimension_str = " x ".join(dim_parts) if dim_parts else "dimensions not specified"
 
                     detailed_products.append(
                         f"""
 Product {idx + 1}:
 - Name: {product_name}
+- Type: {furniture_type}
+- 📐 PHYSICAL DIMENSIONS: {dimension_str}
 - Description: {product_desc}
-{dimension_str}- Placement: {user_request if user_request else 'Place naturally in appropriate location based on product type'}
+- Placement: {user_request if user_request else 'Place naturally in appropriate location based on product type'}
 - Reference Image: Provided below"""
                     )
 
@@ -2616,16 +3578,41 @@ Products with numbered names (e.g., "Cushion Cover #1", "Cushion Cover #2", "Cus
    - This is a FRESH START - show the empty room with ONLY the specified products
    - Example: If input has a vase but the vase is NOT in the specified products, DO NOT show the vase in output"""
                 else:
-                    existing_furniture_instruction = """11. 🛋️ EXISTING FURNITURE (CRITICAL FOR CONSISTENCY) - If the input image already contains furniture (sofa, table, chair, decor, etc.), you MUST preserve the EXACT appearance of that furniture:
+                    existing_furniture_instruction = """11. 🛋️ EXISTING FURNITURE (CRITICAL FOR CONSISTENCY) - If the input image already contains furniture (sofa, table, chair, decor, etc.), you MUST preserve the EXACT appearance AND position of that furniture:
    - DO NOT change the COLOR of existing furniture (e.g., if sofa is blue, keep it blue)
    - DO NOT change the MATERIAL or TEXTURE of existing furniture
    - DO NOT change the STYLE or DESIGN of existing furniture
    - DO NOT change the SIZE or PROPORTIONS of existing furniture
+   - DO NOT MOVE or REPOSITION any existing furniture - keep everything in its EXACT location
    - Keep existing furniture looking IDENTICAL to the input image
    - You are ONLY adding NEW products, NOT modifying existing ones
-   - Example: If input has a blue velvet sofa, the output MUST show the same blue velvet sofa + your new products"""
+   - Example: If input has a blue velvet sofa, the output MUST show the same blue velvet sofa in the SAME position + your new products
 
-                visualization_prompt = f"""{multiple_instance_instruction}{planter_instruction}🔒🔒🔒 CRITICAL INSTRUCTION - READ CAREFULLY 🔒🔒🔒
+🔒🔒🔒 PIXEL-LEVEL POSITION LOCK - MANDATORY 🔒🔒🔒
+   - Every existing furniture piece must remain at EXACTLY THE SAME PIXEL COORDINATES
+   - If a sofa's edge is at pixel X=100 in input, it MUST be at X=100 in output
+   - DO NOT shift, nudge, or adjust positions - not even by a few pixels
+   - The outline of existing furniture must PERFECTLY OVERLAY the input image
+   - Existing furniture is "LOCKED IN PLACE" - only ADD new items around them
+
+🛋️ CUSHIONS / PILLOWS / THROWS - SPECIAL RULES:
+   - Cushions go DIRECTLY ON the sofa/chair surface - on seats or against backrests
+   - The sofa MUST NOT MOVE when adding cushions - cushions sit ON the furniture
+   - 🚫 ABSOLUTELY FORBIDDEN: Moving/shifting sofa to accommodate cushions
+   - ✅ CORRECT: Cushions on sofa, sofa stays in EXACT same pixel position
+
+12. 🚫 NEW PRODUCT PLACEMENT RESTRICTIONS:
+   - ⚠️ ONLY place new items in VISIBLE EMPTY SPACES - spaces that are clearly visible and unobstructed
+   - ⛔ NEVER place furniture BEHIND other furniture (e.g., NO bookshelf behind a sofa - it would be hidden!)
+   - ⛔ NEVER place items where they would be COVERED or BLOCKED by existing furniture
+   - ✅ Place items NEXT TO existing furniture (beside the sofa, not behind it)
+   - ✅ Place items in OPEN FLOOR AREAS visible to the camera
+   - ✅ Place items AGAINST VISIBLE WALLS (not walls blocked by sofas/beds)
+   - Bookshelves, cabinets, and tall furniture must be placed against OPEN walls where they are FULLY VISIBLE"""
+
+                visualization_prompt = f"""{VisualizationPrompts.get_system_intro()}
+
+{multiple_instance_instruction}{planter_instruction}🔒🔒🔒 CRITICAL INSTRUCTION - READ CAREFULLY 🔒🔒🔒
 
 THIS IS A PRODUCT PLACEMENT TASK. YOUR GOAL: Take the EXACT room image provided and ADD {product_count} furniture product(s) to it.
 
@@ -2640,18 +3627,17 @@ DO NOT redesign the space.
 DO NOT change ANY aspect of the room structure.
 DO NOT alter floors, walls, windows, doors, or ceiling in ANY way.
 
-🚨 CRITICAL DIMENSIONAL REQUIREMENTS 🚨
+🚨🚨🚨 CRITICAL RESOLUTION REQUIREMENTS 🚨🚨🚨
 ═══════════════════════════════════════════════════════════════
-1. OUTPUT IMAGE DIMENSIONS: The output image MUST have the EXACT SAME width and height (in pixels) as the input image
-2. ASPECT RATIO: The aspect ratio of the output MUST be IDENTICAL to the input image
-3. ROOM PROPORTIONS: The room's length and width proportions MUST remain unchanged
-4. IMAGE RESOLUTION: Match the exact resolution of the input - do NOT resize or crop
-5. NO DIMENSIONAL CHANGES: The room's physical dimensions (length, width, height) MUST stay the same
+⚠️ OUTPUT RESOLUTION: You MUST output at HIGH RESOLUTION matching the input
+⚠️ The input image resolution will be shown when the image is provided
+⚠️ Generate at MAXIMUM QUALITY - this will be used for production display
 
-⚠️ VERIFICATION CHECK:
-- If input image is 1024x768 pixels → output MUST be 1024x768 pixels
-- If input room appears 15ft x 12ft → output room MUST appear 15ft x 12ft
-- If input has 16:9 aspect ratio → output MUST have 16:9 aspect ratio
+1. OUTPUT IMAGE DIMENSIONS: Output at the HIGHEST possible resolution
+2. ASPECT RATIO: MUST match the input image aspect ratio exactly
+3. DO NOT output at default/lower resolution - use maximum quality
+4. IMAGE QUALITY: Generate crisp, sharp, high-resolution output
+5. NO DOWNSCALING: Never reduce quality or resolution from input
 
 THE INPUT IMAGE SHOWS THE USER'S ACTUAL ROOM.
 YOU ARE ADDING PRODUCTS TO THEIR REAL SPACE.
@@ -3087,8 +4073,23 @@ Create a photorealistic interior design visualization that addresses the user's 
 
                     logger.info(f"[VIZ] Passing {len(product_images)} total reference images to model")
 
+                    # Add explicit dimension requirements now that we know the input size
+                    dimension_instruction = f"""
+
+🚨🚨🚨 MANDATORY OUTPUT RESOLUTION 🚨🚨🚨
+═══════════════════════════════════════════════════════════════
+⚠️ INPUT IMAGE: {input_width}x{input_height} pixels
+⚠️ OUTPUT MUST BE: {input_width}x{input_height} pixels (EXACT SAME RESOLUTION)
+
+- Generate output at EXACTLY {input_width} pixels wide and {input_height} pixels tall
+- DO NOT output at a lower resolution than {input_width}x{input_height}
+- DO NOT change the aspect ratio
+- This is a PRODUCTION quality image - use MAXIMUM resolution
+═══════════════════════════════════════════════════════════════
+"""
+                    contents.append(dimension_instruction)
+
                     # Use response modalities for image and text generation
-                    # Use HIGH media resolution for better quality output
                     generate_content_config = types.GenerateContentConfig(
                         response_modalities=["IMAGE", "TEXT"],
                         temperature=0.25,  # Lower temperature for better room preservation consistency
@@ -3198,6 +4199,41 @@ Create a photorealistic interior design visualization that addresses the user's 
             if not transformed_image:
                 logger.warning("No transformed image generated, using original")
                 transformed_image = visualization_request.base_image
+            else:
+                # Verify and fix output resolution to match input
+                try:
+                    # Extract base64 data from the transformed image
+                    output_b64 = transformed_image
+                    if output_b64.startswith("data:"):
+                        output_b64 = output_b64.split(",", 1)[1]
+
+                    output_bytes = base64.b64decode(output_b64)
+                    output_img = Image.open(io.BytesIO(output_bytes))
+                    output_width, output_height = output_img.size
+
+                    logger.info(
+                        f"[VIZ] Output resolution: {output_width}x{output_height}, Input was: {input_width}x{input_height}"
+                    )
+
+                    # If output is significantly different from input, resize with high quality
+                    if output_width != input_width or output_height != input_height:
+                        logger.warning(
+                            f"[VIZ] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
+                        )
+                        if output_img.mode != "RGB":
+                            output_img = output_img.convert("RGB")
+                        # Use LANCZOS for high-quality upscaling/downscaling
+                        output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
+
+                        # Re-encode to base64 with high quality
+                        buffer = io.BytesIO()
+                        output_img.save(buffer, format="PNG", optimize=False)
+                        buffer.seek(0)
+                        resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                        transformed_image = f"data:image/png;base64,{resized_b64}"
+                        logger.info(f"[VIZ] Resized output to match input: {input_width}x{input_height}")
+                except Exception as resize_err:
+                    logger.warning(f"[VIZ] Could not verify/fix output resolution: {resize_err}")
 
             if transformation_description:
                 logger.info(f"AI description: {transformation_description[:150]}...")
@@ -3238,8 +4274,8 @@ Create a photorealistic interior design visualization that addresses the user's 
         try:
             start_time = time.time()
 
-            # Process the base image
-            processed_image = self._preprocess_image(base_image)
+            # Process the base image - use editing preprocessor to preserve quality
+            processed_image = self._preprocess_image_for_editing(base_image)
 
             # Build transformation prompt with strong room preservation
             visualization_prompt = f"""IMPORTANT: Use the EXACT room shown in this image as your base. Do NOT create a new room.
@@ -3354,67 +4390,51 @@ QUALITY REQUIREMENTS:
         placed_products: List[Dict[str, Any]] = None,
         lighting_conditions: str = "mixed",
         render_quality: str = "high",
+        reference_image: Optional[str] = None,
     ) -> VisualizationResult:
         """
         Generate iterative visualization by modifying an existing generated image
         Used when user requests changes to a previously generated visualization (e.g., "place the lamp in the corner")
 
-        ISSUE 11 FIX: Now accepts placed_products to maintain product persistence across modifications
+        Uses centralized VisualizationPrompts for consistent prompt structure.
+
+        Args:
+            base_image: Base64 encoded current visualization
+            modification_request: User's modification instruction
+            placed_products: Products currently in the room (with dimensions)
+            lighting_conditions: Room lighting conditions
+            render_quality: Desired render quality
+            reference_image: Optional reference image for style guidance
         """
         try:
             start_time = time.time()
 
-            # Process the base image (existing visualization)
-            processed_image = self._preprocess_image(base_image)
+            # Process the base image (existing visualization) - use editing preprocessor to preserve quality
+            processed_image = self._preprocess_image_for_editing(base_image)
 
-            # ISSUE 11 FIX: Build list of existing products to preserve
-            existing_products_description = ""
-            if placed_products and len(placed_products) > 0:
-                existing_products_description = "\n\n🔒 CRITICAL: PRESERVE THESE EXISTING PRODUCTS:\n"
-                existing_products_description += "The room already contains these products from previous visualizations:\n"
-                for idx, product in enumerate(placed_products, 1):
-                    product_name = product.get("full_name") or product.get("name", "furniture item")
-                    existing_products_description += f"  {idx}. {product_name}\n"
-                existing_products_description += "\n⚠️ IMPORTANT: These products MUST remain visible in the output."
-                existing_products_description += "\n⚠️ DO NOT remove or replace these products unless specifically requested."
-                existing_products_description += (
-                    f"\n⚠️ The modification '{modification_request}' should ONLY affect what is specifically mentioned."
-                )
-                existing_products_description += "\n⚠️ All other furniture and products must stay exactly as shown."
+            # Detect instruction type for appropriate prompt handling
+            instruction_lower = modification_request.lower()
+            if any(word in instruction_lower for word in ["move", "place", "position", "shift", "put", "reposition"]):
+                instruction_type = "placement"
+            elif any(word in instruction_lower for word in ["bright", "light", "dark", "dim", "lighting"]):
+                instruction_type = "brightness"
+            elif reference_image:
+                instruction_type = "reference"
+            else:
+                instruction_type = "placement"  # Default to placement
 
-            # Build iterative modification prompt with room and product preservation
-            visualization_prompt = f"""IMPORTANT: This is the EXACT room to modify. Keep the same room structure, walls, windows, flooring, and perspective.
+            logger.info(f"[IterativeViz] Instruction type: {instruction_type}, request: {modification_request[:50]}...")
 
-MODIFICATION REQUEST: {modification_request}
-{existing_products_description}
+            # Use centralized prompt with dimensions
+            visualization_prompt = VisualizationPrompts.get_edit_by_instruction_prompt(
+                instruction=modification_request,
+                instruction_type=instruction_type,
+                current_products=placed_products or [],
+                reference_image_provided=bool(reference_image),
+            )
 
-🚨 CRITICAL DIMENSIONAL REQUIREMENTS 🚨
-═══════════════════════════════════════════════════════════════
-1. OUTPUT IMAGE DIMENSIONS: The output image MUST have the EXACT SAME width and height (in pixels) as the input image
-2. ASPECT RATIO: The aspect ratio of the output MUST be IDENTICAL to the input image
-3. ROOM PROPORTIONS: The room's length and width proportions MUST remain unchanged
-4. IMAGE RESOLUTION: Match the exact resolution of the input - do NOT resize or crop
-5. NO DIMENSIONAL CHANGES: The room's physical dimensions (length, width, height) MUST stay the same
-
-🔒 CRITICAL PRESERVATION RULES:
-1. USE THIS EXACT ROOM: Keep the same walls, windows, doors, flooring, ceiling shown in this image
-2. PRESERVE ROOM STRUCTURE: Do not change the room layout, dimensions, or architectural features
-3. KEEP CAMERA ANGLE: Maintain the exact perspective and viewpoint
-4. SAME BASE SPACE: This must remain the SAME physical room, just with the requested modification
-5. KEEP ALL EXISTING PRODUCTS: All furniture and products currently in the room must remain visible (unless removal is specifically requested)
-
-✅ APPLY ONLY THIS MODIFICATION:
-- User request: {modification_request}
-- Change ONLY what is specifically mentioned
-- Keep ALL other elements exactly as shown (especially existing products)
-- If repositioning items, move only what is specifically mentioned
-- If adding new items, place them naturally without removing existing items
-
-EXAMPLES OF CORRECT MODIFICATIONS:
-- "place the lamp at the far corner" → Move ONLY the lamp to corner, keep ALL other furniture exactly where it is
-- "add more pillows" → Add 2-3 pillows to THIS room, keep ALL existing furniture unchanged
-- "make it brighter" → Increase lighting, keep ALL furniture and products in their positions
-- "move the table to the center" → Move ONLY the table, keep everything else in exact positions
+            # Add quality and lighting requirements
+            visualization_prompt += f"""
 
 QUALITY REQUIREMENTS:
 - Lighting: {lighting_conditions} - maintain existing light sources
@@ -3429,8 +4449,7 @@ QUALITY REQUIREMENTS:
 4. MATCH exposure: products should NOT be brighter or darker than similar surfaces in room
 5. NO "SPOTLIGHT" EFFECT: products must NOT look highlighted compared to the room
 6. SEAMLESS BLEND: a viewer should NOT be able to tell products were digitally added
-
-🎯 RESULT: Output must show THIS EXACT ROOM with ALL existing products preserved and only the requested modification applied. Same walls, same windows, same floor, same furniture, same perspective - just with the specific change requested. All products must have lighting that perfectly matches the room."""
+"""
 
             # Use Gemini 3 Pro Image (Nano Banana Pro) for generation
             model = "gemini-3-pro-image-preview"
@@ -3748,7 +4767,13 @@ QUALITY REQUIREMENTS:
         return None
 
     def _preprocess_image(self, image_data: str) -> str:
-        """Preprocess image for AI analysis"""
+        """
+        Preprocess image for AI analysis.
+
+        OPTIMIZATION: Increased max_size to 2048 and quality to 98 for better analysis.
+        The larger size helps with room detail detection and the higher quality
+        preserves important visual information for accurate room analysis.
+        """
         try:
             # Remove data URL prefix if present
             if image_data.startswith("data:image"):
@@ -3762,8 +4787,8 @@ QUALITY REQUIREMENTS:
             if image.mode != "RGB":
                 image = image.convert("RGB")
 
-            # Resize for optimal processing (max 1024px)
-            max_size = 1024
+            # Resize for optimal processing (max 2048px - increased from 1024 for better quality)
+            max_size = 2048
             if image.width > max_size or image.height > max_size:
                 image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
 
@@ -3771,9 +4796,9 @@ QUALITY REQUIREMENTS:
             enhancer = ImageEnhance.Sharpness(image)
             image = enhancer.enhance(1.1)
 
-            # Convert back to base64
+            # Convert back to base64 with high quality (98% - increased from 90%)
             buffer = io.BytesIO()
-            image.save(buffer, format="JPEG", quality=90, optimize=True)
+            image.save(buffer, format="JPEG", quality=98, optimize=True)
             return base64.b64encode(buffer.getvalue()).decode()
 
         except Exception as e:
@@ -3782,34 +4807,25 @@ QUALITY REQUIREMENTS:
 
     def _preprocess_image_for_editing(self, image_data: str) -> str:
         """
-        Minimal preprocessing for image editing tasks (furniture removal).
-        Preserves original quality - only strips data URL prefix and ensures valid format.
-        Does NOT resize or apply enhancements that could degrade editing quality.
+        Minimal preprocessing for image editing/visualization tasks.
+
+        CRITICAL: To prevent quality degradation on subsequent visualizations,
+        this function does NOT re-encode the image. It only strips the data URL
+        prefix if present and returns the raw base64 data.
+
+        Re-encoding (even to PNG) causes cumulative quality loss because:
+        1. Each decode/encode cycle can alter pixel values slightly
+        2. Gemini returns images in its own format - re-encoding adds another conversion
+        3. After 5-6 passes, artifacts become visible
         """
         try:
-            # Remove data URL prefix if present
+            # Only strip data URL prefix if present - do NOT re-encode
             if image_data.startswith("data:image"):
+                # Extract just the base64 part after the comma
                 image_data = image_data.split(",")[1]
 
-            # Decode and validate image
-            image_bytes = base64.b64decode(image_data)
-            image = Image.open(io.BytesIO(image_bytes))
-
-            # Convert to RGB if needed (some formats like PNG with transparency need this)
-            if image.mode != "RGB":
-                image = image.convert("RGB")
-
-            # Only resize if image is extremely large (> 4096px) to avoid API limits
-            # but preserve as much quality as possible
-            max_size = 4096
-            if image.width > max_size or image.height > max_size:
-                image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-                logger.info(f"Resized large image from {image.width}x{image.height} to fit within {max_size}px")
-
-            # Convert back to base64 with high quality (95%)
-            buffer = io.BytesIO()
-            image.save(buffer, format="JPEG", quality=95)
-            return base64.b64encode(buffer.getvalue()).decode()
+            # Return as-is without any re-encoding
+            return image_data
 
         except Exception as e:
             logger.error(f"Error preprocessing image for editing: {e}")

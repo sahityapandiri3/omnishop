@@ -7,7 +7,7 @@ import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import { Panel, Group } from 'react-resizable-panels';
 import { PanelResizeHandle } from '@/components/ui/PanelResizeHandle';
-import { adminCuratedAPI, getCategorizedStores, visualizeRoom, startChatSession, startFurnitureRemoval, checkFurnitureRemovalStatus, furniturePositionAPI, generateAngleView, StoreCategory, getRecoveredCurationState, clearRecoveredCurationState } from '@/utils/api';
+import { adminCuratedAPI, getCategorizedStores, visualizeRoom, startChatSession, startFurnitureRemoval, checkFurnitureRemovalStatus, furniturePositionAPI, generateAngleView, StoreCategory, getRecoveredCurationState, clearRecoveredCurationState, imageAPI } from '@/utils/api';
 import { FurniturePosition, MagicGrabLayer, PendingMoveData } from '@/components/DraggableFurnitureCanvas';
 import { AngleSelector, ViewingAngle } from '@/components/AngleSelector';
 
@@ -86,7 +86,10 @@ export default function CreateCuratedLookPage() {
   const styleFromId = searchParams?.get('style_from');
   const editId = searchParams?.get('edit');
   // Use either style_from or edit parameter for loading existing look
-  const existingLookId = styleFromId || editId;
+  const initialLookId = styleFromId || editId || null;
+
+  // Track existing look ID as state so we can update it after creating a new draft
+  const [existingLookId, setExistingLookId] = useState<string | null>(initialLookId);
 
   // Loading state for style_from
   const [loadingStyleFrom, setLoadingStyleFrom] = useState(false);
@@ -144,21 +147,20 @@ export default function CreateCuratedLookPage() {
   const [styleLabels, setStyleLabels] = useState<string[]>([]);
   const [roomType, setRoomType] = useState<'living_room' | 'bedroom'>('living_room');
   // Budget tier options (auto-calculated based on total price)
+  // Must match backend BudgetTier enum in database/models.py
   const BUDGET_TIER_OPTIONS = [
-    { value: 'essential', label: 'Essential', range: '< ₹2L' },
-    { value: 'value', label: 'Value', range: '₹2L – ₹4L' },
-    { value: 'mid', label: 'Mid', range: '₹4L – ₹8L' },
+    { value: 'pocket_friendly', label: 'Pocket-friendly', range: '< ₹2L' },
+    { value: 'mid_tier', label: 'Mid-tier', range: '₹2L – ₹8L' },
     { value: 'premium', label: 'Premium', range: '₹8L – ₹15L' },
-    { value: 'ultra_luxury', label: 'Ultra-Luxury', range: '₹15L+' },
+    { value: 'luxury', label: 'Luxury', range: '₹15L+' },
   ];
 
   // Auto-calculate budget tier based on total price
   const calculateBudgetTier = (price: number): { value: string; label: string; range: string } => {
-    if (price < 200000) return BUDGET_TIER_OPTIONS[0]; // Essential
-    if (price < 400000) return BUDGET_TIER_OPTIONS[1]; // Value
-    if (price < 800000) return BUDGET_TIER_OPTIONS[2]; // Mid
-    if (price < 1500000) return BUDGET_TIER_OPTIONS[3]; // Premium
-    return BUDGET_TIER_OPTIONS[4]; // Ultra-Luxury
+    if (price < 200000) return BUDGET_TIER_OPTIONS[0]; // Pocket-friendly
+    if (price < 800000) return BUDGET_TIER_OPTIONS[1]; // Mid-tier
+    if (price < 1500000) return BUDGET_TIER_OPTIONS[2]; // Premium
+    return BUDGET_TIER_OPTIONS[3]; // Luxury
   };
 
   // Available style labels for multi-select
@@ -178,6 +180,10 @@ export default function CreateCuratedLookPage() {
   const [saving, setSaving] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Ref-based guards to prevent double submissions (more reliable than state alone)
+  const isSavingRef = useRef(false);
+  const isSavingDraftRef = useRef(false);
 
   // Furniture quantity rules - same as user experience
   // SINGLE_INSTANCE: Only one of this type allowed in the canvas (replaces existing)
@@ -262,6 +268,9 @@ export default function CreateCuratedLookPage() {
 
   // Special instructions for edit mode (text-based repositioning)
   const [editSpecialInstructions, setEditSpecialInstructions] = useState('');
+
+  // Track if positions have been manually edited (to inform subsequent visualizations)
+  const [positionsWereEdited, setPositionsWereEdited] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasProductsRef = useRef<HTMLDivElement>(null);
@@ -628,6 +637,24 @@ export default function CreateCuratedLookPage() {
     try {
       setIsRemovingFurniture(true);
 
+      // OPTIMIZATION: Upload image and perform room analysis FIRST (if existing look)
+      // This caches room analysis (camera view, dimensions, furniture detection) in the CuratedLook table
+      // Saves 4-13 seconds per subsequent visualization by avoiding redundant Gemini calls
+      if (existingLookId) {
+        try {
+          console.log('[CuratedNew] Uploading room image for analysis with curated_look_id:', existingLookId);
+          const uploadResponse = await imageAPI.uploadRoomImageFromBase64(
+            base64Image,
+            null,  // project_id
+            parseInt(existingLookId)  // curated_look_id
+          );
+          console.log('[CuratedNew] Room analysis complete:', uploadResponse.room_analysis?.room_type);
+        } catch (uploadError) {
+          // Log but don't fail - room analysis caching is an optimization, not critical
+          console.warn('[CuratedNew] Room analysis upload failed (non-critical):', uploadError);
+        }
+      }
+
       // Extract just the base64 data (without the data:image/... prefix)
       const imageData = base64Image.includes('base64,')
         ? base64Image.split('base64,')[1]
@@ -775,6 +802,8 @@ export default function CreateCuratedLookPage() {
   // Remove product from canvas
   const removeProduct = (productId: number) => {
     setSelectedProducts(selectedProducts.filter(p => p.id !== productId));
+    // Also update visualizedProducts to keep them in sync - prevents stale product data in edit mode
+    setVisualizedProducts(prev => prev.filter(p => p.id !== productId));
   };
 
   // Get quantity for a product (for display in discovery panel)
@@ -879,15 +908,27 @@ export default function CreateCuratedLookPage() {
 
   // Publish
   const handlePublish = async () => {
+    // Prevent double-submission using both ref (immediate) and state (for UI)
+    if (isSavingRef.current || saving) {
+      console.log('[Publish] Already saving, ignoring duplicate request');
+      return;
+    }
+
+    // Immediately set ref to prevent any race conditions
+    isSavingRef.current = true;
+
     if (!title.trim()) {
+      isSavingRef.current = false;
       setError('Please enter a title');
       return;
     }
     if (!visualizationImage) {
+      isSavingRef.current = false;
       setError('Please generate a visualization first');
       return;
     }
     if (selectedProducts.length === 0) {
+      isSavingRef.current = false;
       setError('Please add at least one product');
       return;
     }
@@ -930,6 +971,7 @@ export default function CreateCuratedLookPage() {
       warningMessage += 'The saved curated look will only include products from the product list. Continue anyway?';
 
       if (!confirm(warningMessage)) {
+        isSavingRef.current = false;
         return;
       }
     }
@@ -972,6 +1014,13 @@ export default function CreateCuratedLookPage() {
         : await adminCuratedAPI.create(lookData);
 
       console.log('[Publish] Success:', result, existingLookId ? '(updated existing)' : '(created new)');
+
+      // If we created a new look, update existingLookId so any subsequent action uses update instead of create
+      if (!existingLookId && result?.id) {
+        setExistingLookId(String(result.id));
+        console.log('[Publish] Updated existingLookId to:', result.id);
+      }
+
       // Clear saved state on successful publish
       sessionStorage.removeItem('curation_page_state');
       router.push('/admin/curated');
@@ -981,12 +1030,23 @@ export default function CreateCuratedLookPage() {
       setError(`Failed to publish: ${err.response?.data?.detail || err.message || 'Unknown error'}`);
     } finally {
       setSaving(false);
+      isSavingRef.current = false;
     }
   };
 
   // Save as Draft - saves without publishing
   const handleSaveAsDraft = async () => {
+    // Prevent double-submission using both ref (immediate) and state (for UI)
+    if (isSavingDraftRef.current || savingDraft) {
+      console.log('[SaveDraft] Already saving, ignoring duplicate request');
+      return;
+    }
+
+    // Immediately set ref to prevent any race conditions
+    isSavingDraftRef.current = true;
+
     if (!title.trim()) {
+      isSavingDraftRef.current = false;
       setError('Please enter a title for the curated look');
       return;
     }
@@ -1028,6 +1088,13 @@ export default function CreateCuratedLookPage() {
         : await adminCuratedAPI.create(lookData);
 
       console.log('[SaveDraft] Success:', result, existingLookId ? '(updated existing)' : '(created new)');
+
+      // If we created a new look, update existingLookId so subsequent saves update instead of create
+      if (!existingLookId && result?.id) {
+        setExistingLookId(String(result.id));
+        console.log('[SaveDraft] Updated existingLookId to:', result.id);
+      }
+
       // Clear saved state on successful save
       sessionStorage.removeItem('curation_page_state');
       router.push('/admin/curated');
@@ -1037,6 +1104,7 @@ export default function CreateCuratedLookPage() {
       setError(`Failed to save draft: ${err.response?.data?.detail || err.message || 'Unknown error'}`);
     } finally {
       setSavingDraft(false);
+      isSavingDraftRef.current = false;
     }
   };
 
@@ -1077,7 +1145,8 @@ export default function CreateCuratedLookPage() {
       console.log('[ChangeDetect] Setting needsRevisualization to TRUE');
       setNeedsRevisualization(true);
     } else {
-      console.log('[ChangeDetect] No changes detected');
+      console.log('[ChangeDetect] No changes detected, setting needsRevisualization to FALSE');
+      setNeedsRevisualization(false);
     }
   }, [selectedProducts, visualizedProductIds, visualizedProducts, visualizationImage]);
 
@@ -1105,12 +1174,19 @@ export default function CreateCuratedLookPage() {
     console.log('[DetectChangeType] visualizedProductIds:', Array.from(visualizedProductIds));
 
     const currentIds = new Set(selectedProducts.map(p => String(p.id)));
-    const removedProducts = Array.from(visualizedProductIds).filter(id => !currentIds.has(id));
-    console.log('[DetectChangeType] removedProducts:', removedProducts);
+    const removedProductIds = Array.from(visualizedProductIds).filter(id => !currentIds.has(id));
+    console.log('[DetectChangeType] removedProductIds:', removedProductIds);
 
-    if (removedProducts.length > 0) {
-      console.log('[DetectChangeType] => RESET: Products removed');
-      return { type: 'reset', reason: 'products_removed' };
+    if (removedProductIds.length > 0) {
+      // Get full product info for removed products so we can tell AI which products to remove
+      const removedProductsInfo = visualizedProducts.filter(p => removedProductIds.includes(String(p.id)));
+      console.log('[DetectChangeType] => REMOVAL: Products removed:', removedProductsInfo.map(p => p.name));
+      return {
+        type: 'removal',
+        reason: 'products_removed',
+        removedProducts: removedProductsInfo,
+        remainingProducts: selectedProducts
+      };
     }
 
     // Check for quantity changes
@@ -1119,6 +1195,8 @@ export default function CreateCuratedLookPage() {
     let hasQuantityIncrease = false;
     let hasQuantityDecrease = false;
     const additionalInstances: any[] = [];
+
+    const decreasedProducts: any[] = [];
 
     selectedProducts.forEach(currentProduct => {
       const visualizedProduct = visualizedProducts.find(vp => vp.id === currentProduct.id);
@@ -1143,16 +1221,28 @@ export default function CreateCuratedLookPage() {
           _isQuantityIncrease: true // Flag to indicate this is additional copies
         });
       } else if (currentQty < visualizedQty) {
-        // Quantity decreased - need full reset to remove items
-        console.log(`[DetectChangeType] => QUANTITY DECREASE for ${currentProduct.name}: ${visualizedQty} -> ${currentQty}`);
+        // Quantity decreased - track how many to remove
+        const removeCount = visualizedQty - currentQty;
+        console.log(`[DetectChangeType] => QUANTITY DECREASE for ${currentProduct.name}: ${visualizedQty} -> ${currentQty} (remove ${removeCount})`);
         hasQuantityDecrease = true;
+        decreasedProducts.push({
+          ...currentProduct,
+          removeCount: removeCount, // How many to remove
+          originalQty: visualizedQty,
+          newQty: currentQty
+        });
       }
     });
 
-    // Quantity decrease requires full reset
+    // Quantity decrease - use removal mode instead of full reset
     if (hasQuantityDecrease) {
-      console.log('[DetectChangeType] => FINAL RESULT: RESET (quantities decreased)');
-      return { type: 'reset', reason: 'quantities_decreased' };
+      console.log('[DetectChangeType] => FINAL RESULT: REMOVAL (quantities decreased)', decreasedProducts.map(p => `${p.name}: remove ${p.removeCount}`));
+      return {
+        type: 'removal',
+        reason: 'quantities_decreased',
+        removedProducts: decreasedProducts,
+        remainingProducts: selectedProducts
+      };
     }
 
     // Check for new products (not in visualized set)
@@ -1211,11 +1301,20 @@ export default function CreateCuratedLookPage() {
       let productsToVisualize: any[];
       let isIncremental = false;
       let forceReset = false;
+      let removalMode = false;
+      let productsToRemove: any[] = [];
 
       if (changeInfo.type === 'additive' && visualizationImage) {
         baseImage = visualizationImage;
         productsToVisualize = changeInfo.newProducts!;
         isIncremental = true;
+      } else if (changeInfo.type === 'removal' && visualizationImage) {
+        // Product removal: use current visualization and remove specific products
+        baseImage = visualizationImage;
+        productsToVisualize = selectedProducts; // Remaining products (for reference)
+        productsToRemove = changeInfo.removedProducts || [];
+        removalMode = true;
+        console.log('[Visualize] REMOVAL MODE: Removing products:', productsToRemove.map((p: any) => p.name));
       } else if (changeInfo.type === 'reset') {
         baseImage = roomImage;
         productsToVisualize = selectedProducts;
@@ -1241,7 +1340,31 @@ export default function CreateCuratedLookPage() {
       });
 
       console.log('[Visualize] Sending products:', productDetails.map(p => ({ name: p.name, qty: p.quantity })));
-      console.log('[Visualize] forceReset:', forceReset, 'isIncremental:', isIncremental, 'reason:', changeInfo.reason || 'none');
+      console.log('[Visualize] forceReset:', forceReset, 'isIncremental:', isIncremental, 'removalMode:', removalMode, 'reason:', changeInfo.reason || 'none');
+      if (removalMode) {
+        console.log('[Visualize] Products to remove with counts:', productsToRemove.map((p: any) => ({ name: p.name, removeCount: p.removeCount })));
+      }
+
+      // Prepare removal products info for backend
+      const removalProductDetails = productsToRemove.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        full_name: p.name,
+        remove_count: p.removeCount || 1, // For quantity decreases, how many to remove
+      }));
+
+      // For incremental visualization, send products already in the base image
+      // This allows the AI to know exactly what furniture to preserve
+      const visualizedProductDetails = visualizedProducts.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        full_name: p.name,
+        quantity: p.quantity || 1,
+      }));
+
+      if (isIncremental) {
+        console.log('[Visualize] Existing products in base image:', visualizedProductDetails.map(p => ({ name: p.name, qty: p.quantity })));
+      }
 
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`, {
         method: 'POST',
@@ -1252,6 +1375,9 @@ export default function CreateCuratedLookPage() {
           analysis: { design_style: 'modern', color_palette: [], room_type: 'living_room' },
           is_incremental: isIncremental,
           force_reset: forceReset,
+          removal_mode: removalMode,
+          products_to_remove: removalMode ? removalProductDetails : undefined,
+          visualized_products: isIncremental ? visualizedProductDetails : [],  // Products already in base image (for incremental)
           user_uploaded_new_image: changeInfo.type === 'initial',
           action: 'add',  // Always add products in curated looks editor (skip furniture replacement clarification)
           curated_look_id: existingLookId ? parseInt(existingLookId) : undefined,  // For precomputation cache
@@ -1304,7 +1430,8 @@ export default function CreateCuratedLookPage() {
 
         setVisualizationImage(retryImage);
         setVisualizedProductIds(retryProductIds);
-        setVisualizedProducts(selectedProducts);
+        // Deep copy selected products with their quantities to track what was visualized
+        setVisualizedProducts(selectedProducts.map(p => ({ ...p, quantity: p.quantity || 1 })));
         setNeedsRevisualization(false);
         setCanUndo(true);
         setCanRedo(false);
@@ -1329,8 +1456,11 @@ export default function CreateCuratedLookPage() {
 
       setVisualizationImage(newImage);
       setVisualizedProductIds(newProductIds);
-      setVisualizedProducts(selectedProducts);
+      // Deep copy selected products with their quantities to track what was visualized
+      setVisualizedProducts(selectedProducts.map(p => ({ ...p, quantity: p.quantity || 1 })));
       setNeedsRevisualization(false);
+      // Reset position edit flag since AI placed products fresh in this visualization
+      setPositionsWereEdited(false);
       // Use local history length to determine undo/redo state (more reliable than backend)
       setCanUndo(true); // Can always undo after a visualization
       setCanRedo(false); // Clear redo after new visualization
@@ -1839,10 +1969,23 @@ export default function CreateCuratedLookPage() {
       if (!data.image) throw new Error('No edited image was generated');
 
       setVisualizationImage(data.image);
+
+      // Add to history for undo/redo support
+      const newHistoryEntry: VisualizationHistoryEntry = {
+        image: data.image,
+        products: [...visualizedProducts],
+        productIds: new Set(visualizedProducts.map((p: any) => String(p.id))),
+      };
+      setVisualizationHistory(prev => [...prev, newHistoryEntry]);
+      setRedoStack([]); // Clear redo stack on new edit
+      setCanUndo(true);
+      setCanRedo(false);
+
       setNeedsRevisualization(false);
       setIsEditingPositions(false);
       setHasUnsavedPositions(false);
       setEditSpecialInstructions(''); // Clear instructions after successful edit
+      setPositionsWereEdited(true); // Mark that positions were manually edited - affects next visualization
     } catch (error: any) {
       setError(error.message || 'Failed to apply edit instructions.');
     } finally {
@@ -2025,8 +2168,14 @@ export default function CreateCuratedLookPage() {
                   <button
                     key={range.label}
                     onClick={() => {
-                      setMinPrice(range.min);
-                      setMaxPrice(range.max);
+                      // Toggle: if already selected, clear the filter
+                      if (minPrice === range.min && maxPrice === range.max) {
+                        setMinPrice('');
+                        setMaxPrice('');
+                      } else {
+                        setMinPrice(range.min);
+                        setMaxPrice(range.max);
+                      }
                     }}
                     className={`px-2 py-1 text-xs rounded-full transition-colors ${
                       minPrice === range.min && maxPrice === range.max
@@ -2618,39 +2767,67 @@ export default function CreateCuratedLookPage() {
                         )}
                         {/* Quantity badge */}
                         {(product.quantity || 1) > 1 && (
-                          <div className="absolute top-0.5 left-0.5 w-5 h-5 bg-purple-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                            {product.quantity}
+                          <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-purple-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center z-10">
+                            {product.quantity}x
                           </div>
                         )}
-                        <button
-                          onClick={() => removeProduct(product.id)}
-                          className="absolute top-0.5 right-0.5 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                          </svg>
-                        </button>
-                      </div>
-                      <div className="p-1">
-                        <p className="text-[10px] font-medium text-gray-900 line-clamp-1">{product.name}</p>
-                        <div className="flex items-center justify-between">
-                          <p className="text-[10px] text-purple-600 font-semibold">{formatPrice((product.price || 0) * (product.quantity || 1))}</p>
+                        {/* Hover overlay with controls - same as product panel */}
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
                           {/* Quantity controls */}
-                          <div className="flex items-center gap-0.5">
+                          <div className="flex items-center gap-1.5 bg-white rounded-lg px-2 py-1">
                             <button
-                              onClick={() => decrementQuantity(product.id)}
-                              className="w-4 h-4 bg-gray-200 hover:bg-gray-300 rounded text-[10px] font-bold flex items-center justify-center"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                decrementQuantity(product.id);
+                              }}
+                              className="w-6 h-6 bg-gray-200 hover:bg-gray-300 rounded text-sm font-bold flex items-center justify-center"
                             >
                               -
                             </button>
-                            <span className="w-4 text-[10px] text-center font-medium">{product.quantity || 1}</span>
+                            <span className="w-5 text-center font-semibold text-sm">{product.quantity || 1}</span>
                             <button
-                              onClick={() => incrementQuantity(product.id)}
-                              className="w-4 h-4 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded text-[10px] font-bold flex items-center justify-center"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                incrementQuantity(product.id);
+                              }}
+                              className="w-6 h-6 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-bold flex items-center justify-center"
                             >
                               +
                             </button>
                           </div>
+                          {/* Remove button */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeProduct(product.id);
+                            }}
+                            className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium rounded-lg flex items-center gap-1"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Remove
+                          </button>
+                          {/* View Details button */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDetailProduct(product);
+                            }}
+                            className="px-3 py-1.5 bg-white/90 hover:bg-white text-gray-800 text-xs font-medium rounded-lg flex items-center gap-1"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            View Details
+                          </button>
+                        </div>
+                      </div>
+                      <div className="p-1">
+                        <p className="text-[10px] font-medium text-gray-900 line-clamp-1 cursor-pointer hover:text-purple-600" onClick={() => setDetailProduct(product)}>{product.name}</p>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-gray-500 capitalize">{product.source_website || product.source}</span>
+                          <p className="text-[10px] text-purple-600 font-semibold">{formatPrice((product.price || 0) * (product.quantity || 1))}</p>
                         </div>
                       </div>
                     </div>
@@ -2678,7 +2855,7 @@ export default function CreateCuratedLookPage() {
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-gray-900 truncate">{product.name}</p>
+                        <p className="text-xs font-medium text-gray-900 truncate cursor-pointer hover:text-purple-600" onClick={() => setDetailProduct(product)}>{product.name}</p>
                         <p className="text-[10px] text-gray-500 capitalize">{product.source_website || product.source}</p>
                         <p className="text-xs font-semibold text-purple-600">{formatPrice((product.price || 0) * (product.quantity || 1))}</p>
                       </div>
@@ -2699,8 +2876,18 @@ export default function CreateCuratedLookPage() {
                         </button>
                       </div>
                       <button
+                        onClick={() => setDetailProduct(product)}
+                        className="text-blue-600 hover:text-blue-700 p-0.5 mr-1"
+                        title="View Details"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </button>
+                      <button
                         onClick={() => removeProduct(product.id)}
                         className="text-red-600 hover:text-red-700 p-0.5"
+                        title="Remove"
                       >
                         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -2711,6 +2898,39 @@ export default function CreateCuratedLookPage() {
                 </div>
               )}
             </div>
+
+            {/* Visualization In Progress - Shimmer Preview (first-time visualization) */}
+            {isVisualizing && !visualizationImage && roomImage && (
+              <div className="p-4 border-b border-gray-200">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-medium text-gray-900">Generating Visualization...</h3>
+                </div>
+                <div className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden ring-2 ring-blue-400">
+                  {/* Room image as preview background */}
+                  <img
+                    src={roomImage}
+                    alt="Room preview"
+                    className="w-full h-full object-cover opacity-50"
+                  />
+                  {/* Shimmer overlay animation */}
+                  <div
+                    className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer z-10"
+                    style={{ backgroundSize: '200% 100%' }}
+                  />
+                  {/* Progress indicator */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 z-20">
+                    <div className="bg-black/70 backdrop-blur-sm rounded-xl px-6 py-4 flex flex-col items-center shadow-2xl">
+                      <svg className="animate-spin h-10 w-10 text-white mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span className="text-white font-semibold text-base">Placing furniture in your room...</span>
+                      <span className="text-white/80 text-sm mt-1">Omni is styling your space</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Visualization Result with Edit Positions, Undo/Redo (Exact copy from CanvasPanel) */}
             {visualizationImage && (
@@ -2841,6 +3061,25 @@ export default function CreateCuratedLookPage() {
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                         </svg>
                         <span className="text-sm font-medium text-gray-700">Generating {loadingAngle} view...</span>
+                      </div>
+                    </div>
+                  )}
+                  {/* Re-visualization shimmer overlay */}
+                  {isVisualizing && !isEditingPositions && (
+                    <div className="absolute inset-0 z-20">
+                      <div
+                        className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer"
+                        style={{ backgroundSize: '200% 100%' }}
+                      />
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30">
+                        <div className="bg-black/70 backdrop-blur-sm rounded-xl px-6 py-4 flex flex-col items-center shadow-2xl">
+                          <svg className="animate-spin h-10 w-10 text-white mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          <span className="text-white font-semibold text-base">Updating visualization...</span>
+                          <span className="text-white/80 text-sm mt-1">Omni is updating your space</span>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -2975,30 +3214,44 @@ export default function CreateCuratedLookPage() {
           {/* Visualize & Publish Buttons - Fixed at bottom (Smart states from CanvasPanel) */}
           <div className="p-4 border-t border-gray-200 flex-shrink-0 space-y-2">
             {/* Visualize Button with Smart States */}
-            {isEditingPositions && editSpecialInstructions.trim() ? (
-              /* State: Edit Mode with Special Instructions (Purple, Enabled) */
-              <button
-                onClick={handleRevisualizeWithInstructions}
-                disabled={isVisualizing}
-                className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
-              >
-                {isVisualizing ? (
-                  <>
-                    <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Applying Instructions...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                    Apply Edit Instructions
-                  </>
-                )}
-              </button>
+            {isEditingPositions ? (
+              /* Edit Mode: Show Apply button if instructions exist, otherwise show prompt */
+              editSpecialInstructions.trim() ? (
+                /* State: Edit Mode with Special Instructions (Purple, Enabled) */
+                <button
+                  onClick={handleRevisualizeWithInstructions}
+                  disabled={isVisualizing}
+                  className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
+                >
+                  {isVisualizing ? (
+                    <>
+                      <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Applying Instructions...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      Apply Edit Instructions
+                    </>
+                  )}
+                </button>
+              ) : (
+                /* State: Edit Mode without instructions - prompt user */
+                <button
+                  disabled
+                  className="w-full py-3 px-4 bg-purple-200 text-purple-600 font-semibold rounded-lg cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  Enter instructions above or exit edit mode
+                </button>
+              )
             ) : isUpToDate ? (
               /* State 2: Up to Date (Green, Disabled) */
               <button
