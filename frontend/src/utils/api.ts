@@ -664,13 +664,97 @@ export const chatAPI = {
 };
 
 export const imageAPI = {
-  uploadRoomImage: async (file: File) => {
-    // Mock implementation
-    return {
-      url: URL.createObjectURL(file),
-      id: "mock-image-" + Date.now()
-    };
+  /**
+   * Upload room image and perform combined room analysis.
+   * This is called during image upload to cache room analysis for faster visualization.
+   *
+   * @param file - The image file to upload
+   * @param projectId - Optional project ID (design page flow)
+   * @param curatedLookId - Optional curated look ID (admin curation flow)
+   * @returns Upload response with image data and room analysis
+   */
+  uploadRoomImage: async (
+    file: File,
+    projectId?: string | null,
+    curatedLookId?: number | null
+  ): Promise<{
+    image_data: string;
+    filename: string;
+    size: number;
+    content_type: string;
+    upload_timestamp: string;
+    room_analysis: Record<string, unknown>;
+  }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    // Build URL with query parameters
+    const params = new URLSearchParams();
+    if (projectId) {
+      params.append('project_id', projectId);
+    }
+    if (curatedLookId) {
+      params.append('curated_look_id', curatedLookId.toString());
+    }
+
+    const queryString = params.toString();
+    const url = `/api/visualization/upload-room-image${queryString ? `?${queryString}` : ''}`;
+
+    const response = await api.post(url, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+
+    return response.data;
   },
+
+  /**
+   * Upload room image from base64 string (for use when image is already loaded).
+   * Converts base64 to File and calls uploadRoomImage.
+   *
+   * @param base64Data - Base64 encoded image data (with or without data URI prefix)
+   * @param projectId - Optional project ID (design page flow)
+   * @param curatedLookId - Optional curated look ID (admin curation flow)
+   * @returns Upload response with image data and room analysis
+   */
+  uploadRoomImageFromBase64: async (
+    base64Data: string,
+    projectId?: string | null,
+    curatedLookId?: number | null
+  ): Promise<{
+    image_data: string;
+    filename: string;
+    size: number;
+    content_type: string;
+    upload_timestamp: string;
+    room_analysis: Record<string, unknown>;
+  }> => {
+    // Extract base64 content and mime type
+    let mimeType = 'image/jpeg';
+    let base64Content = base64Data;
+
+    if (base64Data.startsWith('data:')) {
+      const matches = base64Data.match(/^data:([^;]+);base64,(.+)$/);
+      if (matches) {
+        mimeType = matches[1];
+        base64Content = matches[2];
+      }
+    }
+
+    // Convert base64 to Blob then to File
+    const byteCharacters = atob(base64Content);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: mimeType });
+    const file = new File([blob], 'room-image.jpg', { type: mimeType });
+
+    return imageAPI.uploadRoomImage(file, projectId, curatedLookId);
+  },
+
   getOptimizedImageUrl: (url: string) => url
 };
 
