@@ -19,6 +19,8 @@ except ImportError:
     GENAI_AVAILABLE = False
     logging.warning("google-genai package not installed. Image transformation will not work.")
 
+from services.api_usage_service import log_gemini_usage
+
 from core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -136,6 +138,7 @@ Generate a high-quality photorealistic image of the transformed room."""
                 model=self.model,
                 contents=[full_prompt, input_image],
             )
+            log_gemini_usage(response, "image_transformation", self.model)
 
             logger.info("✅ Received response from Gemini")
 

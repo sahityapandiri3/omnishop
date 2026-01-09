@@ -1177,9 +1177,29 @@ export default function CreateCuratedLookPage() {
     const removedProductIds = Array.from(visualizedProductIds).filter(id => !currentIds.has(id));
     console.log('[DetectChangeType] removedProductIds:', removedProductIds);
 
+    // Check for new products BEFORE deciding on removal vs reset
+    // We need to know this because removal + addition requires reset, not just removal
+    const newProducts = selectedProducts.filter(p => !visualizedProductIds.has(String(p.id)));
+    console.log('[DetectChangeType] newProducts (early check):', newProducts.map(p => ({ id: p.id, name: p.name })));
+
     if (removedProductIds.length > 0) {
-      // Get full product info for removed products so we can tell AI which products to remove
+      // Get full product info for removed products
       const removedProductsInfo = visualizedProducts.filter(p => removedProductIds.includes(String(p.id)));
+
+      // CRITICAL FIX: If products are BOTH removed AND added, use RESET mode instead of removal
+      // Removal mode only removes products from the image - it doesn't add new ones
+      // Reset mode starts fresh from the clean room image and visualizes all current products
+      if (newProducts.length > 0) {
+        console.log('[DetectChangeType] => RESET (both removal and addition): Removed:', removedProductsInfo.map(p => p.name), 'Added:', newProducts.map(p => p.name));
+        return {
+          type: 'reset',
+          reason: 'products_removed_and_added',
+          removedProducts: removedProductsInfo,
+          newProducts: newProducts
+        };
+      }
+
+      // Only removals, no additions - use removal mode
       console.log('[DetectChangeType] => REMOVAL: Products removed:', removedProductsInfo.map(p => p.name));
       return {
         type: 'removal',
@@ -1245,11 +1265,9 @@ export default function CreateCuratedLookPage() {
       };
     }
 
-    // Check for new products (not in visualized set)
-    const newProducts = selectedProducts.filter(p => !visualizedProductIds.has(String(p.id)));
-    console.log('[DetectChangeType] newProducts (not in visualized):', newProducts.map(p => ({ id: p.id, name: p.name })));
-
-    // Combine quantity increases AND new products into one additive operation
+    // newProducts was already calculated at the top of this function
+    // (used for checking removal+addition scenario)
+    // Now combine quantity increases AND new products into one additive operation
     const allNewItems = [...additionalInstances, ...newProducts];
 
     if (allNewItems.length > 0 && visualizedProductIds.size > 0) {

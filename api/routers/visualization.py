@@ -10,15 +10,17 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from schemas.chat import ChatMessageSchema
+from services.api_usage_service import log_gemini_usage
 from services.chatgpt_service import chatgpt_service
 from services.google_ai_service import google_ai_service
 from services.ml_recommendation_model import ml_recommendation_model
 from services.recommendation_engine import RecommendationRequest, recommendation_engine
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.database import get_db
-from database.models import Product
+from database.models import CuratedLook, Product, Project
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/visualization", tags=["visualization"])
@@ -303,8 +305,28 @@ async def generate_room_visualization(
 
 
 @router.post("/upload-room-image")
-async def upload_room_image(file: UploadFile = File(...)):
-    """Upload room image for analysis"""
+async def upload_room_image(
+    file: UploadFile = File(...),
+    curated_look_id: Optional[int] = None,
+    project_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Upload room image and perform combined room analysis.
+
+    This endpoint now performs room analysis during upload (not during visualization),
+    saving 4-13 seconds per subsequent visualization by caching the analysis.
+
+    Args:
+        file: The room image file
+        curated_look_id: If provided, saves room_analysis to CuratedLook table (admin curation flow)
+        project_id: If provided, saves room_analysis to Project table (design page flow)
+        db: Database session
+
+    Returns:
+        image_data: Base64 encoded image data
+        room_analysis: Cached room analysis (camera view, dimensions, existing furniture, etc.)
+    """
     try:
         # Validate file type
         if not file.content_type.startswith("image/"):
@@ -314,12 +336,38 @@ async def upload_room_image(file: UploadFile = File(...)):
         contents = await file.read()
         encoded_image = base64.b64encode(contents).decode()
 
+        # Perform combined room analysis (room type, dimensions, camera view, AND furniture detection)
+        # This is done ONCE during upload instead of on every visualization
+        logger.info(
+            f"[upload-room-image] Starting combined room analysis (curated_look_id={curated_look_id}, project_id={project_id})"
+        )
+        room_analysis = await google_ai_service.analyze_room_with_furniture(encoded_image)
+        room_analysis_dict = room_analysis.to_dict()
+        logger.info(
+            f"[upload-room-image] Room analysis complete: {room_analysis.room_type}, {len(room_analysis.existing_furniture)} furniture items detected"
+        )
+
+        # Save room analysis to CuratedLook (admin curation flow)
+        if curated_look_id:
+            logger.info(f"[upload-room-image] Saving room analysis to curated_look {curated_look_id}")
+            await db.execute(
+                update(CuratedLook).where(CuratedLook.id == curated_look_id).values(room_analysis=room_analysis_dict)
+            )
+            await db.commit()
+
+        # Save room analysis to Project (design page flow)
+        if project_id:
+            logger.info(f"[upload-room-image] Saving room analysis to project {project_id}")
+            await db.execute(update(Project).where(Project.id == project_id).values(room_analysis=room_analysis_dict))
+            await db.commit()
+
         return {
             "image_data": f"data:{file.content_type};base64,{encoded_image}",
             "filename": file.filename,
             "size": len(contents),
             "content_type": file.content_type,
             "upload_timestamp": datetime.utcnow().isoformat(),
+            "room_analysis": room_analysis_dict,
         }
 
     except Exception as e:
@@ -331,6 +379,9 @@ async def upload_room_image(file: UploadFile = File(...)):
 async def extract_furniture_layers(session_id: str, request: ExtractLayersRequest, db: AsyncSession = Depends(get_db)):
     """
     Extract all objects as draggable layers for Magic Grab editing.
+
+    NOTE: This endpoint is DISABLED as SAM segmentation is not currently used.
+    The Magic Grab feature has been deprecated in favor of Gemini-based editing.
 
     This is the entry point for the Magic Grab workflow:
     1. SAM automatically detects and segments ALL objects in the image
@@ -349,6 +400,10 @@ async def extract_furniture_layers(session_id: str, request: ExtractLayersReques
         background: Clean room image with furniture removed
         layers: List of extracted layers with transparent cutouts and positions
     """
+    # SAM-based Magic Grab is disabled - return 501 Not Implemented
+    raise HTTPException(status_code=501, detail="Magic Grab (SAM segmentation) is disabled. Use Gemini-based editing instead.")
+
+    # Original implementation (disabled):
     try:
         logger.info(f"[ExtractLayers] Starting Magic Grab extraction for session {session_id}")
 
@@ -770,6 +825,9 @@ async def composite_layers(session_id: str, request: CompositeLayersRequest):
     """
     Composite all layers at their new positions to create final image.
 
+    NOTE: This endpoint is DISABLED as SAM segmentation is not currently used.
+    The Magic Grab feature has been deprecated in favor of Gemini-based editing.
+
     This is called when user clicks "Done" after editing positions:
     1. PIL composites all layer cutouts onto the background
     2. (Optional) Gemini harmonizes lighting for seamless blending
@@ -782,6 +840,10 @@ async def composite_layers(session_id: str, request: CompositeLayersRequest):
     Returns:
         Final composited image
     """
+    # SAM-based layer compositing is disabled - return 501 Not Implemented
+    raise HTTPException(status_code=501, detail="Layer compositing (SAM-based) is disabled. Use Gemini-based editing instead.")
+
+    # Original implementation (disabled):
     try:
         logger.info(f"[CompositeLayers] Starting compositing for session {session_id}")
         logger.info(f"[CompositeLayers] Compositing {len(request.layers)} layers")
@@ -1553,6 +1615,9 @@ async def segment_at_point(session_id: str, request: SegmentAtPointRequest):
     """
     Segment object at a clicked point using Gemini + SAM.
 
+    NOTE: This endpoint is DISABLED as SAM segmentation is not currently used.
+    Click-to-select has been deprecated in favor of Gemini-based editing.
+
     This is the core endpoint for "click-to-select" functionality.
 
     Flow:
@@ -1569,6 +1634,12 @@ async def segment_at_point(session_id: str, request: SegmentAtPointRequest):
     Returns:
         Layer object with cutout, mask, bbox, center for dragging
     """
+    # SAM-based click-to-select is disabled - return 501 Not Implemented
+    raise HTTPException(
+        status_code=501, detail="Click-to-select (SAM segmentation) is disabled. Use Gemini-based editing instead."
+    )
+
+    # Original implementation (disabled):
     import asyncio
     import base64
     import io
@@ -1784,6 +1855,7 @@ IMPORTANT: The bbox MUST be for the object the RED CIRCLE is ON, not nearby obje
                     temperature=0.2,
                 ),
             )
+            log_gemini_usage(response, "identify_object", "gemini-2.0-flash-exp")
             if response.text:
                 return response.text
             return None
@@ -1989,6 +2061,7 @@ If none match well, return 0.""",
                             contents=contents,
                             config=types.GenerateContentConfig(temperature=0.1),
                         )
+                        log_gemini_usage(response, "match_product", "gemini-2.0-flash-exp")
                         if response.text:
                             return response.text.strip()
                         return None
@@ -2093,6 +2166,7 @@ Generate the room image with the {object_name} cleanly removed."""
                             temperature=0.3,
                         ),
                     )
+                    log_gemini_usage(response, "inpaint_object_removal", "gemini-3-pro-image-preview")
 
                     inpainted_image = None
                     parts = None
@@ -2203,6 +2277,7 @@ Generate the room image with the object cleanly removed."""
                     temperature=0.3,
                 ),
             )
+            log_gemini_usage(response, "fallback_inpaint", "gemini-3-pro-image-preview")
             inpainted_image = None
             parts = None
             if hasattr(response, "parts") and response.parts:
@@ -2270,11 +2345,20 @@ async def segment_at_points(session_id: str, request: SegmentAtPointsRequest):
     """
     Segment object using multiple click points (grouped selection).
 
+    NOTE: This endpoint is DISABLED as SAM segmentation is not currently used.
+    Multi-point selection has been deprecated in favor of Gemini-based editing.
+
     Use this when user wants to select multiple items as one unit,
     e.g., sofa + all pillows, or table + all objects on it.
 
     All points with the same label are merged into a single mask.
     """
+    # SAM-based multi-point selection is disabled - return 501 Not Implemented
+    raise HTTPException(
+        status_code=501, detail="Multi-point selection (SAM segmentation) is disabled. Use Gemini-based editing instead."
+    )
+
+    # Original implementation (disabled):
     try:
         from services.sam_service import sam_service
 
@@ -2499,6 +2583,7 @@ QUALITY REQUIREMENTS:
                     temperature=0.4,
                 ),
             )
+            log_gemini_usage(response, "replace_product_harmonize", "gemini-3-pro-image-preview")
 
             result_image = None
             parts = None
@@ -2798,6 +2883,7 @@ The goal is to make it look like there was never anything in that spot."""
                     temperature=0.3,
                 ),
             )
+            log_gemini_usage(response, "visualize_curated_look_inpaint", "gemini-2.0-flash-exp")
 
             result_image = None
             parts = None
@@ -2884,17 +2970,42 @@ async def edit_with_instructions(
         input_image = Image.open(io.BytesIO(image_bytes))
         width, height = input_image.size
 
-        logger.info(f"[{session_id}] Input image size: {width}x{height}")
+        # Log image hash to debug consecutive edit issues
+        import hashlib
+
+        image_hash = hashlib.md5(image_bytes).hexdigest()[:12]
+        logger.info(f"[{session_id}] Input image size: {width}x{height}, hash: {image_hash}")
 
         # Fetch product reference images
         product_images = []
         product_list_text = ""
+        total_item_count = 0
         if request.products:
             logger.info(f"[{session_id}] Fetching {len(request.products)} product reference images...")
-            product_list_text = "\n\nPRODUCTS IN THIS SCENE (these must appear EXACTLY as shown in reference images):\n"
+            product_lines = []
             async with httpx.AsyncClient(timeout=15.0) as http_client:
                 for product in request.products:
-                    product_list_text += f"- {product.name} (quantity: {product.quantity})\n"
+                    qty = product.quantity or 1
+                    total_item_count += qty
+                    product_lines.append(f"- {product.name}: EXACTLY {qty} {'items' if qty > 1 else 'item'}")
+
+            product_list_text = (
+                f"""
+
+⚠️ EXACT ITEM COUNT IN SCENE: {total_item_count} total items ⚠️
+PRODUCTS (your output must have EXACTLY these counts):
+"""
+                + "\n".join(product_lines)
+                + f"""
+
+🔢 VERIFICATION: After your edit, count the items. There must be EXACTLY {total_item_count} items total.
+"""
+            )
+
+            # Now fetch images
+            async with httpx.AsyncClient(timeout=15.0) as http_client:
+                for product in request.products:
+                    # (image fetching continues below)
                     if product.image_url:
                         try:
                             img_response = await http_client.get(product.image_url)
@@ -2906,32 +3017,76 @@ async def edit_with_instructions(
                             logger.warning(f"[{session_id}] Failed to fetch image for {product.name}: {e}")
 
         # Build the prompt for Gemini
-        edit_prompt = f"""You are an interior design image editor. RELOCATE furniture in this room image.
+        edit_prompt = f"""You are an interior design image editor. Edit the room image according to the user's instructions.
 
 INSTRUCTION: {request.instructions}
 {product_list_text}
-WHAT "MOVE" MEANS:
-- MOVE = RELOCATE = Take the item FROM its current position and PUT it at the new position
-- The item must NO LONGER EXIST at its original location
-- The original location should show the floor/wall/background that was behind it
-- DO NOT DUPLICATE - there should be exactly ONE of each item (unless quantity specifies more)
 
-ABSOLUTE RULES - VIOLATION IS FAILURE:
-1. NEVER ADD NEW ITEMS - if there is 1 bench, there must still be exactly 1 bench
-2. NEVER DUPLICATE - moving an item means it disappears from original spot
-3. The item being moved must VANISH from its original position (show background there instead)
-4. Total item count BEFORE edit must EQUAL total item count AFTER edit
-5. Products must look IDENTICAL to reference images (same design, color, texture)
-6. Output the ENTIRE room, same dimensions, same perspective
+⛔⛔⛔ CRITICAL: MOVE = DELETE FROM OLD + CREATE AT NEW ⛔⛔⛔
+═══════════════════════════════════════════════════════════════════════
+When asked to MOVE, REPOSITION, or RELOCATE an item:
 
-EXAMPLE:
-- "Move the bench to the right" means:
-  - Find the bench in the image
-  - REMOVE it from its current position (show floor/background where it was)
-  - Place the SAME bench (not a copy) at a position to the right
-  - Result: Still only 1 bench, now on the right side
+1. FIRST: ERASE/DELETE the item completely from its ORIGINAL location
+   - The original spot must show the floor, wall, or background behind it
+   - The item must VANISH from where it was
 
-QUALITY: Maximum resolution {width}x{height}, photorealistic, natural lighting."""
+2. THEN: Place the SAME item at the NEW location
+   - There should be EXACTLY ONE of each item after the move
+   - NEVER leave a copy at the old position
+
+🚨 DUPLICATION IS FORBIDDEN 🚨
+- If you see 1 chair before the move, there must be EXACTLY 1 chair after
+- If you see 2 chairs before the move, there must be EXACTLY 2 chairs after
+- NEVER ADD EXTRA ITEMS - the count must MATCH before and after
+
+WHAT MOVING MEANS:
+- "Position chairs next to each other" → Take chairs from their current spots, DELETE them there, place them side by side
+- "Move the table to the left" → REMOVE table from original spot, show empty space, place table on the left
+- Each moved item must DISAPPEAR from its original location
+═══════════════════════════════════════════════════════════════════════
+
+TYPES OF EDITS:
+
+1. REPOSITIONING (move, relocate, position):
+   - STEP 1: Completely REMOVE the item from its current position (show floor/wall behind)
+   - STEP 2: Place the item at the new position
+   - The old position must be EMPTY after the move
+   - COUNT CHECK: Same number of items before and after
+
+2. APPEARANCE CORRECTION (fix shape, color, size):
+   - If user says a product looks wrong (wrong shape, color, etc.), FIX it
+   - Use the REFERENCE IMAGES provided to see the correct appearance
+   - Products must look IDENTICAL to their reference images
+
+ABSOLUTE RULES:
+1. ⛔ NEVER ADD NEW ITEMS - item count must stay EXACTLY the same
+2. ⛔ NEVER DUPLICATE items when moving - remove from old position FIRST
+3. ⛔ After moving, the OLD position must be EMPTY (show floor/wall)
+4. Products must look IDENTICAL to reference images
+5. Output the ENTIRE room, same dimensions, same perspective
+
+🚫🚫🚫 WALL & FLOOR COLOR PRESERVATION - ABSOLUTE REQUIREMENT 🚫🚫🚫
+⛔ DO NOT CHANGE THE WALL COLOR - walls must remain EXACTLY the same color as input
+⛔ DO NOT CHANGE THE FLOOR COLOR - flooring must remain EXACTLY the same color/material as input
+⛔ DO NOT add paint, wallpaper, or any wall treatment that wasn't there
+⛔ DO NOT change flooring material, color, or texture
+- If walls are white → output walls MUST be white
+- If walls are grey → output walls MUST be grey
+- If floor is wooden → output floor MUST be the SAME wooden color
+- The room's color scheme is FIXED - you are ONLY repositioning furniture
+
+FAILURE CONDITIONS (you WILL fail if you do these):
+- Leaving a copy of a moved item at its original position
+- Having more items after the edit than before
+- Not clearing the original position when moving
+- Changing the wall color or floor color
+
+🚨🚨🚨 CRITICAL OUTPUT REQUIREMENTS 🚨🚨🚨
+- Output image MUST be EXACTLY {width}x{height} pixels (width={width}, height={height})
+- DO NOT swap width and height - orientation must match input EXACTLY
+- The aspect ratio MUST remain identical to the input image
+- Generate at MAXIMUM quality, photorealistic, with natural lighting
+- DO NOT crop, rotate, or change the image dimensions in ANY way"""
 
         # Initialize Gemini client
         client = genai.Client(api_key=settings.google_ai_api_key)
@@ -2960,6 +3115,7 @@ QUALITY: Maximum resolution {width}x{height}, photorealistic, natural lighting."
                     temperature=0.4,
                 ),
             )
+            log_gemini_usage(response, "edit_with_instructions", "gemini-3-pro-image-preview")
 
             result_image = None
             parts = None
@@ -2991,18 +3147,24 @@ QUALITY: Maximum resolution {width}x{height}, photorealistic, natural lighting."
         result = await asyncio.wait_for(loop.run_in_executor(None, _run_edit), timeout=90)
 
         if result:
-            # Resize to match original if needed
+            # Handle dimension issues - Gemini sometimes returns different dimensions
+            result_w, result_h = result.size
             if result.size != (width, height):
-                logger.info(f"[{session_id}] Resizing result from {result.size} to {width}x{height}")
+                logger.warning(f"[{session_id}] Gemini returned {result_w}x{result_h} but input was {width}x{height}")
+                # Resize with high quality interpolation to match original
                 result = result.resize((width, height), Image.LANCZOS)
+                logger.info(f"[{session_id}] Resized to {width}x{height}")
 
             # Convert to base64
             result_buffer = io.BytesIO()
             result.convert("RGB").save(result_buffer, format="PNG", optimize=False)
             result_buffer.seek(0)
-            result_b64 = f"data:image/png;base64,{base64.b64encode(result_buffer.getvalue()).decode()}"
+            result_bytes = result_buffer.getvalue()
+            result_b64 = f"data:image/png;base64,{base64.b64encode(result_bytes).decode()}"
 
-            logger.info(f"[{session_id}] Edit with instructions completed successfully")
+            # Log output hash to debug consecutive edit issues
+            output_hash = hashlib.md5(result_bytes).hexdigest()[:12]
+            logger.info(f"[{session_id}] Edit with instructions completed successfully, output hash: {output_hash}")
 
             return {
                 "image": result_b64,
@@ -3016,3 +3178,75 @@ QUALITY: Maximum resolution {width}x{height}, photorealistic, natural lighting."
     except Exception as e:
         logger.error(f"[{session_id}] Error in edit-with-instructions: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to apply edit instructions: {str(e)}")
+
+
+@router.get("/api-usage")
+async def get_api_usage(hours: int = 24, db: AsyncSession = Depends(get_db)):
+    """
+    Get API usage statistics from database.
+
+    Args:
+        hours: Number of hours to look back (default 24 for today)
+
+    Returns:
+        Usage summary with token counts by operation and provider
+    """
+    from datetime import timedelta
+
+    from sqlalchemy import func, select
+
+    from database.models import ApiUsage
+
+    try:
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+        # Get total stats
+        total_query = select(
+            func.count(ApiUsage.id).label("total_calls"),
+            func.sum(ApiUsage.total_tokens).label("total_tokens"),
+        ).where(ApiUsage.timestamp >= cutoff)
+
+        total_result = await db.execute(total_query)
+        total_row = total_result.fetchone()
+
+        # Get breakdown by operation
+        by_operation_query = (
+            select(
+                ApiUsage.operation,
+                func.count(ApiUsage.id).label("calls"),
+                func.sum(ApiUsage.total_tokens).label("tokens"),
+            )
+            .where(ApiUsage.timestamp >= cutoff)
+            .group_by(ApiUsage.operation)
+        )
+
+        op_result = await db.execute(by_operation_query)
+        by_operation = [{"operation": r.operation, "calls": r.calls, "tokens": r.tokens or 0} for r in op_result.fetchall()]
+
+        # Get breakdown by provider
+        by_provider_query = (
+            select(
+                ApiUsage.provider,
+                func.count(ApiUsage.id).label("calls"),
+                func.sum(ApiUsage.total_tokens).label("tokens"),
+            )
+            .where(ApiUsage.timestamp >= cutoff)
+            .group_by(ApiUsage.provider)
+        )
+
+        provider_result = await db.execute(by_provider_query)
+        by_provider = [{"provider": r.provider, "calls": r.calls, "tokens": r.tokens or 0} for r in provider_result.fetchall()]
+
+        return {
+            "status": "success",
+            "period_hours": hours,
+            "usage": {
+                "total_api_calls": total_row.total_calls or 0,
+                "total_tokens": total_row.total_tokens or 0,
+                "by_operation": by_operation,
+                "by_provider": by_provider,
+            },
+        }
+    except Exception as e:
+        logger.error(f"Error getting API usage: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get API usage: {str(e)}")

@@ -34,6 +34,47 @@ class BudgetTier(enum.Enum):
     LUXURY = "luxury"  # ₹15L+
 
 
+class ApiProvider(enum.Enum):
+    """API providers for usage tracking"""
+
+    GEMINI = "gemini"
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+
+
+class ApiUsage(Base):
+    """Track API usage and token consumption"""
+
+    __tablename__ = "api_usage"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
+    session_id = Column(String(36), nullable=True, index=True)
+
+    # API details
+    provider = Column(String(20), nullable=False, index=True)  # gemini, openai, etc.
+    model = Column(String(50), nullable=False, index=True)  # gemini-2.0-flash-exp, gpt-4, etc.
+    operation = Column(String(50), nullable=False, index=True)  # visualize, analyze_room, chat, etc.
+
+    # Token counts
+    prompt_tokens = Column(Integer, nullable=True)
+    completion_tokens = Column(Integer, nullable=True)
+    total_tokens = Column(Integer, nullable=True)
+
+    # Cost tracking (in USD)
+    estimated_cost = Column(Float, nullable=True)
+
+    # Additional metadata (request details, error info, etc.)
+    request_metadata = Column(JSON, nullable=True)
+
+    # Indexes for common queries
+    __table_args__ = (
+        Index("idx_api_usage_timestamp_provider", "timestamp", "provider"),
+        Index("idx_api_usage_user_operation", "user_id", "operation"),
+    )
+
+
 class Store(Base):
     """Store information with budget tier classification"""
 
@@ -43,10 +84,10 @@ class Store(Base):
     name = Column(String(50), unique=True, nullable=False, index=True)  # e.g., "modernquests", "josmo"
     display_name = Column(String(100), nullable=True)  # e.g., "Modern Quests", "Josmo"
     budget_tier = Column(
-        Enum(BudgetTier, values_callable=lambda x: [e.value for e in x], name="budgettier"),
+        String(20),  # Use String to avoid asyncpg enum issues - database has native enum
         nullable=True,
         index=True,
-    )  # essential, value, mid, premium, ultra_luxury
+    )
     website_url = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -357,6 +398,9 @@ class Project(Base):
     clean_room_image = Column(Text, nullable=True)  # Base64 of furniture-removed room
     visualization_image = Column(Text, nullable=True)  # Base64 of last rendered visualization
 
+    # Cached room analysis from upload (JSONB) - avoids redundant Gemini calls during visualization
+    room_analysis = Column(JSON, nullable=True)
+
     # Canvas state
     canvas_products = Column(Text, nullable=True)  # JSON array of products on canvas
     visualization_history = Column(Text, nullable=True)  # JSON array of visualization history for undo/redo
@@ -474,10 +518,13 @@ class CuratedLook(Base):
     room_image = Column(Text, nullable=True)  # Base64 of original room (optional)
     visualization_image = Column(Text, nullable=True)  # Base64 of AI visualization
 
+    # Cached room analysis from upload (JSONB) - avoids redundant Gemini calls during visualization
+    room_analysis = Column(JSON, nullable=True)
+
     # Metadata
     total_price = Column(Float, default=0)
     budget_tier = Column(
-        Enum(BudgetTier, values_callable=lambda x: [e.value for e in x], name="budgettier"),
+        String(20),  # Use String to avoid asyncpg enum issues - database has native enum
         nullable=True,
         index=True,
     )
@@ -575,7 +622,7 @@ class HomeStylingSession(Base):
     style = Column(String(50), nullable=True)  # "modern", "modern_luxury", "indian_contemporary"
     color_palette = Column(JSON, default=list)  # ["warm", "neutral", "cool", "bold"]
     budget_tier = Column(
-        Enum(BudgetTier, values_callable=lambda x: [e.value for e in x], name="budgettier"),
+        String(20),  # Use String to avoid asyncpg enum issues - database has native enum
         nullable=True,
         index=True,
     )  # User's budget preference for curated looks

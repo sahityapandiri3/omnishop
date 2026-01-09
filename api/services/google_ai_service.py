@@ -640,6 +640,8 @@ class GoogleAIStudioService:
             "total_processing_time": 0.0,
             "last_reset": datetime.now(),
         }
+        # Token usage tracking - accumulates all API calls
+        self.token_usage_history: List[Dict[str, Any]] = []
 
         self._validate_api_key()
 
@@ -660,6 +662,141 @@ class GoogleAIStudioService:
             logger.warning("Google AI API key not configured - image generation will not be available")
 
         logger.info("Google AI Studio service initialized with Gemini 3 Pro Image (Nano Banana Pro) support")
+
+        # Track last API call usage for logging by routers
+        self.last_usage_metadata = None
+
+    def extract_usage_metadata(self, response, operation: str = "unknown", model_override: str = None) -> Dict[str, Any]:
+        """
+        Extract token usage metadata from Gemini API response and persist to database.
+
+        Args:
+            response: Gemini API response object
+            operation: Type of operation (visualize, analyze_room, chat, etc.)
+            model_override: Override model name if known
+
+        Returns:
+            Dictionary with token counts and model info
+        """
+        usage = {
+            "timestamp": datetime.now().isoformat(),
+            "provider": "gemini",
+            "model": model_override or getattr(response, "model", "gemini-2.0-flash-exp"),
+            "operation": operation,
+            "prompt_tokens": None,
+            "completion_tokens": None,
+            "total_tokens": None,
+        }
+
+        try:
+            if hasattr(response, "usage_metadata"):
+                metadata = response.usage_metadata
+                usage["prompt_tokens"] = getattr(metadata, "prompt_token_count", None)
+                usage["completion_tokens"] = getattr(metadata, "candidates_token_count", None)
+                usage["total_tokens"] = getattr(metadata, "total_token_count", None)
+
+                # Log for debugging
+                logger.info(
+                    f"[Token Usage] {usage['operation']} - model={usage['model']}, "
+                    f"prompt={usage['prompt_tokens']}, completion={usage['completion_tokens']}, total={usage['total_tokens']}"
+                )
+        except Exception as e:
+            logger.warning(f"Failed to extract usage metadata: {e}")
+
+        self.last_usage_metadata = usage
+        # Append to history for cumulative tracking
+        self.token_usage_history.append(usage)
+
+        # Persist to database
+        self._persist_usage_to_db(usage)
+
+        return usage
+
+    def _persist_usage_to_db(self, usage: Dict[str, Any]):
+        """Persist usage record to database (runs in background thread)."""
+        try:
+            from core.database import get_sync_db_session
+            from database.models import ApiUsage
+
+            with get_sync_db_session() as db:
+                record = ApiUsage(
+                    timestamp=datetime.now(),
+                    provider=usage.get("provider", "gemini"),
+                    model=usage.get("model", "unknown"),
+                    operation=usage.get("operation", "unknown"),
+                    prompt_tokens=usage.get("prompt_tokens"),
+                    completion_tokens=usage.get("completion_tokens"),
+                    total_tokens=usage.get("total_tokens"),
+                )
+                db.add(record)
+                # Commit happens automatically via context manager
+            logger.debug(f"[API Usage] Persisted to database: {usage['operation']}")
+        except Exception as e:
+            # Don't fail the main request if logging fails
+            logger.warning(f"Failed to persist API usage to database: {e}")
+
+    def get_last_usage(self) -> Optional[Dict[str, Any]]:
+        """Get the usage metadata from the last API call."""
+        return self.last_usage_metadata
+
+    def get_usage_summary(self, since_hours: int = 24) -> Dict[str, Any]:
+        """
+        Get usage summary for the specified time period.
+
+        Args:
+            since_hours: Number of hours to look back (default 24 for today)
+
+        Returns:
+            Dictionary with usage summary statistics
+        """
+        from datetime import timedelta
+
+        cutoff = datetime.now() - timedelta(hours=since_hours)
+        cutoff_iso = cutoff.isoformat()
+
+        # Filter history to requested time period
+        recent = [u for u in self.token_usage_history if u.get("timestamp", "") >= cutoff_iso]
+
+        total_prompt = sum(u.get("prompt_tokens") or 0 for u in recent)
+        total_completion = sum(u.get("completion_tokens") or 0 for u in recent)
+        total_tokens = sum(u.get("total_tokens") or 0 for u in recent)
+
+        # Group by operation
+        by_operation = {}
+        for u in recent:
+            op = u.get("operation", "unknown")
+            if op not in by_operation:
+                by_operation[op] = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            by_operation[op]["calls"] += 1
+            by_operation[op]["prompt_tokens"] += u.get("prompt_tokens") or 0
+            by_operation[op]["completion_tokens"] += u.get("completion_tokens") or 0
+            by_operation[op]["total_tokens"] += u.get("total_tokens") or 0
+
+        # Group by model
+        by_model = {}
+        for u in recent:
+            model = u.get("model", "unknown")
+            if model not in by_model:
+                by_model[model] = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            by_model[model]["calls"] += 1
+            by_model[model]["prompt_tokens"] += u.get("prompt_tokens") or 0
+            by_model[model]["completion_tokens"] += u.get("completion_tokens") or 0
+            by_model[model]["total_tokens"] += u.get("total_tokens") or 0
+
+        return {
+            "period_hours": since_hours,
+            "total_api_calls": len(recent),
+            "total_prompt_tokens": total_prompt,
+            "total_completion_tokens": total_completion,
+            "total_tokens": total_tokens,
+            "by_operation": by_operation,
+            "by_model": by_model,
+        }
+
+    def clear_usage_history(self):
+        """Clear the token usage history (typically done after persisting to database)."""
+        self.token_usage_history = []
+        logger.info("Token usage history cleared")
 
     def _validate_api_key(self):
         """Validate Google AI API key"""
@@ -1548,6 +1685,10 @@ Be VERY strict - if you see ANY furniture at all, set has_furniture to true."""
                         temperature=0.1,
                     ),
                 )
+                # Extract and log token usage
+                self.extract_usage_metadata(
+                    response, operation="validate_furniture_removed", model_override="gemini-2.5-flash"
+                )
                 return response.text
 
             loop = asyncio.get_event_loop()
@@ -1687,6 +1828,10 @@ FAILURE IS NOT ACCEPTABLE: Every single piece of furniture AND floor covering MU
                                 temperature=0.2,  # Lower temperature for more consistent removal
                             ),
                         )
+                        # Extract and log token usage
+                        self.extract_usage_metadata(
+                            response, operation="remove_furniture", model_override="gemini-3-pro-image-preview"
+                        )
 
                         result_image = None
                         # Handle different response structures from Google AI SDK
@@ -1763,38 +1908,8 @@ FAILURE IS NOT ACCEPTABLE: Every single piece of furniture AND floor covering MU
                             logger.error(f"Furniture removal streaming error on attempt {attempt + 1}: {stream_error}")
 
                     if generated_image:
-                        # Validate that furniture was actually removed
-                        logger.info(f"Validating furniture removal result for attempt {attempt + 1}...")
-                        try:
-                            detection_result = await self.validate_furniture_removed(generated_image)
-                            has_sofa = detection_result.get("has_sofa", False)
-                            has_furniture = detection_result.get("has_furniture", False)
-                            detected_items = detection_result.get("detected_items", [])
-                            confidence = detection_result.get("confidence", 0.0)
-
-                            # If sofa is still detected with high confidence, retry
-                            if has_sofa and confidence > 0.7:
-                                logger.warning(
-                                    f"Furniture still detected after removal (confidence: {confidence}): {detected_items}. "
-                                    f"Retrying with stricter approach..."
-                                )
-                                # Continue to next retry attempt
-                                if attempt < max_retries - 1:
-                                    await asyncio.sleep(2)
-                                    continue
-
-                            # If general furniture is detected but not sofa, log but still return
-                            # (some small items might be acceptable)
-                            if has_furniture and not has_sofa:
-                                logger.info(
-                                    f"Minor furniture items detected but no sofa (confidence: {confidence}): {detected_items}. "
-                                    f"Proceeding with result."
-                                )
-
-                            logger.info(f"Furniture removal validation passed on attempt {attempt + 1}")
-                        except Exception as validation_error:
-                            logger.warning(f"Furniture validation failed, proceeding with result: {validation_error}")
-
+                        # Validation disabled to save tokens - user can retry if removal fails
+                        logger.info(f"Furniture removal successful on attempt {attempt + 1}")
                         return generated_image
 
                     logger.warning(f"Furniture removal attempt {attempt + 1} produced no image")
@@ -1897,6 +2012,8 @@ Everything outside this area must remain IDENTICAL to the input image."""
                         ),
                         timeout=60,
                     )
+                    # Extract and log token usage
+                    self.extract_usage_metadata(response, operation="inpaint_removed_product", model_override=model)
 
                     if response.candidates:
                         for part in response.candidates[0].content.parts:
@@ -2005,6 +2122,8 @@ Everything outside this area must remain IDENTICAL to the input image."""
                         ),
                         timeout=90,
                     )
+                    # Extract and log token usage
+                    self.extract_usage_metadata(response, operation="remove_products_from_visualization", model_override=model)
 
                     if response.candidates:
                         for part in response.candidates[0].content.parts:
@@ -4910,6 +5029,10 @@ YOUR TASK: Generate this room from a COMPLETELY DIFFERENT angle - a STRAIGHT-ON 
                         temperature=0.3,
                     ),
                 )
+                # Extract and log token usage
+                self.extract_usage_metadata(
+                    response, operation="transform_perspective", model_override="gemini-3-pro-image-preview"
+                )
 
                 result_image = None
                 parts = None
@@ -5068,6 +5191,10 @@ DO NOT:
                         response_modalities=["IMAGE"],
                         temperature=0.4,
                     ),
+                )
+                # Extract and log token usage
+                self.extract_usage_metadata(
+                    response, operation="generate_alternate_view", model_override="gemini-3-pro-image-preview"
                 )
 
                 result_image = None

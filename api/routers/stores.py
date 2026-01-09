@@ -131,11 +131,11 @@ async def _fetch_categorized_stores_from_db(db: AsyncSession) -> CategorizedStor
         store_info = StoreInfo(
             name=store.name,
             display_name=store.display_name or store.name.replace("_", " ").title(),
-            budget_tier=store.budget_tier.value if store.budget_tier else None,
+            budget_tier=store.budget_tier if store.budget_tier else None,
         )
         all_stores.append(store_info)
 
-        tier_key = store.budget_tier.value if store.budget_tier else "other"
+        tier_key = store.budget_tier if store.budget_tier else "other"
         if tier_key not in tier_groups:
             tier_groups[tier_key] = []
         tier_groups[tier_key].append(store_info)

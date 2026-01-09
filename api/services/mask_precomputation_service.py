@@ -1,6 +1,10 @@
 """
 Background mask pre-computation service for Edit Position optimization.
 
+NOTE: This service is DISABLED as SAM segmentation is not currently used.
+The mask pre-computation feature has been deprecated along with the Magic Grab workflow.
+All methods in this service are no-ops and will not perform any actual computation.
+
 This service pre-computes segmentation masks after each visualization completes,
 so when users click "Edit Position", the masks are already available for instant retrieval.
 """
@@ -58,7 +62,14 @@ class MaskPrecomputationService:
         """
         Create a pending precomputation job and return job ID.
         Does NOT wait for completion - returns immediately.
+
+        NOTE: DISABLED - SAM segmentation is not used. Returns None immediately.
         """
+        # SAM-based mask precomputation is disabled
+        logger.debug(f"[Precompute] Skipping precomputation (disabled) for session {session_id[:8]}...")
+        return None
+
+        # Original implementation (disabled):
         viz_hash = compute_visualization_hash(visualization_image)
         prod_hash = compute_product_hash(products)
 
@@ -317,7 +328,13 @@ class MaskPrecomputationService:
         """
         Check if we have valid pre-computed masks.
         Returns None if not found or not ready.
+
+        NOTE: DISABLED - SAM segmentation is not used. Returns None immediately.
         """
+        # SAM-based mask caching is disabled
+        return None
+
+        # Original implementation (disabled):
         viz_hash = compute_visualization_hash(visualization_image)
         prod_hash = compute_product_hash(products)
 
@@ -461,7 +478,14 @@ class MaskPrecomputationService:
         """
         Create a pending precomputation job for a curated look.
         Does NOT wait for completion - returns immediately.
+
+        NOTE: DISABLED - SAM segmentation is not used. Returns None immediately.
         """
+        # SAM-based mask precomputation is disabled
+        logger.debug(f"[Precompute] Skipping precomputation (disabled) for curated look {curated_look_id}")
+        return None
+
+        # Original implementation (disabled):
         viz_hash = compute_visualization_hash(visualization_image)
         prod_hash = compute_product_hash(products)
 

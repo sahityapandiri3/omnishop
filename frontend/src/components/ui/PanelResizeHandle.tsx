@@ -8,26 +8,17 @@ interface PanelResizeHandleProps {
 
 /**
  * Styled vertical resize handle for panel layout.
- * Single line that highlights purple on hover.
+ * Wide hit area (8px) for easy grabbing, with visible line in center.
  */
 export function PanelResizeHandle({ id }: PanelResizeHandleProps) {
   return (
     <Separator
       id={id}
+      className="hover:bg-purple-100 active:bg-purple-200 transition-colors"
       style={{
-        width: '1px',
-        backgroundColor: '#e5e5e5',
-        border: 'none',
-        outline: 'none',
-        boxShadow: 'none',
+        width: '8px',
+        background: 'linear-gradient(to right, transparent 3px, #d1d5db 3px, #d1d5db 5px, transparent 5px)',
         cursor: 'col-resize',
-        transition: 'background-color 150ms',
-      }}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLElement).style.backgroundColor = '#a855f7';
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLElement).style.backgroundColor = '#e5e5e5';
       }}
     />
   );

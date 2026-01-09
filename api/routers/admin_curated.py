@@ -49,13 +49,13 @@ def calculate_budget_tier(total_price: float) -> str:
     - Luxury: ₹15L+ (>= 1,500,000)
     """
     if total_price < 200000:
-        return BudgetTier.POCKET_FRIENDLY.value
+        return "pocket_friendly"
     elif total_price < 800000:
-        return BudgetTier.MID_TIER.value
+        return "mid_tier"
     elif total_price < 1500000:
-        return BudgetTier.PREMIUM.value
+        return "premium"
     else:
-        return BudgetTier.LUXURY.value
+        return "luxury"
 
 
 logger = logging.getLogger(__name__)
@@ -153,6 +153,10 @@ SEARCH_SYNONYMS = {
     "lights": ["light", "lighting", "chandelier", "pendant light"],
     "chandelier": ["chandelier", "pendant light", "ceiling light"],
     "table": ["table", "desk"],
+    # Center/Centre table synonyms (American vs British spelling)
+    "center": ["center", "centre"],
+    "centre": ["centre", "center"],
+    "coffee": ["coffee", "center", "centre"],  # Coffee tables are similar to center tables
     "tables": ["table", "desk"],
     "desk": ["table", "desk"],
     "desks": ["table", "desk"],
@@ -414,7 +418,7 @@ async def fetch_curated_look_with_products(look_id: int, db: AsyncSession) -> Cu
         room_image=look.room_image,
         visualization_image=look.visualization_image,
         total_price=look.total_price or 0,
-        budget_tier=look.budget_tier.value if look.budget_tier else None,
+        budget_tier=look.budget_tier if look.budget_tier else None,
         is_published=look.is_published,
         display_order=look.display_order or 0,
         products=products,
@@ -811,7 +815,7 @@ async def list_curated_looks(
                 room_type=look.room_type,
                 visualization_image=look.visualization_image,
                 total_price=look.total_price or 0,
-                budget_tier=look.budget_tier.value if look.budget_tier else None,
+                budget_tier=look.budget_tier if look.budget_tier else None,
                 is_published=look.is_published,
                 display_order=look.display_order or 0,
                 product_count=len(look.products) if look.products else 0,

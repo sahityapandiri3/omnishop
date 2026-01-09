@@ -5,8 +5,9 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import ChatPanel from '@/components/panels/ChatPanel';
 import ProductDiscoveryPanel from '@/components/panels/ProductDiscoveryPanel';
 import CanvasPanel from '@/components/panels/CanvasPanel';
+import { ProductDetailModal } from '@/components/ProductDetailModal';
 import { ResizablePanelLayout } from '@/components/panels/ResizablePanelLayout';
-import { checkFurnitureRemovalStatus, startFurnitureRemoval, getCategorizedStores, projectsAPI, restoreDesignStateFromRecovery, CategorizedStoresResponse, StoreCategory } from '@/utils/api';
+import { checkFurnitureRemovalStatus, startFurnitureRemoval, getCategorizedStores, projectsAPI, restoreDesignStateFromRecovery, CategorizedStoresResponse, StoreCategory, imageAPI } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigationGuard } from '@/hooks/useNavigationGuard';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
@@ -46,6 +47,9 @@ function DesignPageContent() {
   const [showStoreModal, setShowStoreModal] = useState(false);
   const [availableStores, setAvailableStores] = useState<string[]>([]);
   const [storeCategories, setStoreCategories] = useState<StoreCategory[]>([]);
+
+  // Product detail modal state
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
 
   // Project state (for logged-in users)
   const searchParams = useSearchParams();
@@ -1179,7 +1183,7 @@ function DesignPageContent() {
   // Handle room image upload with furniture removal
   const handleRoomImageUpload = async (imageData: string) => {
     try {
-      console.log('[DesignPage] Starting furniture removal for uploaded image...');
+      console.log('[DesignPage] Starting room image upload and analysis...');
 
       // IMPORTANT: Clear any existing furniture removal job to prevent infinite loop
       const existingJobId = sessionStorage.getItem('furnitureRemovalJobId');
@@ -1189,6 +1193,22 @@ function DesignPageContent() {
       }
 
       setIsProcessingFurniture(true);
+      setProcessingStatus('Analyzing room...');
+
+      // OPTIMIZATION: Upload image and perform room analysis FIRST
+      // This caches room analysis (camera view, dimensions, furniture detection) in the Project table
+      // Saves 4-13 seconds per subsequent visualization by avoiding redundant Gemini calls
+      if (projectId) {
+        try {
+          console.log('[DesignPage] Uploading room image for analysis with project_id:', projectId);
+          const uploadResponse = await imageAPI.uploadRoomImageFromBase64(imageData, projectId);
+          console.log('[DesignPage] Room analysis complete:', uploadResponse.room_analysis?.room_type);
+        } catch (uploadError) {
+          // Log but don't fail - room analysis caching is an optimization, not critical
+          console.warn('[DesignPage] Room analysis upload failed (non-critical):', uploadError);
+        }
+      }
+
       setProcessingStatus('Removing existing furniture from your room...');
 
       // Start async furniture removal
@@ -1599,11 +1619,13 @@ function DesignPageContent() {
                 onClearCanvas={handleClearCanvas}
                 onRoomImageUpload={handleRoomImageUpload}
                 onSetProducts={setCanvasProducts}
+                onViewProductDetails={setSelectedProduct}
                 initialVisualizationImage={initialVisualizationImage}
                 initialVisualizationHistory={visualizationHistory}
                 onVisualizationHistoryChange={setVisualizationHistory}
                 onVisualizationImageChange={setInitialVisualizationImage}
                 isProcessingFurniture={isProcessingFurniture}
+                projectId={projectId}
               />
             }
           />
@@ -1647,15 +1669,32 @@ function DesignPageContent() {
               onClearCanvas={handleClearCanvas}
               onRoomImageUpload={handleRoomImageUpload}
               onSetProducts={setCanvasProducts}
+              onViewProductDetails={setSelectedProduct}
               initialVisualizationImage={initialVisualizationImage}
               initialVisualizationHistory={visualizationHistory}
               onVisualizationHistoryChange={setVisualizationHistory}
               onVisualizationImageChange={setInitialVisualizationImage}
               isProcessingFurniture={isProcessingFurniture}
+              projectId={projectId}
             />
           </div>
         </div>
       </div>
+
+      {/* Product Detail Modal */}
+      {selectedProduct && (
+        <ProductDetailModal
+          product={selectedProduct}
+          isOpen={true}
+          onClose={() => setSelectedProduct(null)}
+          onAddToCanvas={() => {
+            handleAddToCanvas(selectedProduct);
+            setSelectedProduct(null);
+          }}
+          inCanvas={canvasProducts.some(p => p.id?.toString() === selectedProduct.id?.toString())}
+          canvasQuantity={canvasProducts.find(p => p.id?.toString() === selectedProduct.id?.toString())?.quantity || 0}
+        />
+      )}
 
       {/* Store Selection Modal */}
       {showStoreModal && (

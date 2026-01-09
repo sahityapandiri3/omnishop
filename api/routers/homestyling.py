@@ -74,7 +74,7 @@ async def create_session(
             room_type=request.room_type.value if request.room_type else None,
             style=request.style.value if request.style else None,
             color_palette=[c.value for c in request.color_palette] if request.color_palette else [],
-            budget_tier=BudgetTierModel(request.budget_tier.value) if request.budget_tier else None,
+            budget_tier=request.budget_tier.value if request.budget_tier else None,
             status=HomeStylingSessionStatus.PREFERENCES,
         )
         db.add(session)
@@ -89,7 +89,7 @@ async def create_session(
             room_type=session.room_type,
             style=session.style,
             color_palette=session.color_palette or [],
-            budget_tier=session.budget_tier.value if session.budget_tier else None,
+            budget_tier=session.budget_tier if session.budget_tier else None,
             original_room_image=None,  # Don't return large images in list responses
             clean_room_image=None,
             selected_tier=session.selected_tier.value if session.selected_tier else None,
@@ -176,7 +176,7 @@ async def get_session(
             room_type=session.room_type,
             style=session.style,
             color_palette=session.color_palette or [],
-            budget_tier=session.budget_tier.value if session.budget_tier else None,
+            budget_tier=session.budget_tier if session.budget_tier else None,
             original_room_image=session.original_room_image if include_images else None,
             clean_room_image=session.clean_room_image if include_images else None,
             selected_tier=session.selected_tier.value if session.selected_tier else None,
@@ -217,7 +217,7 @@ async def update_preferences(
         if request.color_palette is not None:
             session.color_palette = [c.value for c in request.color_palette]
         if request.budget_tier is not None:
-            session.budget_tier = BudgetTierModel(request.budget_tier.value)
+            session.budget_tier = request.budget_tier.value
 
         await db.commit()
         await db.refresh(session)
@@ -230,7 +230,7 @@ async def update_preferences(
             room_type=session.room_type,
             style=session.style,
             color_palette=session.color_palette or [],
-            budget_tier=session.budget_tier.value if session.budget_tier else None,
+            budget_tier=session.budget_tier if session.budget_tier else None,
             original_room_image=None,
             clean_room_image=None,
             selected_tier=session.selected_tier.value if session.selected_tier else None,
@@ -427,7 +427,7 @@ async def generate_views(
         # Find matching curated looks WITH their products
         # STRICT style matching - only get looks that have the user's selected style
         # Also filter by budget tier if set
-        budget_filter_msg = f", budget_tier='{session.budget_tier.value}'" if session.budget_tier else ""
+        budget_filter_msg = f", budget_tier='{session.budget_tier}'" if session.budget_tier else ""
         logger.info(f"Finding curated looks for room_type='{session.room_type}', style='{session.style}'{budget_filter_msg}")
 
         looks_query = (
@@ -439,7 +439,7 @@ async def generate_views(
 
         # Filter by budget tier if user has set one
         if session.budget_tier:
-            looks_query = looks_query.where(CuratedLook.budget_tier == session.budget_tier.value)
+            looks_query = looks_query.where(CuratedLook.budget_tier == session.budget_tier)
 
         looks_query = (
             looks_query.options(
@@ -457,7 +457,7 @@ async def generate_views(
         if not looks:
             session.status = HomeStylingSessionStatus.FAILED
             await db.commit()
-            budget_msg = f" and {session.budget_tier.value} budget" if session.budget_tier else ""
+            budget_msg = f" and {session.budget_tier} budget" if session.budget_tier else ""
             raise HTTPException(
                 status_code=404,
                 detail=f"No curated looks found for {session.room_type} with {session.style} style{budget_msg}",
