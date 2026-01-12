@@ -31,6 +31,19 @@ const isBase64Image = (src: string | null | undefined): boolean => {
   return src.startsWith('data:') || src.startsWith('/9j/') || src.startsWith('iVBOR');
 };
 
+// Helper function to extract dimensions from product attributes
+const extractDimensions = (attrs?: Array<{ attribute_name: string; attribute_value: string }>) => {
+  if (!attrs) return undefined;
+  const dimensions: { width?: string; height?: string; depth?: string } = {};
+  for (const attr of attrs) {
+    if (attr.attribute_name === 'width') dimensions.width = attr.attribute_value;
+    else if (attr.attribute_name === 'height') dimensions.height = attr.attribute_value;
+    else if (attr.attribute_name === 'depth') dimensions.depth = attr.attribute_value;
+  }
+  // Only return if at least one dimension exists
+  return (dimensions.width || dimensions.height || dimensions.depth) ? dimensions : undefined;
+};
+
 interface ProductAttribute {
   attribute_name: string;
   attribute_value: string;
@@ -656,19 +669,6 @@ export default function CanvasPanel({
         productsToVisualize = products;
         console.log(`[CanvasPanel] Initial visualization: visualizing all products (using ${cleanRoomImage ? 'clean room' : 'room image'})`);
       }
-
-      // Helper function to extract dimensions from product attributes
-      const extractDimensions = (attrs?: ProductAttribute[]) => {
-        if (!attrs) return undefined;
-        const dimensions: { width?: string; height?: string; depth?: string } = {};
-        for (const attr of attrs) {
-          if (attr.attribute_name === 'width') dimensions.width = attr.attribute_value;
-          else if (attr.attribute_name === 'height') dimensions.height = attr.attribute_value;
-          else if (attr.attribute_name === 'depth') dimensions.depth = attr.attribute_value;
-        }
-        // Only return if at least one dimension exists
-        return (dimensions.width || dimensions.height || dimensions.depth) ? dimensions : undefined;
-      };
 
       // Helper function to format product for API
       const formatProductForApi = (p: Product) => ({
