@@ -128,6 +128,20 @@ def normalize_singular_plural(word: str) -> list:
     return list(set(forms))  # Remove duplicates
 
 
+# Exclusion dictionary - when searching for key, exclude products containing these terms
+# This prevents "center table" search from returning "dining table" etc.
+SEARCH_EXCLUSIONS = {
+    "center table": ["dining", "console", "side table", "end table", "nightstand"],
+    "centre table": ["dining", "console", "side table", "end table", "nightstand"],
+    "coffee table": ["dining", "console", "side table", "end table", "nightstand"],
+    "dining table": ["center", "centre", "coffee", "side table", "end table", "console"],
+    "side table": ["dining", "center", "centre", "coffee"],
+    "end table": ["dining", "center", "centre", "coffee"],
+    "console table": ["dining", "center", "centre", "coffee", "side table"],
+    "nightstand": ["dining", "center", "centre", "coffee", "console"],
+    "bedside table": ["dining", "center", "centre", "coffee", "console"],
+}
+
 # Synonym dictionary for search terms - maps search term to list of synonyms
 SEARCH_SYNONYMS = {
     "carpet": ["rug", "carpet", "runner", "mat", "floor covering"],
@@ -290,6 +304,37 @@ def expand_search_query_grouped(query: str) -> List[List[str]]:
 
     logger.info(f"Multi-word query '{query}' grouped to: {groups}")
     return groups
+
+
+def get_exclusion_terms(query: str) -> List[str]:
+    """Get list of terms to exclude from search results based on query.
+
+    Example: "center table" -> ["dining", "console", "side table", "end table", "nightstand"]
+    """
+    query_lower = query.lower().strip()
+
+    # Check for exact match first
+    if query_lower in SEARCH_EXCLUSIONS:
+        return SEARCH_EXCLUSIONS[query_lower]
+
+    # Check if query contains any exclusion key
+    for key, exclusions in SEARCH_EXCLUSIONS.items():
+        if key in query_lower:
+            return exclusions
+
+    return []
+
+
+def should_exclude_product(product_name: str, exclusion_terms: List[str]) -> bool:
+    """Check if a product should be excluded based on exclusion terms."""
+    if not exclusion_terms:
+        return False
+
+    name_lower = product_name.lower()
+    for term in exclusion_terms:
+        if term.lower() in name_lower:
+            return True
+    return False
 
 
 async def semantic_search_products(
@@ -617,6 +662,11 @@ async def search_products_for_look(
         semantic_scores: Dict[int, float] = {}
         seen_product_ids = set()
 
+        # Get exclusion terms for the query (e.g., "center table" excludes "dining")
+        exclusion_terms = get_exclusion_terms(query) if query else []
+        if exclusion_terms:
+            logger.info(f"[SEARCH] Exclusion terms for '{query}': {exclusion_terms}")
+
         # Helper: Check if product name matches ALL search groups (for primary match)
         def name_matches_all_groups(product_name: str, groups: List[List[str]]) -> bool:
             """Check if product name contains at least one term from EACH group."""
@@ -650,27 +700,52 @@ async def search_products_for_look(
             semantic_threshold = 0.3
             semantic_sorted = sorted(semantic_product_ids.items(), key=lambda x: x[1], reverse=True)
 
-            # Get the set of keyword-matching product IDs
+            # Get the set of keyword-matching product IDs and names
             keyword_product_ids = {p.id for p in keyword_products}
+            keyword_product_names = {p.id: p.name for p in keyword_products}
 
+            # If we have exclusion terms, we need to fetch names for semantic-only products
+            semantic_only_names = {}
+            if exclusion_terms:
+                semantic_only_ids = [pid for pid, _ in semantic_sorted if pid not in keyword_product_ids]
+                if semantic_only_ids:
+                    names_query = select(Product.id, Product.name).where(Product.id.in_(semantic_only_ids))
+                    names_result = await db.execute(names_query)
+                    semantic_only_names = {row[0]: row[1] for row in names_result.fetchall()}
+
+            excluded_count = 0
             for product_id, similarity in semantic_sorted:
                 if similarity >= semantic_threshold:
                     # Only include semantic results that also match keyword search
                     # OR have very high similarity (>= 0.5) for genuine semantic matches
                     if product_id in keyword_product_ids or similarity >= 0.5:
+                        # Check exclusion terms
+                        product_name = keyword_product_names.get(product_id) or semantic_only_names.get(product_id, "")
+                        if exclusion_terms and should_exclude_product(product_name, exclusion_terms):
+                            excluded_count += 1
+                            continue
+
                         ordered_product_ids.append(product_id)
                         semantic_scores[product_id] = similarity
                         seen_product_ids.add(product_id)
 
             logger.info(
-                f"[SEARCH] Added {len(seen_product_ids)} semantic results (threshold={semantic_threshold}, keyword-filtered)"
+                f"[SEARCH] Added {len(seen_product_ids)} semantic results (threshold={semantic_threshold}, keyword-filtered, {excluded_count} excluded)"
             )
 
         # Add keyword-only results (products without embeddings or below semantic threshold)
+        excluded_keyword_count = 0
         for p in keyword_products:
             if p.id not in seen_product_ids:
+                # Check exclusion terms
+                if exclusion_terms and should_exclude_product(p.name, exclusion_terms):
+                    excluded_keyword_count += 1
+                    continue
                 ordered_product_ids.append(p.id)
                 seen_product_ids.add(p.id)
+
+        if excluded_keyword_count > 0:
+            logger.info(f"[SEARCH] Excluded {excluded_keyword_count} keyword results due to exclusion terms")
 
         total_results = len(ordered_product_ids)
 

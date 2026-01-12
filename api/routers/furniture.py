@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 from services.furniture_removal_service import furniture_removal_service
-from services.google_ai_service import google_ai_service
+from services.google_ai_service import generate_workflow_id, google_ai_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()  # No prefix here - it's added in main.py
@@ -32,60 +32,37 @@ class FurnitureStatusResponse(BaseModel):
     job_id: str
     status: str
     image: Optional[str] = None  # Only present when completed or failed
+    room_analysis: Optional[dict] = None  # Room analysis JSON (style, type, dimensions, etc.)
 
 
-async def process_furniture_removal(job_id: str, image: str) -> None:
+async def process_furniture_removal(job_id: str, image: str, workflow_id: str = None) -> None:
     """
     Background task for furniture removal and perspective transformation.
 
-    Process order:
-    1. Analyze ORIGINAL image for perspective (original has clear furniture cues)
-    2. Transform to front view if needed (before furniture removal)
-    3. Remove furniture from the (possibly transformed) image
+    The remove_furniture function performs 2 Gemini calls:
+    1. analyze_room_image (JSON) - detect viewing angle + room style/type/dimensions
+    2. remove_furniture (IMAGE) - removes furniture + transforms to front view + straightens lines
+
+    Args:
+        job_id: Job identifier for tracking
+        image: Base64 encoded image
+        workflow_id: Workflow ID for tracking all API calls from this user action
     """
     try:
-        logger.info(f"Starting image processing for job {job_id}")
+        logger.info(f"Starting furniture removal for job {job_id}, workflow {workflow_id}")
         furniture_removal_service.update_job(job_id, "processing")
 
-        image_to_process = image
+        # Remove furniture - returns dict with 'image' and 'room_analysis'
+        result = await google_ai_service.remove_furniture(image, max_retries=5, workflow_id=workflow_id)
 
-        # Step 1: Analyze ORIGINAL image for perspective (before furniture removal)
-        # Original image has furniture which provides better perspective cues
-        try:
-            logger.info(f"Step 1: Analyzing original image perspective for job {job_id}...")
-            room_analysis = await google_ai_service.analyze_room_image(image)
-
-            # Check viewing angle from room analysis
-            camera_view = getattr(room_analysis, "camera_view_analysis", {}) or {}
-            viewing_angle = camera_view.get("viewing_angle", "straight_on")
-
-            # Log the full camera_view_analysis for debugging
-            logger.info(f"Room analysis camera_view for job {job_id}: {camera_view}")
-            logger.info(f"Detected viewing_angle for job {job_id}: '{viewing_angle}'")
-
-            # Step 2: Transform perspective if not straight-on
-            if viewing_angle and viewing_angle != "straight_on":
-                logger.info(f"Step 2: Detected {viewing_angle} angle - transforming to front view for job {job_id}")
-                transformed_image = await google_ai_service.transform_perspective_to_front(image, viewing_angle)
-                if transformed_image and transformed_image != image:
-                    image_to_process = transformed_image
-                    logger.info(f"Successfully transformed perspective to front view for job {job_id}")
-                else:
-                    logger.info(f"Perspective transformation returned same image for job {job_id}")
-            else:
-                logger.info(f"Image already has straight-on perspective for job {job_id}")
-        except Exception as perspective_error:
-            # Don't fail the whole job if perspective transformation fails
-            logger.warning(f"Perspective analysis/transformation failed for job {job_id}, continuing: {perspective_error}")
-
-        # Step 3: Remove furniture from the (possibly transformed) image
-        logger.info(f"Step 3: Removing furniture for job {job_id}...")
-        processed_image = await google_ai_service.remove_furniture(image_to_process, max_retries=5)
-
-        if processed_image:
-            # Success - cache and update job
-            logger.info(f"Image processing completed successfully for job {job_id}")
-            furniture_removal_service.update_job(job_id, "completed", processed_image)
+        if result and result.get("image"):
+            # Success - cache and update job with both image and room_analysis
+            processed_image = result["image"]
+            room_analysis = result.get("room_analysis")
+            logger.info(
+                f"Image processing completed successfully for job {job_id}, style={room_analysis.get('style_assessment') if room_analysis else 'unknown'}"
+            )
+            furniture_removal_service.update_job(job_id, "completed", processed_image, room_analysis)
             furniture_removal_service.cache_result(image, processed_image)
         else:
             # Failed after all retries
@@ -104,7 +81,9 @@ async def start_furniture_removal(request: FurnitureRemovalRequest, background_t
     Returns job_id immediately for polling
     """
     try:
-        logger.info("Received furniture removal request")
+        # Generate workflow_id to track all API calls from this user action
+        workflow_id = generate_workflow_id()
+        logger.info(f"Received furniture removal request, workflow_id={workflow_id}")
 
         # Create job (checks cache automatically)
         job_id = furniture_removal_service.create_job(request.image)
@@ -119,9 +98,9 @@ async def start_furniture_removal(request: FurnitureRemovalRequest, background_t
             logger.info(f"Cache hit for furniture removal job {job_id}")
             return FurnitureRemovalResponse(job_id=job_id, status="completed")
 
-        # Start background processing
-        background_tasks.add_task(process_furniture_removal, job_id, request.image)
-        logger.info(f"Started background furniture removal processing for job {job_id}")
+        # Start background processing with workflow_id
+        background_tasks.add_task(process_furniture_removal, job_id, request.image, workflow_id)
+        logger.info(f"Started background furniture removal processing for job {job_id}, workflow {workflow_id}")
 
         return FurnitureRemovalResponse(job_id=job_id, status="pending")
 
@@ -134,7 +113,7 @@ async def start_furniture_removal(request: FurnitureRemovalRequest, background_t
 async def get_furniture_removal_status(job_id: str):
     """
     Check status of furniture removal job
-    Returns processed image when completed, original image when failed
+    Returns processed image and room_analysis when completed, original image when failed
     """
     try:
         job = furniture_removal_service.get_job(job_id)
@@ -146,6 +125,7 @@ async def get_furniture_removal_status(job_id: str):
 
         if job.status == "completed" and job.processed_image:
             response.image = job.processed_image
+            response.room_analysis = job.room_analysis  # Include room analysis (style, type, dimensions, etc.)
         elif job.status == "failed":
             # Fallback to original image on failure
             response.image = job.original_image

@@ -216,7 +216,9 @@ function AdminCuratedLooksContent() {
                   <Link href={`/admin/curated/${look.id}`} className="block hover:text-purple-600 transition-colors">
                     <h3 className="font-semibold text-gray-900 text-base mb-0.5 line-clamp-1">{look.title}</h3>
                   </Link>
-                  <p className="text-xs text-gray-600 mb-2 line-clamp-1">{look.style_theme}</p>
+                  {look.style_theme && (
+                    <p className="text-xs text-gray-500 mb-2">{look.style_theme}</p>
+                  )}
 
                   <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
                     <span>{look.product_count} products</span>

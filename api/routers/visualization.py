@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from schemas.chat import ChatMessageSchema
 from services.api_usage_service import log_gemini_usage
 from services.chatgpt_service import chatgpt_service
-from services.google_ai_service import google_ai_service
+from services.google_ai_service import generate_workflow_id, google_ai_service
 from services.ml_recommendation_model import ml_recommendation_model
 from services.recommendation_engine import RecommendationRequest, recommendation_engine
 from sqlalchemy import update

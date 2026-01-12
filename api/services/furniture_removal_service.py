@@ -21,6 +21,7 @@ class FurnitureRemovalJob:
     status: str  # pending, processing, completed, failed
     original_image: str
     processed_image: Optional[str] = None
+    room_analysis: Optional[Dict] = None  # Room analysis JSON from analyze_room_image
     retries: int = 0
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
@@ -75,12 +76,16 @@ class FurnitureRemovalService:
         """Get job by ID"""
         return self.jobs.get(job_id)
 
-    def update_job(self, job_id: str, status: str, processed_image: Optional[str] = None) -> None:
-        """Update job status and optionally processed image"""
+    def update_job(
+        self, job_id: str, status: str, processed_image: Optional[str] = None, room_analysis: Optional[Dict] = None
+    ) -> None:
+        """Update job status and optionally processed image and room analysis"""
         if job_id in self.jobs:
             self.jobs[job_id].status = status
             if processed_image:
                 self.jobs[job_id].processed_image = processed_image
+            if room_analysis:
+                self.jobs[job_id].room_analysis = room_analysis
             self.jobs[job_id].updated_at = datetime.utcnow()
 
     def increment_retries(self, job_id: str) -> None:

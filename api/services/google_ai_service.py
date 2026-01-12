@@ -8,9 +8,24 @@ import json
 import logging
 import random
 import time
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+
+
+def generate_workflow_id() -> str:
+    """
+    Generate a unique workflow ID for tracking all API calls from a single user action.
+
+    Use this at the start of a user-initiated flow (e.g., button click) and pass it
+    through all subsequent API calls to track the complete workflow.
+
+    Returns:
+        A unique workflow ID string (UUID4 format)
+    """
+    return str(uuid.uuid4())
+
 
 import aiohttp
 from google import genai
@@ -133,19 +148,16 @@ class VisualizationPrompts:
     def get_room_preservation_rules() -> str:
         """Room preservation rules used by ALL workflows."""
         return """
-═══════════════════════════════════════════════════════════════
-🏠 ROOM PRESERVATION RULES (MANDATORY FOR ALL OPERATIONS)
-═══════════════════════════════════════════════════════════════
-
-1. OUTPUT DIMENSIONS: Must EXACTLY match input image dimensions (pixel-for-pixel)
-2. ASPECT RATIO: Preserve exactly - no cropping, no letterboxing
-3. CAMERA ANGLE: Maintain identical viewing angle and perspective
-4. WALLS & FLOORS: Keep EXACT same colors, textures, and materials
-5. ARCHITECTURAL FEATURES: Preserve all windows, doors, columns, moldings
-6. LIGHTING: Match existing room lighting conditions
-7. EXISTING FURNITURE (unless explicitly removing): Keep in EXACT same position, size, color
-8. NO ZOOM: Never zoom in or crop - show full room view
-9. NO ADDITIONS: Never add furniture not explicitly requested
+ROOM PRESERVATION RULES (MANDATORY):
+1. OUTPUT DIMENSIONS: Match input exactly (pixel-for-pixel)
+2. ASPECT RATIO: No cropping or letterboxing
+3. CAMERA ANGLE: Same viewing angle and perspective
+4. WALLS & FLOORS: Same colors, textures, materials
+5. ARCHITECTURAL FEATURES: Preserve windows, doors, columns, moldings
+6. LIGHTING: Match existing room lighting
+7. EXISTING FURNITURE: Keep in exact same position, size, color (unless removing)
+8. NO ZOOM: Show full room view
+9. NO ADDITIONS: Only add explicitly requested furniture
 10. PHOTOREALISM: Output must look like a real photograph
 """
 
@@ -153,105 +165,59 @@ class VisualizationPrompts:
     def get_placement_guidelines() -> str:
         """Product-type specific placement rules."""
         return """
-═══════════════════════════════════════════════════════════════
-📐 PLACEMENT GUIDELINES BY PRODUCT TYPE
-═══════════════════════════════════════════════════════════════
+PLACEMENT GUIDELINES BY PRODUCT TYPE:
 
-🪑 SOFAS:
-- Place DIRECTLY AGAINST the wall with MINIMAL GAP (2-4 inches max)
-- Position as the main seating piece, centered on the wall
+SOFAS: Against wall with minimal gap (2-4 inches), centered
 
-🪑 CHAIRS (accent, armchair, dining, recliner):
-- Position on sides of existing sofa (if present), angled for conversation
-- Maintain 18-30 inches spacing from sofa
-- If no sofa, place along a wall or in natural seating position
+CHAIRS: On sides of sofa angled for conversation, 18-30 inches spacing
 
-🔲 CENTER TABLE / COFFEE TABLE:
-- Place DIRECTLY IN FRONT OF the sofa or seating area
-- Centered in the "coffee table zone" (14-18 inches from sofa)
+CENTER/COFFEE TABLE: In front of sofa, 14-18 inches from seating
 
-🔲 OTTOMAN:
-- Place IN FRONT OF the sofa, 14-18 inches from sofa's front edge
-- Used as footrest or extra seating, NOT as sofa replacement
+OTTOMAN: In front of sofa, 14-18 inches from front edge
 
-🔲 SIDE TABLE / END TABLE:
-- Place DIRECTLY ADJACENT to sofa's SIDE (at the armrest)
-- Must be FLUSH with sofa's side, at ARM'S REACH from seated person
+SIDE/END TABLE: Adjacent to sofa armrest, at arm's reach
 
-🔲 CONSOLE TABLE / ENTRYWAY TABLE:
-- Place AGAINST AN EMPTY WALL (not in seating area)
-- Typical placement: behind sofa, in entryways, hallways
-- NEVER removes or replaces seating furniture
+CONSOLE TABLE: Against empty wall, behind sofa or in entryways
 
-📦 STORAGE UNITS / CABINETS / BOOKSHELVES / BAR COUNTERS:
-- Place DIRECTLY AGAINST A WALL with back touching the wall
-- Ensure NO OBSTRUCTIONS in front (maintain 36+ inches clearance)
-- Do not obstruct pathways or block other furniture
-- Bar counters should have open space in front for stools/standing
+STORAGE/CABINETS/BOOKSHELVES: Against wall, 36+ inches clearance in front
 
-🪟 CURTAINS / DRAPES / WINDOW TREATMENTS:
-- Apply ONLY to VISIBLE WINDOWS in the room
-- Curtains should hang from above window frame to floor or sill
-- Width should cover window plus 4-8 inches on each side
-- Match curtain style to room aesthetic
+CURTAINS: On visible windows, above frame to floor/sill
 
-💡 LAMPS:
-- Table lamps: on existing tables (side, console, nightstand)
-- Floor lamps: in corners or beside seating
+LAMPS: Table lamps on tables, floor lamps in corners
 
-🛏️ BEDS:
-- Place against a wall (headboard against wall)
+BEDS: Headboard against wall
 
-🪴 FLOOR PLANTERS / TALL PLANTS:
-- Place in FAR CORNERS, next to furniture, or tucked beside items
-- Should occupy LESS than 5-10% of visible image area
-- Keep proportionally SMALL (2-3 feet tall MAX)
+PLANTERS: Far corners, small (less than 5-10% of image)
 
-🛋️ CUSHIONS / PILLOWS:
-- Place DIRECTLY ON the sofa/chair (on seat or against backrest)
-- Arrange naturally - slightly angled, varied positions
+CUSHIONS/PILLOWS: On sofa/chair seat or backrest
 
-🧶 THROWS / BLANKETS:
-- Drape over arm of sofa/chair OR fold on seat
-- Furniture underneath must NOT move
+THROWS: Draped over arm or folded on seat
 
-💐 TABLETOP DECOR (vases, flowers, decorative objects):
-- Place ON table surfaces (coffee, side, console, dining tables)
-- Preferred surfaces: coffee table → side table → console → shelf
+TABLETOP DECOR: On coffee table, side table, or console
 
-🗿 SCULPTURES / FIGURINES:
-- FIRST: Place on CENTER TABLE / COFFEE TABLE
-- SECOND: Side table if center table full
-- THIRD: Console table, shelf, or mantel
-
-🖼️ WALL ART / MIRRORS:
-- Mount on walls at appropriate eye level
-- Add alongside existing art (gallery style), don't replace
+WALL ART/MIRRORS: At eye level, alongside existing art
 """
 
     @staticmethod
     def get_product_accuracy_rules() -> str:
         """Rules for accurate product reproduction."""
         return """
-═══════════════════════════════════════════════════════════════
-🎯 PRODUCT ACCURACY REQUIREMENTS
-═══════════════════════════════════════════════════════════════
+PRODUCT ACCURACY REQUIREMENTS:
 
-⚠️ CRITICAL: Products in output MUST match reference images EXACTLY
+CRITICAL: Products must match reference images EXACTLY
 
-✅ MUST DO:
-- Copy EXACT appearance from product reference image
+MUST DO:
+- Copy exact appearance from reference image
 - Match exact color, pattern, texture, material
 - Preserve product proportions and dimensions
-- Show product's FRONT FACE towards camera
-- Scale products according to their PHYSICAL DIMENSIONS provided
+- Show product's front face towards camera
+- Scale according to provided dimensions
 
-❌ MUST NOT:
-- Generate a "similar" or "inspired by" version
-- Change colors to "match the room better"
+MUST NOT:
+- Generate "similar" or "inspired by" versions
+- Change colors to match room
 - Alter product design or style
 - Show product from back or side
-- Ignore provided dimensions
 """
 
     @staticmethod
@@ -400,11 +366,12 @@ YOUR TASK:
             products_to_remove: Products being removed (with name, quantity, dimensions)
             remaining_products: Products that should stay (with dimensions for reference)
         """
-        # Format removal list
+        # Format removal list with furniture type for better identification
         removal_lines = []
         for product in products_to_remove:
             name = product.get("full_name") or product.get("name", "furniture item")
             qty = product.get("quantity", 1)
+            furniture_type = product.get("furniture_type", "").replace("_", " ")
             dims = product.get("dimensions", {})
             dim_str = ""
             if dims:
@@ -415,64 +382,86 @@ YOUR TASK:
                     dim_parts.append(f'{dims["depth"]}" D')
                 if dims.get("height"):
                     dim_parts.append(f'{dims["height"]}" H')
-                dim_str = f" ({' x '.join(dim_parts)})" if dim_parts else ""
+                dim_str = f" - Size: {' x '.join(dim_parts)}" if dim_parts else ""
+
+            # Always include furniture type - use "small decorative item" for "other"
+            if furniture_type and furniture_type != "other":
+                type_hint = f" [TYPE: {furniture_type}]"
+            else:
+                type_hint = " [TYPE: small decorative item / table decor]"
 
             if qty > 1:
-                removal_lines.append(f"- {name}{dim_str} (remove {qty} copies)")
+                removal_lines.append(f'- "{name}"{type_hint}{dim_str} (remove {qty} copies)')
             else:
-                removal_lines.append(f"- {name}{dim_str}")
+                removal_lines.append(f'- "{name}"{type_hint}{dim_str}')
 
         removal_list = "\n".join(removal_lines)
 
-        # Format remaining products - include quantities for clarity
+        # Format remaining products with furniture type to help distinguish
         remaining_list = []
         for product in remaining_products:
             name = product.get("full_name") or product.get("name", "item")
             qty = product.get("quantity", 1)
+            # Check both furniture_type and product_type (frontend uses different field names)
+            furniture_type = (product.get("furniture_type") or product.get("product_type") or "").replace("_", " ")
+            type_hint = f" [TYPE: {furniture_type}]" if furniture_type and furniture_type not in ("other", "furniture") else ""
             if qty > 1:
-                remaining_list.append(f"- {name} ({qty} copies - KEEP ALL {qty})")
+                remaining_list.append(f'- "{name}"{type_hint} ({qty} copies - KEEP ALL)')
             else:
-                remaining_list.append(f"- {name} (KEEP THIS - DO NOT REMOVE)")
+                remaining_list.append(f'- "{name}"{type_hint} (KEEP - DO NOT REMOVE)')
         remaining_description = "\n".join(remaining_list) if remaining_list else "None - room should be empty after removal"
+
+        # Count items to remove for emphasis
+        num_items_to_remove = len(products_to_remove)
+        num_items_to_keep = len(remaining_products)
 
         # Use a REMOVAL-SPECIFIC intro instead of the generic styling intro
         return f"""You are an image inpainting tool. Your ONLY task is to REMOVE objects from images and fill the empty space with appropriate background.
 
-🚨🚨🚨 CRITICAL: THIS IS A REMOVAL/DELETION TASK - NOT A STYLING TASK 🚨🚨🚨
+*** CRITICAL: THIS IS A REMOVAL/DELETION TASK - NOT A STYLING TASK ***
 
-═══════════════════════════════════════════════════════════════
-🗑️ TASK: DELETE/REMOVE FURNITURE FROM IMAGE
-═══════════════════════════════════════════════════════════════
+===============================================================
+TASK: DELETE EXACTLY {num_items_to_remove} ITEM(S) FROM IMAGE
+===============================================================
 
-🗑️ ITEMS TO DELETE FROM THIS IMAGE (REMOVE THESE):
+[REMOVE] EXACTLY THIS/THESE {num_items_to_remove} ITEM(S) - NO MORE, NO LESS:
 {removal_list}
 
-⛔⛔⛔ ITEMS THAT MUST REMAIN - DO NOT REMOVE THESE: ⛔⛔⛔
+*** PROTECTED ITEMS - THESE {num_items_to_keep} ITEMS MUST STAY EXACTLY AS THEY ARE: ***
 {remaining_description}
 
-🚨 IMPORTANT: Read the product names CAREFULLY. Some products have similar names but are DIFFERENT items:
-- Only remove items that EXACTLY match the "ITEMS TO DELETE" list above
-- If a product name is similar but NOT identical, DO NOT remove it
-- When in doubt, KEEP the item - only remove exact matches
+*** CRITICAL COUNTING RULE ***
+- You must remove EXACTLY {num_items_to_remove} piece(s) of furniture
+- You must keep EXACTLY {num_items_to_keep} piece(s) of furniture
+- If you remove more than {num_items_to_remove} item(s), you have FAILED
+- Count the furniture before and after - the difference should be EXACTLY {num_items_to_remove}
 
-⚠️ WHAT YOU MUST DO:
-1. FIND the items listed under "ITEMS TO DELETE" in the image
-2. DELETE/ERASE them completely
+MATCHING RULES - BE PRECISE:
+- ONLY remove items that match the reference image provided (if any)
+- Different furniture types are DIFFERENT items (a bar cabinet is NOT a decorative item)
+- A cabinet is NOT the same as a decorative piece, lamp, or artwork
+- When in doubt, KEEP the item - only remove if you are 100% certain it matches
+
+WHAT YOU MUST DO:
+1. IDENTIFY the EXACT item(s) from the "REMOVE" list using the reference image
+2. DELETE/ERASE ONLY those specific item(s) - nothing else
 3. FILL the empty space with floor/wall texture (inpaint the background)
-4. The result should look like those items were NEVER there
+4. VERIFY all {num_items_to_keep} protected items are still present and unchanged
 
-❌ WHAT YOU MUST NOT DO:
-- DO NOT remove items from the "MUST REMAIN" list
+WHAT YOU MUST NOT DO:
+- DO NOT remove more items than listed ({num_items_to_remove} max)
+- DO NOT remove anything from the "PROTECTED ITEMS" list
+- DO NOT remove items that merely look similar - only exact matches
 - DO NOT add any new furniture
 - DO NOT rearrange existing furniture
 - DO NOT change anything except removing the specified items
-- DO NOT "style" or "decorate" the room
 
-📏 OUTPUT REQUIREMENTS:
+OUTPUT REQUIREMENTS:
 - Keep EXACT same image dimensions
 - Keep EXACT same camera angle
 - Keep EXACT same lighting
-- Only difference: the listed items are GONE, replaced with floor/wall
+- Only difference: EXACTLY {num_items_to_remove} item(s) are GONE, replaced with floor/wall
+- All {num_items_to_keep} protected items must be UNCHANGED
 
 Think of this as ERASING furniture and painting over with the background, like using Photoshop's content-aware fill.
 """
@@ -501,11 +490,20 @@ Think of this as ERASING furniture and painting over with the background, like u
         type_specific = ""
         if instruction_type == "placement":
             type_specific = """
-📍 PLACEMENT MODIFICATION:
-- You may move products to new positions as instructed
+PLACEMENT MODIFICATION - MOVE = RELOCATE (NOT DUPLICATE):
+- When instructed to MOVE a product, you must RELOCATE it (remove from old position, place in new position)
+- CRITICAL: The product must ONLY appear ONCE in the output - at the NEW position
+- The OLD position must show the floor/wall/background that was behind the furniture
+- Use content-aware fill to restore background where the product was removed
 - Use the provided DIMENSIONS to maintain correct product scale when repositioning
-- Maintain proper placement rules (sofas against walls, etc.)
+- Maintain proper placement rules (sofas against walls, tables on floor, etc.)
 - Products being moved should keep their exact size based on dimensions
+
+MOVE OPERATION STEPS:
+1. Identify the product to move and its current position
+2. ERASE the product from its current position (restore background)
+3. PLACE the same product at the new position as instructed
+4. Result: Product appears ONLY at new position, old position shows room background
 """
         elif instruction_type == "brightness":
             type_specific = """
@@ -547,11 +545,13 @@ CURRENT PRODUCTS IN ROOM (with dimensions - preserve these sizes):
 - A 84" wide sofa must remain 84" wide after repositioning
 - Product proportions relative to room must stay correct
 
-⚠️ MODIFICATION RULES:
+MODIFICATION RULES:
 1. Apply ONLY the requested modification
 2. Keep all other aspects unchanged
 3. Products not mentioned in instruction stay in place at same scale
 4. Room structure (walls, floors, windows) remains fixed
+5. MOVE/RELOCATE = Remove from old position + Place at new position (NOT duplicate)
+6. The output must have the SAME NUMBER of each product as the input (unless adding/removing)
 
 {VisualizationPrompts.get_product_accuracy_rules()}
 
@@ -666,7 +666,9 @@ class GoogleAIStudioService:
         # Track last API call usage for logging by routers
         self.last_usage_metadata = None
 
-    def extract_usage_metadata(self, response, operation: str = "unknown", model_override: str = None) -> Dict[str, Any]:
+    def extract_usage_metadata(
+        self, response, operation: str = "unknown", model_override: str = None, workflow_id: str = None
+    ) -> Dict[str, Any]:
         """
         Extract token usage metadata from Gemini API response and persist to database.
 
@@ -674,6 +676,7 @@ class GoogleAIStudioService:
             response: Gemini API response object
             operation: Type of operation (visualize, analyze_room, chat, etc.)
             model_override: Override model name if known
+            workflow_id: Optional workflow ID to track all API calls from a single user action
 
         Returns:
             Dictionary with token counts and model info
@@ -686,6 +689,7 @@ class GoogleAIStudioService:
             "prompt_tokens": None,
             "completion_tokens": None,
             "total_tokens": None,
+            "workflow_id": workflow_id,
         }
 
         try:
@@ -727,13 +731,35 @@ class GoogleAIStudioService:
                     prompt_tokens=usage.get("prompt_tokens"),
                     completion_tokens=usage.get("completion_tokens"),
                     total_tokens=usage.get("total_tokens"),
+                    session_id=usage.get("workflow_id"),  # Store workflow_id in session_id column
                 )
                 db.add(record)
                 # Commit happens automatically via context manager
-            logger.debug(f"[API Usage] Persisted to database: {usage['operation']}")
+            workflow_info = f", workflow={usage.get('workflow_id')[:8]}..." if usage.get("workflow_id") else ""
+            logger.debug(f"[API Usage] Persisted to database: {usage['operation']}{workflow_info}")
         except Exception as e:
             # Don't fail the main request if logging fails
             logger.warning(f"Failed to persist API usage to database: {e}")
+
+    def _log_streaming_operation(self, operation: str, model: str, workflow_id: str = None):
+        """
+        Log a streaming API operation to the database.
+        Streaming APIs don't return token counts, so we log the operation without token data.
+        This helps track that visualization operations occurred even without exact token counts.
+        """
+        usage = {
+            "timestamp": datetime.now().isoformat(),
+            "provider": "gemini",
+            "model": model,
+            "operation": operation,
+            "prompt_tokens": None,
+            "completion_tokens": None,
+            "total_tokens": None,
+            "workflow_id": workflow_id,
+        }
+        logger.info(f"[Streaming API] {operation} - model={model} (token counts unavailable for streaming)")
+        self.token_usage_history.append(usage)
+        self._persist_usage_to_db(usage)
 
     def get_last_usage(self) -> Optional[Dict[str, Any]]:
         """Get the usage metadata from the last API call."""
@@ -836,8 +862,17 @@ class GoogleAIStudioService:
             self.session = aiohttp.ClientSession(timeout=timeout)
         return self.session
 
-    async def _make_api_request(self, endpoint: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Make authenticated API request to Google AI Studio"""
+    async def _make_api_request(
+        self, endpoint: str, payload: Dict[str, Any], operation: str = "unknown", workflow_id: str = None
+    ) -> Dict[str, Any]:
+        """Make authenticated API request to Google AI Studio
+
+        Args:
+            endpoint: API endpoint path
+            payload: Request payload
+            operation: Operation name for usage tracking
+            workflow_id: Optional workflow ID to track all API calls from a single user action
+        """
         await self.rate_limiter.acquire()
 
         session = await self._get_session()
@@ -847,6 +882,11 @@ class GoogleAIStudioService:
         start_time = time.time()
         self.usage_stats["total_requests"] += 1
 
+        # Extract model name from endpoint (e.g., "models/gemini-3-pro-preview:generateContent" -> "gemini-3-pro-preview")
+        model_name = "unknown"
+        if "models/" in endpoint:
+            model_name = endpoint.split("models/")[1].split(":")[0]
+
         try:
             async with session.post(url, json=payload, headers=headers) as response:
                 if response.status == 200:
@@ -854,6 +894,9 @@ class GoogleAIStudioService:
                     self.usage_stats["successful_requests"] += 1
                     processing_time = time.time() - start_time
                     self.usage_stats["total_processing_time"] += processing_time
+
+                    # Log usage from REST API response
+                    self._log_rest_api_usage(result, operation, model_name, workflow_id)
 
                     logger.info(f"Google AI API request successful - Time: {processing_time:.2f}s")
                     return result
@@ -868,7 +911,35 @@ class GoogleAIStudioService:
             logger.error(f"Google AI API request failed: {e}")
             raise
 
-    async def analyze_room_image(self, image_data: str) -> RoomAnalysis:
+    def _log_rest_api_usage(self, result: Dict[str, Any], operation: str, model: str, workflow_id: str = None):
+        """Log token usage from REST API response."""
+        try:
+            usage_metadata = result.get("usageMetadata", {})
+
+            usage = {
+                "timestamp": datetime.now().isoformat(),
+                "provider": "gemini",
+                "model": model,
+                "operation": operation,
+                "prompt_tokens": usage_metadata.get("promptTokenCount"),
+                "completion_tokens": usage_metadata.get("candidatesTokenCount"),
+                "total_tokens": usage_metadata.get("totalTokenCount"),
+                "workflow_id": workflow_id,
+            }
+
+            if usage["total_tokens"]:
+                logger.info(
+                    f"[Token Usage] {operation} - model={model}, "
+                    f"prompt={usage['prompt_tokens']}, completion={usage['completion_tokens']}, total={usage['total_tokens']}"
+                )
+
+            self.last_usage_metadata = usage
+            self.token_usage_history.append(usage)
+            self._persist_usage_to_db(usage)
+        except Exception as e:
+            logger.warning(f"Failed to log REST API usage: {e}")
+
+    async def analyze_room_image(self, image_data: str, workflow_id: str = None) -> RoomAnalysis:
         """Analyze room image for spatial understanding"""
         try:
             # Prepare image for analysis
@@ -911,7 +982,7 @@ Return JSON in this EXACT format (camera_view_analysis MUST be first):
   }
 }
 
-🚨 CRITICAL - VIEWING ANGLE DETECTION (camera_view_analysis.viewing_angle):
+CRITICAL - VIEWING ANGLE DETECTION (camera_view_analysis.viewing_angle):
 
 Look at how many walls you can see and their angles:
 - "corner" = You can see TWO walls meeting at a corner. Both walls are visible at angles. THIS IMAGE IS LIKELY A CORNER VIEW.
@@ -919,7 +990,7 @@ Look at how many walls you can see and their angles:
 - "diagonal_right" = Camera points toward the right-back corner. The LEFT wall is prominently visible.
 - "straight_on" = RARE. Only if: the back wall is perfectly parallel to the image edge AND you can barely see any side walls.
 
-⚠️ If you can clearly see TWO walls (like a window wall AND a solid wall meeting at a corner), it's "corner" NOT "straight_on".
+NOTE: If you can clearly see TWO walls (like a window wall AND a solid wall meeting at a corner), it's "corner" NOT "straight_on".
 
 For primary_wall: Choose the SOLID wall without windows/glass doors.
 For recommended_furniture_zone: Place furniture against solid walls, NOT windows."""
@@ -937,7 +1008,9 @@ For recommended_furniture_zone: Place furniture against solid walls, NOT windows
                 },
             }
 
-            result = await self._make_api_request("models/gemini-3-pro-preview:generateContent", payload)
+            result = await self._make_api_request(
+                "models/gemini-3-pro-preview:generateContent", payload, operation="analyze_room_image", workflow_id=workflow_id
+            )
 
             # Parse response
             content = result.get("candidates", [{}])[0].get("content", {})
@@ -974,8 +1047,18 @@ For recommended_furniture_zone: Place furniture against solid walls, NOT windows
                     else:
                         raise json.JSONDecodeError("No JSON object found", text_response, 0)
                 except json.JSONDecodeError:
-                    # Use a fallback DICT (not RoomAnalysis) since we call .get() on it below
-                    logger.warning("Both JSON parsing attempts failed, using fallback")
+                    # Try to extract just camera_view_analysis even if full JSON is malformed
+                    logger.warning("Both JSON parsing attempts failed, trying to extract camera_view_analysis")
+                    extracted_viewing_angle = "straight_on"
+                    try:
+                        # Look for viewing_angle value in the raw text
+                        angle_match = re.search(r'"viewing_angle"\s*:\s*"([^"]+)"', text_response)
+                        if angle_match:
+                            extracted_viewing_angle = angle_match.group(1)
+                            logger.info(f"Extracted viewing_angle from malformed JSON: {extracted_viewing_angle}")
+                    except Exception:
+                        pass
+
                     analysis_data = {
                         "room_type": "unknown",
                         "dimensions": {},
@@ -986,7 +1069,7 @@ For recommended_furniture_zone: Place furniture against solid walls, NOT windows
                         "style_assessment": "unknown",
                         "scale_references": {},
                         "camera_view_analysis": {
-                            "viewing_angle": "straight_on",
+                            "viewing_angle": extracted_viewing_angle,
                             "primary_wall": "back",
                             "floor_center_location": "image_center",
                             "recommended_furniture_zone": "center_floor",
@@ -1102,7 +1185,9 @@ List ALL furniture and decor objects visible in the room with detailed attribute
                 },
             }
 
-            result = await self._make_api_request("models/gemini-3-pro-preview:generateContent", payload)
+            result = await self._make_api_request(
+                "models/gemini-3-pro-preview:generateContent", payload, operation="analyze_room_with_furniture"
+            )
 
             content = result.get("candidates", [{}])[0].get("content", {})
             text_response = content.get("parts", [{}])[0].get("text", "{}")
@@ -1227,7 +1312,9 @@ Provide detailed spatial analysis in JSON format:
                 "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1536, "responseMimeType": "application/json"},
             }
 
-            result = await self._make_api_request("models/gemini-3-pro-preview:generateContent", payload)
+            result = await self._make_api_request(
+                "models/gemini-3-pro-preview:generateContent", payload, operation="spatial_analysis"
+            )
 
             content = result.get("candidates", [{}])[0].get("content", {})
             text_response = content.get("parts", [{}])[0].get("text", "{}")
@@ -1250,7 +1337,7 @@ Provide detailed spatial analysis in JSON format:
             logger.error(f"Error in spatial analysis: {e}")
             return self._create_fallback_spatial_analysis()
 
-    async def detect_objects_in_room(self, image_data: str) -> List[Dict[str, Any]]:
+    async def detect_objects_in_room(self, image_data: str, workflow_id: str = None) -> List[Dict[str, Any]]:
         """Detect and classify objects in room image"""
         try:
             processed_image = self._preprocess_image(image_data)
@@ -1291,7 +1378,9 @@ Return results as JSON array:
                 "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1024, "responseMimeType": "application/json"},
             }
 
-            result = await self._make_api_request("models/gemini-3-pro-preview:generateContent", payload)
+            result = await self._make_api_request(
+                "models/gemini-2.5-flash:generateContent", payload, operation="detect_objects", workflow_id=workflow_id
+            )
 
             content = result.get("candidates", [{}])[0].get("content", {})
             text_response = content.get("parts", [{}])[0].get("text", "[]")
@@ -1371,7 +1460,9 @@ CRITICAL: Distinguish between center_table (in front of seating) and side_table 
                 "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1024, "responseMimeType": "application/json"},
             }
 
-            result = await self._make_api_request("models/gemini-3-pro-preview:generateContent", payload)
+            result = await self._make_api_request(
+                "models/gemini-3-pro-preview:generateContent", payload, operation="detect_furniture"
+            )
 
             content = result.get("candidates", [{}])[0].get("content", {})
             text_response = content.get("parts", [{}])[0].get("text", "[]")
@@ -1446,7 +1537,9 @@ CRITICAL: Keep sofas, chairs, tables, and lamps SEPARATE:
                 "generationConfig": {"temperature": 0.2, "maxOutputTokens": 512, "responseMimeType": "application/json"},
             }
 
-            result = await self._make_api_request("models/gemini-3-pro-preview:generateContent", payload)
+            result = await self._make_api_request(
+                "models/gemini-3-pro-preview:generateContent", payload, operation="check_furniture_exists"
+            )
 
             content = result.get("candidates", [{}])[0].get("content", {})
             text_response = content.get("parts", [{}])[0].get("text", "{}")
@@ -1710,28 +1803,197 @@ Be VERY strict - if you see ANY furniture at all, set has_furniture to true."""
                 "confidence": 0.0,
             }
 
-    async def remove_furniture(self, image_base64: str, max_retries: int = 5) -> Optional[str]:
+    async def _apply_perspective_correction(self, image_base64: str, workflow_id: str = None) -> str:
         """
-        Remove all furniture from room image using Gemini 2.5 Flash Image model.
-        Uses the simplified API pattern from Google docs with PIL Image.
-        Returns: base64 encoded image with furniture removed, or None on failure
+        Apply perspective/lens correction to an empty room image.
+        Always straightens vertical lines regardless of viewing angle.
+
+        Args:
+            image_base64: Base64 encoded image (with or without data URL prefix)
+            workflow_id: Workflow ID for tracking all API calls from a single user action
+
+        Returns:
+            Perspective-corrected image with straight vertical lines
         """
         try:
-            # Convert base64 to PIL Image for the new API style
-            # Log input for debugging Railway issues
+            logger.info("Applying perspective correction to straighten vertical lines")
+            corrected_image = await self._straighten_vertical_lines(image_base64, workflow_id=workflow_id)
+            if corrected_image:
+                logger.info("Perspective correction complete")
+                return corrected_image
+            else:
+                logger.warning("Perspective correction returned None, using original image")
+                return image_base64
+
+        except Exception as e:
+            logger.warning(f"Perspective correction failed, using original image: {e}")
+            return image_base64
+
+    async def _straighten_vertical_lines(self, image_base64: str, workflow_id: str = None) -> Optional[str]:
+        """
+        Straighten vertical lines in a room image to correct lens distortion.
+        This corrects the common issue where walls lean inward due to wide-angle lenses.
+
+        Args:
+            image_base64: Base64 encoded image
+            workflow_id: Workflow ID for tracking all API calls from a single user action
+
+        Returns:
+            Image with straightened vertical lines, or None on failure
+        """
+        try:
+            # Convert base64 to PIL Image
+            image_data = image_base64
+            if image_data.startswith("data:image"):
+                image_data = image_data.split(",")[1]
+
+            image_bytes = base64.b64decode(image_data)
+            pil_image = Image.open(io.BytesIO(image_bytes))
+
+            if pil_image.mode != "RGB":
+                pil_image = pil_image.convert("RGB")
+
+            logger.info(f"Straightening vertical lines for image ({pil_image.width}x{pil_image.height})")
+
+            prompt = """🔧 LENS DISTORTION CORRECTION TASK
+
+Correct the perspective distortion in this room image to make it look like a professional architectural photograph.
+
+📐 WHAT TO FIX:
+1. VERTICAL LINES: Make ALL vertical lines perfectly vertical (90° to the floor)
+   - Wall edges should be straight up and down, not leaning inward or outward
+   - Door frames, window frames should be perfectly vertical
+   - Any vertical architectural elements should be straight
+
+2. HORIZONTAL LINES: Make horizontal lines level
+   - Floor line should be horizontal
+   - Ceiling line should be horizontal
+   - Window sills, baseboards should be level
+
+3. LENS DISTORTION: Correct any barrel or pincushion distortion from wide-angle lenses
+   - Straight lines in real life should appear straight in the image
+   - Walls should not curve or bulge
+
+⚠️ IMPORTANT:
+- Do NOT change the room contents - keep everything exactly as is
+- Do NOT change colors, lighting, or any visual elements
+- ONLY fix the geometric distortion
+- The result should look like it was taken with a professional tilt-shift lens
+
+OUTPUT: Same image with corrected perspective - walls perfectly vertical, lines straight."""
+
+            def _run_correction():
+                response = self.genai_client.models.generate_content(
+                    model="gemini-3-pro-image-preview",
+                    contents=[prompt, pil_image],
+                    config=types.GenerateContentConfig(
+                        response_modalities=["IMAGE"],
+                        temperature=0.2,
+                    ),
+                )
+                # Extract and log token usage (workflow_id captured from outer scope)
+                self.extract_usage_metadata(
+                    response,
+                    operation="straighten_vertical_lines",
+                    model_override="gemini-3-pro-image-preview",
+                    workflow_id=workflow_id,
+                )
+
+                result_image = None
+                parts = None
+                if hasattr(response, "parts") and response.parts:
+                    parts = response.parts
+                elif hasattr(response, "candidates") and response.candidates:
+                    candidate = response.candidates[0]
+                    if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
+                        parts = candidate.content.parts
+
+                if parts:
+                    for part in parts:
+                        if hasattr(part, "inline_data") and part.inline_data is not None:
+                            image_bytes_result = part.inline_data.data
+                            mime_type = getattr(part.inline_data, "mime_type", None) or "image/png"
+
+                            if isinstance(image_bytes_result, bytes):
+                                first_hex = image_bytes_result[:4].hex()
+                                if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                    image_base64_result = base64.b64encode(image_bytes_result).decode("utf-8")
+                                else:
+                                    image_base64_result = image_bytes_result.decode("utf-8")
+                                result_image = f"data:{mime_type};base64,{image_base64_result}"
+                                break
+
+                return result_image
+
+            loop = asyncio.get_event_loop()
+            corrected = await asyncio.wait_for(loop.run_in_executor(None, _run_correction), timeout=90)
+            return corrected
+
+        except asyncio.TimeoutError:
+            logger.error("Vertical line straightening timed out after 90 seconds")
+            return None
+        except Exception as e:
+            logger.error(f"Error straightening vertical lines: {e}")
+            return None
+
+    async def remove_furniture(
+        self, image_base64: str, max_retries: int = 5, workflow_id: str = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Remove all furniture from room image using Gemini image model.
+
+        This function performs 2 Gemini calls:
+        1. analyze_room_image (JSON) - detect viewing angle + room style/type/dimensions
+        2. remove_furniture (IMAGE) - removes furniture + straightens lines + transforms to front view (if angle is not straight_on)
+
+        Args:
+            image_base64: Base64 encoded source image
+            max_retries: Number of retry attempts
+            workflow_id: Optional workflow ID for tracking all API calls from a single user action
+
+        Returns: Dict with 'image' (base64) and 'room_analysis' (dict), or None on failure
+        """
+        try:
+            # Step 1: Analyze room for viewing angle AND capture full room analysis (JSON call)
+            viewing_angle = "straight_on"  # default
+            room_analysis_dict = None
+            try:
+                room_analysis = await self.analyze_room_image(image_base64, workflow_id=workflow_id)
+                viewing_angle = room_analysis.camera_view_analysis.get("viewing_angle", "straight_on")
+                # Capture full room analysis for return
+                room_analysis_dict = {
+                    "camera_view_analysis": room_analysis.camera_view_analysis,
+                    "room_type": room_analysis.room_type,
+                    "dimensions": room_analysis.dimensions,
+                    "lighting_conditions": room_analysis.lighting_conditions,
+                    "color_palette": room_analysis.color_palette,
+                    "existing_furniture": room_analysis.existing_furniture,
+                    "architectural_features": room_analysis.architectural_features,
+                    "style_assessment": room_analysis.style_assessment,
+                    "scale_references": room_analysis.scale_references,
+                }
+                logger.info(
+                    f"Room analysis complete: viewing_angle={viewing_angle}, style={room_analysis.style_assessment}, workflow_id={workflow_id}"
+                )
+            except Exception as e:
+                logger.warning(f"Room analysis failed, assuming straight_on: {e}")
+
+            # Step 2: Remove furniture + transform perspective + straighten lines (single IMAGE call)
+            # Convert base64 to PIL Image
             original_length = len(image_base64)
             logger.info(f"Received image base64 string: {original_length} characters")
 
+            image_to_process = image_base64
             # Remove data URL prefix if present
-            if image_base64.startswith("data:image"):
-                image_base64 = image_base64.split(",")[1]
-                logger.info(f"After stripping data URL prefix: {len(image_base64)} characters")
+            if image_to_process.startswith("data:image"):
+                image_to_process = image_to_process.split(",")[1]
+                logger.info(f"After stripping data URL prefix: {len(image_to_process)} characters")
 
             # Log preview to detect truncation
-            if len(image_base64) > 100:
-                logger.info(f"Base64 preview: {image_base64[:50]}...{image_base64[-50:]}")
+            if len(image_to_process) > 100:
+                logger.info(f"Base64 preview: {image_to_process[:50]}...{image_to_process[-50:]}")
 
-            image_bytes = base64.b64decode(image_base64)
+            image_bytes = base64.b64decode(image_to_process)
             logger.info(f"Decoded to {len(image_bytes)} bytes")
 
             # Validate minimum size (real images are > 1KB)
@@ -1756,40 +2018,65 @@ Be VERY strict - if you see ANY furniture at all, set has_furniture to true."""
             if pil_image.mode != "RGB":
                 pil_image = pil_image.convert("RGB")
 
-            logger.info(f"Loaded image for furniture removal (EXIF corrected): {pil_image.width}x{pil_image.height} pixels")
+            logger.info(
+                f"Loaded image for furniture removal (EXIF corrected): {pil_image.width}x{pil_image.height} pixels, viewing_angle={viewing_angle}"
+            )
 
-            prompt = """🚨 CRITICAL TASK: Remove ALL furniture and movable objects from this room image AND correct the perspective.
+            # Step 2: Remove furniture + straighten lines + transform angle (if needed)
+            # Build perspective/transformation instructions based on detected viewing angle
+            if viewing_angle == "straight_on":
+                perspective_instruction = """PERSPECTIVE CORRECTION (MANDATORY):
+- Straighten ALL vertical lines (walls, door frames, window frames should be perfectly vertical - 90 degrees to floor)
+- Level ALL horizontal lines (floor line, ceiling line, window sills should be horizontal)
+- Correct any lens distortion - walls should NOT lean inward or outward
+- The output should look like a professional real estate photo with proper architectural perspective"""
+                angle_output = "SAME CAMERA ANGLE - keep the exact same viewing angle as the input"
+            else:
+                # For diagonal/corner views, include transformation to front view
+                angle_descriptions = {
+                    "diagonal_left": "diagonal left angle (camera positioned to the right, looking left toward a corner)",
+                    "diagonal_right": "diagonal right angle (camera positioned to the left, looking right toward a corner)",
+                    "corner": "corner angle (camera in the corner, looking diagonally across the room)",
+                }
+                angle_desc = angle_descriptions.get(viewing_angle, f"{viewing_angle} angle")
+                perspective_instruction = f"""CAMERA ANGLE TRANSFORMATION + PERSPECTIVE CORRECTION (MANDATORY):
+
+CURRENT VIEW: This image is taken from {angle_desc}. You can see TWO walls meeting.
+
+YOUR TASK - Transform to STRAIGHT-ON FRONT VIEW:
+- Generate the room as if the camera moved to face the MAIN WALL directly (parallel to image edges)
+- The main solid wall should fill the CENTER of the output image
+- Side walls should be barely visible (thin slivers at left/right edges)
+- You should NOT see a corner prominently anymore
+
+ALSO CORRECT PERSPECTIVE:
+- ALL vertical lines must be perfectly vertical (90 degrees to floor)
+- ALL horizontal lines must be level
+- Correct any lens distortion - walls should NOT lean inward or outward
+- Output should look like a professional architectural photograph"""
+                angle_output = "FRONT-FACING VIEW - camera facing main wall directly"
+
+            prompt = f"""CRITICAL TASK: Remove ALL furniture, correct lens distortion, and transform to front view.
 
 The output MUST be:
 1. A COMPLETELY EMPTY room with ZERO furniture remaining
-2. PERSPECTIVE CORRECTED like a professional architectural photo
+2. {angle_output}
+3. PERSPECTIVE CORRECTED - vertical lines straight, horizontal lines level
 
-📐 PERSPECTIVE CORRECTION (MANDATORY):
-- Straighten ALL vertical lines (walls, door frames, window frames should be perfectly vertical)
-- Level ALL horizontal lines (floor line, ceiling line, window sills should be horizontal)
-- Correct any lens distortion or tilted camera angle
-- The output should look like a professional real estate photo with proper architectural perspective
-- Walls should not lean inward or outward - they should be straight and vertical
+{perspective_instruction}
 
-⚠️ MANDATORY REMOVALS - These items MUST be deleted from the image:
+MANDATORY REMOVALS - These items MUST be deleted from the image:
 1. ALL SEATING: Sofas (including curved/sectional sofas), couches, chairs, armchairs, ottomans
 2. ALL TABLES: Coffee tables, side tables, dining tables, console tables
 3. ALL BEDS: Beds, mattresses, headboards
 4. ALL LAMPS: Floor lamps, tripod lamps, standing lamps, table lamps, any lamp with a base on the floor
 5. ALL MIRRORS: Standing mirrors, floor mirrors, full-length mirrors, leaning mirrors against walls
 6. ALL PLANTS: Potted plants, planters, indoor trees
-7. ALL DECOR: Vases, sculptures, frames, artwork, cushions, throws on furniture
-8. 🚨 ALL FLOOR COVERINGS: Carpets, rugs, area rugs, floor mats, dhurries, runners - the BARE FLOOR must be visible
+7. ALL DECOR: Vases, sculptures, frames, cushions, throws on furniture
+8. ALL WALL ART: Paintings, posters, prints, wall hangings, framed photos, canvas art, wall decor, tapestries
+9. ALL FLOOR COVERINGS: Carpets, rugs, area rugs, floor mats, dhurries, runners - the BARE FLOOR must be visible
 
-🔴 IMPORTANT: If you see ANY of these in the image, they MUST be removed:
-- A curved or L-shaped sofa → REMOVE IT
-- A lamp with wooden tripod legs → REMOVE IT
-- A tall standing mirror leaning against wall → REMOVE IT
-- Any potted plant → REMOVE IT
-- ANY carpet or rug on the floor → REMOVE IT (show bare floor)
-- ANY floor covering of any color/pattern → REMOVE IT
-
-✅ KEEP ONLY (do not modify these):
+KEEP ONLY (do not modify these):
 - Walls, ceiling, floor (the BARE room floor - no carpets/rugs)
 - Windows, doors, built-in closets
 - Curtains/drapes on windows
@@ -1798,10 +2085,11 @@ The output MUST be:
 - Archways and architectural features
 
 OUTPUT: Generate an image of the SAME room but:
-1. COMPLETELY EMPTY - no furniture, no lamps, no mirrors, no plants, NO CARPETS OR RUGS
-2. PERSPECTIVE CORRECTED - vertical lines straight, horizontal lines level, like a professional architectural photo
+1. COMPLETELY EMPTY - no furniture, no lamps, no mirrors, no plants, NO CARPETS OR RUGS, NO WALL ART
+2. {angle_output}
+3. PERSPECTIVE CORRECTED - vertical lines perfectly vertical, horizontal lines level
 
-FAILURE IS NOT ACCEPTABLE: Every single piece of furniture AND floor covering MUST be removed, AND the perspective MUST be corrected. Do not leave any sofa, lamp, mirror, or carpet in the output."""
+FAILURE IS NOT ACCEPTABLE: Every piece of furniture MUST be removed AND all lines MUST be straight."""
 
             # Retry loop with exponential backoff
             for attempt in range(max_retries):
@@ -1828,9 +2116,12 @@ FAILURE IS NOT ACCEPTABLE: Every single piece of furniture AND floor covering MU
                                 temperature=0.2,  # Lower temperature for more consistent removal
                             ),
                         )
-                        # Extract and log token usage
+                        # Extract and log token usage (workflow_id captured from outer scope)
                         self.extract_usage_metadata(
-                            response, operation="remove_furniture", model_override="gemini-3-pro-image-preview"
+                            response,
+                            operation="remove_furniture",
+                            model_override="gemini-3-pro-image-preview",
+                            workflow_id=workflow_id,
                         )
 
                         result_image = None
@@ -1908,9 +2199,11 @@ FAILURE IS NOT ACCEPTABLE: Every single piece of furniture AND floor covering MU
                             logger.error(f"Furniture removal streaming error on attempt {attempt + 1}: {stream_error}")
 
                     if generated_image:
-                        # Validation disabled to save tokens - user can retry if removal fails
-                        logger.info(f"Furniture removal successful on attempt {attempt + 1}")
-                        return generated_image
+                        # Furniture removal + perspective correction + angle transformation (if needed) all done in one call
+                        logger.info(
+                            f"Furniture removal successful on attempt {attempt + 1}, viewing_angle={viewing_angle}, workflow_id={workflow_id}"
+                        )
+                        return {"image": generated_image, "room_analysis": room_analysis_dict}
 
                     logger.warning(f"Furniture removal attempt {attempt + 1} produced no image")
 
@@ -2063,7 +2356,7 @@ Everything outside this area must remain IDENTICAL to the input image."""
 
         Args:
             image_base64: Base64 encoded visualization image
-            products_to_remove: List of product dicts with name, quantity, and dimensions
+            products_to_remove: List of product dicts with name, quantity, dimensions, and image_url
             remaining_products: List of product dicts that should stay (with dimensions)
             max_retries: Number of retry attempts
 
@@ -2095,13 +2388,19 @@ Everything outside this area must remain IDENTICAL to the input image."""
             # Add resolution requirements
             prompt += f"""
 
-🚨🚨🚨 IMAGE DIMENSION REQUIREMENTS 🚨🚨🚨
+*** IMAGE DIMENSION REQUIREMENTS ***
 - Output MUST be EXACTLY {original_width}x{original_height} pixels
 - DO NOT change the aspect ratio or crop the image
 - The result should look like the room was photographed without the removed items ever being there.
 """
 
             model = "gemini-3-pro-image-preview"
+
+            # Simple contents: just prompt and room image
+            # Reference images were confusing Gemini and causing it to remove wrong items
+            contents = [prompt, pil_image]
+
+            logger.info(f"[RemoveProducts] Sending prompt + room image (no reference images)")
 
             for attempt in range(max_retries):
                 try:
@@ -2113,7 +2412,7 @@ Everything outside this area must remain IDENTICAL to the input image."""
                             None,
                             lambda: self.genai_client.models.generate_content(
                                 model=model,
-                                contents=[prompt, pil_image],
+                                contents=contents,
                                 config=types.GenerateContentConfig(
                                     response_modalities=["IMAGE", "TEXT"],
                                     temperature=0.2,
@@ -2710,6 +3009,9 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 logger.error(f"AI failed to generate ADD visualization after {max_retries} attempts")
                 raise ValueError("AI failed to generate visualization image")
 
+            # Log visualization operation (streaming API doesn't return token counts)
+            self._log_streaming_operation("generate_add_visualization", "gemini-3-pro-image-preview")
+
             return generated_image
 
         except ValueError:
@@ -2720,7 +3022,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
             raise ValueError(f"Visualization generation failed: {e}")
 
     async def generate_add_multiple_visualization(
-        self, room_image: str, products: list[dict], existing_products: Optional[list[dict]] = None
+        self, room_image: str, products: list[dict], existing_products: Optional[list[dict]] = None, workflow_id: str = None
     ) -> str:
         """
         Generate visualization with MULTIPLE products added to room in a SINGLE API call.
@@ -2730,6 +3032,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
             room_image: Base64 encoded room image
             products: List of dicts with 'name' and optional 'image_url' keys (NEW products to add)
             existing_products: List of dicts for products ALREADY in the room image that must be preserved
+            workflow_id: Optional workflow ID for tracking all API calls from a single user action
 
         Returns: base64 image data
         """
@@ -3252,6 +3555,11 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 logger.error(f"AI failed to generate ADD MULTIPLE visualization after {max_retries} attempts")
                 raise ValueError("AI failed to generate visualization image")
 
+            # Log visualization operation (streaming API doesn't return token counts)
+            self._log_streaming_operation(
+                "generate_add_multiple_visualization", "gemini-3-pro-image-preview", workflow_id=workflow_id
+            )
+
             return generated_image
 
         except ValueError:
@@ -3479,6 +3787,9 @@ Generate a photorealistic image of the room with the {product_name} replacing th
                 logger.error(f"AI failed to generate REPLACE visualization after {max_retries} attempts")
                 raise ValueError("AI failed to generate visualization image")
 
+            # Log visualization operation (streaming API doesn't return token counts)
+            self._log_streaming_operation("generate_replace_visualization", "gemini-3-pro-image-preview")
+
             return generated_image
 
         except ValueError:
@@ -3571,7 +3882,7 @@ Generate a photorealistic image of the room with the {product_name} replacing th
 Product {idx + 1}:
 - Name: {product_name}
 - Type: {furniture_type}
-- 📐 PHYSICAL DIMENSIONS: {dimension_str}
+- PHYSICAL DIMENSIONS: {dimension_str}
 - Description: {product_desc}
 - Placement: {user_request if user_request else 'Place naturally in appropriate location based on product type'}
 - Reference Image: Provided below"""
@@ -3731,32 +4042,37 @@ Products with numbered names (e.g., "Cushion Cover #1", "Cushion Cover #2", "Cus
 
                 visualization_prompt = f"""{VisualizationPrompts.get_system_intro()}
 
-{multiple_instance_instruction}{planter_instruction}🔒🔒🔒 CRITICAL INSTRUCTION - READ CAREFULLY 🔒🔒🔒
+{multiple_instance_instruction}{planter_instruction}
 
-THIS IS A PRODUCT PLACEMENT TASK. YOUR GOAL: Take the EXACT room image provided and ADD {product_count} furniture product(s) to it.
+RULE #1 - EXACT PRODUCT REPLICATION (HIGHEST PRIORITY)
+-------------------------------------------------------
+You MUST render products EXACTLY as shown in reference images. This is the most important rule.
+
+MANDATORY:
+- EXACT COLOR: Copy the precise color from reference (not similar, not harmonized - EXACT)
+- EXACT SHAPE: Curved sofas stay curved, tulip chairs stay tulip-shaped, unique designs stay unique
+- EXACT MATERIAL: Velvet stays velvet, leather stays leather, wood grain matches reference
+
+DO NOT:
+- Convert curved/cloud sofas into traditional rectangular sofas
+- Convert tulip/swivel/egg chairs into traditional armchairs
+- Convert abstract art into portraits or different artwork
+- Simplify unique sculptural designs into generic furniture
+- Generate "similar" or "inspired by" versions
+
+The output products must be RECOGNIZABLE as the same products from reference images.
+
+RULE #2 - ROOM PRESERVATION
+---------------------------
+Add {product_count} product(s) to the EXACT room image provided.
 
 {product_count_instruction}
 
-═══════════════════════════════════════════════════════════════
-⚠️ RULE #1 - NEVER BREAK THIS RULE ⚠️
-═══════════════════════════════════════════════════════════════
-YOU MUST USE THE EXACT ROOM FROM THE INPUT IMAGE - PIXEL-LEVEL PRESERVATION.
-DO NOT create a new room.
-DO NOT redesign the space.
-DO NOT change ANY aspect of the room structure.
-DO NOT alter floors, walls, windows, doors, or ceiling in ANY way.
-
-🚨🚨🚨 CRITICAL RESOLUTION REQUIREMENTS 🚨🚨🚨
-═══════════════════════════════════════════════════════════════
-⚠️ OUTPUT RESOLUTION: You MUST output at HIGH RESOLUTION matching the input
-⚠️ The input image resolution will be shown when the image is provided
-⚠️ Generate at MAXIMUM QUALITY - this will be used for production display
-
-1. OUTPUT IMAGE DIMENSIONS: Output at the HIGHEST possible resolution
-2. ASPECT RATIO: MUST match the input image aspect ratio exactly
-3. DO NOT output at default/lower resolution - use maximum quality
-4. IMAGE QUALITY: Generate crisp, sharp, high-resolution output
-5. NO DOWNSCALING: Never reduce quality or resolution from input
+PRESERVE EXACTLY:
+- Room structure: walls, floors, windows, doors, ceiling unchanged
+- Output dimensions: Match input resolution exactly
+- Aspect ratio: No cropping or letterboxing
+- Camera angle: Same perspective and viewpoint
 
 THE INPUT IMAGE SHOWS THE USER'S ACTUAL ROOM.
 YOU ARE ADDING PRODUCTS TO THEIR REAL SPACE.
@@ -3787,71 +4103,14 @@ IF THE ROOM HAS:
 - Modern style → Keep modern style base
 
 ═══════════════════════════════════════════════════════════════
-✅ YOUR ONLY TASK - PRODUCT PLACEMENT ONLY
-═══════════════════════════════════════════════════════════════
-You are placing {product_count} products into the room:
+PRODUCTS TO PLACE ({product_count} items):
 {products_detail}
 
-🔴🔴🔴 EXACT PRODUCT REPLICATION - HIGHEST PRIORITY 🔴🔴🔴
-═══════════════════════════════════════════════════════════════
-For EACH product reference image provided, you MUST render the EXACT SAME product:
-
-1. 🎨 EXACT COLOR - Copy the PRECISE color from the reference image
-   - If the reference sofa is light gray, render LIGHT GRAY (not dark gray, not beige, not white)
-   - If the reference table is dark walnut wood, render DARK WALNUT WOOD (not oak, not pine, not black)
-   - If the reference rug is beige/cream, render BEIGE/CREAM (not brown, not white, not gray)
-
-2. 🪵 EXACT MATERIAL & TEXTURE - Match the reference image exactly
-   - If reference shows velvet fabric, render VELVET (not leather, not cotton)
-   - If reference shows marble top, render MARBLE (not wood, not glass)
-   - If reference shows brass legs, render BRASS (not chrome, not black metal)
-
-3. 📐 EXACT SHAPE & DESIGN - Replicate the reference design precisely
-   - If reference sofa has L-shaped sectional, render L-SHAPED SECTIONAL
-   - If reference table has sleek rectangular design, render SLEEK RECTANGULAR
-   - If reference has round legs, render ROUND LEGS (not square)
-   - 🚨 UNIQUE/UNCONVENTIONAL SHAPES: If product has a unique shape (sphere, planet-like, sculptural, asymmetric),
-     you MUST preserve that EXACT shape - do NOT simplify to a generic version
-   - Example: A Saturn-shaped side table (sphere with ring) must remain a SPHERE with RING, not a generic round table
-   - Example: A sculptural organic coffee table must keep its exact curves, not become a standard rectangle
-
-4. 🏷️ EXACT STYLE - Match the product's style character
-   - Modern minimalist → Keep modern minimalist
-   - Traditional ornate → Keep traditional ornate
-   - Mid-century → Keep mid-century
-
-⚠️ CRITICAL: Look VERY CAREFULLY at each product reference image and replicate it AS-IS.
-❌ DO NOT generate a "similar looking" or "inspired by" version
-❌ DO NOT substitute with a different style of the same furniture type
-❌ DO NOT change the color to "match the room better"
-✅ DO render EXACTLY what you see in the product reference image
-✅ The product in the output MUST look like the same exact product as the reference
-
-📸 MULTIPLE REFERENCE IMAGES PER PRODUCT:
-When multiple reference images are provided for a product (e.g., "1/3", "2/3", "3/3"):
-- These show the SAME product from DIFFERENT ANGLES
-- Use ALL images to understand the product's full 3D appearance
-- Study each angle: front view, side view, detail shots, in-room shots
-- Combine information from ALL reference images to render accurately
-- The first image is usually the primary/front view
-- Additional images show details, materials, proportions from other angles
-- 🎯 Your rendered product should match what someone would see looking at the ACTUAL product
-
-REFERENCE IMAGE MATCHING CHECKLIST (for each product):
-□ Same exact color/shade
-□ Same exact material appearance
-□ Same exact shape/silhouette (ESPECIALLY important for unique designs!)
-□ Same exact style characteristics
-□ Same exact proportions
-□ Same distinctive features (spheres stay spheres, rings stay rings, curves stay curves)
-
-🚨 UNIQUE PRODUCT DESIGNS - SPECIAL ATTENTION:
-Side tables, lamps, and decor often have UNCONVENTIONAL shapes (spheres, planets, sculptural forms).
-You MUST preserve these unique shapes - do NOT convert them to generic furniture.
-If you see a product that looks like a planet with a ring → RENDER a planet with a ring
-If you see a product with an organic sculptural shape → RENDER that exact sculptural shape
-
-═══════════════════════════════════════════════════════════════
+PRODUCT MATCHING REMINDER:
+- Reference images are provided below for each product
+- When multiple images per product (1/3, 2/3, 3/3): use ALL angles to understand the full design
+- Unique shapes (sculptural, curved, spherical) must be preserved exactly
+- Output products must be recognizable as the SAME products from references
 
 {self._build_perspective_scaling_instructions(visualization_request.products_to_place, room_analysis, visualization_request.placement_positions)}
 
@@ -3867,164 +4126,78 @@ PLACEMENT STRATEGY:
 7. Arrange products according to type-specific placement rules (see below)
 8. Ensure products don't block doorways or windows
 9. Keep proper spacing between products (18-30 inches walking space)
-10. ⚖️ SPATIAL BALANCE: Distribute products evenly across the room to create visual balance
-   - If a planter/lamp/decor is placed on one side of the sofa, place a side table on the OTHER side
-   - Avoid clustering all products on one side of the room
-   - Create symmetry and balance in the overall layout
+10. SPATIAL BALANCE: Distribute products evenly, avoid clustering on one side
 
-🎯 CUSTOM POSITION OVERRIDE (IF PROVIDED):
+CUSTOM POSITION OVERRIDE (IF PROVIDED):
 {self._build_custom_position_instructions(visualization_request.placement_positions, visualization_request.products_to_place)}
 
-⚠️ CRITICAL: DO NOT BLOCK EXISTING FURNITURE
-═══════════════════════════════════════════════════════════════
-BEFORE placing any new product, you MUST:
-1. 🔍 ANALYZE THE SCENE: Identify ALL existing furniture already in the room
-2. 🚫 NEVER BLOCK: Do NOT place new furniture in front of existing furniture
-3. 🎯 FIND EMPTY SPACES: Look for empty floor areas where nothing exists
-4. 👁️ MAINTAIN SIGHT LINES: Every piece of furniture should be fully visible
-5. 📐 RESPECT BOUNDARIES: New furniture should not obstruct the view of any existing item
+DO NOT BLOCK EXISTING FURNITURE:
+- Identify all existing furniture before placing new items
+- Never place new furniture in front of existing pieces
+- Find empty floor areas for new items
+- Every furniture piece should remain fully visible
+- Place new items in different locations, not overlapping
 
-SPECIFIC BLOCKING PREVENTION RULES:
-- If a planter/decor item exists next to the sofa, do NOT place a side table in front of it
-- If a side table exists, do NOT place planters/decor items in front of it
-- New items should be placed in DIFFERENT locations, not overlapping with existing items
-- When multiple items exist on one side, place new items on the OPPOSITE side
-- Think: "Can I see the full outline of every existing furniture piece after adding this new one?"
+TYPE-SPECIFIC PLACEMENT:
 
-❌ WRONG: Side table placed in front of planter → blocks planter view
-✅ CORRECT: Side table on opposite side of sofa → both planter and table fully visible
-═══════════════════════════════════════════════════════════════
+SOFAS & SECTIONALS:
+- Place DIRECTLY AGAINST a SOLID wall (2-4 inches gap max)
+- NEVER place against windows, glass doors, or sliding doors
+- Sofa should be PARALLEL to the wall, touching or nearly touching
+CHAIRS:
+- Position on sides of existing sofa, angled for conversation
+- 18-30 inches spacing from sofa
 
-📍 TYPE-SPECIFIC PLACEMENT RULES (ROOM-GEOMETRY AWARE):
+BENCHES:
+- Living room: Place ACROSS from sofa, facing it (3-4 feet distance)
+- Bedroom: Place at foot of bed, parallel to bed frame
+- Never block coffee table area or remove existing furniture
 
-🛋️ SOFAS & SECTIONALS (CRITICAL - READ CAREFULLY):
-- ALWAYS place DIRECTLY AGAINST a SOLID wall with MINIMAL GAP (2-4 inches max from wall)
-- ⚠️ DO NOT leave large empty space between sofa back and wall - sofas sit FLUSH against walls
-- 🚨 NEVER place against WINDOWS, GLASS DOORS, or SLIDING DOORS - only solid walls!
-- For STRAIGHT-ON camera views: place against the back wall (if solid), centered, TOUCHING the wall
-- For DIAGONAL camera views: place against the PRIMARY SOLID WALL (not windows/glass), FLUSH to wall
-- For CORNER camera views: place against one of the visible SOLID walls, NOT in the corner intersection
-- Orientation: Sofa should be PARALLEL to the wall it's against
-- Distance from wall: 0-6 inches (touching or nearly touching)
-- 🚫 NEVER place sofas diagonally across room corners
-- 🚫 NEVER float a sofa in the geometric center of a diagonal shot
-- 🚫 NEVER place sofas in front of floor-to-ceiling windows or glass doors
-- ✅ Place where a real interior designer would place it based on room layout
-- ✅ Position sofas to FACE windows (for the view), not AGAINST windows
+CENTER/COFFEE TABLE:
+- Directly in front of sofa, centered on seating arrangement
+- 14-18 inches from sofa's front
 
-🪑 CHAIRS (accent chair, side chair, armchair):
-- Position on ONE OF THE SIDES of existing sofa (if sofa exists)
-- Angle towards sofa for conversation area
-- Maintain 18-30 inches spacing from sofa
-- For diagonal views, position relative to where the sofa is (against the primary wall)
+SIDE/END TABLE:
+- Directly adjacent to sofa armrest (0-6 inches)
+- If decor exists on one side, place table on opposite side
 
-🪑 BENCHES (bench, ottoman bench, entryway bench, storage bench):
-- ⚠️ CRITICAL: DO NOT REMOVE any existing furniture (chairs, tables, etc.) when adding a bench
-- 🛋️ LIVING ROOM PLACEMENT:
-  - Place bench ACROSS from the sofa (on the OPPOSITE side, facing the sofa)
-  - Position so the bench faces the sofa, creating a conversation area
-  - Maintain 3-4 feet distance from sofa
-  - The bench should be on the far side of the room relative to the sofa
-- 🛏️ BEDROOM PLACEMENT:
-  - Place bench at the FOOT OF THE BED (next to the footrest area)
-  - Position parallel to the foot of the bed
-  - Can be placed at the end of the bed facing outward
-- Can also be positioned near entryways or windows as accent seating (if not living room/bedroom)
-- 🚫 NEVER place bench directly in front of sofa blocking the coffee table area
-- 🚫 NEVER remove or replace existing chairs/furniture to make room for the bench
-- ✅ CORRECT (Living Room): Bench across from sofa, facing it at conversation distance
-- ✅ CORRECT (Bedroom): Bench at foot of bed, parallel to the bed frame
+STORAGE (bookshelf, cabinet):
+- Against walls, not blocking pathways
 
-🔲 CENTER TABLE / COFFEE TABLE:
-- Place DIRECTLY IN FRONT OF the sofa or seating area
-- For diagonal/corner views: position relative to where the sofa is placed (against primary wall)
-- The table should be centered on the seating arrangement, not the image center
-- Perpendicular to sofa's front face
-- Distance: 14-18 inches from sofa's front
+LAMPS:
+- On tables or floor, near seating areas
 
-🔲 SIDE TABLE / END TABLE:
-- ⚠️ CRITICAL: Place DIRECTLY ADJACENT to sofa's SIDE (at armrest)
-- ⚠️ Table must be FLUSH with sofa's side, not in front or behind
-- Position at SAME DEPTH as sofa (aligned with sofa's length, not width)
-- Should be at ARM'S REACH from someone sitting on sofa
-- Distance: 0-6 inches from sofa's side
-- ⚖️ BALANCE: If planter/lamp/decor exists on one side, place side table on the OPPOSITE side
-- 🚫 BLOCKING CHECK: Before placing, ensure you are NOT blocking any existing planter, lamp, or decor item
-- ❌ INCORRECT: Placing in front of sofa but shifted to the side
-- ❌ INCORRECT: Placing in front of an existing planter next to the sofa
-- ✅ CORRECT: Directly touching or very close to sofa's side panel/armrest on the EMPTY side
+BEDS:
+- Headboard against wall, leave walkway space on at least one side
 
-📚 STORAGE (bookshelf, cabinet, dresser):
-- Place against walls, not blocking pathways
-- Leave space for doors to open
-
-💡 LAMPS:
-- Place on existing tables or floor
-- Near seating areas for task lighting
-
-🛏️ BEDS:
-- Place AGAINST a wall - the headboard should touch a wall
-- For diagonal/corner views: place against the primary wall, not floating
-- Leave walkway space on at least one side
-- 🚫 NEVER place beds diagonally or floating in the room center
-
-🌿 PLANTERS (tall floor-standing plants):
+PLANTERS:
 - Place on floor next to sofa, chair, or in corners
-- ⚖️ BALANCE: If placing next to sofa, position on one side; if side table is needed, place it on the OPPOSITE side
-- 🚫 BLOCKING CHECK: Ensure planters do not block existing side tables or other furniture
+- Balance with other items on opposite side
 
-🖼️ WALL ART / WALL HANGINGS / TAPESTRY / PAINTINGS:
-🚨🚨🚨 CRITICAL - MOUNT ON WALL, NOT ON FLOOR 🚨🚨🚨
-- ⚠️ Wall art MUST be hung ON THE WALL - NEVER placed on the floor as a rug/carpet
-- ⚠️ Position on a wall, typically above a sofa, console, bed headboard, or as a focal point
-- ⚠️ Height: Center of artwork should be at eye level (~57-60 inches from floor) or slightly above furniture
-- ⚠️ If above sofa: bottom of art should be 6-12 inches above sofa back
-- ⚠️ For tapestries with tassels/fringe: these are WALL HANGINGS, not rugs - hang on wall
-- 🚫 NEVER place wall art flat on the floor - it is NOT a rug or carpet
-- 🚫 NEVER confuse wall tapestries with floor rugs - check product name/type carefully
-- ✅ CORRECT: Wall art hanging vertically on a wall surface
-- ❌ WRONG: Wall art laid flat on the floor as a carpet
+WALL ART / PAINTINGS:
+- Mount ON THE WALL, not on floor
+- Above sofa: 6-12 inches above sofa back
+- Eye level (57-60 inches from floor)
+- Do NOT confuse with rugs - wall art goes on WALLS
 
-🧶 RUGS / CARPETS / AREA RUGS:
-- Place FLAT ON THE FLOOR under furniture arrangements
-- Rugs go UNDER coffee tables, seating areas, or dining tables
-- For living rooms: rug should be large enough for front legs of sofa/chairs to rest on it
-- 🚫 Do NOT confuse wall art/tapestries with rugs - check product name/description
-- Wall art has "wall", "painting", "art", "tapestry", "hanging" in name → goes on WALL
-- Rugs have "rug", "carpet", "floor mat", "area rug" in name → goes on FLOOR
+RUGS / CARPETS:
+- Place FLAT ON THE FLOOR under furniture
+- Under coffee tables and seating areas
+- Do NOT confuse with wall art - rugs go on FLOORS
 
-🛋️ CUSHION COVERS / THROW PILLOWS (CRITICAL FOR MULTIPLE QUANTITIES):
-- Place ON THE SOFA or chairs - cushions go ON seating, not on the floor
-- When multiple cushion covers are requested (e.g., #1, #2, #3), ALL must be visible
-- Arrange cushions decoratively on the sofa: corners, along the back, or clustered
-- For 2 cushions: place one at each end of the sofa
-- For 3 cushions: two at corners + one in the middle, or all three clustered to one side
-- For 4+ cushions: distribute evenly across the sofa back
-- Each numbered cushion (#1, #2, #3) is a SEPARATE item that MUST appear
-- 🚨 If "Cushion Cover #1", "#2", "#3" are listed, you MUST show 3 cushions on the sofa
-- ❌ WRONG: Showing only 1 cushion when 3 are requested
-- ✅ CORRECT: Showing all 3 cushions arranged on the sofa
+CUSHIONS / PILLOWS:
+- Place ON sofa/chairs, not on floor
+- When multiple requested, show ALL of them
+- Distribute evenly across sofa
 
-💐 TABLETOP DECOR (vases, flower bunches, sculptures, decorative objects, small decor pieces):
-- ⚠️ CRITICAL: These are SMALL items that go ON TABLE SURFACES, not on the floor!
-- Place ON center tables, coffee tables, side tables, console tables, or dining tables
-- NEVER replace furniture like sofas/chairs - these items SIT ON existing surfaces
-- If no table exists in the room, place on shelves, windowsills, or mantels
-- Preferred placement priority: 1) Center/coffee table 2) Side table 3) Console table 4) Dining table 5) Shelf
-- Scale appropriately - these are typically 10-30cm items, not floor-standing pieces
-- ❌ WRONG: Replacing a sofa with a flower vase
-- ✅ CORRECT: Placing a flower vase on the center table in front of the sofa
+TABLETOP DECOR (vases, sculptures):
+- Place ON table surfaces (coffee table, side table, console)
+- Small items (10-30cm), not floor pieces
 
-IMPORTANT FOR MULTIPLE PRODUCTS ({product_count} products):
-- When placing {product_count} products, the room STILL stays the same
-- MORE products does NOT mean redesigning the room
-- Each product gets placed in the EXISTING space
-- The walls, floor, windows stay IDENTICAL even with {product_count} products
-- Think: "I'm adding furniture to a photo, not creating a new photo"
+MULTIPLE PRODUCTS NOTE:
+Room stays identical regardless of product count. You are adding to an existing photo, not creating a new one.
 
-═══════════════════════════════════════════════════════════════
-🎯 EXPECTED OUTPUT
-═══════════════════════════════════════════════════════════════
+EXPECTED OUTPUT:
 Generate ONE image that shows:
 - THE EXACT SAME ROOM from the input (100% preserved)
 - WITH {product_count} new furniture products placed inside it
@@ -4950,132 +5123,134 @@ QUALITY REQUIREMENTS:
             logger.error(f"Error preprocessing image for editing: {e}")
             return image_data
 
-    async def transform_perspective_to_front(self, image_data: str, current_viewing_angle: str) -> str:
-        """
-        Transform a side-angle room photo to a front-angle (straight-on) view.
-        Uses Gemini to regenerate the room from a straight-on perspective.
-
-        Args:
-            image_data: Base64 encoded room image
-            current_viewing_angle: "diagonal_left", "diagonal_right", "corner", or "straight_on"
-
-        Returns:
-            Base64 encoded transformed image with front-angle perspective
-        """
-        # If already front-facing, return as-is
-        if current_viewing_angle == "straight_on":
-            logger.info("Image already has straight-on perspective, skipping transformation")
-            return image_data
-
-        try:
-            # Convert base64 to PIL Image
-            if image_data.startswith("data:image"):
-                image_data = image_data.split(",")[1]
-
-            image_bytes = base64.b64decode(image_data)
-            pil_image = Image.open(io.BytesIO(image_bytes))
-
-            # Apply EXIF orientation correction
-            pil_image = ImageOps.exif_transpose(pil_image)
-
-            if pil_image.mode != "RGB":
-                pil_image = pil_image.convert("RGB")
-
-            logger.info(
-                f"Transforming perspective from {current_viewing_angle} to front view ({pil_image.width}x{pil_image.height})"
-            )
-
-            # Build perspective transformation prompt
-            angle_descriptions = {
-                "diagonal_left": "a diagonal left angle (camera positioned to the right, looking left)",
-                "diagonal_right": "a diagonal right angle (camera positioned to the left, looking right)",
-                "corner": "a corner angle (camera in the corner, looking diagonally across the room)",
-            }
-            angle_desc = angle_descriptions.get(current_viewing_angle, f"a {current_viewing_angle} angle")
-
-            prompt = f"""🎥 CRITICAL: CHANGE THE CAMERA ANGLE
-
-Current view: {angle_desc} (you can see TWO walls meeting at a corner).
-
-YOUR TASK: Generate this room from a COMPLETELY DIFFERENT angle - a STRAIGHT-ON FRONT VIEW.
-
-📸 WHAT A FRONT VIEW LOOKS LIKE:
-- The main wall (solid wall, NOT windows) fills the CENTER of the image
-- This wall is PARALLEL to the image edges (perfectly horizontal at top and bottom)
-- Side walls are barely visible - just thin slivers on left and right edges
-- You should NOT see a corner clearly anymore
-- Floor stretches out in front of the camera
-
-📐 WHAT MUST CHANGE:
-- The angled walls in the current image must become straight/parallel
-- The corner that's currently visible should now be at the far left or right edge (barely visible)
-- The perspective lines should converge toward a single vanishing point in the center
-
-🏠 KEEP THE SAME:
-- Same room, same size, same colors
-- Same floor material and color
-- Same window positions (but viewed from a different angle)
-- Same ceiling and lighting style
-
-⚠️ IMPORTANT: The resulting image should look VISIBLY DIFFERENT from the input - the angle is completely different!"""
-
-            # Generate transformed image
-            def _run_transform():
-                response = self.genai_client.models.generate_content(
-                    model="gemini-3-pro-image-preview",
-                    contents=[prompt, pil_image],
-                    config=types.GenerateContentConfig(
-                        response_modalities=["IMAGE"],
-                        temperature=0.3,
-                    ),
-                )
-                # Extract and log token usage
-                self.extract_usage_metadata(
-                    response, operation="transform_perspective", model_override="gemini-3-pro-image-preview"
-                )
-
-                result_image = None
-                parts = None
-                if hasattr(response, "parts") and response.parts:
-                    parts = response.parts
-                elif hasattr(response, "candidates") and response.candidates:
-                    candidate = response.candidates[0]
-                    if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
-                        parts = candidate.content.parts
-
-                if parts:
-                    for part in parts:
-                        if hasattr(part, "inline_data") and part.inline_data is not None:
-                            image_bytes_result = part.inline_data.data
-                            mime_type = getattr(part.inline_data, "mime_type", None) or "image/png"
-
-                            if isinstance(image_bytes_result, bytes):
-                                first_hex = image_bytes_result[:4].hex()
-                                if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
-                                    image_base64_result = base64.b64encode(image_bytes_result).decode("utf-8")
-                                else:
-                                    image_base64_result = image_bytes_result.decode("utf-8")
-                                result_image = f"data:{mime_type};base64,{image_base64_result}"
-                                break
-
-                return result_image
-
-            loop = asyncio.get_event_loop()
-            transformed_image = await asyncio.wait_for(loop.run_in_executor(None, _run_transform), timeout=90)
-
-            if transformed_image:
-                logger.info(f"Successfully transformed perspective from {current_viewing_angle} to front view")
-                return transformed_image
-            else:
-                logger.warning("Perspective transformation produced no image, returning original")
-                return f"data:image/jpeg;base64,{image_data}" if not image_data.startswith("data:") else image_data
-
-        except asyncio.TimeoutError:
-            logger.error("Perspective transformation timed out after 90 seconds")
-            return f"data:image/jpeg;base64,{image_data}" if not image_data.startswith("data:") else image_data
-        except Exception as e:
-            logger.error(f"Error transforming perspective: {e}")
-            return f"data:image/jpeg;base64,{image_data}" if not image_data.startswith("data:") else image_data
+    # NOTE: transform_perspective_to_front is commented out - functionality moved into remove_furniture prompt
+    # async def transform_perspective_to_front(self, image_data: str, current_viewing_angle: str, workflow_id: str = None) -> str:
+    #     """
+    #     Transform a side-angle room photo to a front-angle (straight-on) view.
+    #     Uses Gemini to regenerate the room from a straight-on perspective.
+    #
+    #     Args:
+    #         image_data: Base64 encoded room image
+    #         current_viewing_angle: "diagonal_left", "diagonal_right", "corner", or "straight_on"
+    #         workflow_id: Optional workflow ID for tracking all API calls from a single user action
+    #
+    #     Returns:
+    #         Base64 encoded transformed image with front-angle perspective
+    #     """
+    #     # If already front-facing, return as-is
+    #     if current_viewing_angle == "straight_on":
+    #         logger.info("Image already has straight-on perspective, skipping transformation")
+    #         return image_data
+    #
+    #     try:
+    #         # Convert base64 to PIL Image
+    #         if image_data.startswith("data:image"):
+    #             image_data = image_data.split(",")[1]
+    #
+    #         image_bytes = base64.b64decode(image_data)
+    #         pil_image = Image.open(io.BytesIO(image_bytes))
+    #
+    #         # Apply EXIF orientation correction
+    #         pil_image = ImageOps.exif_transpose(pil_image)
+    #
+    #         if pil_image.mode != "RGB":
+    #             pil_image = pil_image.convert("RGB")
+    #
+    #         logger.info(
+    #             f"Transforming perspective from {current_viewing_angle} to front view ({pil_image.width}x{pil_image.height})"
+    #         )
+    #
+    #         # Build perspective transformation prompt
+    #         angle_descriptions = {
+    #             "diagonal_left": "a diagonal left angle (camera positioned to the right, looking left)",
+    #             "diagonal_right": "a diagonal right angle (camera positioned to the left, looking right)",
+    #             "corner": "a corner angle (camera in the corner, looking diagonally across the room)",
+    #         }
+    #         angle_desc = angle_descriptions.get(current_viewing_angle, f"a {current_viewing_angle} angle")
+    #
+    #         prompt = f"""CRITICAL: CHANGE THE CAMERA ANGLE
+    #
+    # Current view: {angle_desc} (you can see TWO walls meeting at a corner).
+    #
+    # YOUR TASK: Generate this room from a COMPLETELY DIFFERENT angle - a STRAIGHT-ON FRONT VIEW.
+    #
+    # WHAT A FRONT VIEW LOOKS LIKE:
+    # - The main wall (solid wall, NOT windows) fills the CENTER of the image
+    # - This wall is PARALLEL to the image edges (perfectly horizontal at top and bottom)
+    # - Side walls are barely visible - just thin slivers on left and right edges
+    # - You should NOT see a corner clearly anymore
+    # - Floor stretches out in front of the camera
+    #
+    # WHAT MUST CHANGE:
+    # - The angled walls in the current image must become straight/parallel
+    # - The corner that's currently visible should now be at the far left or right edge (barely visible)
+    # - The perspective lines should converge toward a single vanishing point in the center
+    #
+    # KEEP THE SAME:
+    # - Same room, same size, same colors
+    # - Same floor material and color
+    # - Same window positions (but viewed from a different angle)
+    # - Same ceiling and lighting style
+    #
+    # IMPORTANT: The resulting image should look VISIBLY DIFFERENT from the input - the angle is completely different!"""
+    #
+    #         # Generate transformed image
+    #         def _run_transform():
+    #             response = self.genai_client.models.generate_content(
+    #                 model="gemini-3-pro-image-preview",
+    #                 contents=[prompt, pil_image],
+    #                 config=types.GenerateContentConfig(
+    #                     response_modalities=["IMAGE"],
+    #                     temperature=0.3,
+    #                 ),
+    #             )
+    #             # Extract and log token usage (workflow_id captured from outer scope)
+    #             self.extract_usage_metadata(
+    #                 response, operation="transform_perspective", model_override="gemini-3-pro-image-preview", workflow_id=workflow_id
+    #             )
+    #
+    #             result_image = None
+    #             parts = None
+    #             if hasattr(response, "parts") and response.parts:
+    #                 parts = response.parts
+    #             elif hasattr(response, "candidates") and response.candidates:
+    #                 candidate = response.candidates[0]
+    #                 if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
+    #                     parts = candidate.content.parts
+    #
+    #             if parts:
+    #                 for part in parts:
+    #                     if hasattr(part, "inline_data") and part.inline_data is not None:
+    #                         image_bytes_result = part.inline_data.data
+    #                         mime_type = getattr(part.inline_data, "mime_type", None) or "image/png"
+    #
+    #                         if isinstance(image_bytes_result, bytes):
+    #                             first_hex = image_bytes_result[:4].hex()
+    #                             if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+    #                                 image_base64_result = base64.b64encode(image_bytes_result).decode("utf-8")
+    #                             else:
+    #                                 image_base64_result = image_bytes_result.decode("utf-8")
+    #                             result_image = f"data:{mime_type};base64,{image_base64_result}"
+    #                             break
+    #
+    #             return result_image
+    #
+    #         loop = asyncio.get_event_loop()
+    #         transformed_image = await asyncio.wait_for(loop.run_in_executor(None, _run_transform), timeout=90)
+    #
+    #         if transformed_image:
+    #             logger.info(f"Successfully transformed perspective from {current_viewing_angle} to front view, workflow_id={workflow_id}")
+    #             return transformed_image
+    #         else:
+    #             logger.warning("Perspective transformation produced no image, returning original")
+    #             return f"data:image/jpeg;base64,{image_data}" if not image_data.startswith("data:") else image_data
+    #
+    #     except asyncio.TimeoutError:
+    #         logger.error("Perspective transformation timed out after 90 seconds")
+    #         return f"data:image/jpeg;base64,{image_data}" if not image_data.startswith("data:") else image_data
+    #     except Exception as e:
+    #         logger.error(f"Error transforming perspective: {e}")
+    #         return f"data:image/jpeg;base64,{image_data}" if not image_data.startswith("data:") else image_data
 
     async def generate_alternate_view(
         self, visualization_image: str, target_angle: str, products_description: Optional[str] = None
@@ -5328,10 +5503,9 @@ DO NOT:
         camera_perspective = scale_refs.get("camera_perspective", {})
 
         instruction = """
-📐 PERSPECTIVE-AWARE SCALING SYSTEM
-═══════════════════════════════════════════════════════════════
+PERSPECTIVE-AWARE SCALING SYSTEM
 
-🎯 ROOM CONTEXT (from analysis):
+ROOM CONTEXT:
 """
         # Add room dimension context
         room_width_ft = room_dims.get("estimated_width_ft", 12)
@@ -5351,26 +5525,23 @@ DO NOT:
 
         # Add reference object anchors
         instruction += """
-🚪 SCALE ANCHORS (use these to calibrate product sizes):
-- Standard interior door: 80 inches tall (6.67 feet)
-- Standard window: 36-48 inches wide
-- Standard ceiling: 8-9 feet (96-108 inches)
-- Dining chair seat height: 18 inches from floor
-- Standard sofa depth: 32-40 inches
-- Coffee table height: 16-18 inches
+SCALE ANCHORS:
+- Standard door: 80" tall
+- Standard window: 36-48" wide
+- Ceiling: 8-9 feet
+- Sofa depth: 32-40"
+- Coffee table height: 16-18"
 """
 
         if scale_refs.get("door_visible"):
             door_percent = scale_refs.get("door_apparent_height_percent", 25)
             instruction += f"""
-🚪 DOOR DETECTED: A door is visible in this image occupying ~{door_percent}% of image height.
-   Use this as your PRIMARY scale reference! Scale all products relative to this door.
+DOOR DETECTED: Occupying ~{door_percent}% of image height. Use as scale reference.
 """
 
         # Add per-product relative scaling
         instruction += """
-📏 PRODUCT RELATIVE SIZING:
-Instead of guessing sizes, use these RELATIVE measurements for each product:
+PRODUCT SIZING:
 """
 
         for i, product in enumerate(products):
@@ -5416,28 +5587,16 @@ Instead of guessing sizes, use these RELATIVE measurements for each product:
 """
 
         instruction += """
-🔭 PERSPECTIVE DEPTH RULES:
-Objects appear smaller as they recede into the scene due to perspective:
+PERSPECTIVE DEPTH:
+- FOREGROUND (100%): Front of image, closest to camera
+- MIDGROUND (70-80%): Center of room
+- BACKGROUND (50-60%): Near back wall, furthest from camera
 
-| Position    | Apparent Scale | Description                        |
-|-------------|----------------|------------------------------------|
-| FOREGROUND  | 100%           | Front of image, closest to camera  |
-| MIDGROUND   | 70-80%         | Center of room                     |
-| BACKGROUND  | 50-60%         | Near back wall, furthest from cam  |
-
-⚠️ CRITICAL SCALING CHECKS:
-1. If a door is visible, compare product heights to the door (80" standard)
-2. A sofa (typical 84-96" wide) should occupy ~40-55% of a 12-15ft wide room
-3. Products placed at the BACK of room should appear SMALLER than same product in FOREGROUND
-4. A coffee table should be ~1/2 to 2/3 the width of the sofa in front of it
-5. Side tables should be roughly the same height as sofa armrests (~25-30")
-
-❌ WRONG: All products same apparent size regardless of where they're placed
-❌ WRONG: Sofa at back wall appears same size as if it were in foreground
-❌ WRONG: Product appears larger than the door when it should be smaller
-✅ CORRECT: Products scale naturally with perspective (farther = smaller apparent size)
-✅ CORRECT: Product occupies correct % of room width based on actual dimensions
-✅ CORRECT: Products in background appear appropriately smaller than foreground
+SCALING CHECKS:
+- Compare product heights to door (80" standard)
+- Sofa (84-96" wide) should occupy ~40-55% of room width
+- Products at BACK appear SMALLER than foreground
+- Coffee table ~1/2 to 2/3 width of sofa
 """
 
         return instruction
@@ -5718,7 +5877,7 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
             }
 
             start_time = time.time()
-            await self._make_api_request("models/gemini-3-pro-preview:generateContent", test_payload)
+            await self._make_api_request("models/gemini-3-pro-preview:generateContent", test_payload, operation="health_check")
             response_time = time.time() - start_time
 
             return {
@@ -5754,7 +5913,7 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
 
         try:
             # Make API request
-            response = await self._make_api_request("generateContent", payload)
+            response = await self._make_api_request("generateContent", payload, operation="analyze_image_with_prompt")
 
             # Extract text response
             if response and "candidates" in response:
@@ -5867,7 +6026,9 @@ IMPORTANT:
 
         try:
             # Make API request using Gemini Flash for faster style classification
-            response = await self._make_api_request("models/gemini-2.0-flash:generateContent", payload)
+            response = await self._make_api_request(
+                "models/gemini-2.0-flash:generateContent", payload, operation="classify_room_style"
+            )
 
             # Extract and parse JSON response
             if response and "candidates" in response:
@@ -6094,7 +6255,9 @@ RULES:
 
         try:
             logger.info("[_detect_product_positions] Calling Gemini API...")
-            result = await self._make_api_request("models/gemini-2.0-flash-exp:generateContent", payload)
+            result = await self._make_api_request(
+                "models/gemini-2.0-flash-exp:generateContent", payload, operation="detect_product_positions"
+            )
             logger.info(f"[_detect_product_positions] Got API response")
 
             content = result.get("candidates", [{}])[0].get("content", {})

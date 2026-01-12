@@ -331,53 +331,46 @@ export default function CanvasPanel({
     }
   }, [products, visualizationResult, visualizedProducts.length]);
 
-  // Keep visualizedProducts in sync with canvas products (handles removal AND quantity changes)
-  // This ensures edit mode always uses current canvas state
+  // Keep visualizedProducts quantities in sync with canvas products
+  // NOTE: Do NOT sync removals here - visualizedProducts should retain removed products
+  // until visualization is triggered, so detectChangeType can detect the removal
   useEffect(() => {
     if (visualizedProducts.length === 0 || !visualizationResult) return;
 
     // Build a map of current canvas products by ID
     const currentProductMap = new Map(products.map(p => [String(p.id), p]));
 
-    // Check if sync is needed: product removed OR quantity changed
-    let needsSync = false;
-
-    // Check for removals
+    // Only check for quantity changes, NOT removals
+    // Removals are intentionally kept in visualizedProducts for detection
+    let needsQuantitySync = false;
     for (const vp of visualizedProducts) {
-      if (!currentProductMap.has(String(vp.id))) {
-        needsSync = true;
+      const currentProduct = currentProductMap.get(String(vp.id));
+      // Only sync if product exists in canvas AND quantity changed
+      if (currentProduct && (currentProduct.quantity || 1) !== (vp.quantity || 1)) {
+        needsQuantitySync = true;
         break;
       }
     }
 
-    // Check for quantity changes
-    if (!needsSync) {
-      for (const vp of visualizedProducts) {
+    if (needsQuantitySync) {
+      // Sync only quantities, keep all visualized products (including removed ones)
+      const syncedProducts = visualizedProducts.map(vp => {
         const currentProduct = currentProductMap.get(String(vp.id));
-        if (currentProduct && (currentProduct.quantity || 1) !== (vp.quantity || 1)) {
-          needsSync = true;
-          break;
-        }
-      }
-    }
-
-    if (needsSync) {
-      // Sync visualizedProducts to match current canvas products
-      // Only include products that are still in the canvas, with updated quantities
-      const syncedProducts = visualizedProducts
-        .filter(vp => currentProductMap.has(String(vp.id)))
-        .map(vp => {
-          const currentProduct = currentProductMap.get(String(vp.id))!;
+        if (currentProduct) {
+          // Product still in canvas - update quantity
           return { ...vp, quantity: currentProduct.quantity || 1 };
-        });
+        }
+        // Product removed from canvas - keep as-is for removal detection
+        return vp;
+      });
 
-      console.log('[CanvasPanel] Syncing visualizedProducts with canvas:', {
+      console.log('[CanvasPanel] Syncing visualizedProducts quantities:', {
         before: visualizedProducts.map(p => ({ name: p.name, qty: p.quantity || 1 })),
         after: syncedProducts.map(p => ({ name: p.name, qty: p.quantity || 1 })),
       });
 
       setVisualizedProducts(syncedProducts);
-      setVisualizedProductIds(new Set(syncedProducts.map(p => String(p.id))));
+      // DO NOT update visualizedProductIds - keep removed products in the set for detection
     }
   }, [products, visualizedProducts, visualizationResult]);
 
@@ -426,10 +419,44 @@ export default function CanvasPanel({
     const currentIds = new Set(products.map(p => String(p.id)));
 
     // Check for removals (products that were visualized but no longer in canvas)
-    const removedProducts = Array.from(visualizedProductIds).filter(id => !currentIds.has(id));
-    if (removedProducts.length > 0) {
-      console.log('[CanvasPanel] Detected removal, will reset visualization');
-      return { type: 'reset', reason: 'products_removed' };
+    const removedProductIds = Array.from(visualizedProductIds).filter(id => !currentIds.has(id));
+
+    // Check for additions (products in canvas but not yet visualized)
+    const newProducts = products.filter(p => !visualizedProductIds.has(String(p.id)));
+
+    // OPTIMIZATION: If products are both removed AND added, use remove_and_add workflow
+    // This avoids full reset and instead: (1) removes products (2) adds new ones incrementally
+    if (removedProductIds.length > 0 && newProducts.length > 0 && visualizationResult) {
+      // Get full product info for removed products from visualizedProducts state
+      const removedProductsInfo = removedProductIds.map(id => {
+        const product = products.find(p => String(p.id) === id);
+        return product || { id, name: `Product ${id}` };
+      });
+      console.log('[CanvasPanel] Detected removal AND addition, will use remove_and_add workflow');
+      console.log('[CanvasPanel] Removed:', removedProductIds, 'Added:', newProducts.map(p => p.id));
+      return {
+        type: 'remove_and_add',
+        removedProducts: removedProductsInfo,
+        newProducts,
+        reason: 'products_removed_and_added'
+      };
+    }
+
+    // Simple removal only (no additions) - use removal mode to erase products
+    if (removedProductIds.length > 0 && visualizationResult) {
+      // Get full product info for removed products from visualizedProducts state
+      const removedProductsInfo = removedProductIds.map(id => {
+        const product = visualizedProducts.find(p => String(p.id) === id);
+        return product || { id, name: `Product ${id}` };
+      });
+      console.log('[CanvasPanel] Detected removal only, will use removal mode');
+      console.log('[CanvasPanel] Products to remove:', removedProductsInfo.map(p => p.name || p.id));
+      return {
+        type: 'removal',
+        removedProducts: removedProductsInfo,
+        remainingProducts: products,
+        reason: 'products_removed'
+      };
     }
 
     // Check for quantity changes (requires full re-visualization since positions may change)
@@ -443,10 +470,9 @@ export default function CanvasPanel({
       return { type: 'reset', reason: 'quantity_changed' };
     }
 
-    // Check for additions (products in canvas but not yet visualized)
-    const newProducts = products.filter(p => !visualizedProductIds.has(String(p.id)));
+    // Simple addition only (no removals) - use incremental
     if (newProducts.length > 0 && visualizedProductIds.size > 0) {
-      console.log('[CanvasPanel] Detected additions, will use incremental visualization');
+      console.log('[CanvasPanel] Detected additions only, will use incremental visualization');
       return { type: 'additive', newProducts };
     }
 
@@ -574,6 +600,9 @@ export default function CanvasPanel({
       let productsToVisualize: Product[];
       let isIncremental = false;
       let forceReset = false;
+      let removalMode = false;
+      let productsToRemove: any[] = [];
+      let productsToAdd: Product[] = [];
 
       if (changeInfo.type === 'additive') {
         // Use previous visualization as base, only add new products
@@ -581,6 +610,22 @@ export default function CanvasPanel({
         productsToVisualize = changeInfo.newProducts!;
         isIncremental = true;
         console.log(`[CanvasPanel] Incremental visualization: adding ${productsToVisualize.length} new products`);
+      } else if (changeInfo.type === 'remove_and_add') {
+        // OPTIMIZATION: Two-step workflow - remove then add incrementally
+        // This avoids full reset when products are both removed and added
+        baseImage = visualizationResult!;
+        productsToVisualize = products;  // All remaining products (for reference)
+        productsToRemove = changeInfo.removedProducts || [];
+        productsToAdd = changeInfo.newProducts || [];
+        removalMode = true;
+        console.log(`[CanvasPanel] Remove and add: removing ${productsToRemove.length}, adding ${productsToAdd.length} products`);
+      } else if (changeInfo.type === 'removal') {
+        // Simple removal: use current visualization and remove specific products
+        baseImage = visualizationResult!;
+        productsToVisualize = products;  // Remaining products (for reference)
+        productsToRemove = changeInfo.removedProducts || [];
+        removalMode = true;
+        console.log(`[CanvasPanel] Removal mode: removing ${productsToRemove.length} products`);
       } else if (changeInfo.type === 'reset') {
         // Reset: use CLEAN room image to ensure removed products don't appear
         // This is critical when using curated looks where roomImage might have products baked in
@@ -671,6 +716,9 @@ export default function CanvasPanel({
             },
             is_incremental: isIncremental,
             force_reset: forceReset,
+            removal_mode: removalMode,  // Enable remove_and_add workflow
+            products_to_remove: removalMode ? productsToRemove.map(formatProductForApi) : undefined,  // Products to remove
+            products_to_add: removalMode ? productsToAdd.map(formatProductForApi) : undefined,  // Products to add after removal
             user_uploaded_new_image: changeInfo.type === 'initial',
             curated_look_id: curatedLookId,  // Pass curated look ID for precomputation cache
             project_id: projectId,  // Pass project ID for room analysis cache
@@ -845,6 +893,114 @@ export default function CanvasPanel({
     setCanRedo(newRedoStack.length > 0);
 
     console.log('[CanvasPanel] Redo successful. Remaining redo stack size:', newRedoStack.length);
+  };
+
+  // Improve Quality - Re-visualize all products on clean base image
+  const [isImprovingQuality, setIsImprovingQuality] = useState(false);
+
+  const handleImproveQuality = async () => {
+    const sessionId = sessionStorage.getItem('design_session_id');
+    const baseImage = cleanRoomImage || roomImage;
+
+    if (!baseImage || products.length === 0 || !sessionId) {
+      console.log('[ImproveQuality] Missing requirements');
+      return;
+    }
+
+    // Confirm with warning about undo/redo reset
+    const confirmed = window.confirm(
+      'Improve Quality will re-visualize all products on the original room image.\n\n' +
+      'WARNING: This will reset your undo/redo history.\n\n' +
+      'Continue?'
+    );
+    if (!confirmed) return;
+
+    setIsImprovingQuality(true);
+    console.log('[ImproveQuality] Starting quality improvement with', products.length, 'products');
+
+    try {
+      const productDetails = products.map(p => ({
+        id: p.id,
+        name: p.name,
+        full_name: p.name,
+        style: 0.8,
+        category: p.productType || 'furniture',
+        quantity: p.quantity || 1,
+        image_url: p.image_url || getProductImageUrl(p),
+        furniture_type: p.productType || 'furniture',
+        description: p.description || '',
+        dimensions: extractDimensions(p.attributes),
+      }));
+
+      console.log('[ImproveQuality] Sending products:', productDetails.map(p => ({ name: p.name, qty: p.quantity })));
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: baseImage,  // Use original/clean room image
+            products: productDetails,
+            analysis: { design_style: 'modern', color_palette: [], room_type: 'living_room' },
+            is_incremental: false,
+            force_reset: true,  // Force fresh visualization
+            user_uploaded_new_image: false,
+            action: 'add',
+            curated_look_id: curatedLookId,
+            project_id: projectId,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+        throw new Error(errorData.detail || 'Quality improvement failed');
+      }
+
+      const data = await response.json();
+
+      if (!data.visualization?.rendered_image) {
+        throw new Error('No visualization image was generated');
+      }
+
+      const newImage = data.visualization.rendered_image;
+      console.log('[ImproveQuality] Success! New image length:', newImage?.length);
+
+      // Update visualization result
+      setVisualizationResult(newImage);
+
+      // Reset undo/redo history
+      const newHistoryEntry: VisualizationHistoryEntry = {
+        image: newImage,
+        products: products.map(p => ({ ...p, quantity: p.quantity || 1 })),
+        productIds: new Set(products.map(p => String(p.id))),
+      };
+      setVisualizationHistory([newHistoryEntry]);
+      setRedoStack([]);
+      setCanUndo(false);
+      setCanRedo(false);
+
+      // Update visualized state
+      const newProductIds = new Set(products.map(p => String(p.id)));
+      setVisualizedProductIds(newProductIds);
+      setVisualizedProducts(products.map(p => ({ ...p, quantity: p.quantity || 1 })));
+      setNeedsRevisualization(false);
+
+      // Notify parent
+      if (onVisualizationImageChange) {
+        onVisualizationImageChange(newImage);
+      }
+      if (onVisualizationHistoryChange) {
+        onVisualizationHistoryChange([newHistoryEntry]);
+      }
+
+    } catch (error) {
+      console.error('[ImproveQuality] Error:', error);
+      alert(`Failed to improve quality: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsImprovingQuality(false);
+    }
   };
 
   // Handle angle selection for multi-angle viewing
@@ -1934,8 +2090,8 @@ export default function CanvasPanel({
                       {currentAngle.charAt(0).toUpperCase() + currentAngle.slice(1)} View
                     </div>
                   )}
-                  {/* Re-visualization shimmer overlay */}
-                  {isVisualizing && (
+                  {/* Re-visualization / Improve Quality / Edit shimmer overlay */}
+                  {(isVisualizing || isImprovingQuality || isCompositingLayers) && (
                     <>
                       <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"
                            style={{ backgroundSize: '200% 100%' }} />
@@ -1945,8 +2101,16 @@ export default function CanvasPanel({
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                           </svg>
-                          <span className="text-white font-medium text-sm">{visualizationProgress || 'Updating visualization...'}</span>
-                          <span className="text-white/70 text-xs mt-1">Omni is updating your space</span>
+                          <span className="text-white font-medium text-sm">
+                            {isImprovingQuality ? 'Improving quality...' :
+                             isCompositingLayers ? 'Applying position changes...' :
+                             visualizationProgress || 'Updating visualization...'}
+                          </span>
+                          <span className="text-white/70 text-xs mt-1">
+                            {isImprovingQuality ? 'Re-rendering from original room' :
+                             isCompositingLayers ? 'Finalizing edits' :
+                             'Omni is updating your space'}
+                          </span>
                         </div>
                       </div>
                     </>
@@ -2160,6 +2324,36 @@ export default function CanvasPanel({
           <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2 text-center">
             Visualization matches current canvas
           </p>
+        )}
+
+        {/* Improve Quality - Advanced action at bottom */}
+        {visualizationResult && products.length > 0 && (
+          <div className="mt-4 pt-3 border-t border-neutral-200 dark:border-neutral-700">
+            <button
+              onClick={handleImproveQuality}
+              disabled={isImprovingQuality || isVisualizing}
+              className="w-full py-2 px-3 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 disabled:bg-neutral-50 dark:disabled:bg-neutral-900 disabled:cursor-not-allowed text-neutral-600 dark:text-neutral-300 disabled:text-neutral-400 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+              title="Re-visualize all products on the original room image to improve quality. Resets undo/redo history."
+            >
+              {isImprovingQuality ? (
+                <>
+                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Improving Quality...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Improve Quality
+                </>
+              )}
+            </button>
+            <p className="text-xs text-neutral-400 dark:text-neutral-500 text-center mt-1">Re-renders from original room image. Resets undo/redo.</p>
+          </div>
         )}
       </div>
     </div>

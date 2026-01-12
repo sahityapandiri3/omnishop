@@ -29,7 +29,13 @@ from services.budget_allocator import validate_and_adjust_budget_allocations
 from services.chatgpt_service import chatgpt_service
 from services.conversation_context import conversation_context_manager
 from services.embedding_service import get_embedding_service
-from services.google_ai_service import RoomAnalysis, VisualizationRequest, VisualizationResult, google_ai_service
+from services.google_ai_service import (
+    RoomAnalysis,
+    VisualizationRequest,
+    VisualizationResult,
+    generate_workflow_id,
+    google_ai_service,
+)
 from services.ml_recommendation_model import ml_recommendation_model
 from services.nlp_processor import design_nlp_processor
 from services.ranking_service import get_ranking_service
@@ -2738,6 +2744,10 @@ async def get_chat_history(session_id: str, db: AsyncSession = Depends(get_db)):
 async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depends(get_db)):
     """Generate room visualization with selected products using Google AI Studio"""
     try:
+        # Generate workflow_id to track all API calls from this visualization request
+        workflow_id = generate_workflow_id()
+        logger.info(f"[Visualize] Starting new visualization workflow: {workflow_id}")
+
         # Verify session exists
         session_query = select(ChatSession).where(ChatSession.id == session_id)
         session_result = await db.execute(session_query)
@@ -2755,6 +2765,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         force_reset = request.get("force_reset", False)  # Force fresh visualization
         removal_mode = request.get("removal_mode", False)  # Product removal mode
         products_to_remove = request.get("products_to_remove", [])  # Products to remove from visualization
+        products_to_add = request.get("products_to_add", [])  # Products to add after removal (for remove_and_add mode)
         custom_positions = request.get("custom_positions", [])  # Optional furniture positions for edit mode
         curated_look_id = request.get("curated_look_id")  # For curated look editing
         project_id = request.get("project_id")  # For design page project editing
@@ -2762,10 +2773,18 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         logger.info(
             f"[Visualize] Received request with curated_look_id={curated_look_id}, project_id={project_id}, session_id={session_id}, removal_mode={removal_mode}, visualized_products={len(visualized_products)}"
         )
+        # Debug: Log products_to_add details
+        logger.info(
+            f"[Visualize] products_to_remove: {len(products_to_remove)} items, products_to_add: {len(products_to_add)} items"
+        )
+        if products_to_add:
+            logger.info(f"[Visualize] products_to_add details: {[p.get('name') or p.get('id') for p in products_to_add]}")
 
         # Workflow detection for centralized prompts
         def detect_workflow_type() -> str:
             """Detect which visualization workflow to use."""
+            if removal_mode and products_to_remove and products_to_add:
+                return "REMOVE_AND_ADD"  # Two-step: remove then add incrementally
             if removal_mode and products_to_remove:
                 return "PRODUCT_REMOVAL"
             if request.get("edit_instructions"):
@@ -2817,7 +2836,8 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             raise HTTPException(status_code=400, detail="At least one product must be selected")
 
         # Handle REMOVAL MODE - remove specific products from visualization while preserving others
-        if removal_mode and products_to_remove:
+        # Skip this block for REMOVE_AND_ADD - that's handled separately below
+        if removal_mode and products_to_remove and workflow_type == "PRODUCT_REMOVAL":
             logger.info(f"[Visualize] REMOVAL MODE: Removing {len(products_to_remove)} products from visualization")
 
             # Load dimensions for products to remove and remaining products
@@ -2833,7 +2853,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
 
             dimensions_map = await load_product_dimensions(db, all_product_ids)
 
-            # Enrich products to remove with dimensions and quantity info
+            # Enrich products to remove with dimensions, quantity info, and image_url
             products_to_remove_enriched = []
             for p in products_to_remove:
                 enriched = {
@@ -2842,6 +2862,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     "full_name": p.get("full_name") or p.get("name"),
                     "quantity": p.get("remove_count", 1),
                     "furniture_type": p.get("furniture_type", "furniture"),
+                    "image_url": p.get("image_url"),  # Product image for visual identification by Gemini
                 }
                 if p.get("id") and p["id"] in dimensions_map:
                     enriched["dimensions"] = dimensions_map[p["id"]]
@@ -2852,9 +2873,8 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             # Enrich remaining products with dimensions
             remaining_products_enriched = enrich_products_with_dimensions([dict(p) for p in (products or [])], dimensions_map)
 
-            logger.info(
-                f"[Visualize] Products to remove (with dimensions): {[p.get('full_name') for p in products_to_remove_enriched]}"
-            )
+            products_to_remove_log = [(p.get("full_name"), f"qty={p.get('quantity')}") for p in products_to_remove_enriched]
+            logger.info(f"[Visualize] Products to remove (with dimensions): {products_to_remove_log}")
             logger.info(
                 f"[Visualize] Remaining products: {[p.get('full_name') or p.get('name') for p in remaining_products_enriched]}"
             )
@@ -2896,6 +2916,145 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 logger.error(f"[Visualize] Error in removal mode: {e}", exc_info=True)
                 # Fall through to normal visualization if removal fails
 
+        # Handle REMOVE_AND_ADD workflow - two-step: remove then add incrementally
+        # This avoids full reset when products are removed and added in one action
+        if workflow_type == "REMOVE_AND_ADD":
+            logger.info(
+                f"[Visualize] REMOVE_AND_ADD MODE: Removing {len(products_to_remove)} products, then adding {len(products_to_add)} new products"
+            )
+
+            from services.google_ai_service import enrich_products_with_dimensions, load_product_dimensions
+
+            # Step 1: Gather product IDs for dimension loading
+            all_product_ids = []
+            for p in products_to_remove:
+                if p.get("id"):
+                    all_product_ids.append(p["id"])
+            for p in products_to_add:
+                if p.get("id"):
+                    all_product_ids.append(p["id"])
+            for p in products:  # Remaining products
+                if p.get("id"):
+                    all_product_ids.append(p["id"])
+
+            dimensions_map = await load_product_dimensions(db, all_product_ids)
+
+            # Step 2: Enrich products to remove with image_url for visual identification
+            products_to_remove_enriched = []
+            for p in products_to_remove:
+                enriched = {
+                    "id": p.get("id"),
+                    "name": p.get("name"),
+                    "full_name": p.get("full_name") or p.get("name"),
+                    "quantity": p.get("remove_count", 1),
+                    "furniture_type": p.get("furniture_type", "furniture"),
+                    "image_url": p.get("image_url"),  # Product image for visual identification by Gemini
+                }
+                if p.get("id") and p["id"] in dimensions_map:
+                    enriched["dimensions"] = dimensions_map[p["id"]]
+                else:
+                    enriched["dimensions"] = {}
+                products_to_remove_enriched.append(enriched)
+
+            # Step 3: Enrich remaining products (products that stay in the visualization)
+            remaining_products_enriched = enrich_products_with_dimensions([dict(p) for p in (products or [])], dimensions_map)
+
+            products_remove_log = [(p.get("full_name"), f"qty={p.get('quantity')}") for p in products_to_remove_enriched]
+            logger.info(f"[Visualize] Products to remove: {products_remove_log}")
+            logger.info(
+                f"[Visualize] Remaining products after removal: {[p.get('full_name') or p.get('name') for p in remaining_products_enriched]}"
+            )
+
+            try:
+                # Step 4: Remove products from current visualization
+                cleaned_image = await google_ai_service.remove_products_from_visualization(
+                    base_image, products_to_remove_enriched, remaining_products_enriched
+                )
+
+                if not cleaned_image:
+                    logger.warning("[Visualize] Product removal failed in REMOVE_AND_ADD, falling back to full reset")
+                    # Fall through to normal visualization
+                else:
+                    logger.info(f"[Visualize] Step 1 complete: Products removed successfully")
+
+                    # Step 5: Enrich products to add with dimensions and images
+                    products_to_add_enriched = enrich_products_with_dimensions(
+                        [dict(p) for p in products_to_add], dimensions_map
+                    )
+
+                    # Load product images for the new products
+                    add_product_ids = [p.get("id") for p in products_to_add if p.get("id")]
+                    if add_product_ids:
+                        from database.models import Product as ProductModel
+                        from database.models import ProductImage
+
+                        result = await db.execute(
+                            select(ProductImage)
+                            .where(ProductImage.product_id.in_(add_product_ids))
+                            .order_by(ProductImage.product_id, ProductImage.image_order)
+                        )
+                        product_images = result.scalars().all()
+
+                        # Group images by product_id
+                        images_by_product = {}
+                        for img in product_images:
+                            if img.product_id not in images_by_product:
+                                images_by_product[img.product_id] = []
+                            images_by_product[img.product_id].append(img.original_url)
+
+                        # Attach images to products
+                        for p in products_to_add_enriched:
+                            p_id = p.get("id")
+                            if p_id and p_id in images_by_product:
+                                p["images"] = images_by_product[p_id][:3]  # Max 3 images per product
+
+                    logger.info(f"[Visualize] Step 2: Adding {len(products_to_add_enriched)} products incrementally")
+                    logger.info(
+                        f"[Visualize] Products to add: {[p.get('full_name') or p.get('name') for p in products_to_add_enriched]}"
+                    )
+
+                    # Step 6: Incrementally add new products to the cleaned image
+                    # Use the existing products (after removal) as context
+                    visualization_result = await google_ai_service.generate_add_multiple_visualization(
+                        room_image=cleaned_image,
+                        products=products_to_add_enriched,
+                        existing_products=remaining_products_enriched,
+                        workflow_id=workflow_id,
+                    )
+
+                    if visualization_result:
+                        logger.info(
+                            f"[Visualize] REMOVE_AND_ADD complete: Successfully removed {len(products_to_remove)} and added {len(products_to_add)} products"
+                        )
+
+                        # Update visualization history
+                        context = conversation_context_manager.get_or_create_context(session_id)
+                        context.visualization_history.append(visualization_result)
+                        context.visualization_redo_stack = []
+
+                        return {
+                            "visualization": {
+                                "rendered_image": f"data:image/jpeg;base64,{visualization_result}",
+                                "processing_time": 0.0,
+                                "quality_metrics": {
+                                    "overall_quality": 0.87,
+                                    "placement_accuracy": 0.90,
+                                    "lighting_realism": 0.85,
+                                },
+                            },
+                            "products": products,  # All current products
+                            "removed_products": products_to_remove,
+                            "added_products": products_to_add,
+                            "mode": "remove_and_add",
+                        }
+                    else:
+                        logger.warning("[Visualize] Incremental add failed in REMOVE_AND_ADD, falling back to full reset")
+                        # Fall through to normal visualization
+
+            except Exception as e:
+                logger.error(f"[Visualize] Error in REMOVE_AND_ADD mode: {e}", exc_info=True)
+                # Fall through to normal visualization if the two-step process fails
+
         # Handle force reset FIRST - this takes priority over incremental mode
         # force_reset means products were removed, so we must use the clean base image
         if force_reset:
@@ -2908,36 +3067,8 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             is_incremental = False
             logger.info("Force reset: Disabled incremental mode to ensure clean visualization")
 
-        # Perspective transformation: Convert side-angle photos to front view
-        # Only applies to fresh visualizations (force_reset or first time)
-        normalize_perspective = request.get("normalize_perspective", True)
-        if normalize_perspective and (force_reset or not is_incremental):
-            try:
-                # Use cached room analysis if available, otherwise call API
-                if cached_room_analysis:
-                    logger.info("[Visualize] Using cached room analysis for perspective check (saved 2-8s)")
-                    room_analysis = cached_room_analysis
-                else:
-                    logger.info("[Visualize] No cached room analysis - calling Gemini API...")
-                    room_analysis = await google_ai_service.analyze_room_image(base_image)
-
-                # Check if viewing angle needs transformation
-                camera_view = getattr(room_analysis, "camera_view_analysis", {}) or {}
-                viewing_angle = camera_view.get("viewing_angle", "straight_on")
-
-                if viewing_angle and viewing_angle != "straight_on":
-                    logger.info(f"Detected {viewing_angle} camera angle - transforming to front view")
-                    transformed_image = await google_ai_service.transform_perspective_to_front(base_image, viewing_angle)
-                    if transformed_image and transformed_image != base_image:
-                        base_image = transformed_image
-                        logger.info("Successfully transformed perspective to front view")
-                    else:
-                        logger.info("Perspective transformation returned original image")
-                else:
-                    logger.info("Room already has straight-on perspective, no transformation needed")
-            except Exception as e:
-                logger.warning(f"Perspective transformation failed, using original image: {e}")
-                # Continue with original image if transformation fails
+        # Note: Perspective transformation is handled by remove_furniture() prompt
+        # No separate transform_perspective_to_front call needed here
 
         # Check product count and enforce incremental visualization for larger sets
         # The Gemini API has input size limitations and fails with 500 errors when
@@ -3022,7 +3153,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 existing_furniture = cached_existing_furniture
             else:
                 logger.info("[Visualize] No cached furniture data - calling Gemini API...")
-                objects = await google_ai_service.detect_objects_in_room(base_image)
+                objects = await google_ai_service.detect_objects_in_room(base_image, workflow_id=workflow_id)
                 existing_furniture = objects
 
         # Check if selected product matches existing furniture category
@@ -3348,11 +3479,16 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 logger.info(
                     f"  Existing products in base image: {', '.join(existing_product_details) if existing_product_details else 'none'}"
                 )
+                # Debug: Log image_url presence for product reference matching
+                for p in products_for_viz:
+                    has_image = bool(p.get("image_url"))
+                    logger.info(f"  [ImageURL] {p.get('name')}: {'has image_url' if has_image else 'NO image_url'}")
 
                 current_image = await google_ai_service.generate_add_multiple_visualization(
                     room_image=base_image,  # Start with previous visualization (already has old products)
                     products=products_for_viz,  # Use expanded products for quantity support
                     existing_products=visualized_products,  # Products already in base image to preserve
+                    workflow_id=workflow_id,
                 )
             except ValueError as e:
                 logger.error(f"Batch visualization error: {e}")
@@ -3404,6 +3540,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     current_image = await google_ai_service.generate_add_multiple_visualization(
                         room_image=current_image,
                         products=batch,
+                        workflow_id=workflow_id,
                     )
                     batch_num += 1
 
@@ -6036,7 +6173,9 @@ async def remove_furniture_from_visualization(session_id: str, request: dict, db
     - image: base64 encoded image
     """
     try:
-        logger.info(f"Removing furniture for edit mode, session: {session_id}")
+        # Generate workflow_id to track all API calls from this user action
+        workflow_id = generate_workflow_id()
+        logger.info(f"Removing furniture for edit mode, session: {session_id}, workflow: {workflow_id}")
 
         # Extract image from request
         image = request.get("image")
@@ -6044,7 +6183,7 @@ async def remove_furniture_from_visualization(session_id: str, request: dict, db
             raise HTTPException(status_code=400, detail="No image provided")
 
         # Call Google AI service to remove furniture (with retries)
-        clean_image = await google_ai_service.remove_furniture(image, max_retries=3)
+        clean_image = await google_ai_service.remove_furniture(image, max_retries=3, workflow_id=workflow_id)
 
         if not clean_image:
             raise HTTPException(status_code=500, detail="Failed to remove furniture after retries")

@@ -18,7 +18,7 @@ from schemas.homestyling import (
     UpdatePreferencesRequest,
     UploadImageRequest,
 )
-from services.google_ai_service import google_ai_service
+from services.google_ai_service import generate_workflow_id, google_ai_service
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -267,6 +267,10 @@ async def upload_room_image(
     3. Updates the session status to 'upload'
     """
     try:
+        # Generate workflow_id to track all API calls from this user action
+        workflow_id = generate_workflow_id()
+        logger.info(f"Uploading room image for session: {session_id}, workflow: {workflow_id}")
+
         query = select(HomeStylingSession).where(HomeStylingSession.id == session_id)
         result = await db.execute(query)
         session = result.scalars().first()
@@ -285,7 +289,7 @@ async def upload_room_image(
         # Remove furniture from the image using Google AI
         logger.info(f"Starting furniture removal for session: {session_id}")
         try:
-            clean_image = await google_ai_service.remove_furniture(image_data, max_retries=3)
+            clean_image = await google_ai_service.remove_furniture(image_data, max_retries=3, workflow_id=workflow_id)
             if clean_image:
                 session.clean_room_image = clean_image
                 logger.info(f"Furniture removal successful for session: {session_id}")

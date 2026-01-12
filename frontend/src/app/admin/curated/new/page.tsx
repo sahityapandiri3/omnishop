@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
-import { Panel, Group } from 'react-resizable-panels';
+import { Panel, Group, GroupImperativeHandle } from 'react-resizable-panels';
 import { PanelResizeHandle } from '@/components/ui/PanelResizeHandle';
 import { adminCuratedAPI, getCategorizedStores, visualizeRoom, startChatSession, startFurnitureRemoval, checkFurnitureRemovalStatus, furniturePositionAPI, generateAngleView, StoreCategory, getRecoveredCurationState, clearRecoveredCurationState, imageAPI } from '@/utils/api';
 import { FurniturePosition, MagicGrabLayer, PendingMoveData } from '@/components/DraggableFurnitureCanvas';
@@ -121,6 +121,7 @@ export default function CreateCuratedLookPage() {
   const [totalRelated, setTotalRelated] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const productsContainerRef = useRef<HTMLDivElement>(null);
+  const panelGroupRef = useRef<GroupImperativeHandle>(null);
 
   // Canvas state
   const [selectedProducts, setSelectedProducts] = useState<any[]>([]);
@@ -802,8 +803,9 @@ export default function CreateCuratedLookPage() {
   // Remove product from canvas
   const removeProduct = (productId: number) => {
     setSelectedProducts(selectedProducts.filter(p => p.id !== productId));
-    // Also update visualizedProducts to keep them in sync - prevents stale product data in edit mode
-    setVisualizedProducts(prev => prev.filter(p => p.id !== productId));
+    // DO NOT update visualizedProducts here - it should only change after successful visualization
+    // The visualizedProducts represents what's actually in the visualization image
+    // Keeping them different allows detectChangeType to detect the removal
   };
 
   // Get quantity for a product (for display in discovery panel)
@@ -993,9 +995,14 @@ export default function CreateCuratedLookPage() {
       const roomSizeMB = roomImageData ? (roomImageData.length * 0.75 / 1024 / 1024).toFixed(2) : '0';
       console.log(`[Publish] Sending curated look - viz: ${vizSizeMB}MB, room: ${roomSizeMB}MB, products: ${selectedProducts.length}`);
 
+      // Derive style_theme from first selected style label, or fall back to title
+      const derivedStyleTheme = styleLabels.length > 0
+        ? STYLE_LABEL_OPTIONS.find(o => o.value === styleLabels[0])?.label || styleLabels[0]
+        : title;
+
       const lookData = {
         title,
-        style_theme: styleTheme || title,
+        style_theme: derivedStyleTheme,  // Always use freshly derived value
         style_description: styleDescription,
         style_labels: styleLabels,
         room_type: roomType,
@@ -1067,9 +1074,14 @@ export default function CreateCuratedLookPage() {
       console.log(`[SaveDraft] Saving curated look as draft - products: ${selectedProducts.length}, existingLookId: ${existingLookId || 'none'}`);
       console.log('[SaveDraft] Product quantities:', selectedProducts.map(p => ({ name: p.name, qty: p.quantity || 1 })));
 
+      // Derive style_theme from first selected style label, or fall back to title
+      const derivedStyleTheme = styleLabels.length > 0
+        ? STYLE_LABEL_OPTIONS.find(o => o.value === styleLabels[0])?.label || styleLabels[0]
+        : title;
+
       const lookData = {
         title,
-        style_theme: styleTheme || title,
+        style_theme: derivedStyleTheme,  // Always use freshly derived value
         style_description: styleDescription,
         style_labels: styleLabels,
         room_type: roomType,
@@ -1183,16 +1195,21 @@ export default function CreateCuratedLookPage() {
     console.log('[DetectChangeType] newProducts (early check):', newProducts.map(p => ({ id: p.id, name: p.name })));
 
     if (removedProductIds.length > 0) {
-      // Get full product info for removed products
-      const removedProductsInfo = visualizedProducts.filter(p => removedProductIds.includes(String(p.id)));
+      // Get full product info for removed products, including their quantities as removeCount
+      // When a product is completely removed, we need to remove ALL instances (quantity)
+      const removedProductsInfo = visualizedProducts
+        .filter(p => removedProductIds.includes(String(p.id)))
+        .map(p => ({
+          ...p,
+          removeCount: p.quantity || 1  // Remove ALL instances of this product
+        }));
 
-      // CRITICAL FIX: If products are BOTH removed AND added, use RESET mode instead of removal
-      // Removal mode only removes products from the image - it doesn't add new ones
-      // Reset mode starts fresh from the clean room image and visualizes all current products
-      if (newProducts.length > 0) {
-        console.log('[DetectChangeType] => RESET (both removal and addition): Removed:', removedProductsInfo.map(p => p.name), 'Added:', newProducts.map(p => p.name));
+      // OPTIMIZATION: If products are BOTH removed AND added, use remove_and_add workflow
+      // This avoids full reset and instead: (1) removes products (2) adds new ones incrementally
+      if (newProducts.length > 0 && visualizationImage) {
+        console.log('[DetectChangeType] => REMOVE_AND_ADD: Removed:', removedProductsInfo.map(p => `${p.name} (qty=${p.removeCount})`), 'Added:', newProducts.map(p => p.name));
         return {
-          type: 'reset',
+          type: 'remove_and_add',
           reason: 'products_removed_and_added',
           removedProducts: removedProductsInfo,
           newProducts: newProducts
@@ -1200,7 +1217,7 @@ export default function CreateCuratedLookPage() {
       }
 
       // Only removals, no additions - use removal mode
-      console.log('[DetectChangeType] => REMOVAL: Products removed:', removedProductsInfo.map(p => p.name));
+      console.log('[DetectChangeType] => REMOVAL: Products removed:', removedProductsInfo.map(p => `${p.name} (qty=${p.removeCount})`));
       return {
         type: 'removal',
         reason: 'products_removed',
@@ -1321,11 +1338,22 @@ export default function CreateCuratedLookPage() {
       let forceReset = false;
       let removalMode = false;
       let productsToRemove: any[] = [];
+      let productsToAdd: any[] = [];
 
       if (changeInfo.type === 'additive' && visualizationImage) {
         baseImage = visualizationImage;
         productsToVisualize = changeInfo.newProducts!;
         isIncremental = true;
+      } else if (changeInfo.type === 'remove_and_add' && visualizationImage) {
+        // OPTIMIZATION: Two-step workflow - remove then add incrementally
+        // This avoids full reset when products are both removed and added
+        baseImage = visualizationImage;
+        productsToVisualize = selectedProducts; // All remaining products (for reference)
+        productsToRemove = changeInfo.removedProducts || [];
+        productsToAdd = changeInfo.newProducts || [];
+        removalMode = true;
+        console.log('[Visualize] REMOVE_AND_ADD MODE: Removing', productsToRemove.map((p: any) => p.name), 'Adding', productsToAdd.map((p: any) => p.name));
+        console.log('[Visualize] productsToAdd full data:', JSON.stringify(productsToAdd.map((p: any) => ({ id: p.id, name: p.name, image_url: p.image_url?.substring(0, 50) }))));
       } else if (changeInfo.type === 'removal' && visualizationImage) {
         // Product removal: use current visualization and remove specific products
         baseImage = visualizationImage;
@@ -1353,7 +1381,9 @@ export default function CreateCuratedLookPage() {
           full_name: displayName,
           style: 0.8,
           category: 'furniture',
-          quantity: p.quantity || 1  // Pass quantity for multiple instances
+          quantity: p.quantity || 1,  // Pass quantity for multiple instances
+          image_url: p.image_url || p.imageUrl || p.image,  // Product image for accurate rendering
+          furniture_type: p.furniture_type || p.furnitureType || p.type,  // Furniture category
         };
       });
 
@@ -1361,15 +1391,33 @@ export default function CreateCuratedLookPage() {
       console.log('[Visualize] forceReset:', forceReset, 'isIncremental:', isIncremental, 'removalMode:', removalMode, 'reason:', changeInfo.reason || 'none');
       if (removalMode) {
         console.log('[Visualize] Products to remove with counts:', productsToRemove.map((p: any) => ({ name: p.name, removeCount: p.removeCount })));
+        if (productsToAdd.length > 0) {
+          console.log('[Visualize] Products to add:', productsToAdd.map((p: any) => p.name));
+        }
       }
 
-      // Prepare removal products info for backend
+      // Prepare removal products info for backend - include image_url so Gemini can visually identify what to remove
       const removalProductDetails = productsToRemove.map((p: any) => ({
         id: p.id,
         name: p.name,
         full_name: p.name,
         remove_count: p.removeCount || 1, // For quantity decreases, how many to remove
+        image_url: p.image_url || p.imageUrl || p.image,  // Product image for visual identification
+        furniture_type: p.furniture_type || p.furnitureType || p.type,  // Furniture category
       }));
+
+      // Prepare products to add info for backend (for remove_and_add workflow)
+      // Include image_url and furniture_type for proper visualization
+      console.log('[Visualize] Creating addProductDetails from productsToAdd:', productsToAdd.length, 'items');
+      const addProductDetails = productsToAdd.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        full_name: p.name,
+        quantity: p.quantity || 1,
+        image_url: p.image_url || p.imageUrl || p.image,
+        furniture_type: p.furniture_type || p.furnitureType || p.type,
+      }));
+      console.log('[Visualize] addProductDetails created:', addProductDetails.length, 'items', addProductDetails.map(p => p.name));
 
       // For incremental visualization, send products already in the base image
       // This allows the AI to know exactly what furniture to preserve
@@ -1384,6 +1432,14 @@ export default function CreateCuratedLookPage() {
         console.log('[Visualize] Existing products in base image:', visualizedProductDetails.map(p => ({ name: p.name, qty: p.quantity })));
       }
 
+      // Debug: Log what we're actually sending
+      console.log('[Visualize] Request body:', {
+        removalMode,
+        productsToRemoveCount: removalProductDetails.length,
+        productsToAddCount: addProductDetails.length,
+        addProductDetails: addProductDetails.map(p => ({ id: p.id, name: p.name })),
+      });
+
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1395,6 +1451,7 @@ export default function CreateCuratedLookPage() {
           force_reset: forceReset,
           removal_mode: removalMode,
           products_to_remove: removalMode ? removalProductDetails : undefined,
+          products_to_add: removalMode ? addProductDetails : [],  // Always send array for remove_and_add workflow
           visualized_products: isIncremental ? visualizedProductDetails : [],  // Products already in base image (for incremental)
           user_uploaded_new_image: changeInfo.type === 'initial',
           action: 'add',  // Always add products in curated looks editor (skip furniture replacement clarification)
@@ -1408,6 +1465,13 @@ export default function CreateCuratedLookPage() {
       }
 
       const data = await response.json();
+      console.log('[Visualize] Response data:', {
+        hasVisualization: !!data.visualization,
+        hasRenderedImage: !!data.visualization?.rendered_image,
+        imageLength: data.visualization?.rendered_image?.length,
+        mode: data.mode,
+        removedProducts: data.removed_products,
+      });
 
       // Handle needs_clarification response (shouldn't happen with action: 'add', but handle just in case)
       if (data.needs_clarification) {
@@ -1472,6 +1536,7 @@ export default function CreateCuratedLookPage() {
       // Clear redo stack when new visualization is added
       setRedoStack([]);
 
+      console.log('[Visualize] Setting new image, length:', newImage?.length);
       setVisualizationImage(newImage);
       setVisualizedProductIds(newProductIds);
       // Deep copy selected products with their quantities to track what was visualized
@@ -1482,6 +1547,7 @@ export default function CreateCuratedLookPage() {
       // Use local history length to determine undo/redo state (more reliable than backend)
       setCanUndo(true); // Can always undo after a visualization
       setCanRedo(false); // Clear redo after new visualization
+      console.log('[Visualize] State update complete, selectedProducts:', selectedProducts.map(p => p.name));
     } catch (error: any) {
       console.error('Visualization error:', error);
       setError(error.message || 'Failed to generate visualization. Please try again.');
@@ -2038,6 +2104,96 @@ export default function CreateCuratedLookPage() {
   // END CANVAS PANEL HANDLERS
   // ============================================
 
+  // Improve Quality - Re-visualize all products on clean base image
+  const [isImprovingQuality, setIsImprovingQuality] = useState(false);
+
+  const handleImproveQuality = async () => {
+    if (!roomImage || selectedProducts.length === 0 || !sessionId) {
+      console.log('[ImproveQuality] Missing requirements');
+      return;
+    }
+
+    // Confirm with warning about undo/redo reset
+    const confirmed = window.confirm(
+      'Improve Quality will re-visualize all products on the original room image.\n\n' +
+      'WARNING: This will reset your undo/redo history.\n\n' +
+      'Continue?'
+    );
+    if (!confirmed) return;
+
+    setIsImprovingQuality(true);
+    console.log('[ImproveQuality] Starting quality improvement with', selectedProducts.length, 'products');
+
+    try {
+      const productDetails = selectedProducts.map(p => ({
+        id: p.id,
+        name: p.name,
+        full_name: p.name,
+        style: 0.8,
+        category: 'furniture',
+        quantity: p.quantity || 1,
+        image_url: p.image_url || p.imageUrl || p.image,
+        furniture_type: p.furniture_type || p.furnitureType || p.type,
+      }));
+
+      console.log('[ImproveQuality] Sending products:', productDetails.map(p => ({ name: p.name, qty: p.quantity })));
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: roomImage,  // Use original room image, not current visualization
+          products: productDetails,
+          analysis: { design_style: 'modern', color_palette: [], room_type: 'living_room' },
+          is_incremental: false,
+          force_reset: true,  // Force fresh visualization
+          user_uploaded_new_image: false,
+          action: 'add',
+          curated_look_id: existingLookId ? parseInt(existingLookId) : undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+        throw new Error(errorData.detail || 'Quality improvement failed');
+      }
+
+      const data = await response.json();
+
+      if (!data.visualization?.rendered_image) {
+        throw new Error('No visualization image was generated');
+      }
+
+      const newImage = data.visualization.rendered_image;
+      console.log('[ImproveQuality] Success! New image length:', newImage?.length);
+
+      // Update visualization image
+      setVisualizationImage(newImage);
+
+      // Reset undo/redo stack
+      setVisualizationHistory([{
+        image: newImage,
+        products: selectedProducts.map(p => ({ ...p, quantity: p.quantity || 1 })),
+        productIds: new Set(selectedProducts.map(p => String(p.id))),
+      }]);
+      setRedoStack([]);
+      setCanUndo(false);
+      setCanRedo(false);
+
+      // Update visualized state
+      const newProductIds = new Set(selectedProducts.map(p => String(p.id)));
+      setVisualizedProductIds(newProductIds);
+      setVisualizedProducts(selectedProducts.map(p => ({ ...p, quantity: p.quantity || 1 })));
+      setNeedsRevisualization(false);
+
+    } catch (error) {
+      console.error('[ImproveQuality] Error:', error);
+      alert(`Failed to improve quality: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsImprovingQuality(false);
+    }
+  };
+
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -2111,8 +2267,9 @@ export default function CreateCuratedLookPage() {
       )}
 
       {/* Three Panel Layout - Resizable */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden h-full">
         <Group
+          groupRef={panelGroupRef}
           orientation="horizontal"
           id="omnishop-curated-panels"
           className="h-full"
@@ -2122,7 +2279,6 @@ export default function CreateCuratedLookPage() {
             id="filters-panel"
             defaultSize={15}
             minSize={10}
-            maxSize={25}
             className="bg-white overflow-hidden border-r border-gray-200"
           >
             <div className="h-full flex flex-col">
@@ -2399,7 +2555,6 @@ export default function CreateCuratedLookPage() {
             id="products-panel"
             defaultSize={40}
             minSize={25}
-            maxSize={50}
             className="bg-white overflow-hidden border-r border-gray-200"
           >
             <div className="h-full flex flex-col">
@@ -2631,7 +2786,6 @@ export default function CreateCuratedLookPage() {
             id="canvas-panel"
             defaultSize={45}
             minSize={30}
-            maxSize={60}
             className="bg-white overflow-hidden"
           >
             <div className="h-full flex flex-col overflow-hidden">
@@ -3082,8 +3236,8 @@ export default function CreateCuratedLookPage() {
                       </div>
                     </div>
                   )}
-                  {/* Re-visualization shimmer overlay */}
-                  {isVisualizing && !isEditingPositions && (
+                  {/* Re-visualization / Improve Quality shimmer overlay */}
+                  {(isVisualizing || isImprovingQuality) && !isEditingPositions && (
                     <div className="absolute inset-0 z-20">
                       <div
                         className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer"
@@ -3095,8 +3249,12 @@ export default function CreateCuratedLookPage() {
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                           </svg>
-                          <span className="text-white font-semibold text-base">Updating visualization...</span>
-                          <span className="text-white/80 text-sm mt-1">Omni is updating your space</span>
+                          <span className="text-white font-semibold text-base">
+                            {isImprovingQuality ? 'Improving quality...' : 'Updating visualization...'}
+                          </span>
+                          <span className="text-white/80 text-sm mt-1">
+                            {isImprovingQuality ? 'Re-rendering from original room' : 'Omni is updating your space'}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -3380,6 +3538,36 @@ export default function CreateCuratedLookPage() {
             )}
             {visualizationImage && !title.trim() && (
               <p className="text-xs text-amber-600 text-center">Enter a title to publish</p>
+            )}
+
+            {/* Improve Quality - Advanced action at bottom */}
+            {visualizationImage && selectedProducts.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-gray-200">
+                <button
+                  onClick={handleImproveQuality}
+                  disabled={isImprovingQuality || isVisualizing}
+                  className="w-full py-2 px-3 bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 disabled:cursor-not-allowed text-gray-600 disabled:text-gray-400 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                  title="Re-visualize all products on the original room image to improve quality. Resets undo/redo history."
+                >
+                  {isImprovingQuality ? (
+                    <>
+                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Improving Quality...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Improve Quality
+                    </>
+                  )}
+                </button>
+                <p className="text-xs text-gray-400 text-center mt-1">Re-renders from original room image. Resets undo/redo.</p>
+              </div>
             )}
           </div>
             </div>
