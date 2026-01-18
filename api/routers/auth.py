@@ -8,7 +8,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel
-from schemas.auth import AuthStatusResponse, GoogleAuthRequest, TokenResponse, UserLogin, UserRegister, UserResponse
+from schemas.auth import AuthStatusResponse, GoogleAuthRequest, RefreshTokenRequest, RefreshTokenResponse, TokenResponse, UserLogin, UserRegister, UserResponse
 from services.auth_service import auth_service
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,11 +68,13 @@ async def register(
         auth_provider="email",
     )
 
-    # Generate token
+    # Generate tokens
     access_token = auth_service.create_access_token(data={"sub": user.id})
+    refresh_token = auth_service.create_refresh_token(data={"sub": user.id})
 
     return TokenResponse(
         access_token=access_token,
+        refresh_token=refresh_token,
         user=UserResponse.model_validate(user),
     )
 
@@ -101,11 +103,13 @@ async def login(
             detail="Invalid email or password",
         )
 
-    # Generate token
+    # Generate tokens
     access_token = auth_service.create_access_token(data={"sub": user.id})
+    refresh_token = auth_service.create_refresh_token(data={"sub": user.id})
 
     return TokenResponse(
         access_token=access_token,
+        refresh_token=refresh_token,
         user=UserResponse.model_validate(user),
     )
 
@@ -136,13 +140,15 @@ async def google_auth(
 
     user, is_new = result
 
-    # Generate token
+    # Generate tokens
     access_token = auth_service.create_access_token(data={"sub": user.id})
+    refresh_token = auth_service.create_refresh_token(data={"sub": user.id})
 
     logger.info(f"Google auth successful for {user.email} (new_user={is_new})")
 
     return TokenResponse(
         access_token=access_token,
+        refresh_token=refresh_token,
         user=UserResponse.model_validate(user),
     )
 
@@ -182,6 +188,44 @@ async def logout():
     by removing the token. This endpoint is provided for API completeness.
     """
     return {"message": "Logged out successfully"}
+
+
+@router.post("/refresh", response_model=RefreshTokenResponse)
+async def refresh_token(
+    request: RefreshTokenRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Refresh the access token using a valid refresh token.
+    Returns a new access token on success.
+    """
+    # Verify the refresh token
+    user_id = auth_service.verify_refresh_token(request.refresh_token)
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
+    # Verify user still exists and is active
+    user = await auth_service.get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+        )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is inactive",
+        )
+
+    # Generate new access token
+    access_token = auth_service.create_access_token(data={"sub": user.id})
+
+    logger.info(f"Token refreshed for user {user.email}")
+
+    return RefreshTokenResponse(access_token=access_token)
 
 
 # ============================================================================

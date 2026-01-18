@@ -57,8 +57,22 @@ class TokenResponse(BaseModel):
     """Schema for token response"""
 
     access_token: str
+    refresh_token: Optional[str] = None  # Optional for backwards compatibility
     token_type: str = "bearer"
     user: UserResponse
+
+
+class RefreshTokenRequest(BaseModel):
+    """Schema for refresh token request"""
+
+    refresh_token: str
+
+
+class RefreshTokenResponse(BaseModel):
+    """Schema for refresh token response"""
+
+    access_token: str
+    token_type: str = "bearer"
 
 
 class AuthStatusResponse(BaseModel):

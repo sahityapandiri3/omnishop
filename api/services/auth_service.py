@@ -40,15 +40,35 @@ class AuthService:
         return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
     def create_access_token(self, data: dict, expires_delta: Optional[timedelta] = None) -> str:
-        """Create a JWT access token"""
+        """Create a JWT access token (short-lived)"""
         to_encode = data.copy()
         if expires_delta:
             expire = datetime.utcnow() + expires_delta
         else:
             expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
-        to_encode.update({"exp": expire})
+        to_encode.update({"exp": expire, "type": "access"})
         encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
         return encoded_jwt
+
+    def create_refresh_token(self, data: dict) -> str:
+        """Create a JWT refresh token (long-lived, 30 days)"""
+        to_encode = data.copy()
+        expire = datetime.utcnow() + timedelta(days=30)
+        to_encode.update({"exp": expire, "type": "refresh"})
+        encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+        return encoded_jwt
+
+    def verify_refresh_token(self, token: str) -> Optional[str]:
+        """Verify a refresh token and return the user ID if valid"""
+        try:
+            payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+            if payload.get("type") != "refresh":
+                logger.warning("Token is not a refresh token")
+                return None
+            return payload.get("sub")
+        except JWTError as e:
+            logger.warning(f"Refresh token decode error: {e}")
+            return None
 
     def decode_token(self, token: str) -> Optional[dict]:
         """Decode and validate a JWT token"""

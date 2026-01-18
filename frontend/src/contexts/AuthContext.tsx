@@ -47,8 +47,9 @@ interface AuthContextType extends AuthState {
 // Create context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Token storage key
+// Token storage keys
 const TOKEN_KEY = 'auth_token';
+const REFRESH_TOKEN_KEY = 'refresh_token';
 
 // Provider component
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -68,13 +69,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return localStorage.getItem(TOKEN_KEY);
   }, []);
 
-  // Set token
+  // Set access token
   const setToken = useCallback((token: string | null) => {
     if (typeof window === 'undefined') return;
     if (token) {
       localStorage.setItem(TOKEN_KEY, token);
     } else {
       localStorage.removeItem(TOKEN_KEY);
+    }
+  }, []);
+
+  // Set refresh token
+  const setRefreshToken = useCallback((token: string | null) => {
+    if (typeof window === 'undefined') return;
+    if (token) {
+      localStorage.setItem(REFRESH_TOKEN_KEY, token);
+    } else {
+      localStorage.removeItem(REFRESH_TOKEN_KEY);
     }
   }, []);
 
@@ -166,8 +177,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
       const response = await api.post('/api/auth/login', { email, password });
-      const { access_token, user } = response.data;
+      const { access_token, refresh_token, user } = response.data;
       setToken(access_token);
+      setRefreshToken(refresh_token);
       currentUserIdRef.current = user.id;
       setState({
         user,
@@ -179,15 +191,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setState(prev => ({ ...prev, isLoading: false }));
       throw new Error(error.response?.data?.detail || 'Login failed');
     }
-  }, [setToken]);
+  }, [setToken, setRefreshToken]);
 
   // Register with email/password
   const register = useCallback(async (email: string, password: string, name: string) => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
       const response = await api.post('/api/auth/register', { email, password, name });
-      const { access_token, user } = response.data;
+      const { access_token, refresh_token, user } = response.data;
       setToken(access_token);
+      setRefreshToken(refresh_token);
       currentUserIdRef.current = user.id;
       setState({
         user,
@@ -199,15 +212,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setState(prev => ({ ...prev, isLoading: false }));
       throw new Error(error.response?.data?.detail || 'Registration failed');
     }
-  }, [setToken]);
+  }, [setToken, setRefreshToken]);
 
   // Login with Google
   const loginWithGoogle = useCallback(async (googleToken: string) => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
       const response = await api.post('/api/auth/google', { token: googleToken });
-      const { access_token, user } = response.data;
+      const { access_token, refresh_token, user } = response.data;
       setToken(access_token);
+      setRefreshToken(refresh_token);
       currentUserIdRef.current = user.id;
       setState({
         user,
@@ -219,11 +233,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setState(prev => ({ ...prev, isLoading: false }));
       throw new Error(error.response?.data?.detail || 'Google login failed');
     }
-  }, [setToken]);
+  }, [setToken, setRefreshToken]);
 
   // Logout
   const logout = useCallback(() => {
     setToken(null);
+    setRefreshToken(null);
     currentUserIdRef.current = null;
     setState({
       user: null,
@@ -233,7 +248,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     // Optionally call logout endpoint (not strictly necessary with JWT)
     api.post('/api/auth/logout').catch(() => {});
-  }, [setToken]);
+  }, [setToken, setRefreshToken]);
 
   const value: AuthContextType = {
     ...state,

@@ -853,8 +853,12 @@ async def list_curated_looks(
         if is_published is not None:
             query = query.where(CuratedLook.is_published == is_published)
 
-        # Order by display_order, then created_at
-        query = query.order_by(CuratedLook.display_order.asc(), CuratedLook.created_at.desc())
+        # Order by: published first, then display_order, then created_at
+        query = query.order_by(
+            CuratedLook.is_published.desc(),  # Published first
+            CuratedLook.display_order.asc(),
+            CuratedLook.created_at.desc()
+        )
 
         # Get total count
         count_query = select(func.count()).select_from(CuratedLook)

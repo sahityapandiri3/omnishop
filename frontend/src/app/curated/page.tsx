@@ -24,6 +24,7 @@ function CuratedPageContent() {
   const [roomTypeFilter, setRoomTypeFilter] = useState<RoomType>('all');
   const [selectedStyles, setSelectedStyles] = useState<StyleOption[]>([]);
   const [budgetFilter, setBudgetFilter] = useState<BudgetOption>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
 
   // Fetch curated looks when filter changes
@@ -153,6 +154,32 @@ function CuratedPageContent() {
             <p className="text-sm text-neutral-500 max-w-xl mx-auto">
               Professionally curated room designs. Style your space with a click.
             </p>
+          </div>
+
+          {/* Search Bar */}
+          <div className="flex justify-center mb-4">
+            <div className="relative w-full max-w-md">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search looks..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-white border border-neutral-200 rounded-lg text-sm text-neutral-700 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent shadow-sm"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Filters + Create Your Own */}
@@ -300,28 +327,58 @@ function CuratedPageContent() {
           )}
 
           {/* Looks Grid */}
-          {!loading && !error && looksData?.looks && looksData.looks.length > 0 && (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                {looksData.looks.map((look) => (
-                  <CuratedLookCard
-                    key={look.look_id}
-                    look={look}
-                    onViewDetails={handleViewDetails}
-                    onStyleThisLook={handleStyleThisLook}
-                  />
-                ))}
-              </div>
+          {!loading && !error && looksData?.looks && looksData.looks.length > 0 && (() => {
+            const filteredLooks = looksData.looks.filter(look =>
+              look.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              look.style_theme?.toLowerCase().includes(searchQuery.toLowerCase())
+            );
 
-              {/* Results count */}
-              <div className="text-center text-neutral-400 text-xs mb-6">
-                {looksData.looks.length} {looksData.looks.length === 1 ? 'look' : 'looks'}
-                {roomTypeFilter !== 'all' && ` • ${roomTypeFilter.replace('_', ' ')}`}
-                {selectedStyles.length > 0 && ` • ${selectedStyles.map(s => s.replace('_', ' ')).join(', ')}`}
-                {budgetFilter !== 'all' && ` • ${budgetOptions.find(b => b.value === budgetFilter)?.label}`}
-              </div>
-            </>
-          )}
+            if (filteredLooks.length === 0) {
+              return (
+                <div className="bg-white rounded-xl shadow-sm p-8 max-w-sm mx-auto border border-neutral-200 text-center">
+                  <div className="w-14 h-14 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-7 h-7 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <h2 className="text-base font-semibold text-neutral-800 mb-2">No Matching Looks</h2>
+                  <p className="text-xs text-neutral-500 mb-4">
+                    No looks found for &quot;{searchQuery}&quot;
+                  </p>
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+                  >
+                    Clear search
+                  </button>
+                </div>
+              );
+            }
+
+            return (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                  {filteredLooks.map((look) => (
+                    <CuratedLookCard
+                      key={look.look_id}
+                      look={look}
+                      onViewDetails={handleViewDetails}
+                      onStyleThisLook={handleStyleThisLook}
+                    />
+                  ))}
+                </div>
+
+                {/* Results count */}
+                <div className="text-center text-neutral-400 text-xs mb-6">
+                  {filteredLooks.length} {filteredLooks.length === 1 ? 'look' : 'looks'}
+                  {searchQuery && ` • "${searchQuery}"`}
+                  {roomTypeFilter !== 'all' && ` • ${roomTypeFilter.replace('_', ' ')}`}
+                  {selectedStyles.length > 0 && ` • ${selectedStyles.map(s => s.replace('_', ' ')).join(', ')}`}
+                  {budgetFilter !== 'all' && ` • ${budgetOptions.find(b => b.value === budgetFilter)?.label}`}
+                </div>
+              </>
+            );
+          })()}
 
           {/* Design from scratch section */}
           <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-5 text-center mt-4">

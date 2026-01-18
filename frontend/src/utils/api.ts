@@ -10,12 +10,116 @@ const api = axios.create({
   timeout: 200000, // Increased to 200 seconds to accommodate AI image generation
 });
 
-// Request interceptor for authentication
+// Helper to decode JWT and check expiry
+const isTokenExpired = (token: string): boolean => {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const expiryTime = payload.exp * 1000; // Convert to milliseconds
+    return Date.now() >= expiryTime;
+  } catch {
+    return true; // Invalid token, treat as expired
+  }
+};
+
+// Helper to check if token expires soon (within 5 minutes)
+const isTokenExpiringSoon = (token: string): boolean => {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const expiryTime = payload.exp * 1000;
+    const fiveMinutesFromNow = Date.now() + (5 * 60 * 1000);
+    return expiryTime <= fiveMinutesFromNow;
+  } catch {
+    return true;
+  }
+};
+
+// Flag to prevent multiple concurrent refresh attempts
+let isRefreshing = false;
+let refreshPromise: Promise<string | null> | null = null;
+
+// Function to refresh the access token using the refresh token
+const refreshAccessToken = async (): Promise<string | null> => {
+  // If already refreshing, wait for the existing promise
+  if (isRefreshing && refreshPromise) {
+    return refreshPromise;
+  }
+
+  const refreshToken = typeof window !== 'undefined' ? localStorage.getItem('refresh_token') : null;
+  if (!refreshToken) {
+    console.log('[API] No refresh token available');
+    return null;
+  }
+
+  isRefreshing = true;
+  refreshPromise = (async () => {
+    try {
+      console.log('[API] Attempting to refresh access token...');
+      // Use fetch directly to avoid interceptors
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/auth/refresh`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        }
+      );
+
+      if (!response.ok) {
+        console.warn('[API] Refresh token failed:', response.status);
+        // Clear both tokens on refresh failure
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('refresh_token');
+        return null;
+      }
+
+      const data = await response.json();
+      const newAccessToken = data.access_token;
+
+      // Store the new access token
+      localStorage.setItem('auth_token', newAccessToken);
+      console.log('[API] Successfully refreshed access token');
+
+      return newAccessToken;
+    } catch (error) {
+      console.error('[API] Error refreshing token:', error);
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('refresh_token');
+      return null;
+    } finally {
+      isRefreshing = false;
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+};
+
+// Request interceptor for authentication (async to support token refresh)
 api.interceptors.request.use(
-  (config) => {
+  async (config) => {
     // Add auth token if available
-    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    let token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
     if (token) {
+      // If token is expired or expiring soon, try to refresh it
+      if (isTokenExpired(token) || isTokenExpiringSoon(token)) {
+        console.log('[API] Token expired or expiring soon, attempting refresh...');
+        const newToken = await refreshAccessToken();
+
+        if (newToken) {
+          // Successfully refreshed - use the new token
+          token = newToken;
+        } else {
+          // Refresh failed - clear tokens and redirect to login
+          console.warn('[API] Token refresh failed, redirecting to login');
+          localStorage.removeItem('auth_token');
+          localStorage.removeItem('refresh_token');
+          if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+            window.location.href = '/login?reason=session_expired';
+          }
+          return Promise.reject(new Error('Token expired and refresh failed'));
+        }
+      }
+
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -228,26 +332,45 @@ export const restoreDesignStateFromRecovery = (): boolean => {
   }
 };
 
-// Response interceptor for error handling
+// Response interceptor for error handling (with token refresh retry)
 api.interceptors.response.use(
   (response) => {
     return response;
   },
-  (error) => {
-    if (error.response?.status === 401) {
-      // Handle unauthorized access - token expired or invalid
+  async (error) => {
+    const originalRequest = error.config;
+
+    // Handle 401 errors - try refresh token before redirecting
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+
       if (typeof window !== 'undefined') {
         const currentPath = window.location.pathname;
-        // Only clear token and redirect if not already on auth pages
-        // AND if we haven't already started a redirect (prevents infinite loop when navigation guard blocks)
-        if (!currentPath.startsWith('/login') && !currentPath.startsWith('/register') && !isRedirectingToLogin) {
-          console.warn('[API] 401 Unauthorized - Session expired. Redirecting to login...');
+
+        // Skip refresh attempt for auth pages
+        if (currentPath.startsWith('/login') || currentPath.startsWith('/register')) {
+          return Promise.reject(error);
+        }
+
+        // Try to refresh the token
+        console.log('[API] 401 received, attempting token refresh...');
+        const newToken = await refreshAccessToken();
+
+        if (newToken) {
+          // Retry the original request with the new token
+          console.log('[API] Token refreshed, retrying original request...');
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          return api(originalRequest);
+        }
+
+        // Refresh failed - redirect to login
+        if (!isRedirectingToLogin) {
+          console.warn('[API] 401 Unauthorized - Token refresh failed. Redirecting to login...');
 
           // Set flag to prevent multiple redirect attempts
           isRedirectingToLogin = true;
 
           // Reset the flag after 10 seconds in case user cancels navigation
-          // This allows a retry if user wants to navigate after dealing with unsaved work
           if (redirectResetTimeout) {
             clearTimeout(redirectResetTimeout);
           }
@@ -268,9 +391,10 @@ api.interceptors.response.use(
           }
 
           localStorage.removeItem('auth_token');
+          localStorage.removeItem('refresh_token');
           // Force page reload to trigger auth check and redirect
           window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`;
-        } else if (isRedirectingToLogin) {
+        } else {
           console.log('[API] 401 received but redirect already in progress, ignoring...');
         }
       }

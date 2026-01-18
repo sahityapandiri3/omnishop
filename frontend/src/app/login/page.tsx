@@ -154,6 +154,18 @@ export default function LoginPage() {
             </button>
           </div>
 
+          {/* Session expired message */}
+          {searchParams?.get('reason') === 'session_expired' && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-sm mb-4">
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>Your session has expired. Please sign in again to continue.</span>
+              </div>
+            </div>
+          )}
+
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
             {error && (

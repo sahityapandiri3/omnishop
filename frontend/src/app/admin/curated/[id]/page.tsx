@@ -33,6 +33,11 @@ export default function CuratedLookDetailPage() {
   const [styleLabels, setStyleLabels] = useState<string[]>([]);
   const [savingLabels, setSavingLabels] = useState(false);
 
+  // Scroll to top when the page loads
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   useEffect(() => {
     if (lookId) {
       fetchLook();
