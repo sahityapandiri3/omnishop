@@ -129,16 +129,27 @@ export function LookDetailModal({
                 </div>
               </div>
 
-              {/* Use Style button - Desktop */}
-              <button
-                onClick={() => onStyleThisLook(look)}
-                className="hidden lg:flex mt-3 w-full py-3 px-4 rounded-lg font-medium text-sm transition-all items-center justify-center gap-2 bg-primary-600 hover:bg-primary-700 text-white"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                </svg>
-                Use Style in Studio
-              </button>
+              {/* Action buttons - Desktop */}
+              <div className="hidden lg:flex mt-3 gap-2">
+                <button
+                  onClick={() => onStyleThisLook(look)}
+                  className="flex-1 py-3 px-4 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 bg-primary-600 hover:bg-primary-700 text-white"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                  Use Style in Studio
+                </button>
+                <a
+                  href="/app"
+                  className="flex-1 py-3 px-4 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                  </svg>
+                  Build Your Own
+                </a>
+              </div>
             </div>
 
             {/* Right Side - Products */}
@@ -214,12 +225,6 @@ export function LookDetailModal({
           <div className="lg:hidden p-3 border-t border-neutral-200 bg-neutral-50/80">
             <div className="flex gap-2">
               <button
-                onClick={onClose}
-                className="flex-1 bg-neutral-200 hover:bg-neutral-300 text-neutral-700 py-2.5 px-3 rounded-lg font-medium text-sm transition-colors"
-              >
-                Close
-              </button>
-              <button
                 onClick={() => onStyleThisLook(look)}
                 className="flex-1 bg-primary-600 hover:bg-primary-700 text-white py-2.5 px-3 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1.5"
               >
@@ -228,6 +233,15 @@ export function LookDetailModal({
                 </svg>
                 Use Style
               </button>
+              <a
+                href="/app"
+                className="flex-1 bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 py-2.5 px-3 rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-1.5"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                </svg>
+                Build Your Own
+              </a>
             </div>
           </div>
         </div>

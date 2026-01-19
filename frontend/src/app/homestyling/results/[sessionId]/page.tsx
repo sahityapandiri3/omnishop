@@ -358,7 +358,7 @@ export default function ResultsPage() {
           </div>
           <p className="text-gray-600 mb-4">{error || 'Results not found'}</p>
           <button
-            onClick={() => router.push('/homestyling')}
+            onClick={() => router.push('/homestyling/preferences')}
             className="text-emerald-600 hover:text-emerald-700 font-medium"
           >
             Start Over
@@ -530,7 +530,7 @@ export default function ResultsPage() {
             {/* Actions */}
             <div className="mt-8 flex flex-wrap justify-center gap-4">
               <button
-                onClick={() => router.push('/homestyling')}
+                onClick={() => router.push('/homestyling/preferences')}
                 className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition-all"
               >
                 Get More Looks
