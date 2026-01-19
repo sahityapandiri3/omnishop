@@ -2070,11 +2070,12 @@ MANDATORY REMOVALS - These items MUST be deleted from the image:
 2. ALL TABLES: Coffee tables, side tables, dining tables, console tables
 3. ALL BEDS: Beds, mattresses, headboards
 4. ALL LAMPS: Floor lamps, tripod lamps, standing lamps, table lamps, any lamp with a base on the floor
-5. ALL MIRRORS: Standing mirrors, floor mirrors, full-length mirrors, leaning mirrors against walls
-6. ALL PLANTS: Potted plants, planters, indoor trees
-7. ALL DECOR: Vases, sculptures, frames, cushions, throws on furniture
-8. ALL WALL ART: Paintings, posters, prints, wall hangings, framed photos, canvas art, wall decor, tapestries
-9. ALL FLOOR COVERINGS: Carpets, rugs, area rugs, floor mats, dhurries, runners - the BARE FLOOR must be visible
+5. ALL CEILING LIGHTS: Chandeliers, pendant lights, ceiling fans with lights, hanging lamps, track lighting, recessed light fixtures
+6. ALL MIRRORS: Standing mirrors, floor mirrors, full-length mirrors, leaning mirrors against walls
+7. ALL PLANTS: Potted plants, planters, indoor trees
+8. ALL DECOR: Vases, sculptures, frames, cushions, throws on furniture
+9. ALL WALL ART: Paintings, posters, prints, wall hangings, framed photos, canvas art, wall decor, tapestries
+10. ALL FLOOR COVERINGS: Carpets, rugs, area rugs, floor mats, dhurries, runners - the BARE FLOOR must be visible
 
 KEEP ONLY (do not modify these):
 - Walls, ceiling, floor (the BARE room floor - no carpets/rugs)
@@ -2085,11 +2086,11 @@ KEEP ONLY (do not modify these):
 - Archways and architectural features
 
 OUTPUT: Generate an image of the SAME room but:
-1. COMPLETELY EMPTY - no furniture, no lamps, no mirrors, no plants, NO CARPETS OR RUGS, NO WALL ART
+1. COMPLETELY EMPTY - no furniture, no lamps, no ceiling lights, no mirrors, no plants, NO CARPETS OR RUGS, NO WALL ART
 2. {angle_output}
 3. PERSPECTIVE CORRECTED - vertical lines perfectly vertical, horizontal lines level
 
-FAILURE IS NOT ACCEPTABLE: Every piece of furniture MUST be removed AND all lines MUST be straight."""
+FAILURE IS NOT ACCEPTABLE: Every piece of furniture and ceiling light MUST be removed AND all lines MUST be straight."""
 
             # Retry loop with exponential backoff
             for attempt in range(max_retries):
