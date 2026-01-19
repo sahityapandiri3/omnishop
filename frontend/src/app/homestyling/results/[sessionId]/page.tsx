@@ -536,7 +536,7 @@ export default function ResultsPage() {
                 Get More Looks
               </button>
               <button
-                onClick={() => router.push('/curated')}
+                onClick={() => router.push('/upgrade')}
                 className="px-6 py-3 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold rounded-lg transition-all"
               >
                 Build Your Own

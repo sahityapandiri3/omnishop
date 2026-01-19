@@ -141,7 +141,7 @@ export function LookDetailModal({
                   Use Style in Studio
                 </button>
                 <a
-                  href="/curated"
+                  href="/upgrade"
                   className="flex-1 py-3 px-4 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -234,7 +234,7 @@ export function LookDetailModal({
                 Use Style
               </button>
               <a
-                href="/curated"
+                href="/upgrade"
                 className="flex-1 bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 py-2.5 px-3 rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-1.5"
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
