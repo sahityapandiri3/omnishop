@@ -293,7 +293,7 @@ export default function PurchaseDetailPage() {
                 Get More Looks
               </Link>
               <Link
-                href="/app"
+                href="/curated"
                 className="inline-flex items-center gap-2 px-6 py-3 bg-white text-gray-700 font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
