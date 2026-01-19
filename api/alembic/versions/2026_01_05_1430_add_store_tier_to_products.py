@@ -105,7 +105,14 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_index(op.f("ix_stores_is_active"), table_name="stores")
-    op.drop_index(op.f("ix_stores_budget_tier"), table_name="stores")
-    op.drop_index(op.f("ix_stores_name"), table_name="stores")
-    op.drop_table("stores")
+    from sqlalchemy import inspect
+
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    tables = inspector.get_table_names()
+
+    if "stores" in tables:
+        op.drop_index(op.f("ix_stores_is_active"), table_name="stores")
+        op.drop_index(op.f("ix_stores_budget_tier"), table_name="stores")
+        op.drop_index(op.f("ix_stores_name"), table_name="stores")
+        op.drop_table("stores")

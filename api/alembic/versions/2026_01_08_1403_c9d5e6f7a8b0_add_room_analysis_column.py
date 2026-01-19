@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import JSONB
 
 # revision identifiers, used by Alembic.
@@ -19,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Add room_analysis JSONB column to curated_looks and projects tables.
+    """Add room_analysis JSONB column to curated_looks and projects tables - idempotent.
 
     This column stores cached room analysis data from the upload step,
     eliminating redundant Gemini API calls during visualization.
@@ -39,14 +40,33 @@ def upgrade() -> None:
         "camera_view_analysis": {...}
     }
     """
+    conn = op.get_bind()
+    inspector = inspect(conn)
+
     # Add room_analysis to curated_looks table (admin curation flow)
-    op.add_column("curated_looks", sa.Column("room_analysis", JSONB, nullable=True))
+    if "curated_looks" in inspector.get_table_names():
+        columns = [col['name'] for col in inspector.get_columns('curated_looks')]
+        if 'room_analysis' not in columns:
+            op.add_column("curated_looks", sa.Column("room_analysis", JSONB, nullable=True))
 
     # Add room_analysis to projects table (design page flow)
-    op.add_column("projects", sa.Column("room_analysis", JSONB, nullable=True))
+    if "projects" in inspector.get_table_names():
+        columns = [col['name'] for col in inspector.get_columns('projects')]
+        if 'room_analysis' not in columns:
+            op.add_column("projects", sa.Column("room_analysis", JSONB, nullable=True))
 
 
 def downgrade() -> None:
     """Remove room_analysis columns."""
-    op.drop_column("projects", "room_analysis")
-    op.drop_column("curated_looks", "room_analysis")
+    conn = op.get_bind()
+    inspector = inspect(conn)
+
+    if "projects" in inspector.get_table_names():
+        columns = [col['name'] for col in inspector.get_columns('projects')]
+        if 'room_analysis' in columns:
+            op.drop_column("projects", "room_analysis")
+
+    if "curated_looks" in inspector.get_table_names():
+        columns = [col['name'] for col in inspector.get_columns('curated_looks')]
+        if 'room_analysis' in columns:
+            op.drop_column("curated_looks", "room_analysis")
