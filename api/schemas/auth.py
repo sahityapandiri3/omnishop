@@ -40,6 +40,7 @@ class UserResponse(BaseModel):
     auth_provider: str
     is_active: bool
     role: str  # "user", "admin", or "super_admin"
+    subscription_tier: str = "free"  # "free" or "build_your_own"
     created_at: datetime
 
     @field_serializer("role")
@@ -48,6 +49,13 @@ class UserResponse(BaseModel):
         if hasattr(role, "value"):
             return role.value
         return role
+
+    @field_serializer("subscription_tier")
+    def serialize_subscription_tier(self, subscription_tier):
+        """Convert SubscriptionTier enum to string value"""
+        if hasattr(subscription_tier, "value"):
+            return subscription_tier.value
+        return subscription_tier
 
     class Config:
         from_attributes = True

@@ -1,6 +1,7 @@
 """
 Home Styling API routes for the user-facing home styling flow
 """
+import asyncio
 import logging
 import uuid
 from typing import List, Optional
@@ -12,6 +13,9 @@ from schemas.homestyling import (
     HomeStylingSessionSchema,
     HomeStylingViewSchema,
     ProductInView,
+    PurchaseDetailSchema,
+    PurchaseListResponse,
+    PurchaseSchema,
     SelectTierRequest,
     TrackEventRequest,
     TrackEventResponse,
@@ -19,11 +23,12 @@ from schemas.homestyling import (
     UploadImageRequest,
 )
 from services.google_ai_service import generate_workflow_id, google_ai_service
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from core.auth import get_current_user, get_optional_user
 from core.database import get_db
 from database.models import AnalyticsEvent
 from database.models import BudgetTier as BudgetTierModel
@@ -289,13 +294,16 @@ async def upload_room_image(
         # Remove furniture from the image using Google AI
         logger.info(f"Starting furniture removal for session: {session_id}")
         try:
-            clean_image = await google_ai_service.remove_furniture(image_data, max_retries=3, workflow_id=workflow_id)
-            if clean_image:
-                session.clean_room_image = clean_image
+            result = await google_ai_service.remove_furniture(image_data, max_retries=3, workflow_id=workflow_id)
+            if result and result.get("image"):
+                session.clean_room_image = result["image"]
                 logger.info(f"Furniture removal successful for session: {session_id}")
+                # Log room analysis if available
+                if result.get("room_analysis"):
+                    logger.info(f"Room analysis for session {session_id}: {result['room_analysis']}")
             else:
                 # Fallback to original if removal fails
-                logger.warning(f"Furniture removal returned None for session: {session_id}, using original")
+                logger.warning(f"Furniture removal returned no image for session: {session_id}, using original")
                 session.clean_room_image = image_data
         except Exception as removal_error:
             # Fallback to original if removal fails
@@ -333,6 +341,7 @@ async def select_tier(
     session_id: str,
     request: SelectTierRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_optional_user),
 ):
     """
     Select a tier for the session.
@@ -365,6 +374,11 @@ async def select_tier(
         session.views_count = tier_views[request.tier.value]
         session.status = HomeStylingSessionStatus.TIER_SELECTION
 
+        # Link session to user if authenticated
+        if current_user and not session.user_id:
+            session.user_id = current_user.id
+            logger.info(f"Linked session {session_id} to user {current_user.id}")
+
         await db.commit()
 
         logger.info(f"Selected tier {request.tier.value} for session: {session_id}")
@@ -381,6 +395,56 @@ async def select_tier(
     except Exception as e:
         logger.error(f"Error selecting tier for session {session_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to select tier: {str(e)}")
+
+
+# =============================================================================
+# SESSION RESET FOR RETRY
+# =============================================================================
+
+
+@router.post("/sessions/{session_id}/reset-for-retry")
+async def reset_session_for_retry(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Reset a failed session to allow retry of generation.
+    Clears existing views and resets status to tier_selection.
+    """
+    try:
+        # First, check if session exists
+        query = select(HomeStylingSession).where(HomeStylingSession.id == session_id)
+        result = await db.execute(query)
+        session = result.scalars().first()
+
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # Only delete FAILED or INCOMPLETE views - keep completed ones
+        # This allows retry to only regenerate what failed
+        delete_stmt = delete(HomeStylingView).where(
+            HomeStylingView.session_id == session_id,
+            HomeStylingView.generation_status != "completed"
+        )
+        delete_result = await db.execute(delete_stmt)
+        deleted_count = delete_result.rowcount
+
+        # Reset session status to allow retry
+        session.status = HomeStylingSessionStatus.TIER_SELECTION
+        await db.commit()
+
+        logger.info(f"Reset session {session_id} for retry - deleted {deleted_count} failed/incomplete views (kept completed ones)")
+
+        return {
+            "success": True,
+            "message": "Session reset for retry",
+            "session_id": session_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error resetting session {session_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to reset session: {str(e)}")
 
 
 # =============================================================================
@@ -475,9 +539,31 @@ async def generate_views(
 
         logger.info(f"Generating {len(looks)} views for session {session_id}")
 
+        # Get existing views for this session to avoid regenerating successful ones
+        existing_views_query = select(HomeStylingView).where(HomeStylingView.session_id == session_id)
+        existing_views_result = await db.execute(existing_views_query)
+        existing_views = {v.view_number: v for v in existing_views_result.scalars().all()}
+
+        completed_count = sum(1 for v in existing_views.values() if v.generation_status == "completed")
+        if completed_count > 0:
+            logger.info(f"Found {completed_count} already completed views, will skip regenerating them")
+
         # Generate visualization for each look
         for i, look in enumerate(looks):
             view_number = i + 1
+
+            # Check if this view already exists and is completed
+            existing_view = existing_views.get(view_number)
+            if existing_view and existing_view.generation_status == "completed":
+                logger.info(f"Skipping view {view_number}/{len(looks)} - already completed")
+                continue
+
+            # If view exists but failed, delete it first
+            if existing_view:
+                logger.info(f"Deleting failed/incomplete view {view_number} before regenerating")
+                await db.delete(existing_view)
+                await db.flush()
+
             logger.info(f"Generating view {view_number}/{len(looks)} using look '{look.title}' (ID: {look.id})")
 
             # Build products list for visualization
@@ -537,6 +623,13 @@ async def generate_views(
                 view.visualization_image = look.visualization_image
 
             await db.commit()
+
+            # Add delay between view generations to avoid Google AI rate limiting
+            # Skip delay after the last view
+            if view_number < len(looks):
+                delay_seconds = 5
+                logger.info(f"  Waiting {delay_seconds}s before next view to avoid rate limiting...")
+                await asyncio.sleep(delay_seconds)
 
         # Update session status
         session.status = HomeStylingSessionStatus.COMPLETED
@@ -661,3 +754,161 @@ async def track_event(
     except Exception as e:
         logger.error(f"Error tracking event: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to track event: {str(e)}")
+
+
+# =============================================================================
+# PURCHASES
+# =============================================================================
+
+
+def format_purchase_title(views_count: int, created_at) -> str:
+    """Format purchase title like '3 looks - Jan 19th, 2026'"""
+    # Format the day with ordinal suffix
+    day = created_at.day
+    if 10 <= day % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+
+    # Format the date
+    date_str = created_at.strftime(f"%b {day}{suffix}, %Y")
+
+    # Pluralize "look"
+    look_word = "look" if views_count == 1 else "looks"
+
+    return f"{views_count} {look_word} - {date_str}"
+
+
+@router.get("/purchases", response_model=PurchaseListResponse)
+async def get_purchases(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get all purchases (completed homestyling sessions) for the current user.
+    """
+    try:
+        # Query completed sessions for this user
+        query = (
+            select(HomeStylingSession)
+            .where(HomeStylingSession.user_id == current_user.id)
+            .where(HomeStylingSession.status == HomeStylingSessionStatus.COMPLETED)
+            .options(selectinload(HomeStylingSession.views))
+            .order_by(HomeStylingSession.created_at.desc())
+        )
+
+        result = await db.execute(query)
+        sessions = result.scalars().all()
+
+        purchases = []
+        for session in sessions:
+            # Get thumbnail from first view
+            thumbnail = None
+            if session.views:
+                first_view = sorted(session.views, key=lambda v: v.view_number)[0]
+                thumbnail = first_view.visualization_image
+
+            purchases.append(
+                PurchaseSchema(
+                    id=session.id,
+                    title=format_purchase_title(session.views_count, session.created_at),
+                    views_count=session.views_count,
+                    room_type=session.room_type,
+                    style=session.style,
+                    created_at=session.created_at,
+                    thumbnail=thumbnail,
+                )
+            )
+
+        return PurchaseListResponse(purchases=purchases, total=len(purchases))
+    except Exception as e:
+        logger.error(f"Error getting purchases: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get purchases: {str(e)}")
+
+
+@router.get("/purchases/{purchase_id}", response_model=PurchaseDetailSchema)
+async def get_purchase_detail(
+    purchase_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get purchase details with all views.
+    """
+    try:
+        # Query the session with views
+        query = (
+            select(HomeStylingSession)
+            .where(HomeStylingSession.id == purchase_id)
+            .where(HomeStylingSession.user_id == current_user.id)
+            .where(HomeStylingSession.status == HomeStylingSessionStatus.COMPLETED)
+            .options(
+                selectinload(HomeStylingSession.views)
+                .selectinload(HomeStylingView.curated_look)
+                .selectinload(CuratedLook.products)
+                .selectinload(CuratedLookProduct.product)
+                .selectinload(Product.images)
+            )
+        )
+
+        result = await db.execute(query)
+        session = result.scalar_one_or_none()
+
+        if not session:
+            raise HTTPException(status_code=404, detail="Purchase not found")
+
+        # Build views response
+        views = []
+        for view in sorted(session.views, key=lambda v: v.view_number):
+            products = []
+            total_price = 0
+            style_theme = None
+
+            if view.curated_look:
+                style_theme = view.curated_look.style_theme
+                for lp in view.curated_look.products:
+                    if lp.product:
+                        product_price = lp.product.price or 0
+                        total_price += product_price
+                        products.append(
+                            ProductInView(
+                                id=lp.product.id,
+                                name=lp.product.name,
+                                price=product_price,
+                                image_url=get_primary_image_url(lp.product),
+                                source_website=lp.product.source_website,
+                                source_url=lp.product.source_url,
+                                product_type=lp.product_type,
+                            )
+                        )
+
+            views.append(
+                HomeStylingViewSchema(
+                    id=view.id,
+                    view_number=view.view_number,
+                    visualization_image=view.visualization_image,
+                    curated_look_id=view.curated_look_id,
+                    style_theme=style_theme,
+                    generation_status=view.generation_status,
+                    error_message=view.error_message,
+                    products=products,
+                    total_price=total_price,
+                )
+            )
+
+        return PurchaseDetailSchema(
+            id=session.id,
+            title=format_purchase_title(session.views_count, session.created_at),
+            views_count=session.views_count,
+            room_type=session.room_type,
+            style=session.style,
+            budget_tier=session.budget_tier,
+            original_room_image=session.original_room_image,
+            created_at=session.created_at,
+            views=views,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting purchase detail: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get purchase detail: {str(e)}")

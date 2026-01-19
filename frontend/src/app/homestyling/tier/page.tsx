@@ -30,7 +30,7 @@ const TIERS = [
     value: 'premium' as TierType,
     name: 'Premium',
     views: 6,
-    price: 699,
+    price: 599,
     description: 'Full design experience',
     features: ['6 design visualizations', 'All style options', 'Priority generation', 'Shoppable product lists', 'Save to your account'],
     enabled: false,

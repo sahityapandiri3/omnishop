@@ -4,10 +4,15 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useRef, useEffect } from 'react'
 import { Bars3Icon, XMarkIcon, UserCircleIcon, FolderIcon, ArrowRightOnRectangleIcon, ArrowLeftOnRectangleIcon } from '@heroicons/react/24/outline'
-import { useAuth, isAdmin, isSuperAdmin } from '@/contexts/AuthContext'
+import { useAuth, isAdmin, isSuperAdmin, hasBuildYourOwn } from '@/contexts/AuthContext'
 
-const navigation = [
+// Base navigation - shown to all users
+const baseNavigation = [
   { name: 'Home', href: '/' },
+]
+
+// Navigation for Build Your Own subscribers and admins
+const premiumNavigation = [
   { name: 'Curated', href: '/curated' },
   { name: 'Design', href: '/design' },
 ]
@@ -72,7 +77,8 @@ export function Navigation() {
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-4">
             <div className="flex items-baseline space-x-1">
-              {navigation.map((item) => {
+              {/* Base navigation - always shown */}
+              {baseNavigation.map((item) => {
                 const isActive = pathname === item.href
                 return (
                   <Link
@@ -89,8 +95,52 @@ export function Navigation() {
                 )
               })}
 
-              {/* My Projects - Only show when logged in */}
+              {/* Home Styling - shown to all users */}
+              <Link
+                href="/homestyling"
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  pathname?.startsWith('/homestyling')
+                    ? 'bg-gray-100 text-gray-900'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Home Styling
+              </Link>
+
+              {/* Purchases - shown to authenticated users */}
               {isAuthenticated && (
+                <Link
+                  href="/purchases"
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    pathname?.startsWith('/purchases')
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Purchases
+                </Link>
+              )}
+
+              {/* Premium navigation - only for Build Your Own subscribers and admins */}
+              {hasBuildYourOwn(user) && premiumNavigation.map((item) => {
+                const isActive = pathname === item.href
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isActive
+                        ? 'bg-gray-100 text-gray-900'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    {item.name}
+                  </Link>
+                )
+              })}
+
+              {/* Projects - Only for Build Your Own subscribers and admins */}
+              {isAuthenticated && hasBuildYourOwn(user) && (
                 <Link
                   href="/projects"
                   className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -114,23 +164,6 @@ export function Navigation() {
                   }`}
                 >
                   Admin
-                </Link>
-              )}
-
-              {/* Home Styling Link - Only show for super_admin (testing) */}
-              {isAuthenticated && isSuperAdmin(user) && (
-                <Link
-                  href="/homestyling"
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-1.5 ${
-                    pathname?.startsWith('/homestyling')
-                      ? 'bg-gray-100 text-gray-900'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  Home Styling
-                  <span className="px-1.5 py-0.5 bg-emerald-500 text-white text-[9px] font-bold rounded">
-                    Beta
-                  </span>
                 </Link>
               )}
             </div>
@@ -171,6 +204,13 @@ export function Navigation() {
                           {user?.email}
                         </p>
                       </div>
+                      <Link
+                        href="/purchases"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        My Purchases
+                      </Link>
                       <Link
                         href="/projects"
                         onClick={() => setUserMenuOpen(false)}
@@ -237,7 +277,8 @@ export function Navigation() {
         {mobileMenuOpen && (
           <div className="md:hidden">
             <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 border-t border-gray-200">
-              {navigation.map((item) => {
+              {/* Base navigation - always shown */}
+              {baseNavigation.map((item) => {
                 const isActive = pathname === item.href
                 return (
                   <Link
@@ -255,8 +296,55 @@ export function Navigation() {
                 )
               })}
 
-              {/* My Projects - Mobile */}
+              {/* Home Styling - shown to all users */}
+              <Link
+                href="/homestyling"
+                className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                  pathname?.startsWith('/homestyling')
+                    ? 'bg-gray-100 text-gray-900'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Home Styling
+              </Link>
+
+              {/* Purchases - shown to authenticated users */}
               {isAuthenticated && (
+                <Link
+                  href="/purchases"
+                  className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                    pathname?.startsWith('/purchases')
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Purchases
+                </Link>
+              )}
+
+              {/* Premium navigation - only for Build Your Own subscribers and admins */}
+              {hasBuildYourOwn(user) && premiumNavigation.map((item) => {
+                const isActive = pathname === item.href
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                      isActive
+                        ? 'bg-gray-100 text-gray-900'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {item.name}
+                  </Link>
+                )
+              })}
+
+              {/* Projects - Only for Build Your Own subscribers and admins */}
+              {isAuthenticated && hasBuildYourOwn(user) && (
                 <Link
                   href="/projects"
                   className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
@@ -282,26 +370,6 @@ export function Navigation() {
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   Admin
-                </Link>
-              )}
-
-              {/* Home Styling - Mobile (only for super_admin) */}
-              {isAuthenticated && isSuperAdmin(user) && (
-                <Link
-                  href="/homestyling"
-                  className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
-                    pathname?.startsWith('/homestyling')
-                      ? 'bg-gray-100 text-gray-900'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  <span className="flex items-center gap-2">
-                    Home Styling
-                    <span className="px-1.5 py-0.5 bg-emerald-500 text-white text-[9px] font-bold rounded">
-                      Beta
-                    </span>
-                  </span>
                 </Link>
               )}
 

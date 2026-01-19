@@ -25,6 +25,13 @@ class UserRole(enum.Enum):
     SUPER_ADMIN = "super_admin"
 
 
+class SubscriptionTier(enum.Enum):
+    """Subscription tiers for user access"""
+
+    FREE = "free"  # Default - only Home Styling access
+    BUILD_YOUR_OWN = "build_your_own"  # ₹999/month - access to Curated, Design, Projects
+
+
 class BudgetTier(enum.Enum):
     """Budget tiers for curated looks and stores"""
 
@@ -321,6 +328,12 @@ class User(Base):
     role = Column(
         Enum(UserRole, values_callable=lambda x: [e.value for e in x], name="userrole"),
         default=UserRole.USER,
+        nullable=False,
+        index=True,
+    )
+    subscription_tier = Column(
+        Enum(SubscriptionTier, values_callable=lambda x: [e.value for e in x], name="subscriptiontier"),
+        default=SubscriptionTier.FREE,
         nullable=False,
         index=True,
     )

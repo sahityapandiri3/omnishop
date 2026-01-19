@@ -5,6 +5,7 @@ import { api } from '@/utils/api';
 
 // Types
 export type UserRole = 'user' | 'admin' | 'super_admin';
+export type SubscriptionTier = 'free' | 'build_your_own';
 
 export interface User {
   id: string;
@@ -14,6 +15,7 @@ export interface User {
   auth_provider: string;
   is_active: boolean;
   role: UserRole;
+  subscription_tier: SubscriptionTier;
   created_at: string;
 }
 
@@ -24,6 +26,17 @@ export function isAdmin(user: User | null): boolean {
 
 export function isSuperAdmin(user: User | null): boolean {
   return user?.role === 'super_admin';
+}
+
+// Subscription helper functions
+export function hasBuildYourOwn(user: User | null): boolean {
+  // Admins always have full access
+  if (isAdmin(user)) return true;
+  return user?.subscription_tier === 'build_your_own';
+}
+
+export function canAccessDesignTools(user: User | null): boolean {
+  return hasBuildYourOwn(user);
 }
 
 interface AuthState {

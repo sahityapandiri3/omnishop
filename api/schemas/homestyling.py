@@ -158,3 +158,43 @@ class TrackEventResponse(BaseModel):
 
     success: bool
     event_id: int
+
+
+# Purchase schemas
+class PurchaseSchema(BaseModel):
+    """Schema for a purchase (completed homestyling session) in list view"""
+
+    id: str
+    title: str  # e.g., "3 looks - Jan 19th, 2026"
+    views_count: int
+    room_type: Optional[str] = None
+    style: Optional[str] = None
+    created_at: datetime
+    thumbnail: Optional[str] = None  # First view's visualization image
+
+    class Config:
+        from_attributes = True
+
+
+class PurchaseDetailSchema(BaseModel):
+    """Schema for purchase details with all views"""
+
+    id: str
+    title: str
+    views_count: int
+    room_type: Optional[str] = None
+    style: Optional[str] = None
+    budget_tier: Optional[str] = None
+    original_room_image: Optional[str] = None
+    created_at: datetime
+    views: List[HomeStylingViewSchema] = []
+
+    class Config:
+        from_attributes = True
+
+
+class PurchaseListResponse(BaseModel):
+    """Response for listing purchases"""
+
+    purchases: List[PurchaseSchema]
+    total: int

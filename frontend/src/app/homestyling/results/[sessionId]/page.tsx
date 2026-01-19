@@ -60,9 +60,12 @@ export default function ResultsPage() {
   const [generationStage, setGenerationStage] = useState<GenerationStage>('starting');
   const [currentViewNumber, setCurrentViewNumber] = useState(0);
   const [totalViews, setTotalViews] = useState(1);
+  const [currentRetry, setCurrentRetry] = useState(0);
 
   const generationStarted = useRef(false);
   const pollingInterval = useRef<NodeJS.Timeout | null>(null);
+  const retryCount = useRef(0);
+  const MAX_RETRIES = 3;
 
   // Fetch session data
   const fetchSession = useCallback(async (includeImages: boolean = true) => {
@@ -75,13 +78,14 @@ export default function ResultsPage() {
     }
   }, [sessionId]);
 
-  // Start generation
-  const startGeneration = useCallback(async () => {
-    if (generationStarted.current) return;
+  // Start generation with retry logic
+  const startGeneration = useCallback(async (isRetry: boolean = false) => {
+    if (generationStarted.current && !isRetry) return;
     generationStarted.current = true;
 
     setIsGenerating(true);
     setGenerationStage('starting');
+    setError(null);
 
     try {
       // Start the generation request (this will take a while)
@@ -130,12 +134,53 @@ export default function ResultsPage() {
       setSession(finalSession);
       setGenerationStage('completed');
       setIsGenerating(false);
+      retryCount.current = 0; // Reset retry count on success
 
     } catch (err: any) {
       console.error('Error during generation:', err);
       if (pollingInterval.current) {
         clearInterval(pollingInterval.current);
       }
+
+      // IMPORTANT: Check if session actually completed successfully before retrying
+      // The frontend might timeout even though backend succeeded
+      try {
+        const checkSession = await fetchSession(true);
+        if (checkSession.status === 'completed') {
+          console.log('Session already completed - no retry needed');
+          setSession(checkSession);
+          setGenerationStage('completed');
+          setIsGenerating(false);
+          retryCount.current = 0;
+          return;
+        }
+      } catch (checkErr) {
+        console.error('Failed to check session status:', checkErr);
+      }
+
+      // Auto-retry if we haven't exceeded max retries
+      if (retryCount.current < MAX_RETRIES) {
+        retryCount.current++;
+        setCurrentRetry(retryCount.current);
+        console.log(`Retrying generation (attempt ${retryCount.current}/${MAX_RETRIES})...`);
+
+        // Reset session status to allow retry
+        try {
+          await api.post(`/api/homestyling/sessions/${sessionId}/reset-for-retry`);
+        } catch (resetErr) {
+          console.error('Failed to reset session:', resetErr);
+        }
+
+        // Wait a moment before retrying
+        setGenerationStage('starting');
+        setTimeout(() => {
+          generationStarted.current = false;
+          startGeneration(true);
+        }, 2000);
+        return;
+      }
+
+      // Max retries exceeded, show error
       setGenerationStage('failed');
       setError(err.response?.data?.detail || 'Failed to generate designs. Please try again.');
       setIsGenerating(false);
@@ -243,8 +288,14 @@ export default function ResultsPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
               </svg>
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Creating Your Designs</h1>
-            <p className="text-gray-600">{STAGE_MESSAGES[generationStage]}</p>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+              {currentRetry > 0 ? 'Retrying...' : 'Creating Your Designs'}
+            </h1>
+            <p className="text-gray-600">
+              {currentRetry > 0
+                ? `Attempt ${currentRetry + 1} of ${MAX_RETRIES + 1} - ${STAGE_MESSAGES[generationStage]}`
+                : STAGE_MESSAGES[generationStage]}
+            </p>
           </div>
 
           {/* Progress Card */}
@@ -482,13 +533,13 @@ export default function ResultsPage() {
                 onClick={() => router.push('/homestyling')}
                 className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition-all"
               >
-                Start New Design
+                Get More Looks
               </button>
               <button
-                onClick={() => router.push('/curated')}
+                onClick={() => router.push('/upgrade')}
                 className="px-6 py-3 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold rounded-lg transition-all"
               >
-                Browse More Looks
+                Build Your Own
               </button>
             </div>
           </>

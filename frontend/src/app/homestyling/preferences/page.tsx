@@ -1,19 +1,21 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import api from '@/utils/api';
 
 type RoomType = 'living_room' | 'bedroom';
 type StyleType = 'modern' | 'modern_luxury' | 'indian_contemporary';
-type ColorPalette = 'warm' | 'neutral' | 'cool' | 'bold';
+type BudgetTier = 'pocket_friendly' | 'mid_tier' | 'premium' | 'luxury';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 const ROOM_TYPES = [
   {
     value: 'living_room' as RoomType,
     label: 'Living Room',
     description: 'Sofas, coffee tables, entertainment',
+    comingSoon: false,
     icon: (
       <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
@@ -24,6 +26,7 @@ const ROOM_TYPES = [
     value: 'bedroom' as RoomType,
     label: 'Bedroom',
     description: 'Beds, dressers, nightstands',
+    comingSoon: true,
     icon: (
       <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h14a2 2 0 012 2v4zM3 18v-2h18v2M5 8V6a2 2 0 012-2h10a2 2 0 012 2v2" />
@@ -37,44 +40,58 @@ const STYLES = [
     value: 'modern' as StyleType,
     label: 'Modern',
     description: 'Clean lines, neutral tones',
-    gradient: 'from-gray-700 to-gray-900',
+    imagePath: `${API_URL}/api/styles/Style_Modern.jpg`,
   },
   {
     value: 'modern_luxury' as StyleType,
     label: 'Modern Luxury',
     description: 'Premium finishes, elegant details',
-    gradient: 'from-amber-600 to-amber-800',
+    imagePath: `${API_URL}/api/styles/Style_Luxury.jpg`,
   },
   {
     value: 'indian_contemporary' as StyleType,
     label: 'Indian Contemporary',
     description: 'Warm tones, artisanal crafts',
-    gradient: 'from-orange-600 to-red-700',
+    imagePath: `${API_URL}/api/styles/Style_Indian.jpg`,
   },
 ];
 
-const COLORS = [
-  { value: 'warm' as ColorPalette, label: 'Warm', colors: ['#D4A574', '#C17F59', '#8B4513'] },
-  { value: 'neutral' as ColorPalette, label: 'Neutral', colors: ['#E8E4E1', '#B5B0AC', '#6B6762'] },
-  { value: 'cool' as ColorPalette, label: 'Cool', colors: ['#7EA8BE', '#4A7C8E', '#2C5F6E'] },
-  { value: 'bold' as ColorPalette, label: 'Bold', colors: ['#C7522A', '#E5C185', '#4A6C6F'] },
+const BUDGET_TIERS = [
+  {
+    value: 'pocket_friendly' as BudgetTier,
+    label: 'Budget Friendly',
+    range: 'Under ₹2L',
+    description: 'Essential quality pieces',
+  },
+  {
+    value: 'mid_tier' as BudgetTier,
+    label: 'Mid Range',
+    range: '₹2L – ₹8L',
+    description: 'Balance of quality & value',
+  },
+  {
+    value: 'premium' as BudgetTier,
+    label: 'Premium',
+    range: '₹8L – ₹15L',
+    description: 'High-end designer pieces',
+  },
+  {
+    value: 'luxury' as BudgetTier,
+    label: 'Luxury',
+    range: '₹15L+',
+    description: 'Exclusive luxury brands',
+  },
 ];
 
 export default function PreferencesPage() {
   const router = useRouter();
   const [roomType, setRoomType] = useState<RoomType | null>(null);
   const [style, setStyle] = useState<StyleType | null>(null);
-  const [colorPalette, setColorPalette] = useState<ColorPalette[]>([]);
+  const [budgetTier, setBudgetTier] = useState<BudgetTier | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const toggleColor = (color: ColorPalette) => {
-    setColorPalette((prev) =>
-      prev.includes(color) ? prev.filter((c) => c !== color) : [...prev, color]
-    );
-  };
-
-  const canContinue = roomType && style;
+  const canContinue = roomType && style && budgetTier;
 
   const handleContinue = async () => {
     if (!canContinue) return;
@@ -83,11 +100,12 @@ export default function PreferencesPage() {
     setError(null);
 
     try {
-      // Create session with preferences
+      // Create session with preferences via API
       const response = await api.post('/api/homestyling/sessions', {
         room_type: roomType,
         style: style,
-        color_palette: colorPalette,
+        budget_tier: budgetTier,
+        color_palette: [],
       });
 
       const sessionId = response.data.id;
@@ -138,22 +156,38 @@ export default function PreferencesPage() {
             {ROOM_TYPES.map((room) => (
               <button
                 key={room.value}
-                onClick={() => setRoomType(room.value)}
-                className={`p-4 rounded-xl border-2 transition-all text-left ${
-                  roomType === room.value
+                onClick={() => !room.comingSoon && setRoomType(room.value)}
+                disabled={room.comingSoon}
+                className={`relative p-4 rounded-xl border-2 transition-all text-left ${
+                  room.comingSoon
+                    ? 'border-gray-100 bg-gray-50 cursor-not-allowed opacity-60'
+                    : roomType === room.value
                     ? 'border-emerald-500 bg-emerald-50'
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
                 <div
                   className={`mb-2 ${
-                    roomType === room.value ? 'text-emerald-600' : 'text-gray-400'
+                    room.comingSoon
+                      ? 'text-gray-300'
+                      : roomType === room.value
+                      ? 'text-emerald-600'
+                      : 'text-gray-400'
                   }`}
                 >
                   {room.icon}
                 </div>
-                <h3 className="font-medium text-gray-900">{room.label}</h3>
-                <p className="text-xs text-gray-500">{room.description}</p>
+                <h3 className={`font-medium ${room.comingSoon ? 'text-gray-400' : 'text-gray-900'}`}>
+                  {room.label}
+                </h3>
+                <p className={`text-xs ${room.comingSoon ? 'text-gray-400' : 'text-gray-500'}`}>
+                  {room.description}
+                </p>
+                {room.comingSoon && (
+                  <span className="absolute top-2 right-2 px-2 py-0.5 bg-gray-200 text-gray-500 text-xs font-medium rounded-full">
+                    Coming Soon
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -169,16 +203,28 @@ export default function PreferencesPage() {
               <button
                 key={s.value}
                 onClick={() => setStyle(s.value)}
-                className={`relative rounded-xl overflow-hidden h-32 transition-all ${
-                  style === s.value ? 'ring-4 ring-emerald-500 ring-offset-2' : ''
+                className={`relative rounded-xl overflow-hidden transition-all ${
+                  style === s.value ? 'ring-4 ring-emerald-500 ring-offset-2' : 'hover:shadow-lg'
                 }`}
               >
-                <div
-                  className={`absolute inset-0 bg-gradient-to-br ${s.gradient} flex flex-col justify-end p-3 text-white`}
-                >
-                  <h3 className="font-semibold text-sm">{s.label}</h3>
-                  <p className="text-xs text-white/80">{s.description}</p>
+                {/* Thumbnail Image */}
+                <div className="aspect-[4/3] relative overflow-hidden bg-gray-100">
+                  <img
+                    src={s.imagePath}
+                    alt={s.label}
+                    className="w-full h-full object-cover"
+                  />
+                  {/* Gradient overlay for text readability */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+
+                  {/* Label overlay */}
+                  <div className="absolute bottom-0 left-0 right-0 p-3 text-white text-left">
+                    <h3 className="font-semibold text-sm">{s.label}</h3>
+                    <p className="text-xs text-white/80">{s.description}</p>
+                  </div>
                 </div>
+
+                {/* Selection checkmark */}
                 {style === s.value && (
                   <div className="absolute top-2 right-2 w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center">
                     <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -195,32 +241,40 @@ export default function PreferencesPage() {
           </div>
         </div>
 
-        {/* Color Palette */}
+        {/* Budget Tier */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Color Preferences</h2>
-          <p className="text-sm text-gray-500 mb-4">Optional: Select preferred color palettes</p>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Select Your Budget</h2>
+          <p className="text-sm text-gray-500 mb-4">We'll show you looks that match your budget range</p>
 
-          <div className="grid grid-cols-4 gap-4">
-            {COLORS.map((color) => (
+          <div className="grid grid-cols-2 gap-3">
+            {BUDGET_TIERS.map((tier) => (
               <button
-                key={color.value}
-                onClick={() => toggleColor(color.value)}
-                className={`p-3 rounded-xl border-2 transition-all ${
-                  colorPalette.includes(color.value)
+                key={tier.value}
+                onClick={() => setBudgetTier(tier.value)}
+                className={`relative p-4 rounded-xl border-2 transition-all text-left ${
+                  budgetTier === tier.value
                     ? 'border-emerald-500 bg-emerald-50'
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
-                <div className="flex gap-1 mb-2 justify-center">
-                  {color.colors.map((c, i) => (
-                    <div
-                      key={i}
-                      className="w-5 h-5 rounded-full"
-                      style={{ backgroundColor: c }}
-                    />
-                  ))}
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className={`font-medium ${budgetTier === tier.value ? 'text-emerald-700' : 'text-gray-900'}`}>
+                    {tier.label}
+                  </h3>
+                  {budgetTier === tier.value && (
+                    <svg className="w-5 h-5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
+                      <path
+                        fillRule="evenodd"
+                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  )}
                 </div>
-                <p className="text-xs font-medium text-gray-700 text-center">{color.label}</p>
+                <p className={`text-sm font-medium ${budgetTier === tier.value ? 'text-emerald-600' : 'text-gray-600'}`}>
+                  {tier.range}
+                </p>
+                <p className="text-xs text-gray-500">{tier.description}</p>
               </button>
             ))}
           </div>
