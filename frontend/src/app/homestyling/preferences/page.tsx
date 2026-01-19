@@ -299,15 +299,17 @@ export default function PreferencesPage() {
             onClick={handleContinue}
             disabled={!canContinue || isSubmitting}
             className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all ${
-              canContinue
-                ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              !canContinue
+                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                : isSubmitting
+                ? 'bg-emerald-700 text-white cursor-wait opacity-80'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
             }`}
           >
             {isSubmitting ? (
               <>
                 <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                Saving...
+                Creating session...
               </>
             ) : (
               <>
