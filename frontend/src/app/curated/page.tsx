@@ -438,7 +438,7 @@ function CuratedPageContent() {
 
 export default function CuratedPage() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute requiredTier="build_your_own">
       <CuratedPageContent />
     </ProtectedRoute>
   );

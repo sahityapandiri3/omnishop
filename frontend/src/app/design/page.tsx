@@ -1839,7 +1839,7 @@ function DesignPageContent() {
 
 export default function DesignPage() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute requiredTier="build_your_own">
       <DesignPageContent />
     </ProtectedRoute>
   );

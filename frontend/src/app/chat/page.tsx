@@ -83,7 +83,7 @@ function ChatPageContent() {
 
 export default function ChatPage() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute requiredTier="build_your_own">
       <ChatPageContent />
     </ProtectedRoute>
   );

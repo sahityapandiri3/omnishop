@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getCuratedLooks, CuratedLook } from '@/utils/api';
+import { useAuth, isAdmin } from '@/contexts/AuthContext';
 
 // Helper to format image source - handles base64 and URLs
 const formatImageSrc = (src: string | null | undefined): string => {
@@ -28,8 +30,25 @@ const findLookByTheme = (looks: CuratedLook[], themeName: string): CuratedLook |
 };
 
 export default function HomePage() {
+  const router = useRouter();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [looks, setLooks] = useState<CuratedLook[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Redirect authenticated users based on their subscription tier
+  useEffect(() => {
+    if (authLoading) return; // Wait for auth to load
+
+    if (isAuthenticated && user) {
+      // Admins and build_your_own users go to /curated
+      if (isAdmin(user) || user.subscription_tier === 'build_your_own') {
+        router.replace('/curated');
+      } else {
+        // Free users go to /homestyling/preferences
+        router.replace('/homestyling/preferences');
+      }
+    }
+  }, [isAuthenticated, user, authLoading, router]);
 
   useEffect(() => {
     const fetchLooks = async () => {
@@ -46,6 +65,15 @@ export default function HomePage() {
     };
     fetchLooks();
   }, []);
+
+  // Show loading while checking auth
+  if (authLoading || (isAuthenticated && user)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-neutral-900" />
+      </div>
+    );
+  }
 
   // Find specific looks by name for consistent display (fixed looks for landing page)
   const heroLook = findLookByTheme(looks, 'Coastal Chic');

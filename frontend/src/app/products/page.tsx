@@ -271,7 +271,7 @@ function Pagination({ currentPage, totalPages, onPageChange, hasNext, hasPrev }:
 
 export default function ProductsPage() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute requiredTier="build_your_own">
       <ProductsPageContent />
     </ProtectedRoute>
   );
