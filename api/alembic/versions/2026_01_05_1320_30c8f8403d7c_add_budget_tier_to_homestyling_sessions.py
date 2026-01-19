@@ -23,6 +23,11 @@ def upgrade() -> None:
     conn = op.get_bind()
     inspector = inspect(conn)
 
+    # Check if table exists first
+    if 'homestyling_sessions' not in inspector.get_table_names():
+        # Table doesn't exist, skip this migration
+        return
+
     # Check if column already exists
     columns = [col['name'] for col in inspector.get_columns('homestyling_sessions')]
 
@@ -42,6 +47,10 @@ def downgrade() -> None:
     """Downgrade schema."""
     conn = op.get_bind()
     inspector = inspect(conn)
+
+    # Check if table exists first
+    if 'homestyling_sessions' not in inspector.get_table_names():
+        return
 
     columns = [col['name'] for col in inspector.get_columns('homestyling_sessions')]
 
