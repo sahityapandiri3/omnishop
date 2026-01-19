@@ -84,7 +84,7 @@ async def warm_curated_looks_cache(db_session_factory) -> None:
                     .selectinload(CuratedLookProduct.product)
                     .selectinload(Product.images)
                 )
-                .order_by(CuratedLookModel.display_order.asc(), CuratedLookModel.created_at.desc())
+                .order_by(CuratedLookModel.created_at.desc())
             )
 
             result = await db.execute(query)
@@ -315,7 +315,7 @@ def get_primary_image_url(product: Product) -> Optional[str]:
 
 @router.get("/looks", response_model=CuratedLooksResponse)
 async def get_curated_looks(
-    room_type: Optional[str] = Query(None, description="Filter by room type (living_room, bedroom)"),
+    room_type: Optional[str] = Query(None, description="Filter by room type (living_room, bedroom, foyer)"),
     style: Optional[str] = Query(None, description="Filter by style label (modern, modern_luxury, indian_contemporary, etc.)"),
     budget_tier: Optional[str] = Query(None, description="Filter by budget tier (pocket_friendly, mid_tier, premium, luxury)"),
     include_images: bool = Query(False, description="Include large base64 images (room_image, visualization_image)"),
@@ -357,7 +357,7 @@ async def get_curated_looks(
             .options(
                 selectinload(CuratedLookModel.products).selectinload(CuratedLookProduct.product).selectinload(Product.images)
             )
-            .order_by(CuratedLookModel.display_order.asc(), CuratedLookModel.created_at.desc())
+            .order_by(CuratedLookModel.created_at.desc())
         )
 
         # Apply room type filter if provided

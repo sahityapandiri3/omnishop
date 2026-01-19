@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { adminCuratedAPI, AdminCuratedLookSummary } from '@/utils/api';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 
-type RoomType = 'all' | 'living_room' | 'bedroom';
+type RoomType = 'all' | 'living_room' | 'bedroom' | 'foyer';
 type StyleOption = 'modern' | 'modern_luxury' | 'indian_contemporary';
 type BudgetOption = 'all' | 'pocket_friendly' | 'mid_tier' | 'premium' | 'luxury';
 
@@ -42,23 +42,55 @@ function AdminCuratedLooksContent() {
   };
 
   const [page, setPage] = useState(getInitialPage);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Fetch looks when page or filter changes
+  // Debounce search input
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      if (searchQuery !== debouncedSearch) {
+        setPage(1); // Reset to page 1 when search changes
+      }
+    }, 300);
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchQuery]);
+
+  // Fetch looks when page, filter, search, or other filters change
   useEffect(() => {
     fetchLooks(page);
     isInitialized.current = true;
-  }, [page, filter]);
+  }, [page, filter, debouncedSearch, roomTypeFilter, selectedStyles, budgetFilter]);
 
   const fetchLooks = async (pageNum: number) => {
     try {
       setLoading(true);
 
-      const params: { is_published?: boolean; page?: number; size?: number } = {
+      const params: {
+        is_published?: boolean;
+        page?: number;
+        size?: number;
+        room_type?: string;
+        search?: string;
+        style?: string;
+        budget_tier?: string;
+      } = {
         page: pageNum,
         size: 20,
       };
       if (filter === 'published') params.is_published = true;
       if (filter === 'draft') params.is_published = false;
+      if (roomTypeFilter !== 'all') params.room_type = roomTypeFilter;
+      if (debouncedSearch) params.search = debouncedSearch;
+      if (selectedStyles.length === 1) params.style = selectedStyles[0];
+      if (budgetFilter !== 'all') params.budget_tier = budgetFilter;
 
       const response = await adminCuratedAPI.list(params);
 
@@ -86,6 +118,7 @@ function AdminCuratedLooksContent() {
     { value: 'all', label: 'All Rooms' },
     { value: 'living_room', label: 'Living Room' },
     { value: 'bedroom', label: 'Bedroom' },
+    { value: 'foyer', label: 'Foyer' },
   ];
 
   const styleOptions: { value: StyleOption; label: string }[] = [
@@ -103,11 +136,26 @@ function AdminCuratedLooksContent() {
   ];
 
   const toggleStyle = (style: StyleOption) => {
-    setSelectedStyles(prev =>
-      prev.includes(style)
+    setSelectedStyles(prev => {
+      const newStyles = prev.includes(style)
         ? prev.filter(s => s !== style)
-        : [...prev, style]
-    );
+        : [...prev, style];
+      return newStyles;
+    });
+    setPage(1);
+    sessionStorage.removeItem(CURRENT_PAGE_KEY);
+  };
+
+  const handleRoomTypeChange = (roomType: RoomType) => {
+    setRoomTypeFilter(roomType);
+    setPage(1);
+    sessionStorage.removeItem(CURRENT_PAGE_KEY);
+  };
+
+  const handleBudgetChange = (budget: BudgetOption) => {
+    setBudgetFilter(budget);
+    setPage(1);
+    sessionStorage.removeItem(CURRENT_PAGE_KEY);
   };
 
   // Handle page change
@@ -292,7 +340,7 @@ function AdminCuratedLooksContent() {
               {roomTypes.map((type) => (
                 <button
                   key={type.value}
-                  onClick={() => setRoomTypeFilter(type.value)}
+                  onClick={() => handleRoomTypeChange(type.value)}
                   className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                     roomTypeFilter === type.value
                       ? 'bg-purple-600 text-white'
@@ -307,7 +355,7 @@ function AdminCuratedLooksContent() {
             {/* Budget Filter Dropdown */}
             <select
               value={budgetFilter}
-              onChange={(e) => setBudgetFilter(e.target.value as BudgetOption)}
+              onChange={(e) => handleBudgetChange(e.target.value as BudgetOption)}
               className="bg-gray-50 rounded-lg pl-3 pr-8 py-1.5 text-xs font-medium border border-gray-200 text-gray-600 hover:border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-transparent cursor-pointer"
             >
               {budgetOptions.map((option) => (
@@ -395,50 +443,9 @@ function AdminCuratedLooksContent() {
             </button>
           </div>
         ) : looks.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
-            <svg className="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No curated looks yet</h3>
-            <p className="text-gray-600 mb-4">Get started by creating your first curated look</p>
-            <Link
-              href="/admin/curated/new"
-              className="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors"
-            >
-              Create First Look
-            </Link>
-          </div>
-        ) : (() => {
-          const filteredLooks = looks.filter(look => {
-            // Search filter
-            const matchesSearch = !searchQuery ||
-              look.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-              look.style_theme?.toLowerCase().includes(searchQuery.toLowerCase());
-
-            // Room type filter
-            const matchesRoomType = roomTypeFilter === 'all' || look.room_type === roomTypeFilter;
-
-            // Style filter (multi-select)
-            const matchesStyle = selectedStyles.length === 0 ||
-              selectedStyles.some(style => look.style_theme?.toLowerCase().includes(style.replace('_', ' ')));
-
-            // Budget filter (based on total_price)
-            let matchesBudget = budgetFilter === 'all';
-            if (!matchesBudget) {
-              const price = look.total_price;
-              if (budgetFilter === 'pocket_friendly') matchesBudget = price < 200000;
-              else if (budgetFilter === 'mid_tier') matchesBudget = price >= 200000 && price < 800000;
-              else if (budgetFilter === 'premium') matchesBudget = price >= 800000 && price < 1500000;
-              else if (budgetFilter === 'luxury') matchesBudget = price >= 1500000;
-            }
-
-            return matchesSearch && matchesRoomType && matchesStyle && matchesBudget;
-          });
-
-          const hasActiveFilters = searchQuery || roomTypeFilter !== 'all' || selectedStyles.length > 0 || budgetFilter !== 'all';
-
-          if (filteredLooks.length === 0) {
-            return (
+          (() => {
+            const hasActiveFilters = searchQuery || roomTypeFilter !== 'all' || selectedStyles.length > 0 || budgetFilter !== 'all';
+            return hasActiveFilters ? (
               <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
                 <svg className="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -447,27 +454,38 @@ function AdminCuratedLooksContent() {
                 <p className="text-gray-600 mb-4">
                   {searchQuery ? `No looks found for "${searchQuery}"` : 'No looks match the selected filters'}
                 </p>
-                {hasActiveFilters && (
-                  <button
-                    onClick={() => {
-                      setSearchQuery('');
-                      setRoomTypeFilter('all');
-                      setSelectedStyles([]);
-                      setBudgetFilter('all');
-                    }}
-                    className="text-purple-600 hover:text-purple-700 font-medium"
-                  >
-                    Clear all filters
-                  </button>
-                )}
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setRoomTypeFilter('all');
+                    setSelectedStyles([]);
+                    setBudgetFilter('all');
+                  }}
+                  className="text-purple-600 hover:text-purple-700 font-medium"
+                >
+                  Clear all filters
+                </button>
+              </div>
+            ) : (
+              <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
+                <svg className="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No curated looks yet</h3>
+                <p className="text-gray-600 mb-4">Get started by creating your first curated look</p>
+                <Link
+                  href="/admin/curated/new"
+                  className="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors"
+                >
+                  Create First Look
+                </Link>
               </div>
             );
-          }
-
-          return (
+          })()
+        ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {filteredLooks.map((look) => (
+              {looks.map((look) => (
                 <div
                   key={look.id}
                   className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow"
@@ -631,8 +649,7 @@ function AdminCuratedLooksContent() {
               </div>
             )}
           </>
-          );
-        })()}
+        )}
       </div>
     </div>
   );

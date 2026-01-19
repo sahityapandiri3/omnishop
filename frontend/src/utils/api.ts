@@ -1510,7 +1510,15 @@ export const adminCuratedAPI = {
   /**
    * List all curated looks (admin view)
    */
-  list: async (params?: { page?: number; size?: number; room_type?: string; is_published?: boolean }): Promise<AdminCuratedLooksListResponse> => {
+  list: async (params?: {
+    page?: number;
+    size?: number;
+    room_type?: string;
+    is_published?: boolean;
+    search?: string;
+    style?: string;
+    budget_tier?: string;
+  }): Promise<AdminCuratedLooksListResponse> => {
     try {
       const response = await api.get('/api/admin/curated/', { params });
       return response.data;
@@ -1807,6 +1815,77 @@ export const projectsAPI = {
    */
   getThumbnail: async (projectId: string): Promise<{ visualization_image: string | null }> => {
     const response = await api.get(`/api/projects/${projectId}/thumbnail`);
+    return response.data;
+  },
+};
+
+// =============================================================================
+// PURCHASES (Homestyling)
+// =============================================================================
+
+export interface PurchaseProduct {
+  id: number;
+  name: string;
+  price: number | null;
+  image_url: string | null;
+  source_website: string;
+  source_url: string | null;
+  product_type: string | null;
+}
+
+export interface PurchaseView {
+  id: number;
+  view_number: number;
+  visualization_image: string | null;
+  curated_look_id: number | null;
+  style_theme: string | null;
+  generation_status: string;
+  error_message: string | null;
+  products: PurchaseProduct[];
+  total_price: number;
+}
+
+export interface Purchase {
+  id: string;
+  title: string;
+  views_count: number;
+  room_type: string | null;
+  style: string | null;
+  created_at: string;
+  thumbnail: string | null;
+}
+
+export interface PurchaseDetail {
+  id: string;
+  title: string;
+  views_count: number;
+  room_type: string | null;
+  style: string | null;
+  budget_tier: string | null;
+  original_room_image: string | null;
+  created_at: string;
+  views: PurchaseView[];
+}
+
+export interface PurchasesListResponse {
+  purchases: Purchase[];
+  total: number;
+}
+
+export const purchasesAPI = {
+  /**
+   * List all purchases for the current user
+   */
+  list: async (): Promise<PurchasesListResponse> => {
+    const response = await api.get('/api/homestyling/purchases');
+    return response.data;
+  },
+
+  /**
+   * Get purchase details by ID
+   */
+  get: async (purchaseId: string): Promise<PurchaseDetail> => {
+    const response = await api.get(`/api/homestyling/purchases/${purchaseId}`);
     return response.data;
   },
 };

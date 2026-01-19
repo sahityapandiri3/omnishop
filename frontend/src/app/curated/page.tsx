@@ -9,7 +9,7 @@ import { LookDetailModal } from '@/components/curated/LookDetailModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 
-type RoomType = 'all' | 'living_room' | 'bedroom';
+type RoomType = 'all' | 'living_room' | 'bedroom' | 'foyer';
 type StyleOption = 'modern' | 'modern_luxury' | 'indian_contemporary';
 type BudgetOption = 'all' | 'pocket_friendly' | 'mid_tier' | 'premium' | 'luxury';
 
@@ -117,6 +117,7 @@ function CuratedPageContent() {
     { value: 'all', label: 'All Rooms' },
     { value: 'living_room', label: 'Living Room' },
     { value: 'bedroom', label: 'Bedroom' },
+    { value: 'foyer', label: 'Foyer' },
   ];
 
   const styleOptions: { value: StyleOption; label: string }[] = [

@@ -24,7 +24,7 @@ from sqlalchemy.orm import selectinload
 
 from core.auth import require_admin
 from core.database import get_db
-from database.models import BudgetTier, Category, CuratedLook, CuratedLookProduct, Product, ProductAttribute, User
+from database.models import Category, CuratedLook, CuratedLookProduct, Product, ProductAttribute, User
 
 # Global embedding service instance
 _embedding_service: Optional[EmbeddingService] = None
@@ -839,6 +839,9 @@ async def list_curated_looks(
     size: int = Query(20, ge=1, le=100),
     room_type: Optional[str] = Query(None),
     is_published: Optional[bool] = Query(None),
+    search: Optional[str] = Query(None, description="Search by title or style theme"),
+    style: Optional[str] = Query(None, description="Filter by style theme"),
+    budget_tier: Optional[str] = Query(None, description="Filter by budget tier"),
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -853,19 +856,40 @@ async def list_curated_looks(
         if is_published is not None:
             query = query.where(CuratedLook.is_published == is_published)
 
-        # Order by: published first, then display_order, then created_at
-        query = query.order_by(
-            CuratedLook.is_published.desc(),  # Published first
-            CuratedLook.display_order.asc(),
-            CuratedLook.created_at.desc()
-        )
+        # Search filter (case-insensitive search in title and style_theme)
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.where(or_(CuratedLook.title.ilike(search_pattern), CuratedLook.style_theme.ilike(search_pattern)))
 
-        # Get total count
+        # Style filter
+        if style:
+            # Handle underscore to space conversion (e.g., "indian_contemporary" -> "Indian Contemporary")
+            style_pattern = f"%{style.replace('_', ' ')}%"
+            query = query.where(CuratedLook.style_theme.ilike(style_pattern))
+
+        # Budget tier filter
+        if budget_tier:
+            query = query.where(CuratedLook.budget_tier == budget_tier)
+
+        # Order by: latest first (created_at DESC)
+        query = query.order_by(CuratedLook.created_at.desc())
+
+        # Get total count (with same filters)
         count_query = select(func.count()).select_from(CuratedLook)
         if room_type:
             count_query = count_query.where(CuratedLook.room_type == room_type)
         if is_published is not None:
             count_query = count_query.where(CuratedLook.is_published == is_published)
+        if search:
+            search_pattern = f"%{search}%"
+            count_query = count_query.where(
+                or_(CuratedLook.title.ilike(search_pattern), CuratedLook.style_theme.ilike(search_pattern))
+            )
+        if style:
+            style_pattern = f"%{style.replace('_', ' ')}%"
+            count_query = count_query.where(CuratedLook.style_theme.ilike(style_pattern))
+        if budget_tier:
+            count_query = count_query.where(CuratedLook.budget_tier == budget_tier)
 
         total_result = await db.execute(count_query)
         total = total_result.scalar()
