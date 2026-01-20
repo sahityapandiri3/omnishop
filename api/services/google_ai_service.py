@@ -3477,7 +3477,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
             )
 
             # Retry configuration with timeout protection
-            max_retries = 3
+            max_retries = 5  # Increased from 3 to handle Google API 500 errors
             timeout_seconds = 90
             num_products = len(products)
 

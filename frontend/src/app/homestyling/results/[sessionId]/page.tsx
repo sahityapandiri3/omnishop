@@ -22,6 +22,7 @@ interface HomeStylingView {
   style_theme: string | null;
   generation_status: string;
   error_message: string | null;
+  is_fallback: boolean;
   products: ProductInView[];
   total_price: number;
 }
@@ -450,6 +451,27 @@ export default function ResultsPage() {
                       </div>
                     )}
                   </div>
+                  {/* Fallback Warning Banner */}
+                  {currentView?.is_fallback && (
+                    <div className="bg-amber-50 border-t border-amber-200 px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-amber-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <div className="flex-1">
+                          <p className="text-sm text-amber-800">
+                            Showing with a different background.{' '}
+                            <button
+                              onClick={() => router.push(`/homestyling/upload?session_id=${sessionId}&retry_view=${currentView.view_number}`)}
+                              className="font-medium text-amber-700 hover:text-amber-900 underline"
+                            >
+                              Click here to visualize in your space
+                            </button>
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="p-4 border-t border-gray-100">
                     <div className="flex items-center justify-between">
                       <div>

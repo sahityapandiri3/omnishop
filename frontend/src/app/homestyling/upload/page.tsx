@@ -4,6 +4,14 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/utils/api';
 
+interface PreviousRoom {
+  session_id: string;
+  room_type: string | null;
+  style: string | null;
+  clean_room_image: string;
+  created_at: string;
+}
+
 export default function UploadPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -15,6 +23,10 @@ export default function UploadPage() {
   const [isProcessed, setIsProcessed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [activeTab, setActiveTab] = useState<'upload' | 'previous'>('upload');
+  const [previousRooms, setPreviousRooms] = useState<PreviousRoom[]>([]);
+  const [loadingPrevious, setLoadingPrevious] = useState(false);
+  const [selectedPreviousRoom, setSelectedPreviousRoom] = useState<string | null>(null);
 
   useEffect(() => {
     // Get session ID from sessionStorage
@@ -24,7 +36,22 @@ export default function UploadPage() {
       return;
     }
     setSessionId(storedSessionId);
+
+    // Fetch previous rooms
+    fetchPreviousRooms();
   }, [router]);
+
+  const fetchPreviousRooms = async () => {
+    setLoadingPrevious(true);
+    try {
+      const response = await api.get('/api/homestyling/previous-rooms?limit=10');
+      setPreviousRooms(response.data.rooms || []);
+    } catch (err) {
+      console.error('Failed to fetch previous rooms:', err);
+    } finally {
+      setLoadingPrevious(false);
+    }
+  };
 
   const processImage = async (imageData: string, sid: string) => {
     setIsProcessing(true);
@@ -61,8 +88,10 @@ export default function UploadPage() {
     }
   };
 
-  const handleFileSelect = (file: File) => {
-    if (!file.type.startsWith('image/')) {
+  const handleFileSelect = async (file: File) => {
+    // Check if it's an image file (including HEIC)
+    const isHeic = file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
+    if (!file.type.startsWith('image/') && !isHeic) {
       setError('Please select an image file');
       return;
     }
@@ -78,6 +107,34 @@ export default function UploadPage() {
     setIsProcessed(false);
     setError(null);
 
+    let fileToProcess = file;
+
+    // Convert HEIC to JPEG if needed
+    if (isHeic) {
+      setIsProcessing(true);
+      try {
+        console.log('Converting HEIC to JPEG...');
+        // Dynamically import heic2any to avoid SSR issues
+        const heic2any = (await import('heic2any')).default;
+        const convertedBlob = await heic2any({
+          blob: file,
+          toType: 'image/jpeg',
+          quality: 0.9,
+        });
+        // heic2any can return an array of blobs for multi-image HEIC, take the first
+        const blob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+        fileToProcess = new File([blob], file.name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg'), {
+          type: 'image/jpeg',
+        });
+        console.log('HEIC conversion complete');
+      } catch (heicError) {
+        console.error('HEIC conversion failed:', heicError);
+        setError('Failed to convert HEIC image. Please try a different format (JPG, PNG).');
+        setIsProcessing(false);
+        return;
+      }
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const result = e.target?.result as string;
@@ -87,8 +144,9 @@ export default function UploadPage() {
     };
     reader.onerror = () => {
       setError('Failed to read file');
+      setIsProcessing(false);
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(fileToProcess);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -123,9 +181,60 @@ export default function UploadPage() {
     setShowOriginal(false);
     setIsProcessed(false);
     setError(null);
+    setSelectedPreviousRoom(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  const handleSelectPreviousRoom = async (room: PreviousRoom) => {
+    setSelectedPreviousRoom(room.session_id);
+    setIsProcessing(true);
+    setError(null);
+
+    try {
+      const currentSessionId = sessionStorage.getItem('homestyling_session_id');
+      if (!currentSessionId) {
+        setError('Session not found. Please go back and start again.');
+        return;
+      }
+
+      // Copy the clean room image to the current session
+      const response = await api.post(`/api/homestyling/sessions/${currentSessionId}/use-previous-room`, {
+        previous_session_id: room.session_id,
+      });
+
+      const cleanImage = response.data.clean_room_image;
+      if (cleanImage) {
+        const cleanImageUrl = cleanImage.startsWith('data:')
+          ? cleanImage
+          : `data:image/jpeg;base64,${cleanImage}`;
+        setProcessedImage(cleanImageUrl);
+        setOriginalImage(cleanImageUrl); // Use clean as original since we're reusing
+      }
+
+      setIsProcessed(true);
+      setActiveTab('upload'); // Switch back to upload tab to show the result
+    } catch (err: any) {
+      console.error('Error using previous room:', err);
+      setError(err.response?.data?.detail || 'Failed to use previous room. Please try again.');
+      setSelectedPreviousRoom(null);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
+  const formatRoomType = (type: string | null) => {
+    if (!type) return 'Room';
+    return type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
   };
 
   return (
@@ -163,10 +272,52 @@ export default function UploadPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6 relative">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Upload Room Photo</h2>
           <p className="text-sm text-gray-500 mb-4">
-            Upload a photo of your room. We'll automatically prepare it for styling.
+            Upload a new photo or select from your previously uploaded rooms.
           </p>
 
-          {!originalImage ? (
+          {/* Tabs */}
+          {!originalImage && (
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setActiveTab('upload')}
+                className={`flex-1 py-2.5 px-4 rounded-lg font-medium text-sm transition-all ${
+                  activeTab === 'upload'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  Upload New
+                </span>
+              </button>
+              <button
+                onClick={() => setActiveTab('previous')}
+                className={`flex-1 py-2.5 px-4 rounded-lg font-medium text-sm transition-all ${
+                  activeTab === 'previous'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                  Previously Uploaded
+                  {previousRooms.length > 0 && (
+                    <span className="bg-white/20 text-xs px-1.5 py-0.5 rounded-full">
+                      {previousRooms.length}
+                    </span>
+                  )}
+                </span>
+              </button>
+            </div>
+          )}
+
+          {/* Upload New Tab Content */}
+          {activeTab === 'upload' && !originalImage && (
             <div
               onDrop={handleDrop}
               onDragOver={handleDragOver}
@@ -199,7 +350,81 @@ export default function UploadPage() {
               <p className="text-sm text-gray-500">or click to browse</p>
               <p className="text-xs text-gray-400 mt-2">PNG, JPG up to 10MB</p>
             </div>
-          ) : (
+          )}
+
+          {/* Previously Uploaded Tab Content */}
+          {activeTab === 'previous' && !originalImage && (
+            <div>
+              {loadingPrevious ? (
+                <div className="flex justify-center items-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-emerald-600 border-t-transparent" />
+                </div>
+              ) : previousRooms.length === 0 ? (
+                <div className="text-center py-12">
+                  <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-gray-500 font-medium">No previous rooms yet</p>
+                  <p className="text-sm text-gray-400 mt-1">Upload your first room to get started</p>
+                  <button
+                    onClick={() => setActiveTab('upload')}
+                    className="mt-4 text-emerald-600 hover:text-emerald-700 font-medium text-sm"
+                  >
+                    Upload Now →
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {previousRooms.map((room) => (
+                    <button
+                      key={room.session_id}
+                      onClick={() => handleSelectPreviousRoom(room)}
+                      disabled={isProcessing}
+                      className={`group relative aspect-[4/3] rounded-xl overflow-hidden border-2 transition-all ${
+                        selectedPreviousRoom === room.session_id
+                          ? 'border-emerald-500 ring-2 ring-emerald-200'
+                          : 'border-transparent hover:border-emerald-300'
+                      } ${isProcessing && selectedPreviousRoom === room.session_id ? 'opacity-75' : ''}`}
+                    >
+                      <img
+                        src={room.clean_room_image.startsWith('data:')
+                          ? room.clean_room_image
+                          : `data:image/jpeg;base64,${room.clean_room_image}`}
+                        alt={formatRoomType(room.room_type)}
+                        className="w-full h-full object-cover"
+                      />
+                      {/* Hover overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                      {/* Room info */}
+                      <div className="absolute bottom-0 left-0 right-0 p-2 translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all">
+                        <p className="text-white text-xs font-medium truncate">{formatRoomType(room.room_type)}</p>
+                        <p className="text-white/70 text-[10px]">{formatDate(room.created_at)}</p>
+                      </div>
+                      {/* Selected indicator */}
+                      {selectedPreviousRoom === room.session_id && (
+                        <div className="absolute top-2 right-2">
+                          {isProcessing ? (
+                            <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center">
+                              <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent" />
+                            </div>
+                          ) : (
+                            <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center">
+                              <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Image Preview (shown after upload or selection) */}
+          {originalImage && (
             <div className="relative">
               <div className="aspect-video rounded-xl overflow-hidden bg-gray-100">
                 <img
@@ -260,7 +485,7 @@ export default function UploadPage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,.heic,.heif"
             onChange={handleFileChange}
             className="hidden"
           />

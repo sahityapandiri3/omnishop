@@ -114,6 +114,7 @@ class HomeStylingViewSchema(BaseModel):
     style_theme: Optional[str] = None
     generation_status: str
     error_message: Optional[str] = None
+    is_fallback: bool = False  # True if showing curated look image instead of user's room
     products: List[ProductInView] = []
     total_price: float = 0
 
@@ -141,6 +142,26 @@ class HomeStylingSessionSchema(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class PreviousRoomSchema(BaseModel):
+    """Schema for a previously uploaded room"""
+
+    session_id: str
+    room_type: Optional[str] = None
+    style: Optional[str] = None
+    clean_room_image: str  # Thumbnail version of cleaned room
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PreviousRoomsResponse(BaseModel):
+    """Response for list of previous rooms"""
+
+    rooms: List[PreviousRoomSchema]
+    total: int
 
 
 # Analytics schemas

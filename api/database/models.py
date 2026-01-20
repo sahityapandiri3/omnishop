@@ -692,6 +692,7 @@ class HomeStylingView(Base):
     # Status
     generation_status = Column(String(20), default="pending")  # "pending", "generating", "completed", "failed"
     error_message = Column(Text, nullable=True)
+    is_fallback = Column(Boolean, default=False)  # True if showing curated look image instead of user's room
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
