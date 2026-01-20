@@ -1075,6 +1075,7 @@ async def get_purchase_detail(
             style=session.style,
             budget_tier=session.budget_tier,
             original_room_image=session.original_room_image,
+            clean_room_image=session.clean_room_image,
             created_at=session.created_at,
             views=views,
         )

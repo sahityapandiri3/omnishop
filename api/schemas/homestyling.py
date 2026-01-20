@@ -207,6 +207,7 @@ class PurchaseDetailSchema(BaseModel):
     style: Optional[str] = None
     budget_tier: Optional[str] = None
     original_room_image: Optional[str] = None
+    clean_room_image: Optional[str] = None  # Furniture-removed version for design page
     created_at: datetime
     views: List[HomeStylingViewSchema] = []
 

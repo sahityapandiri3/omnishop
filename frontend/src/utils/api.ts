@@ -1863,6 +1863,7 @@ export interface PurchaseDetail {
   style: string | null;
   budget_tier: string | null;
   original_room_image: string | null;
+  clean_room_image: string | null;
   created_at: string;
   views: PurchaseView[];
 }

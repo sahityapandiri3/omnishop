@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 
 const FEATURES = [
@@ -63,21 +63,96 @@ const FEATURES = [
 
 export default function UpgradePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isAuthenticated, isLoading } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Check if coming from purchase (Style This Further) or other sources
+  const fromSource = searchParams?.get('from');
+  const redirectTo = searchParams?.get('redirect');
+  const [hasStyleThisFurtherData, setHasStyleThisFurtherData] = useState(false);
+
+  useEffect(() => {
+    // Check if we have Style This Further data in sessionStorage
+    const data = sessionStorage.getItem('styleThisFurther');
+    setHasStyleThisFurtherData(fromSource === 'purchase' && !!data);
+  }, [fromSource]);
+
   const handleUpgrade = async () => {
+    console.log('[Upgrade] handleUpgrade called, fromSource:', fromSource);
+
     if (!isAuthenticated && !isLoading) {
       // Redirect to login with return URL
-      sessionStorage.setItem('upgrade_return_to', '/upgrade');
+      sessionStorage.setItem('upgrade_return_to', `/upgrade?from=${fromSource || ''}`);
       router.push('/login');
       return;
     }
 
     setIsProcessing(true);
     // TODO: Integrate with payment gateway (Razorpay/Stripe)
-    // For now, show a message
-    alert('Payment integration coming soon! Contact support@omnishop.com for early access.');
+    // For now, simulate successful upgrade and redirect
+
+    // If coming from purchase with "Style this further", redirect to design page
+    const styleThisFurtherData = sessionStorage.getItem('styleThisFurther');
+    console.log('[Upgrade] styleThisFurtherData exists:', !!styleThisFurtherData);
+    if (styleThisFurtherData) {
+      const parsed = JSON.parse(styleThisFurtherData);
+      console.log('[Upgrade] styleThisFurther contents:', {
+        hasPurchaseId: !!parsed.purchaseId,
+        hasViewId: !!parsed.viewId,
+        hasVisualization: !!parsed.visualization,
+        vizLength: parsed.visualization?.length || 0,
+        hasCleanRoomImage: !!parsed.cleanRoomImage,
+        cleanRoomLength: parsed.cleanRoomImage?.length || 0,
+        hasProducts: !!parsed.products,
+        productsCount: parsed.products?.length || 0,
+      });
+    }
+    if (fromSource === 'purchase' && styleThisFurtherData) {
+      try {
+        const data = JSON.parse(styleThisFurtherData);
+
+        // Clear any existing design data to ensure fresh load
+        sessionStorage.removeItem('roomImage');
+        sessionStorage.removeItem('persistedCanvasProducts');
+
+        // Transfer data to design page format
+        // Use cleanRoomImage (furniture-removed version) for the design canvas
+        if (data.cleanRoomImage) {
+          sessionStorage.setItem('curatedRoomImage', data.cleanRoomImage);
+          sessionStorage.setItem('cleanRoomImage', data.cleanRoomImage);
+          console.log('[Upgrade] Set curatedRoomImage, length:', data.cleanRoomImage.length);
+        } else {
+          console.warn('[Upgrade] No cleanRoomImage in styleThisFurther data');
+        }
+        if (data.visualization) {
+          sessionStorage.setItem('curatedVisualizationImage', data.visualization);
+          console.log('[Upgrade] Set curatedVisualizationImage, length:', data.visualization.length);
+        } else {
+          console.warn('[Upgrade] No visualization in styleThisFurther data');
+        }
+        if (data.products && data.products.length > 0) {
+          sessionStorage.setItem('preselectedProducts', JSON.stringify(data.products));
+          console.log('[Upgrade] Set preselectedProducts, count:', data.products.length);
+        } else {
+          console.warn('[Upgrade] No products in styleThisFurther data');
+        }
+        // Clean up
+        sessionStorage.removeItem('styleThisFurther');
+
+        // Skip payment for testing - directly redirect to design
+        router.push('/design');
+      } catch (e) {
+        console.error('Failed to parse styleThisFurther data:', e);
+        alert('Payment integration coming soon! Contact support@omnishop.com for early access.');
+      }
+    } else if (redirectTo) {
+      // Handle redirect param (e.g., redirect=curated for "Build Your Own")
+      // Skip payment for testing - directly redirect
+      router.push(`/${redirectTo}`);
+    } else {
+      alert('Payment integration coming soon! Contact support@omnishop.com for early access.');
+    }
     setIsProcessing(false);
   };
 

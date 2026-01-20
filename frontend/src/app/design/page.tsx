@@ -113,6 +113,14 @@ function DesignPageContent() {
       return;
     }
 
+    // IMPORTANT: If authenticated but no projectId, a new project will be created by the second useEffect
+    // Don't process sessionStorage here - it will be cleared after reading, then the project creation
+    // redirect will lose the data. Let the second useEffect handle sessionStorage after project creation.
+    if (isAuthenticated && !urlProjectId) {
+      console.log('[DesignPage] Authenticated without projectId - deferring to project creation logic');
+      return;
+    }
+
     // Try to restore state from 401 recovery (session expiry during work)
     // This restores data that was saved to localStorage before redirect to login
     const wasRecovered = restoreDesignStateFromRecovery();
@@ -367,31 +375,40 @@ function DesignPageContent() {
       if (!urlProjectId) {
         console.log('[DesignPage] Authenticated user without projectId - auto-creating new project');
 
-        // Clear any stale sessionStorage data from previous projects
-        // This ensures the new project starts fresh, not with old images/products
-        sessionStorage.removeItem('roomImage');
-        sessionStorage.removeItem('cleanRoomImage');
-        sessionStorage.removeItem('curatedRoomImage');
-        sessionStorage.removeItem('curatedVisualizationImage');
-        sessionStorage.removeItem('preselectedProducts');
-        sessionStorage.removeItem('persistedCanvasProducts');
-        sessionStorage.removeItem('design_session_id');
-        sessionStorage.removeItem('furnitureRemovalJobId');
-        console.log('[DesignPage] Cleared sessionStorage for fresh project creation');
+        // Check if there's curated data that needs to be preserved
+        const hasCuratedData = sessionStorage.getItem('curatedRoomImage') ||
+                               sessionStorage.getItem('curatedVisualizationImage') ||
+                               sessionStorage.getItem('preselectedProducts');
 
-        // Also clear React state to ensure fresh start when component doesn't re-mount
-        setRoomImage(null);
-        setCleanRoomImage(null);
-        setCanvasProducts([]);
-        setProductRecommendations([]);
-        setInitialVisualizationImage(null);
-        setSelectedCategories(null);
-        setProductsByCategory(null);
-        setTotalBudget(null);
-        setVisualizationHistory([]);
-        setChatSessionId(null);
-        setProjectId(null);
-        setProjectName('');
+        if (hasCuratedData) {
+          console.log('[DesignPage] Curated data detected - preserving sessionStorage for new project');
+        } else {
+          // Clear any stale sessionStorage data from previous projects
+          // This ensures the new project starts fresh, not with old images/products
+          sessionStorage.removeItem('roomImage');
+          sessionStorage.removeItem('cleanRoomImage');
+          sessionStorage.removeItem('curatedRoomImage');
+          sessionStorage.removeItem('curatedVisualizationImage');
+          sessionStorage.removeItem('preselectedProducts');
+          sessionStorage.removeItem('persistedCanvasProducts');
+          sessionStorage.removeItem('design_session_id');
+          sessionStorage.removeItem('furnitureRemovalJobId');
+          console.log('[DesignPage] Cleared sessionStorage for fresh project creation');
+
+          // Also clear React state to ensure fresh start when component doesn't re-mount
+          setRoomImage(null);
+          setCleanRoomImage(null);
+          setCanvasProducts([]);
+          setProductRecommendations([]);
+          setInitialVisualizationImage(null);
+          setSelectedCategories(null);
+          setProductsByCategory(null);
+          setTotalBudget(null);
+          setVisualizationHistory([]);
+          setChatSessionId(null);
+          setProjectId(null);
+          setProjectName('');
+        }
 
         try {
           const newProject = await projectsAPI.create({
@@ -399,9 +416,10 @@ function DesignPageContent() {
           });
           console.log('[DesignPage] Auto-created new project:', newProject.id, newProject.name);
 
-          // Redirect to the same page with the new projectId and fresh param
-          // Use fresh=1 to signal this is a brand new project
-          router.replace(`/design?projectId=${newProject.id}&fresh=1`);
+          // Redirect to the same page with the new projectId
+          // Use fresh=1 ONLY if no curated data - otherwise let project loading read from sessionStorage
+          const freshParam = hasCuratedData ? '' : '&fresh=1';
+          router.replace(`/design?projectId=${newProject.id}${freshParam}`);
           return;
         } catch (error) {
           console.error('[DesignPage] Failed to auto-create project:', error);

@@ -283,9 +283,29 @@ export default function PurchaseDetailPage() {
 
             {/* Action Buttons */}
             <div className="flex flex-wrap justify-center gap-4 mt-8">
+              <button
+                onClick={() => {
+                  // Store params in sessionStorage to avoid URL tampering
+                  // Use clean_room_image (furniture-removed) for design page, fallback to original
+                  sessionStorage.setItem('styleThisFurther', JSON.stringify({
+                    purchaseId,
+                    viewId: currentView?.id,
+                    visualization: currentView?.visualization_image,
+                    products: currentView?.products,
+                    cleanRoomImage: purchase.clean_room_image || purchase.original_room_image,
+                  }));
+                  router.push('/upgrade?from=purchase');
+                }}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+                Style This Further
+              </button>
               <Link
                 href="/homestyling/preferences"
-                className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-white text-gray-700 font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
@@ -293,19 +313,13 @@ export default function PurchaseDetailPage() {
                 Get More Looks
               </Link>
               <Link
-                href="/upgrade"
+                href="/upgrade?redirect=curated"
                 className="inline-flex items-center gap-2 px-6 py-3 bg-white text-gray-700 font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
                 </svg>
                 Build Your Own
-              </Link>
-              <Link
-                href="/purchases"
-                className="inline-flex items-center gap-2 px-6 py-3 bg-white text-gray-700 font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
-              >
-                View All Purchases
               </Link>
             </div>
           </>
