@@ -6,7 +6,7 @@ import logging
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 from schemas.homestyling import (
     BudgetTier,
@@ -614,18 +614,40 @@ async def reset_session_for_retry(
 # =============================================================================
 
 
+async def _run_generation_in_background(session_id: str):
+    """Background task to run the actual generation work with its own db session."""
+    from core.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        try:
+            await _generate_views_impl(session_id, db)
+        except Exception as e:
+            logger.error(f"Background generation failed for session {session_id}: {e}", exc_info=True)
+            # Try to mark session as failed
+            try:
+                query = select(HomeStylingSession).where(HomeStylingSession.id == session_id)
+                result = await db.execute(query)
+                session = result.scalars().first()
+                if session:
+                    session.status = HomeStylingSessionStatus.FAILED
+                    await db.commit()
+            except:
+                pass
+
+
 @router.post("/sessions/{session_id}/generate")
 async def generate_views(
     session_id: str,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Generate visualizations for the session.
+    Start visualization generation for the session (runs in background).
 
     This endpoint:
-    1. Finds matching curated looks based on style and room type
-    2. For each look, generates a new visualization using the user's room image + products
-    3. Stores the generated visualizations
+    1. Validates the session can be generated
+    2. Starts generation in background
+    3. Returns immediately - frontend should poll for status
     """
     try:
         # Get session with views
@@ -639,6 +661,11 @@ async def generate_views(
 
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
+
+        # Check if already generating
+        if session.status == HomeStylingSessionStatus.GENERATING:
+            logger.info(f"Session {session_id} is already generating, returning started status")
+            return {"status": "started", "message": "Generation already in progress"}
 
         # Prevent generation beyond the tier limit
         current_views = len(session.views) if session.views else 0
@@ -661,203 +688,219 @@ async def generate_views(
         session.status = HomeStylingSessionStatus.GENERATING
         await db.commit()
 
-        # Find matching curated looks WITH their products
-        # STRICT style matching - only get looks that have the user's selected style
-        # Also filter by budget tier if set
-        budget_filter_msg = f", budget_tier='{session.budget_tier}'" if session.budget_tier else ""
-        logger.info(f"Finding curated looks for room_type='{session.room_type}', style='{session.style}'{budget_filter_msg}")
-
-        looks_query = (
-            select(CuratedLook)
-            .where(CuratedLook.is_published.is_(True))
-            .where(CuratedLook.room_type == session.room_type)
-            .where(CuratedLook.style_labels.cast(JSONB).contains([session.style]))
-        )
-
-        # Filter by budget tier if user has set one
-        if session.budget_tier:
-            looks_query = looks_query.where(CuratedLook.budget_tier == session.budget_tier)
-
-        # Exclude curated looks already used in existing views
-        if session.views:
-            used_look_ids = [v.curated_look_id for v in session.views if v.curated_look_id]
-            if used_look_ids:
-                looks_query = looks_query.where(CuratedLook.id.notin_(used_look_ids))
-                logger.info(f"Excluding {len(used_look_ids)} already-used curated looks")
-
-        # Calculate remaining views to generate (respect tier limit)
-        remaining_views = max_views - current_views
-        logger.info(f"Generating {remaining_views} views (current: {current_views}, max: {max_views})")
-
-        looks_query = (
-            looks_query.options(
-                selectinload(CuratedLook.products).selectinload(CuratedLookProduct.product).selectinload(Product.images)
-            )
-            .order_by(func.random())
-            .limit(remaining_views)
-        )
-
-        looks_result = await db.execute(looks_query)
-        looks = looks_result.scalars().all()
-
-        logger.info(f"Found {len(looks)} curated looks matching style '{session.style}'{budget_filter_msg}")
-
-        if not looks:
-            session.status = HomeStylingSessionStatus.FAILED
-            await db.commit()
-            budget_msg = f" and {session.budget_tier} budget" if session.budget_tier else ""
-            raise HTTPException(
-                status_code=404,
-                detail=f"No curated looks found for {session.room_type} with {session.style} style{budget_msg}",
-            )
-
-        # Get the user's clean room image (furniture removed)
-        user_room_image = session.clean_room_image
-        # Remove data URL prefix if present
-        if user_room_image.startswith("data:"):
-            user_room_image = user_room_image.split(",", 1)[1] if "," in user_room_image else user_room_image
-
-        logger.info(f"Generating {len(looks)} views for session {session_id}")
-
-        # Delete any existing views for this session to start fresh
-        existing_views_query = select(HomeStylingView).where(HomeStylingView.session_id == session_id)
-        existing_views_result = await db.execute(existing_views_query)
-        existing_views = existing_views_result.scalars().all()
-        for ev in existing_views:
-            await db.delete(ev)
-        await db.flush()
-        logger.info(f"Cleared {len(existing_views)} existing views for fresh generation")
-
-        # Helper function to build products list for a look
-        def build_products_for_viz(look):
-            products_for_viz = []
-            for lp in look.products:
-                if lp.product:
-                    image_url = None
-                    if lp.product.images:
-                        primary = next((img for img in lp.product.images if img.is_primary), None)
-                        if primary:
-                            image_url = primary.original_url
-                        elif lp.product.images:
-                            image_url = lp.product.images[0].original_url
-                    products_for_viz.append(
-                        {
-                            "name": lp.product.name,
-                            "full_name": lp.product.name,
-                            "image_url": image_url,
-                            "quantity": lp.quantity or 1,
-                        }
-                    )
-            return products_for_viz
-
-        # Helper function to try generating a visualization
-        async def try_generate_visualization(look, products_for_viz):
-            """Try to generate visualization. Returns (image, error) tuple."""
-            if not products_for_viz:
-                return user_room_image, None
-            try:
-                logger.info(f"  Calling AI visualizer with {len(products_for_viz)} products for look '{look.title}'")
-                visualization_image = await google_ai_service.generate_add_multiple_visualization(
-                    room_image=user_room_image, products=products_for_viz
-                )
-                return visualization_image, None
-            except Exception as viz_error:
-                logger.error(f"  Failed to generate visualization for look '{look.title}': {viz_error}")
-                return None, str(viz_error)
-
-        # Phase 1: Try to generate all looks, track successes and failures
-        logger.info(f"Phase 1: Generating {len(looks)} views...")
-        results = []  # List of (look, products, image, error, is_fallback)
-
-        for i, look in enumerate(looks):
-            products_for_viz = build_products_for_viz(look)
-            image, error = await try_generate_visualization(look, products_for_viz)
-
-            if image and not error:
-                logger.info(f"  Look {i+1}/{len(looks)} '{look.title}' - SUCCESS")
-                results.append((look, products_for_viz, image, None, False))
-            else:
-                logger.warning(f"  Look {i+1}/{len(looks)} '{look.title}' - FAILED, will retry")
-                results.append((look, products_for_viz, None, error, False))
-
-            # Delay between generations
-            if i < len(looks) - 1:
-                delay_seconds = 5
-                logger.info(f"  Waiting {delay_seconds}s before next generation...")
-                await asyncio.sleep(delay_seconds)
-
-        # Phase 2: Retry failed looks
-        failed_indices = [i for i, r in enumerate(results) if r[2] is None]
-        if failed_indices:
-            logger.info(f"Phase 2: Retrying {len(failed_indices)} failed looks...")
-            for idx in failed_indices:
-                look, products_for_viz, _, prev_error, _ = results[idx]
-                logger.info(f"  Retrying look '{look.title}'...")
-
-                # Wait before retry
-                await asyncio.sleep(10)  # Longer delay for retries
-
-                image, error = await try_generate_visualization(look, products_for_viz)
-
-                if image and not error:
-                    logger.info(f"  Retry SUCCESS for look '{look.title}'")
-                    results[idx] = (look, products_for_viz, image, None, False)
-                else:
-                    logger.warning(f"  Retry FAILED for look '{look.title}', using fallback")
-                    # Use curated look's image as fallback
-                    results[idx] = (look, products_for_viz, look.visualization_image, error, True)
-
-        # Phase 3: Assign view numbers based on success order (non-fallbacks first)
-        logger.info("Phase 3: Assigning view numbers (successes first)...")
-
-        # Sort: non-fallback first, then fallback
-        sorted_results = sorted(results, key=lambda r: (r[4], results.index(r)))  # is_fallback, original order
-
-        # Get the next view number (continue from existing views if any)
-        existing_max_view = max([v.view_number for v in session.views], default=0) if session.views else 0
-        view_number = existing_max_view + 1
-        for look, products_for_viz, image, error, is_fallback in sorted_results:
-            view = HomeStylingView(
-                session_id=session_id,
-                curated_look_id=look.id,
-                visualization_image=image,
-                view_number=view_number,
-                generation_status="completed" if not is_fallback else "completed",
-                error_message=error if is_fallback else None,
-                is_fallback=is_fallback,
-            )
-            db.add(view)
-
-            status_str = "FALLBACK" if is_fallback else "OK"
-            logger.info(f"  View {view_number}: '{look.title}' [{status_str}]")
-            view_number += 1
-
-        await db.commit()
-
-        # Update session status
-        session.status = HomeStylingSessionStatus.COMPLETED
-        await db.commit()
-
-        logger.info(f"Completed generating {len(looks)} views for session: {session_id}")
+        # Start generation in background using asyncio.create_task
+        # (BackgroundTasks doesn't work well with async functions)
+        logger.info(f"Starting background generation for session {session_id}")
+        asyncio.create_task(_run_generation_in_background(session_id))
 
         return {
-            "success": True,
-            "message": f"Generated {len(looks)} views",
+            "status": "started",
+            "message": "Generation started in background",
             "session_id": session_id,
-            "views_count": len(looks),
-            "status": session.status.value,
         }
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating views for session {session_id}: {e}", exc_info=True)
-        # Update status to failed
+        logger.error(f"Error starting generation for session {session_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to start generation: {str(e)}")
+
+
+async def _generate_views_impl(session_id: str, db: AsyncSession):
+    """
+    Actual implementation of view generation (runs in background).
+    """
+    # Get session with views
+    query = (
+        select(HomeStylingSession)
+        .where(HomeStylingSession.id == session_id)
+        .options(selectinload(HomeStylingSession.views))
+    )
+    result = await db.execute(query)
+    session = result.scalars().first()
+
+    if not session:
+        logger.error(f"Session {session_id} not found in background generation")
+        return
+
+    # Find matching curated looks WITH their products
+    # STRICT style matching - only get looks that have the user's selected style
+    # Also filter by budget tier if set
+    current_views = len(session.views) if session.views else 0
+    max_views = session.views_count or 3
+    budget_filter_msg = f", budget_tier='{session.budget_tier}'" if session.budget_tier else ""
+    logger.info(f"Finding curated looks for room_type='{session.room_type}', style='{session.style}'{budget_filter_msg}")
+
+    looks_query = (
+        select(CuratedLook)
+        .where(CuratedLook.is_published.is_(True))
+        .where(CuratedLook.room_type == session.room_type)
+        .where(CuratedLook.style_labels.cast(JSONB).contains([session.style]))
+    )
+
+    # Filter by budget tier if user has set one
+    if session.budget_tier:
+        looks_query = looks_query.where(CuratedLook.budget_tier == session.budget_tier)
+
+    # Exclude curated looks already used in existing views
+    if session.views:
+        used_look_ids = [v.curated_look_id for v in session.views if v.curated_look_id]
+        if used_look_ids:
+            looks_query = looks_query.where(CuratedLook.id.notin_(used_look_ids))
+            logger.info(f"Excluding {len(used_look_ids)} already-used curated looks")
+
+    # Calculate remaining views to generate (respect tier limit)
+    remaining_views = max_views - current_views
+    logger.info(f"Generating {remaining_views} views (current: {current_views}, max: {max_views})")
+
+    looks_query = (
+        looks_query.options(
+            selectinload(CuratedLook.products).selectinload(CuratedLookProduct.product).selectinload(Product.images)
+        )
+        .order_by(func.random())
+        .limit(remaining_views)
+    )
+
+    looks_result = await db.execute(looks_query)
+    looks = looks_result.scalars().all()
+
+    logger.info(f"Found {len(looks)} curated looks matching style '{session.style}'{budget_filter_msg}")
+
+    if not looks:
+        session.status = HomeStylingSessionStatus.FAILED
+        await db.commit()
+        budget_msg = f" and {session.budget_tier} budget" if session.budget_tier else ""
+        logger.error(f"No curated looks found for {session.room_type} with {session.style} style{budget_msg}")
+        return
+
+    # Get the user's clean room image (furniture removed)
+    user_room_image = session.clean_room_image
+    # Remove data URL prefix if present
+    if user_room_image.startswith("data:"):
+        user_room_image = user_room_image.split(",", 1)[1] if "," in user_room_image else user_room_image
+
+    logger.info(f"Generating {len(looks)} views for session {session_id}")
+
+    # Delete any existing views for this session to start fresh
+    existing_views_query = select(HomeStylingView).where(HomeStylingView.session_id == session_id)
+    existing_views_result = await db.execute(existing_views_query)
+    existing_views = existing_views_result.scalars().all()
+    for ev in existing_views:
+        await db.delete(ev)
+    await db.flush()
+    logger.info(f"Cleared {len(existing_views)} existing views for fresh generation")
+
+    # Helper function to build products list for a look
+    def build_products_for_viz(look):
+        products_for_viz = []
+        for lp in look.products:
+            if lp.product:
+                image_url = None
+                if lp.product.images:
+                    primary = next((img for img in lp.product.images if img.is_primary), None)
+                    if primary:
+                        image_url = primary.original_url
+                    elif lp.product.images:
+                        image_url = lp.product.images[0].original_url
+                products_for_viz.append(
+                    {
+                        "name": lp.product.name,
+                        "full_name": lp.product.name,
+                        "image_url": image_url,
+                        "quantity": lp.quantity or 1,
+                    }
+                )
+        return products_for_viz
+
+    # Helper function to try generating a visualization
+    async def try_generate_visualization(look, products_for_viz):
+        """Try to generate visualization. Returns (image, error) tuple."""
+        if not products_for_viz:
+            return user_room_image, None
         try:
-            session.status = HomeStylingSessionStatus.FAILED
-            await db.commit()
-        except:
-            pass
-        raise HTTPException(status_code=500, detail=f"Failed to generate views: {str(e)}")
+            logger.info(f"  Calling AI visualizer with {len(products_for_viz)} products for look '{look.title}'")
+            visualization_image = await google_ai_service.generate_add_multiple_visualization(
+                room_image=user_room_image, products=products_for_viz
+            )
+            return visualization_image, None
+        except Exception as viz_error:
+            logger.error(f"  Failed to generate visualization for look '{look.title}': {viz_error}")
+            return None, str(viz_error)
+
+    # Phase 1: Try to generate all looks, track successes and failures
+    logger.info(f"Phase 1: Generating {len(looks)} views...")
+    results = []  # List of (look, products, image, error, is_fallback)
+
+    for i, look in enumerate(looks):
+        products_for_viz = build_products_for_viz(look)
+        image, error = await try_generate_visualization(look, products_for_viz)
+
+        if image and not error:
+            logger.info(f"  Look {i+1}/{len(looks)} '{look.title}' - SUCCESS")
+            results.append((look, products_for_viz, image, None, False))
+        else:
+            logger.warning(f"  Look {i+1}/{len(looks)} '{look.title}' - FAILED, will retry")
+            results.append((look, products_for_viz, None, error, False))
+
+        # Delay between generations
+        if i < len(looks) - 1:
+            delay_seconds = 5
+            logger.info(f"  Waiting {delay_seconds}s before next generation...")
+            await asyncio.sleep(delay_seconds)
+
+    # Phase 2: Retry failed looks
+    failed_indices = [i for i, r in enumerate(results) if r[2] is None]
+    if failed_indices:
+        logger.info(f"Phase 2: Retrying {len(failed_indices)} failed looks...")
+        for idx in failed_indices:
+            look, products_for_viz, _, prev_error, _ = results[idx]
+            logger.info(f"  Retrying look '{look.title}'...")
+
+            # Wait before retry
+            await asyncio.sleep(10)  # Longer delay for retries
+
+            image, error = await try_generate_visualization(look, products_for_viz)
+
+            if image and not error:
+                logger.info(f"  Retry SUCCESS for look '{look.title}'")
+                results[idx] = (look, products_for_viz, image, None, False)
+            else:
+                logger.warning(f"  Retry FAILED for look '{look.title}', using fallback")
+                # Use curated look's image as fallback
+                results[idx] = (look, products_for_viz, look.visualization_image, error, True)
+
+    # Phase 3: Assign view numbers based on success order (non-fallbacks first)
+    logger.info("Phase 3: Assigning view numbers (successes first)...")
+
+    # Sort: non-fallback first, then fallback
+    sorted_results = sorted(results, key=lambda r: (r[4], results.index(r)))  # is_fallback, original order
+
+    # Get the next view number (continue from existing views if any)
+    existing_max_view = max([v.view_number for v in session.views], default=0) if session.views else 0
+    view_number = existing_max_view + 1
+    for look, products_for_viz, image, error, is_fallback in sorted_results:
+        view = HomeStylingView(
+            session_id=session_id,
+            curated_look_id=look.id,
+            visualization_image=image,
+            view_number=view_number,
+            generation_status="completed" if not is_fallback else "completed",
+            error_message=error if is_fallback else None,
+            is_fallback=is_fallback,
+        )
+        db.add(view)
+
+        status_str = "FALLBACK" if is_fallback else "OK"
+        logger.info(f"  View {view_number}: '{look.title}' [{status_str}]")
+        view_number += 1
+
+    await db.commit()
+
+    # Update session status
+    session.status = HomeStylingSessionStatus.COMPLETED
+    await db.commit()
+
+    logger.info(f"Completed generating {len(looks)} views for session: {session_id}")
 
 
 @router.get("/sessions/{session_id}/views", response_model=List[HomeStylingViewSchema])
