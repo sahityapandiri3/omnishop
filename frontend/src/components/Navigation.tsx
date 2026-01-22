@@ -11,10 +11,14 @@ const baseNavigation = [
   { name: 'Home', href: '/' },
 ]
 
-// Navigation for Build Your Own subscribers and admins
+// Navigation for upgraded users
 const premiumNavigation = [
-  { name: 'Curated', href: '/curated' },
   { name: 'Design', href: '/design' },
+]
+
+// Admin-only navigation
+const adminNavigation = [
+  { name: 'Curated', href: '/curated' },
 ]
 
 export function Navigation() {
@@ -125,7 +129,7 @@ export function Navigation() {
                 </Link>
               )}
 
-              {/* Premium navigation - only for Build Your Own subscribers and admins */}
+              {/* Premium navigation - only for upgraded users and admins */}
               {hasBuildYourOwn(user) && premiumNavigation.map((item) => {
                 const isActive = pathname === item.href
                 return (
@@ -143,7 +147,25 @@ export function Navigation() {
                 )
               })}
 
-              {/* Projects - Only for Build Your Own subscribers and admins */}
+              {/* Admin-only navigation - Curated */}
+              {isAdmin(user) && adminNavigation.map((item) => {
+                const isActive = pathname === item.href
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isActive
+                        ? 'bg-gray-100 text-gray-900'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    {item.name}
+                  </Link>
+                )
+              })}
+
+              {/* Projects - Only for upgraded users and admins */}
               {isAuthenticated && hasBuildYourOwn(user) && (
                 <Link
                   href="/projects"
@@ -332,7 +354,7 @@ export function Navigation() {
                 </Link>
               )}
 
-              {/* Premium navigation - only for Build Your Own subscribers and admins */}
+              {/* Premium navigation - only for upgraded users and admins */}
               {hasBuildYourOwn(user) && premiumNavigation.map((item) => {
                 const isActive = pathname === item.href
                 return (
@@ -351,7 +373,26 @@ export function Navigation() {
                 )
               })}
 
-              {/* Projects - Only for Build Your Own subscribers and admins */}
+              {/* Admin-only navigation - Curated */}
+              {isAdmin(user) && adminNavigation.map((item) => {
+                const isActive = pathname === item.href
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                      isActive
+                        ? 'bg-gray-100 text-gray-900'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {item.name}
+                  </Link>
+                )
+              })}
+
+              {/* Projects - Only for upgraded users and admins */}
               {isAuthenticated && hasBuildYourOwn(user) && (
                 <Link
                   href="/projects"

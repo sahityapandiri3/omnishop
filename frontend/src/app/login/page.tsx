@@ -48,7 +48,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
       // Use explicit redirect if available, otherwise determine by user tier
-      const targetUrl = explicitRedirectUrl || (hasBuildYourOwn(user) ? '/curated' : '/homestyling');
+      const targetUrl = explicitRedirectUrl || (hasBuildYourOwn(user) ? '/projects' : '/homestyling');
       router.push(targetUrl);
     }
   }, [isAuthenticated, isLoading, router, explicitRedirectUrl, user]);
@@ -66,7 +66,7 @@ export default function LoginPage() {
         loggedInUser = await register(email, password, name);
       }
       // Use explicit redirect if available, otherwise determine by user tier
-      const targetUrl = explicitRedirectUrl || (hasBuildYourOwn(loggedInUser) ? '/curated' : '/homestyling');
+      const targetUrl = explicitRedirectUrl || (hasBuildYourOwn(loggedInUser) ? '/projects' : '/homestyling');
       router.push(targetUrl);
     } catch (err: any) {
       setError(err.message || 'An error occurred');
@@ -87,7 +87,7 @@ export default function LoginPage() {
     try {
       const loggedInUser = await loginWithGoogle(credentialResponse.credential);
       // Use explicit redirect if available, otherwise determine by user tier
-      const targetUrl = explicitRedirectUrl || (hasBuildYourOwn(loggedInUser) ? '/curated' : '/homestyling');
+      const targetUrl = explicitRedirectUrl || (hasBuildYourOwn(loggedInUser) ? '/projects' : '/homestyling');
       router.push(targetUrl);
     } catch (err: any) {
       setError(err.message || 'Google login failed');

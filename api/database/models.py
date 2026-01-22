@@ -29,7 +29,8 @@ class SubscriptionTier(enum.Enum):
     """Subscription tiers for user access"""
 
     FREE = "free"  # Default - only Home Styling access
-    BUILD_YOUR_OWN = "build_your_own"  # ₹999/month - access to Curated, Design, Projects
+    BUILD_YOUR_OWN = "build_your_own"  # Legacy tier (kept for backwards compatibility)
+    UPGRADED = "upgraded"  # ₹999/month - access to Curated, Design, Projects
 
 
 class BudgetTier(enum.Enum):

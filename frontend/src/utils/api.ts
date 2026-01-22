@@ -97,6 +97,14 @@ const refreshAccessToken = async (): Promise<string | null> => {
 // Request interceptor for authentication (async to support token refresh)
 api.interceptors.request.use(
   async (config) => {
+    // Skip token handling for auth endpoints (login, register, etc.)
+    const isAuthEndpoint = config.url?.includes('/api/auth/login') ||
+                           config.url?.includes('/api/auth/register') ||
+                           config.url?.includes('/api/auth/google');
+    if (isAuthEndpoint) {
+      return config;
+    }
+
     // Add auth token if available
     let token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
     if (token) {
