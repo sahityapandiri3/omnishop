@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { authAPI } from '@/utils/api';
 
 const FEATURES = [
   {
@@ -64,96 +65,61 @@ const FEATURES = [
 export default function UpgradePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, refreshUser } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Check if coming from purchase (Style This Further) or other sources
   const fromSource = searchParams?.get('from');
   const redirectTo = searchParams?.get('redirect');
-  const [hasStyleThisFurtherData, setHasStyleThisFurtherData] = useState(false);
-
-  useEffect(() => {
-    // Check if we have Style This Further data in sessionStorage
-    const data = sessionStorage.getItem('styleThisFurther');
-    setHasStyleThisFurtherData(fromSource === 'purchase' && !!data);
-  }, [fromSource]);
 
   const handleUpgrade = async () => {
-    console.log('[Upgrade] handleUpgrade called, fromSource:', fromSource);
+    console.log('[Upgrade] handleUpgrade called, fromSource:', fromSource, 'redirectTo:', redirectTo);
 
     if (!isAuthenticated && !isLoading) {
       // Redirect to login with return URL
-      sessionStorage.setItem('upgrade_return_to', `/upgrade?from=${fromSource || ''}`);
+      sessionStorage.setItem('upgrade_return_to', `/upgrade?from=${fromSource || ''}&redirect=${redirectTo || ''}`);
       router.push('/login');
       return;
     }
 
     setIsProcessing(true);
-    // TODO: Integrate with payment gateway (Razorpay/Stripe)
-    // For now, simulate successful upgrade and redirect
+    setError(null);
 
-    // If coming from purchase with "Style this further", redirect to design page
-    const styleThisFurtherData = sessionStorage.getItem('styleThisFurther');
-    console.log('[Upgrade] styleThisFurtherData exists:', !!styleThisFurtherData);
-    if (styleThisFurtherData) {
-      const parsed = JSON.parse(styleThisFurtherData);
-      console.log('[Upgrade] styleThisFurther contents:', {
-        hasPurchaseId: !!parsed.purchaseId,
-        hasViewId: !!parsed.viewId,
-        hasVisualization: !!parsed.visualization,
-        vizLength: parsed.visualization?.length || 0,
-        hasCleanRoomImage: !!parsed.cleanRoomImage,
-        cleanRoomLength: parsed.cleanRoomImage?.length || 0,
-        hasProducts: !!parsed.products,
-        productsCount: parsed.products?.length || 0,
-      });
-    }
-    if (fromSource === 'purchase' && styleThisFurtherData) {
-      try {
-        const data = JSON.parse(styleThisFurtherData);
+    try {
+      // Call the upgrade API
+      // TODO: Integrate with payment gateway (Razorpay/Stripe) before this call
+      const result = await authAPI.upgrade('upgraded');
+      console.log('[Upgrade] Upgrade successful:', result);
 
-        // Clear any existing design data to ensure fresh load
-        sessionStorage.removeItem('roomImage');
-        sessionStorage.removeItem('persistedCanvasProducts');
+      // Refresh user to get updated subscription tier
+      await refreshUser();
+      console.log('[Upgrade] User refreshed with new subscription tier');
 
-        // Transfer data to design page format
-        // Use cleanRoomImage (furniture-removed version) for the design canvas
-        if (data.cleanRoomImage) {
-          sessionStorage.setItem('curatedRoomImage', data.cleanRoomImage);
-          sessionStorage.setItem('cleanRoomImage', data.cleanRoomImage);
-          console.log('[Upgrade] Set curatedRoomImage, length:', data.cleanRoomImage.length);
-        } else {
-          console.warn('[Upgrade] No cleanRoomImage in styleThisFurther data');
-        }
-        if (data.visualization) {
-          sessionStorage.setItem('curatedVisualizationImage', data.visualization);
-          console.log('[Upgrade] Set curatedVisualizationImage, length:', data.visualization.length);
-        } else {
-          console.warn('[Upgrade] No visualization in styleThisFurther data');
-        }
-        if (data.products && data.products.length > 0) {
-          sessionStorage.setItem('preselectedProducts', JSON.stringify(data.products));
-          console.log('[Upgrade] Set preselectedProducts, count:', data.products.length);
-        } else {
-          console.warn('[Upgrade] No products in styleThisFurther data');
-        }
-        // Clean up
-        sessionStorage.removeItem('styleThisFurther');
+      // Determine where to redirect based on the upgrade source
+      // - Style This Further (from=purchase): sessionStorage has curated data → /design (preloaded)
+      // - Build Your Own (no from param): no data → /curated (browse first)
+      let targetPage: string;
 
-        // Skip payment for testing - directly redirect to design
-        router.push('/design');
-      } catch (e) {
-        console.error('Failed to parse styleThisFurther data:', e);
-        alert('Payment integration coming soon! Contact support@omnishop.com for early access.');
+      if (redirectTo) {
+        // Explicit redirect destination takes priority
+        targetPage = `/${redirectTo}`;
+      } else if (fromSource === 'purchase') {
+        // Coming from Style This Further - sessionStorage has curated data
+        targetPage = '/design';
+      } else {
+        // Coming from Build Your Own - go to curated to browse first
+        targetPage = '/curated';
       }
-    } else if (redirectTo) {
-      // Handle redirect param (e.g., redirect=curated for "Build Your Own")
-      // Skip payment for testing - directly redirect
-      router.push(`/${redirectTo}`);
-    } else {
-      alert('Payment integration coming soon! Contact support@omnishop.com for early access.');
+
+      console.log('[Upgrade] Redirecting to:', targetPage, '(from:', fromSource, ')');
+      router.push(targetPage);
+    } catch (err: any) {
+      console.error('[Upgrade] Failed to upgrade:', err);
+      setError(err.response?.data?.detail || 'Failed to upgrade. Please try again.');
+    } finally {
+      setIsProcessing(false);
     }
-    setIsProcessing(false);
   };
 
   return (
@@ -199,6 +165,13 @@ export default function UpgradePage() {
                 </div>
               ))}
             </div>
+
+            {/* Error Message */}
+            {error && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+                {error}
+              </div>
+            )}
 
             {/* CTA */}
             <button

@@ -32,7 +32,8 @@ export function isSuperAdmin(user: User | null): boolean {
 export function hasBuildYourOwn(user: User | null): boolean {
   // Admins always have full access
   if (isAdmin(user)) return true;
-  return user?.subscription_tier === 'build_your_own';
+  // Check for "upgraded" tier (covers both Build Your Own and Style This Further upgrades)
+  return user?.subscription_tier === 'upgraded';
 }
 
 export function canAccessDesignTools(user: User | null): boolean {
@@ -48,9 +49,9 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string) => Promise<void>;
-  loginWithGoogle: (googleToken: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
+  register: (email: string, password: string, name: string) => Promise<User>;
+  loginWithGoogle: (googleToken: string) => Promise<User>;
   logout: () => void;
   refreshUser: () => Promise<void>;
   // Clear the external invalidation flag (after user acknowledges)
@@ -186,7 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshUser]);
 
   // Login with email/password
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string): Promise<User> => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
       const response = await api.post('/api/auth/login', { email, password });
@@ -200,6 +201,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: true,
         sessionInvalidatedExternally: false,
       });
+      return user;
     } catch (error: any) {
       setState(prev => ({ ...prev, isLoading: false }));
       throw new Error(error.response?.data?.detail || 'Login failed');
@@ -207,7 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [setToken, setRefreshToken]);
 
   // Register with email/password
-  const register = useCallback(async (email: string, password: string, name: string) => {
+  const register = useCallback(async (email: string, password: string, name: string): Promise<User> => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
       const response = await api.post('/api/auth/register', { email, password, name });
@@ -221,6 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: true,
         sessionInvalidatedExternally: false,
       });
+      return user;
     } catch (error: any) {
       setState(prev => ({ ...prev, isLoading: false }));
       throw new Error(error.response?.data?.detail || 'Registration failed');
@@ -228,7 +231,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [setToken, setRefreshToken]);
 
   // Login with Google
-  const loginWithGoogle = useCallback(async (googleToken: string) => {
+  const loginWithGoogle = useCallback(async (googleToken: string): Promise<User> => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
       const response = await api.post('/api/auth/google', { token: googleToken });
@@ -242,6 +245,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: true,
         sessionInvalidatedExternally: false,
       });
+      return user;
     } catch (error: any) {
       setState(prev => ({ ...prev, isLoading: false }));
       throw new Error(error.response?.data?.detail || 'Google login failed');

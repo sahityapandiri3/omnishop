@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { ResizeObserverErrorSuppressor } from '@/components/ResizeObserverErrorSuppressor';
 
 // Google OAuth Client ID - must be set in environment variables
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
@@ -46,6 +47,7 @@ export function Providers({ children }: ProvidersProps) {
   const content = (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <ResizeObserverErrorSuppressor />
         {children}
         {/* Show React Query DevTools in development */}
         {process.env.NODE_ENV === 'development' && (

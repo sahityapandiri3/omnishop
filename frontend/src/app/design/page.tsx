@@ -72,6 +72,9 @@ function DesignPageContent() {
   // Track if we recovered from a 401 session expiry (used to determine if sessionStorage data should be used)
   const wasRecoveredFromSessionExpiryRef = useRef<boolean>(false);
 
+  // Track if we're currently creating a project (to prevent duplicate creation from React re-renders)
+  const isCreatingProjectRef = useRef<boolean>(false);
+
   // Track if we have unsaved changes
   const hasUnsavedChanges = saveStatus === 'unsaved' || saveStatus === 'saving';
 
@@ -99,6 +102,7 @@ function DesignPageContent() {
       sessionStorage.removeItem('persistedCanvasProducts');
       sessionStorage.removeItem('design_session_id');
       sessionStorage.removeItem('furnitureRemovalJobId');
+      sessionStorage.removeItem('designAccessGranted'); // Clear tier bypass for fresh project
       // Don't load any stored images - let the user start fresh
       return;
     }
@@ -373,6 +377,12 @@ function DesignPageContent() {
 
       // If authenticated but no project ID, auto-create a new project
       if (!urlProjectId) {
+        // CRITICAL: Prevent duplicate project creation from React re-renders (Strict Mode, etc.)
+        if (isCreatingProjectRef.current) {
+          console.log('[DesignPage] Project creation already in progress - skipping duplicate');
+          return;
+        }
+        isCreatingProjectRef.current = true;
         console.log('[DesignPage] Authenticated user without projectId - auto-creating new project');
 
         // Check if there's curated data that needs to be preserved
@@ -423,6 +433,8 @@ function DesignPageContent() {
           return;
         } catch (error) {
           console.error('[DesignPage] Failed to auto-create project:', error);
+          // Reset the creation ref so user can retry
+          isCreatingProjectRef.current = false;
           // Fall back to guest mode on error
           setProjectLoaded(true);
           return;
@@ -430,6 +442,8 @@ function DesignPageContent() {
       }
 
       try {
+        // Reset the creation ref now that we have a projectId (redirect completed)
+        isCreatingProjectRef.current = false;
         console.log('[DesignPage] Loading project:', urlProjectId);
         const project = await projectsAPI.get(urlProjectId);
         console.log('[DesignPage] Project API response:', {
@@ -1245,7 +1259,12 @@ function DesignPageContent() {
       } catch (storageError) {
         // If quota exceeded, clear everything and try again
         console.warn('[DesignPage] SessionStorage quota exceeded, clearing and retrying...');
+        // Preserve the design access bypass key before clearing
+        const hadDesignAccess = sessionStorage.getItem('designAccessGranted');
         sessionStorage.clear();
+        if (hadDesignAccess) {
+          sessionStorage.setItem('designAccessGranted', hadDesignAccess);
+        }
         sessionStorage.setItem('furnitureRemovalJobId', response.job_id);
         // Don't store the image if it's too large - the API already has it
         console.log('[DesignPage] Image too large for sessionStorage, will fetch from API after reload');
@@ -1542,7 +1561,7 @@ function DesignPageContent() {
       {/* Furniture removal overlay is now shown on the room image in CanvasPanel */}
 
       {/* Mobile Tab Navigation */}
-      <div className="lg:hidden bg-white dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700 px-4">
+      <div className="md:hidden bg-white dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700 px-4">
         <div className="flex gap-1">
           <button
             onClick={() => setActiveTab('chat')}
@@ -1599,22 +1618,26 @@ function DesignPageContent() {
       {/* Three-Panel Layout */}
       <div className="flex-1 overflow-hidden">
         {/* Desktop: Resizable three-panel layout */}
-        <div className="hidden lg:block h-full">
+        <div className="hidden md:block h-full">
           <ResizablePanelLayout
             chatPanel={
-              projectLoaded ? (
+              <div className="relative h-full">
+                {/* Always render ChatPanel - use key to only remount when project changes */}
                 <ChatPanel
+                  key={projectId || 'new-project'}
                   onProductRecommendations={handleProductRecommendations}
                   roomImage={roomImage}
                   selectedStores={selectedStores}
                   initialSessionId={chatSessionId}
                   onSessionIdChange={setChatSessionId}
                 />
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-                </div>
-              )
+                {/* Loading overlay - shows on top while project is loading */}
+                {!projectLoaded && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                  </div>
+                )}
+              </div>
             }
             productsPanel={
               <ProductDiscoveryPanel
@@ -1650,21 +1673,25 @@ function DesignPageContent() {
         </div>
 
         {/* Mobile & Tablet: Single panel with tabs */}
-        <div className="lg:hidden h-full">
+        <div className="md:hidden h-full">
           <div className={`h-full ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
-            {projectLoaded ? (
+            <div className="relative h-full">
+              {/* Always render ChatPanel - use key to only remount when project changes */}
               <ChatPanel
+                key={projectId || 'new-project'}
                 onProductRecommendations={handleProductRecommendations}
                 roomImage={roomImage}
                 selectedStores={selectedStores}
                 initialSessionId={chatSessionId}
                 onSessionIdChange={setChatSessionId}
               />
-            ) : (
-              <div className="flex items-center justify-center h-full">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-              </div>
-            )}
+              {/* Loading overlay - shows on top while project is loading */}
+              {!projectLoaded && (
+                <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                </div>
+              )}
+            </div>
           </div>
           <div className={`h-full ${activeTab === 'products' ? 'block' : 'hidden'}`}>
             <ProductDiscoveryPanel
@@ -1857,7 +1884,10 @@ function DesignPageContent() {
 
 export default function DesignPage() {
   return (
-    <ProtectedRoute requiredTier="build_your_own">
+    <ProtectedRoute
+      requiredTier="build_your_own"
+      bypassTierWithSessionKeys={['curatedRoomImage', 'curatedVisualizationImage', 'preselectedProducts', 'designAccessGranted']}
+    >
       <DesignPageContent />
     </ProtectedRoute>
   );

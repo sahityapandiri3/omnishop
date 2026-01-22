@@ -34,6 +34,8 @@ interface SessionData {
   status: string;
   views_count: number;
   views: HomeStylingView[];
+  original_room_image: string | null;
+  clean_room_image: string | null;
 }
 
 type GenerationStage = 'starting' | 'finding_looks' | 'generating' | 'completed' | 'failed';
@@ -68,6 +70,10 @@ export default function ResultsPage() {
   const retryCount = useRef(0);
   const MAX_RETRIES = 3;
 
+  // Timer for elapsed time display
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const timerInterval = useRef<NodeJS.Timeout | null>(null);
+
   // Fetch session data
   const fetchSession = useCallback(async (includeImages: boolean = true) => {
     try {
@@ -87,6 +93,15 @@ export default function ResultsPage() {
     setIsGenerating(true);
     setGenerationStage('starting');
     setError(null);
+    setElapsedSeconds(0);
+
+    // Start timer
+    if (timerInterval.current) {
+      clearInterval(timerInterval.current);
+    }
+    timerInterval.current = setInterval(() => {
+      setElapsedSeconds(prev => prev + 1);
+    }, 1000);
 
     try {
       // Start the generation request (this will take a while)
@@ -125,22 +140,27 @@ export default function ResultsPage() {
       // Wait for generation to complete
       await generatePromise;
 
-      // Stop polling
+      // Stop polling and timer
       if (pollingInterval.current) {
         clearInterval(pollingInterval.current);
       }
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current);
+      }
 
-      // Fetch final results with images
-      const finalSession = await fetchSession(true);
-      setSession(finalSession);
+      // Generation complete - redirect to purchase page
       setGenerationStage('completed');
       setIsGenerating(false);
-      retryCount.current = 0; // Reset retry count on success
+      retryCount.current = 0;
+      router.push(`/purchases/${sessionId}`);
 
     } catch (err: any) {
       console.error('Error during generation:', err);
       if (pollingInterval.current) {
         clearInterval(pollingInterval.current);
+      }
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current);
       }
 
       // IMPORTANT: Check if session actually completed successfully before retrying
@@ -148,11 +168,8 @@ export default function ResultsPage() {
       try {
         const checkSession = await fetchSession(true);
         if (checkSession.status === 'completed') {
-          console.log('Session already completed - no retry needed');
-          setSession(checkSession);
-          setGenerationStage('completed');
-          setIsGenerating(false);
-          retryCount.current = 0;
+          console.log('Session already completed - redirecting to purchase page');
+          router.push(`/purchases/${sessionId}`);
           return;
         }
       } catch (checkErr) {
@@ -210,6 +227,11 @@ export default function ResultsPage() {
           setGenerationStage('generating');
           setLoading(false);
 
+          // Start timer for elapsed time
+          timerInterval.current = setInterval(() => {
+            setElapsedSeconds(prev => prev + 1);
+          }, 1000);
+
           // Start polling
           pollingInterval.current = setInterval(async () => {
             try {
@@ -219,20 +241,34 @@ export default function ResultsPage() {
               const completedViews = updatedSession.views.filter(v => v.generation_status === 'completed').length;
               setCurrentViewNumber(completedViews);
 
-              if (updatedSession.status === 'completed' || updatedSession.status === 'failed') {
+              if (updatedSession.status === 'completed') {
                 if (pollingInterval.current) {
                   clearInterval(pollingInterval.current);
                 }
+                if (timerInterval.current) {
+                  clearInterval(timerInterval.current);
+                }
+                router.push(`/purchases/${sessionId}`);
+              } else if (updatedSession.status === 'failed') {
+                if (pollingInterval.current) {
+                  clearInterval(pollingInterval.current);
+                }
+                if (timerInterval.current) {
+                  clearInterval(timerInterval.current);
+                }
                 setIsGenerating(false);
-                setGenerationStage(updatedSession.status === 'completed' ? 'completed' : 'failed');
+                setGenerationStage('failed');
               }
             } catch (e) {
               console.error('Polling error:', e);
             }
           }, 3000);
+        } else if (sessionData.status === 'completed') {
+          // Already completed - redirect to purchase page
+          router.push(`/purchases/${sessionId}`);
         } else {
-          // Generation is complete or failed
-          setGenerationStage(sessionData.status === 'completed' ? 'completed' : 'failed');
+          // Failed
+          setGenerationStage('failed');
           setLoading(false);
         }
       } catch (err: any) {
@@ -247,6 +283,9 @@ export default function ResultsPage() {
     return () => {
       if (pollingInterval.current) {
         clearInterval(pollingInterval.current);
+      }
+      if (timerInterval.current) {
+        clearInterval(timerInterval.current);
       }
     };
   }, [sessionId, fetchSession, startGeneration]);
@@ -277,69 +316,87 @@ export default function ResultsPage() {
     );
   }
 
-  // Generating state - show progress
+  // Generating state - show progress overlay on room image
   if (isGenerating) {
+    const roomImage = session?.original_room_image || session?.clean_room_image;
+
     return (
       <div className="min-h-screen bg-gray-50 py-8">
-        <div className="max-w-2xl mx-auto px-4">
-          {/* Progress Header */}
-          <div className="text-center mb-12">
-            <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg className="w-10 h-10 text-emerald-600 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-              </svg>
-            </div>
+        <div className="max-w-4xl mx-auto px-4">
+          {/* Header */}
+          <div className="text-center mb-6">
             <h1 className="text-2xl font-bold text-gray-900 mb-2">
               {currentRetry > 0 ? 'Retrying...' : 'Creating Your Designs'}
             </h1>
             <p className="text-gray-600">
-              {currentRetry > 0
-                ? `Attempt ${currentRetry + 1} of ${MAX_RETRIES + 1} - ${STAGE_MESSAGES[generationStage]}`
-                : STAGE_MESSAGES[generationStage]}
+              {session?.room_type?.replace('_', ' ')} • {formatStyle(session?.style || null)}
             </p>
           </div>
 
-          {/* Progress Card */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-            {/* Progress Bar */}
-            <div className="mb-6">
-              <div className="flex justify-between text-sm text-gray-600 mb-2">
-                <span>Progress</span>
-                <span>{currentViewNumber} of {totalViews} views</span>
-              </div>
-              <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-                  style={{ width: `${totalViews > 0 ? (currentViewNumber / totalViews) * 100 : 0}%` }}
+          {/* Room Image with Overlay */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="aspect-[4/3] relative bg-gray-100">
+              {/* Room Image */}
+              {roomImage ? (
+                <img
+                  src={
+                    roomImage.startsWith('data:')
+                      ? roomImage
+                      : `data:image/png;base64,${roomImage}`
+                  }
+                  alt="Your room"
+                  className="w-full h-full object-contain"
                 />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-400">
+                  <svg className="w-16 h-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
+                </div>
+              )}
+
+              {/* Progress Overlay */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/20">
+                <div className="bg-black/60 backdrop-blur-sm rounded-xl px-6 py-4 flex flex-col items-center">
+                  <svg className="animate-spin h-8 w-8 text-white mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span className="text-white font-medium text-sm">
+                    {currentRetry > 0
+                      ? `Retrying (${currentRetry + 1}/${MAX_RETRIES + 1})...`
+                      : generationStage === 'generating'
+                        ? `Generating visualization (${elapsedSeconds}s)...`
+                        : generationStage === 'finding_looks'
+                          ? 'Finding matching furniture...'
+                          : 'Starting generation...'}
+                  </span>
+                  <span className="text-white/70 text-xs mt-1">
+                    {currentViewNumber > 0
+                      ? `View ${currentViewNumber} of ${totalViews} complete`
+                      : 'Omni is designing your space'}
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* Stage Indicators */}
-            <div className="space-y-4">
-              <StageIndicator
-                label="Finding furniture sets"
-                status={generationStage === 'starting' || generationStage === 'finding_looks' ? 'active' : 'completed'}
-              />
-              <StageIndicator
-                label="Generating AI visualizations"
-                status={generationStage === 'generating' ? 'active' : generationStage === 'completed' ? 'completed' : 'pending'}
-                subtitle={generationStage === 'generating' ? `Creating view ${currentViewNumber + 1} of ${totalViews}...` : undefined}
-              />
-              <StageIndicator
-                label="Finalizing designs"
-                status={generationStage === 'completed' ? 'completed' : 'pending'}
-              />
-            </div>
-
-            {/* Estimated Time */}
-            <div className="mt-8 pt-6 border-t border-gray-100 text-center">
-              <p className="text-sm text-gray-500">
-                Estimated time: {totalViews * 30}-{totalViews * 45} seconds
-              </p>
-              <p className="text-xs text-gray-400 mt-1">
-                Each visualization is uniquely generated with AI
-              </p>
+            {/* Bottom Info */}
+            <div className="p-4 border-t border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">{STAGE_MESSAGES[generationStage]}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-gray-500">
+                    {currentViewNumber} of {totalViews} views
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -472,6 +529,15 @@ export default function ResultsPage() {
                       </div>
                     </div>
                   )}
+                  {/* AI Visualization Disclaimer */}
+                  <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
+                    <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      AI-generated visualization. Actual products may vary slightly in appearance.
+                    </p>
+                  </div>
                   <div className="p-4 border-t border-gray-100">
                     <div className="flex items-center justify-between">
                       <div>
@@ -552,60 +618,60 @@ export default function ResultsPage() {
             {/* Actions */}
             <div className="mt-8 flex flex-wrap justify-center gap-4">
               <button
-                onClick={() => router.push('/homestyling/preferences')}
-                className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition-all"
+                onClick={() => {
+                  // Clear ALL design-related sessionStorage to free up quota (5MB limit)
+                  sessionStorage.removeItem('curatedRoomImage');
+                  sessionStorage.removeItem('curatedVisualizationImage');
+                  sessionStorage.removeItem('preselectedProducts');
+                  sessionStorage.removeItem('roomImage');
+                  sessionStorage.removeItem('persistedCanvasProducts');
+                  sessionStorage.removeItem('cleanRoomImage');
+                  sessionStorage.removeItem('styleThisFurther');
+                  sessionStorage.removeItem('preselectedLookTheme');
+                  sessionStorage.removeItem('design_session_id');
+                  sessionStorage.removeItem('furnitureRemovalJobId');
+                  sessionStorage.removeItem('pendingFurnitureRemoval');
+
+                  // Set data directly for design page
+                  if (session.clean_room_image) {
+                    sessionStorage.setItem('curatedRoomImage', session.clean_room_image);
+                  }
+                  if (currentView?.visualization_image) {
+                    sessionStorage.setItem('curatedVisualizationImage', currentView.visualization_image);
+                  }
+                  if (currentView?.products && currentView.products.length > 0) {
+                    sessionStorage.setItem('preselectedProducts', JSON.stringify(currentView.products));
+                  }
+
+                  router.push('/upgrade?from=purchase');
+                }}
+                className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition-all flex items-center gap-2"
               >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+                Style This Further
+              </button>
+              <button
+                onClick={() => router.push('/homestyling/preferences')}
+                className="px-6 py-3 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold rounded-lg transition-all flex items-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                </svg>
                 Get More Looks
               </button>
               <button
-                onClick={() => router.push('/upgrade')}
-                className="px-6 py-3 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold rounded-lg transition-all"
+                onClick={() => router.push('/upgrade?redirect=design')}
+                className="px-6 py-3 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold rounded-lg transition-all flex items-center gap-2"
               >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                </svg>
                 Build Your Own
               </button>
             </div>
           </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Stage Indicator Component
-function StageIndicator({
-  label,
-  status,
-  subtitle
-}: {
-  label: string;
-  status: 'pending' | 'active' | 'completed';
-  subtitle?: string;
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-        status === 'completed'
-          ? 'bg-emerald-500'
-          : status === 'active'
-            ? 'bg-emerald-100 border-2 border-emerald-500'
-            : 'bg-gray-100'
-      }`}>
-        {status === 'completed' ? (
-          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-          </svg>
-        ) : status === 'active' ? (
-          <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse" />
-        ) : (
-          <div className="w-3 h-3 bg-gray-300 rounded-full" />
-        )}
-      </div>
-      <div>
-        <p className={`font-medium ${status === 'active' ? 'text-emerald-600' : status === 'completed' ? 'text-gray-900' : 'text-gray-400'}`}>
-          {label}
-        </p>
-        {subtitle && (
-          <p className="text-sm text-gray-500">{subtitle}</p>
         )}
       </div>
     </div>

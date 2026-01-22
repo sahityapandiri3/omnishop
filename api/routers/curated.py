@@ -157,6 +157,10 @@ def create_thumbnail(base64_image: str, max_width: int = 800, quality: int = 80)
     Higher default quality (80%) and resolution (800px) for crisp display on modern screens.
     """
     try:
+        # Strip data URL prefix if present (e.g., "data:image/jpeg;base64,")
+        if base64_image.startswith("data:"):
+            base64_image = base64_image.split(",", 1)[1]
+
         # Decode base64
         image_data = base64.b64decode(base64_image)
         image = Image.open(io.BytesIO(image_data))

@@ -322,6 +322,12 @@ export default function CanvasPanel({
       setVisualizedProductIds(productIds);
       setVisualizedProducts([...products]);
 
+      // CRITICAL: Also sync quantities to prevent false "quantity changed" detection
+      const quantitiesMap = new Map<string, number>();
+      products.forEach(p => quantitiesMap.set(String(p.id), p.quantity || 1));
+      setVisualizedQuantities(quantitiesMap);
+      console.log('[CanvasPanel] Synced visualizedQuantities with products:', quantitiesMap.size, 'entries');
+
       // Add to history for undo support
       setVisualizationHistory([{
         image: formattedImage,
@@ -336,13 +342,26 @@ export default function CanvasPanel({
 
   // Keep visualizedProducts in sync when products change and we have a visualization
   // This handles the case where products load after the initial visualization is set
+  // CRITICAL: This must sync visualizedProductIds so change detection works correctly
   useEffect(() => {
-    if (visualizationResult && products.length > 0 && visualizedProducts.length === 0) {
-      console.log('[CanvasPanel] Syncing visualizedProducts with products (was empty):', products.length);
+    // If we have a visualization (from curated look) but visualizedProductIds is empty,
+    // we need to sync from products so change detection works
+    if (visualizationResult && products.length > 0 && visualizedProductIds.size === 0) {
+      const productIds = products.map(p => String(p.id));
+      console.log('[CanvasPanel] CRITICAL SYNC: visualizedProductIds was empty, syncing from products:', {
+        productsCount: products.length,
+        productIds,
+        productNames: products.map(p => p.name).slice(0, 5),
+        visualizedProductsLength: visualizedProducts.length,
+      });
       setVisualizedProducts([...products]);
-      setVisualizedProductIds(new Set(products.map(p => String(p.id))));
+      setVisualizedProductIds(new Set(productIds));
+      // Also sync quantities
+      const quantitiesMap = new Map<string, number>();
+      products.forEach(p => quantitiesMap.set(String(p.id), p.quantity || 1));
+      setVisualizedQuantities(quantitiesMap);
     }
-  }, [products, visualizationResult, visualizedProducts.length]);
+  }, [products, visualizationResult, visualizedProductIds.size]);
 
   // Keep visualizedProducts quantities in sync with canvas products
   // NOTE: Do NOT sync removals here - visualizedProducts should retain removed products
@@ -431,22 +450,35 @@ export default function CanvasPanel({
     // Ensure IDs are strings for consistent comparison
     const currentIds = new Set(products.map(p => String(p.id)));
 
+    // CRITICAL FIX: If we have a visualizationResult but visualizedProductIds is empty,
+    // this is a sync issue (e.g., "Style This Further" scenario where sync hasn't happened yet).
+    // In this case, we should trigger a RESET to properly establish tracking state.
+    // This ensures the visualization runs and all tracking states are properly set.
+    let effectiveVisualizedIds = visualizedProductIds;
+    if (visualizationResult && visualizedProductIds.size === 0 && products.length > 0) {
+      console.warn('[CanvasPanel] detectChangeType: visualizedProductIds empty with existing visualization');
+      console.warn('[CanvasPanel] Triggering reset to establish proper tracking state');
+      // Return reset to force a fresh visualization that will properly set tracking state
+      return { type: 'reset', reason: 'tracking_sync_needed' };
+    }
+
     // Check for removals (products that were visualized but no longer in canvas)
-    const removedProductIds = Array.from(visualizedProductIds).filter(id => !currentIds.has(id));
+    const removedProductIds = Array.from(effectiveVisualizedIds).filter(id => !currentIds.has(id));
 
     // Check for additions (products in canvas but not yet visualized)
-    const newProducts = products.filter(p => !visualizedProductIds.has(String(p.id)));
+    const newProducts = products.filter(p => !effectiveVisualizedIds.has(String(p.id)));
 
     // OPTIMIZATION: If products are both removed AND added, use remove_and_add workflow
     // This avoids full reset and instead: (1) removes products (2) adds new ones incrementally
     if (removedProductIds.length > 0 && newProducts.length > 0 && visualizationResult) {
       // Get full product info for removed products from visualizedProducts state
+      // CRITICAL: Must use visualizedProducts, NOT products - removed items aren't in products anymore!
       const removedProductsInfo = removedProductIds.map(id => {
-        const product = products.find(p => String(p.id) === id);
+        const product = visualizedProducts.find(p => String(p.id) === id);
         return product || { id, name: `Product ${id}` };
       });
       console.log('[CanvasPanel] Detected removal AND addition, will use remove_and_add workflow');
-      console.log('[CanvasPanel] Removed:', removedProductIds, 'Added:', newProducts.map(p => p.id));
+      console.log('[CanvasPanel] Removed:', removedProductsInfo.map(p => p.name || p.id), 'Added:', newProducts.map(p => p.name || p.id));
       return {
         type: 'remove_and_add',
         removedProducts: removedProductsInfo,
@@ -472,25 +504,64 @@ export default function CanvasPanel({
       };
     }
 
-    // Check for quantity changes (requires full re-visualization since positions may change)
-    const quantityChanged = products.some(p => {
-      const currentQty = p.quantity || 1;
-      const visualizedQty = visualizedQuantities.get(String(p.id)) || 0;
-      return visualizedProductIds.has(String(p.id)) && currentQty !== visualizedQty;
+    // Check for quantity changes - handle incrementally instead of full reset
+    const quantityIncreases: { product: any; delta: number }[] = [];
+    const quantityDecreases: { product: any; delta: number }[] = [];
+
+    products.forEach(p => {
+      if (effectiveVisualizedIds.has(String(p.id))) {
+        const currentQty = p.quantity || 1;
+        const visualizedQty = visualizedQuantities.get(String(p.id)) || 1;
+        const delta = currentQty - visualizedQty;
+
+        if (delta > 0) {
+          quantityIncreases.push({ product: p, delta });
+        } else if (delta < 0) {
+          quantityDecreases.push({ product: p, delta: Math.abs(delta) });
+        }
+      }
     });
-    if (quantityChanged) {
-      console.log('[CanvasPanel] Detected quantity change, will reset visualization to re-place products');
-      return { type: 'reset', reason: 'quantity_changed' };
+
+    // Handle quantity increases incrementally - only add the new copies
+    if (quantityIncreases.length > 0 && quantityDecreases.length === 0) {
+      console.log('[CanvasPanel] Detected quantity increase only, will add delta copies incrementally');
+      console.log('[CanvasPanel] Quantity increases:', quantityIncreases.map(q =>
+        `${q.product.name}: +${q.delta} (${visualizedQuantities.get(String(q.product.id)) || 1} -> ${q.product.quantity})`
+      ));
+      return {
+        type: 'quantity_increase',
+        quantityDeltas: quantityIncreases,
+        reason: 'quantity_increased'
+      };
+    }
+
+    // Handle quantity decreases - need to remove extra copies
+    if (quantityDecreases.length > 0 && quantityIncreases.length === 0) {
+      console.log('[CanvasPanel] Detected quantity decrease only, will remove extra copies');
+      console.log('[CanvasPanel] Quantity decreases:', quantityDecreases.map(q =>
+        `${q.product.name}: -${q.delta} (${visualizedQuantities.get(String(q.product.id)) || 1} -> ${q.product.quantity})`
+      ));
+      return {
+        type: 'quantity_decrease',
+        quantityDeltas: quantityDecreases,
+        reason: 'quantity_decreased'
+      };
+    }
+
+    // Mixed quantity changes (some increase, some decrease) - use reset for simplicity
+    if (quantityIncreases.length > 0 && quantityDecreases.length > 0) {
+      console.log('[CanvasPanel] Detected mixed quantity changes, will reset visualization');
+      return { type: 'reset', reason: 'mixed_quantity_changes' };
     }
 
     // Simple addition only (no removals) - use incremental
-    if (newProducts.length > 0 && visualizedProductIds.size > 0) {
+    if (newProducts.length > 0 && effectiveVisualizedIds.size > 0) {
       console.log('[CanvasPanel] Detected additions only, will use incremental visualization');
       return { type: 'additive', newProducts };
     }
 
-    // Initial visualization (nothing visualized yet)
-    if (visualizedProductIds.size === 0) {
+    // Initial visualization (nothing visualized yet AND no existing visualization)
+    if (effectiveVisualizedIds.size === 0 && !visualizationResult) {
       console.log('[CanvasPanel] Initial visualization');
       return { type: 'initial' };
     }
@@ -571,6 +642,30 @@ export default function CanvasPanel({
     // Need at least one base image (prefer cleanRoomImage) and products
     if ((!roomImage && !cleanRoomImage) || products.length === 0) return;
 
+    // Debug: Log what images we have
+    console.log('[CanvasPanel] handleVisualize called with:', {
+      hasCleanRoomImage: !!cleanRoomImage,
+      cleanRoomImageLength: cleanRoomImage?.length || 0,
+      cleanRoomImagePrefix: cleanRoomImage?.substring(0, 50) || 'null',
+      hasRoomImage: !!roomImage,
+      roomImageLength: roomImage?.length || 0,
+      roomImagePrefix: roomImage?.substring(0, 50) || 'null',
+      productsCount: products.length,
+      productNames: products.map(p => p.name).slice(0, 5),
+      visualizedProductIdsSize: visualizedProductIds.size,
+      hasVisualizationResult: !!visualizationResult,
+    });
+
+    // SAFETY: If we have a visualization but visualizedProductIds is empty, sync now
+    // This shouldn't happen but guards against race conditions
+    if (visualizationResult && products.length > 0 && visualizedProductIds.size === 0) {
+      console.warn('[CanvasPanel] WARNING: visualizedProductIds empty with existing visualization - syncing now');
+      const productIds = new Set(products.map(p => String(p.id)));
+      setVisualizedProductIds(productIds);
+      setVisualizedProducts([...products]);
+      // Still continue with visualization, but log the issue
+    }
+
     setIsVisualizing(true);
     setVisualizationStartTime(Date.now());
     setVisualizationProgress('Preparing visualization...');
@@ -578,6 +673,15 @@ export default function CanvasPanel({
     try {
       // Detect change type
       const changeInfo = detectChangeType();
+      console.log('[CanvasPanel] Change detection result:', {
+        type: changeInfo.type,
+        reason: changeInfo.reason,
+        visualizedProductIdsCount: visualizedProductIds.size,
+        visualizedProductIds: Array.from(visualizedProductIds),
+        currentProductIds: products.map(p => String(p.id)),
+        removedCount: changeInfo.removedProducts?.length || 0,
+        newProductsCount: changeInfo.newProducts?.length || 0,
+      });
 
       if (changeInfo.type === 'no_change') {
         console.log('[CanvasPanel] No changes detected, skipping visualization');
@@ -639,6 +743,41 @@ export default function CanvasPanel({
         productsToRemove = changeInfo.removedProducts || [];
         removalMode = true;
         console.log(`[CanvasPanel] Removal mode: removing ${productsToRemove.length} products`);
+      } else if (changeInfo.type === 'quantity_increase') {
+        // OPTIMIZED: Only add the delta copies incrementally
+        // Instead of re-visualizing everything, just add the new copies
+        baseImage = visualizationResult!;
+        isIncremental = true;
+
+        // Create products to add with only the DELTA quantity
+        // E.g., if going from 2 to 4, we only add 2 more copies
+        productsToVisualize = changeInfo.quantityDeltas!.map((qd: { product: any; delta: number }) => ({
+          ...qd.product,
+          quantity: qd.delta,  // Only the delta quantity
+          name: `${qd.product.name} (adding ${qd.delta} more)`,  // Help AI understand this is additional
+        }));
+
+        console.log(`[CanvasPanel] Quantity increase: adding ${changeInfo.quantityDeltas!.length} product types incrementally`);
+        changeInfo.quantityDeltas!.forEach((qd: { product: any; delta: number }) => {
+          console.log(`  - ${qd.product.name}: +${qd.delta} copies`);
+        });
+      } else if (changeInfo.type === 'quantity_decrease') {
+        // Remove extra copies using removal mode
+        baseImage = visualizationResult!;
+        removalMode = true;
+        productsToVisualize = products;
+
+        // Create removal entries for the extra copies
+        productsToRemove = changeInfo.quantityDeltas!.map((qd: { product: any; delta: number }) => ({
+          ...qd.product,
+          remove_count: qd.delta,  // Number of copies to remove
+          name: qd.product.name,
+        }));
+
+        console.log(`[CanvasPanel] Quantity decrease: removing extra copies from ${changeInfo.quantityDeltas!.length} product types`);
+        changeInfo.quantityDeltas!.forEach((qd: { product: any; delta: number }) => {
+          console.log(`  - ${qd.product.name}: -${qd.delta} copies`);
+        });
       } else if (changeInfo.type === 'reset') {
         // Reset: use CLEAN room image to ensure removed products don't appear
         // This is critical when using curated looks where roomImage might have products baked in
@@ -668,6 +807,7 @@ export default function CanvasPanel({
         baseImage = imageToUse;
         productsToVisualize = products;
         console.log(`[CanvasPanel] Initial visualization: visualizing all products (using ${cleanRoomImage ? 'clean room' : 'room image'})`);
+        console.log(`[CanvasPanel] Base image length: ${baseImage?.length || 0}, prefix: ${baseImage?.substring(0, 80) || 'null'}`);
       }
 
       // Helper function to format product for API
@@ -678,6 +818,7 @@ export default function CanvasPanel({
         image_url: p.image_url || getProductImageUrl(p),  // Include product image for AI reference
         description: p.description || '',  // Include description for AI context (materials, colors, style)
         product_type: p.productType || 'furniture',
+        furniture_type: p.productType || 'furniture',  // Also send as furniture_type for backend compatibility
         style: 0.8,
         category: p.productType || 'furniture',
         quantity: p.quantity || 1,  // Include quantity for placing multiple of same product
@@ -695,7 +836,21 @@ export default function CanvasPanel({
 
       // For incremental visualization, send the products already in the base image
       // This allows the AI to know exactly what furniture to preserve
-      const visualizedProductDetails = visualizedProducts.map(formatProductForApi);
+      // CRITICAL FIX: If visualizedProducts is empty but we have a visualizationResult (from curated look),
+      // use the current products as the visualized products for proper tracking
+      const effectiveVisualizedProducts = visualizedProducts.length > 0
+        ? visualizedProducts
+        : (visualizationResult ? products : []);
+      const visualizedProductDetails = effectiveVisualizedProducts.map(formatProductForApi);
+
+      console.log('[CanvasPanel] Preparing visualization request:', {
+        isIncremental,
+        forceReset,
+        removalMode,
+        visualizedProductsCount: visualizedProducts.length,
+        effectiveVisualizedProductsCount: effectiveVisualizedProducts.length,
+        productsToVisualizeCount: productsToVisualize.length,
+      });
 
       // V1 Visualization API call with timeout and retry
       const requestStartTime = Date.now();
@@ -725,7 +880,7 @@ export default function CanvasPanel({
           }),
         },
         2,  // maxRetries: 2 retries (3 total attempts)
-        180000,  // timeout: 3 minutes per attempt
+        300000,  // timeout: 5 minutes per attempt (needed for batch processing 10+ products)
         3000  // retryDelay: 3 seconds initial delay
       );
 
@@ -2104,7 +2259,7 @@ export default function CanvasPanel({
                           <span className="text-white font-medium text-sm">
                             {isImprovingQuality ? 'Improving quality...' :
                              isCompositingLayers ? 'Applying position changes...' :
-                             visualizationProgress || 'Updating visualization...'}
+                             'Updating visualization...'}
                           </span>
                           <span className="text-white/70 text-xs mt-1">
                             {isImprovingQuality ? 'Re-rendering from original room' :
@@ -2194,7 +2349,7 @@ export default function CanvasPanel({
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   ></path>
                 </svg>
-                <span className="text-sm">{visualizationProgress || 'Moving product...'}</span>
+                <span className="text-sm">Moving product...</span>
               </>
             ) : (
               <>
@@ -2229,7 +2384,7 @@ export default function CanvasPanel({
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   ></path>
                 </svg>
-                <span className="text-sm">{visualizationProgress || 'Re-visualizing...'}</span>
+                <span className="text-sm">Re-visualizing...</span>
               </>
             ) : (
               <>
@@ -2275,7 +2430,7 @@ export default function CanvasPanel({
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   ></path>
                 </svg>
-                <span className="text-sm">{visualizationProgress || 'Visualizing...'}</span>
+                <span className="text-sm">Visualizing...</span>
               </>
             ) : (
               <>

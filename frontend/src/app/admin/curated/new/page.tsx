@@ -2845,7 +2845,7 @@ export default function CreateCuratedLookPage() {
                   {roomImage ? (
                     <div className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden">
                       <img
-                        src={roomImage}
+                        src={roomImage.startsWith('data:') ? roomImage : `data:image/jpeg;base64,${roomImage}`}
                         alt="Room"
                         className="w-full h-full object-cover"
                         onLoad={() => console.log('Room image loaded successfully')}
@@ -3080,7 +3080,7 @@ export default function CreateCuratedLookPage() {
                 <div className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden ring-2 ring-blue-400">
                   {/* Room image as preview background */}
                   <img
-                    src={roomImage}
+                    src={roomImage?.startsWith('data:') ? roomImage : `data:image/jpeg;base64,${roomImage}`}
                     alt="Room preview"
                     className="w-full h-full object-cover opacity-50"
                   />

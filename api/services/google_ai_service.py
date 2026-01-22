@@ -371,7 +371,8 @@ YOUR TASK:
         for product in products_to_remove:
             name = product.get("full_name") or product.get("name", "furniture item")
             qty = product.get("quantity", 1)
-            furniture_type = product.get("furniture_type", "").replace("_", " ")
+            # Check both furniture_type and product_type (frontend uses product_type)
+            furniture_type = (product.get("furniture_type") or product.get("product_type") or "").replace("_", " ")
             dims = product.get("dimensions", {})
             dim_str = ""
             if dims:
@@ -584,11 +585,22 @@ async def load_product_dimensions(db, product_ids: List[int]) -> Dict[int, Dict[
     if not product_ids:
         return {}
 
-    dimensions = {pid: {} for pid in product_ids}
+    # Convert all product IDs to integers (they might be strings from frontend)
+    int_product_ids = []
+    for pid in product_ids:
+        try:
+            int_product_ids.append(int(pid))
+        except (ValueError, TypeError):
+            pass
+
+    if not int_product_ids:
+        return {}
+
+    dimensions = {pid: {} for pid in int_product_ids}
 
     result = await db.execute(
         select(ProductAttribute).where(
-            ProductAttribute.product_id.in_(product_ids), ProductAttribute.attribute_name.in_(["width", "depth", "height"])
+            ProductAttribute.product_id.in_(int_product_ids), ProductAttribute.attribute_name.in_(["width", "depth", "height"])
         )
     )
     attributes = result.scalars().all()
@@ -617,8 +629,13 @@ def enrich_products_with_dimensions(
     """
     for product in products:
         product_id = product.get("id")
-        if product_id and product_id in dimensions_map:
-            product["dimensions"] = dimensions_map[product_id]
+        # Convert to int for lookup (IDs might be strings from frontend)
+        try:
+            int_product_id = int(product_id) if product_id else None
+        except (ValueError, TypeError):
+            int_product_id = None
+        if int_product_id and int_product_id in dimensions_map:
+            product["dimensions"] = dimensions_map[int_product_id]
         elif "dimensions" not in product:
             product["dimensions"] = {}
     return products
@@ -3089,8 +3106,16 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 if image_url:
                     try:
                         image_data = await self._download_image(image_url)
+                        if image_data:
+                            logger.info(
+                                f"✅ Downloaded product image for '{name}': {len(image_data)} bytes from {image_url[:100]}..."
+                            )
+                        else:
+                            logger.warning(f"⚠️ No image data returned for '{name}' from {image_url[:100]}...")
                     except Exception as e:
-                        logger.warning(f"Failed to download product image for {name}: {e}")
+                        logger.warning(f"❌ Failed to download product image for '{name}': {e}")
+                else:
+                    logger.warning(f"⚠️ No image_url provided for product '{name}' - AI won't have visual reference!")
                 product_images_data.append(image_data)
 
             # Build product list for prompt with quantities and dimensions - VERY EXPLICIT about counts
@@ -3380,12 +3405,33 @@ If the room ALREADY has a chair/cushion/table and you're asked to add ANOTHER on
 - Result: 2 items of the same type in the room (NOT replacing the original)
 - Example: If there's already 1 accent chair and you add 1 more → room should have 2 chairs
 
-🔴 EXACT PRODUCT REPLICATION - CRITICAL FOR COLORS:
+🔴🔴🔴 EXACT PRODUCT REPLICATION - THIS IS THE MOST CRITICAL REQUIREMENT 🔴🔴🔴
+═══════════════════════════════════════════════════════════════════════════════
+
+⚠️⚠️⚠️ YOU MUST COPY THE EXACT PRODUCT FROM THE REFERENCE IMAGE ⚠️⚠️⚠️
+
 For each product with a reference image provided:
-- EXACT COLOR matching - if the reference shows ORANGE, output MUST be ORANGE
-- EXACT MATERIAL & TEXTURE
-- EXACT SHAPE & DESIGN
-- The products in output MUST look like the SAME EXACT products from reference images
+1. 🎯 EXACT SHAPE/SILHOUETTE - Copy the PRECISE shape from the reference
+   - If reference shows a pedestal table with teardrop glass base → output MUST have pedestal with teardrop glass base
+   - If reference shows nesting tables → output MUST be nesting tables
+   - DO NOT substitute with a similar-but-different furniture style!
+
+2. 🎨 EXACT COLOR - Match the precise color/finish
+   - If reference shows gold/brass metal → output MUST be gold/brass metal
+   - If reference shows smoky glass → output MUST be smoky glass
+
+3. 🔧 EXACT DESIGN DETAILS - Copy all distinctive features
+   - Base style (pedestal vs legs vs frame)
+   - Top shape (round vs rectangular vs oval)
+   - Material combinations (metal + glass, wood + marble, etc.)
+
+4. ⛔ ABSOLUTELY FORBIDDEN:
+   - DO NOT render a "generic" version of the furniture type
+   - DO NOT substitute with a different table/chair/sofa style
+   - DO NOT improvise or "interpret" the design
+   - The output product MUST be RECOGNIZABLE as the SAME product from the reference image
+
+Think of it this way: If a customer ordered THIS SPECIFIC product and you deliver something different, they will return it. The reference image IS the product - copy it EXACTLY.
 
 ⚠️ COLOR MATCHING IS MANDATORY:
 - If you're adding 2 copies of "Orange Cushion", BOTH must be ORANGE (same as reference)
@@ -3459,10 +3505,14 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 if image_data:
                     if qty_for_product > 1:
                         contents.append(
-                            f"\n🎨 Product {i+1} reference image ({name}) - ADD {qty_for_product} COPIES, ALL must match THIS EXACT COLOR:"
+                            f"\n🎯 Product {i+1} REFERENCE IMAGE ({name}) - COPY THIS EXACT PRODUCT {qty_for_product} TIMES:\n"
+                            f"⚠️ CRITICAL: Match the EXACT shape, design, color, material, and all visual details. DO NOT substitute with a different style!"
                         )
                     else:
-                        contents.append(f"\n🎨 Product {i+1} reference image ({name}) - must match THIS EXACT COLOR:")
+                        contents.append(
+                            f"\n🎯 Product {i+1} REFERENCE IMAGE ({name}) - COPY THIS EXACT PRODUCT:\n"
+                            f"⚠️ CRITICAL: Match the EXACT shape, design, color, material, and all visual details. DO NOT substitute with a different style!"
+                        )
                     prod_image_bytes = base64.b64decode(image_data)
                     prod_pil_image = Image.open(io.BytesIO(prod_image_bytes))
                     if prod_pil_image.mode != "RGB":

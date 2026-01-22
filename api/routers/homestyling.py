@@ -218,9 +218,11 @@ async def get_previous_rooms(
 
     try:
         # Query sessions with clean_room_image, ordered by most recent
+        # Exclude sessions where the image was copied from another session (source_session_id is set)
         query = (
             select(HomeStylingSession)
             .where(HomeStylingSession.clean_room_image.isnot(None))
+            .where(HomeStylingSession.source_session_id.is_(None))  # Only original uploads
             .order_by(HomeStylingSession.created_at.desc())
             .limit(limit)
         )
@@ -232,8 +234,12 @@ async def get_previous_rooms(
         result = await db.execute(query)
         sessions = result.scalars().all()
 
-        # Count total
-        count_query = select(func.count(HomeStylingSession.id)).where(HomeStylingSession.clean_room_image.isnot(None))
+        # Count total (only original uploads, not copies)
+        count_query = (
+            select(func.count(HomeStylingSession.id))
+            .where(HomeStylingSession.clean_room_image.isnot(None))
+            .where(HomeStylingSession.source_session_id.is_(None))
+        )
         if current_user:
             count_query = count_query.where(HomeStylingSession.user_id == current_user.id)
         count_result = await db.execute(count_query)
@@ -458,6 +464,7 @@ async def use_previous_room(
         # Copy the images from previous session to current
         current_session.original_room_image = previous_session.original_room_image
         current_session.clean_room_image = previous_session.clean_room_image
+        current_session.source_session_id = request.previous_session_id  # Track that this was copied
         current_session.status = HomeStylingSessionStatus.UPLOAD
 
         await db.commit()
@@ -520,6 +527,13 @@ async def select_tier(
         session.selected_tier = HomeStylingTier(request.tier.value)
         session.views_count = tier_views[request.tier.value]
         session.status = HomeStylingSessionStatus.TIER_SELECTION
+
+        # Clear any existing views to ensure fresh generation
+        # This handles cases where user changes tier or reuses the session
+        delete_stmt = delete(HomeStylingView).where(HomeStylingView.session_id == session_id)
+        delete_result = await db.execute(delete_stmt)
+        if delete_result.rowcount > 0:
+            logger.info(f"Cleared {delete_result.rowcount} existing views for session {session_id}")
 
         # Link session to user if authenticated
         if current_user and not session.user_id:
@@ -626,6 +640,13 @@ async def generate_views(
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
+        # Prevent generation beyond the tier limit
+        current_views = len(session.views) if session.views else 0
+        max_views = session.views_count or 3  # Default to 3 if not set
+        if current_views >= max_views:
+            logger.warning(f"Session {session_id} already has {current_views}/{max_views} views, skipping generation")
+            return {"status": "already_completed", "views_count": current_views, "max_views": max_views}
+
         # Validate session has required data
         if not session.room_type:
             raise HTTPException(status_code=400, detail="Room type not selected")
@@ -657,12 +678,23 @@ async def generate_views(
         if session.budget_tier:
             looks_query = looks_query.where(CuratedLook.budget_tier == session.budget_tier)
 
+        # Exclude curated looks already used in existing views
+        if session.views:
+            used_look_ids = [v.curated_look_id for v in session.views if v.curated_look_id]
+            if used_look_ids:
+                looks_query = looks_query.where(CuratedLook.id.notin_(used_look_ids))
+                logger.info(f"Excluding {len(used_look_ids)} already-used curated looks")
+
+        # Calculate remaining views to generate (respect tier limit)
+        remaining_views = max_views - current_views
+        logger.info(f"Generating {remaining_views} views (current: {current_views}, max: {max_views})")
+
         looks_query = (
             looks_query.options(
                 selectinload(CuratedLook.products).selectinload(CuratedLookProduct.product).selectinload(Product.images)
             )
             .order_by(func.random())
-            .limit(session.views_count)
+            .limit(remaining_views)
         )
 
         looks_result = await db.execute(looks_query)
@@ -781,7 +813,9 @@ async def generate_views(
         # Sort: non-fallback first, then fallback
         sorted_results = sorted(results, key=lambda r: (r[4], results.index(r)))  # is_fallback, original order
 
-        view_number = 1
+        # Get the next view number (continue from existing views if any)
+        existing_max_view = max([v.view_number for v in session.views], default=0) if session.views else 0
+        view_number = existing_max_view + 1
         for look, products_for_viz, image, error, is_fallback in sorted_results:
             view = HomeStylingView(
                 session_id=session_id,

@@ -778,6 +778,17 @@ export const categoryAPI = {
   getCategories
 };
 
+export const authAPI = {
+  /**
+   * Upgrade user's subscription tier to "upgraded"
+   * @returns Promise with upgrade response
+   */
+  upgrade: async (tier: string = 'upgraded'): Promise<{ success: boolean; subscription_tier: string; message: string }> => {
+    const response = await api.post('/api/auth/upgrade', { tier });
+    return response.data;
+  }
+};
+
 export const chatAPI = {
   startSession: () => startChatSession(),
   sendMessage: (message: string, sessionId?: string, image?: File) => {

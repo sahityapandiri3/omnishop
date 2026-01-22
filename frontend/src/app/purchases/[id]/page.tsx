@@ -191,6 +191,15 @@ export default function PurchaseDetailPage() {
                       </div>
                     )}
                   </div>
+                  {/* AI Visualization Disclaimer */}
+                  <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
+                    <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      AI-generated visualization. Actual products may vary slightly in appearance.
+                    </p>
+                  </div>
                   <div className="p-4 border-t border-gray-100">
                     <div className="flex items-center justify-between">
                       <div>
@@ -285,15 +294,55 @@ export default function PurchaseDetailPage() {
             <div className="flex flex-wrap justify-center gap-4 mt-8">
               <button
                 onClick={() => {
-                  // Store params in sessionStorage to avoid URL tampering
-                  // Use clean_room_image (furniture-removed) for design page, fallback to original
-                  sessionStorage.setItem('styleThisFurther', JSON.stringify({
-                    purchaseId,
-                    viewId: currentView?.id,
-                    visualization: currentView?.visualization_image,
-                    products: currentView?.products,
-                    cleanRoomImage: purchase.clean_room_image || purchase.original_room_image,
-                  }));
+                  // Clear ALL design-related sessionStorage to free up quota (5MB limit)
+                  sessionStorage.removeItem('curatedRoomImage');
+                  sessionStorage.removeItem('curatedVisualizationImage');
+                  sessionStorage.removeItem('preselectedProducts');
+                  sessionStorage.removeItem('roomImage');
+                  sessionStorage.removeItem('persistedCanvasProducts');
+                  sessionStorage.removeItem('cleanRoomImage');
+                  sessionStorage.removeItem('styleThisFurther');
+                  sessionStorage.removeItem('preselectedLookTheme');
+                  sessionStorage.removeItem('design_session_id');
+                  sessionStorage.removeItem('furnitureRemovalJobId');
+                  sessionStorage.removeItem('pendingFurnitureRemoval');
+
+                  // Set data directly for design page (no intermediate storage)
+                  const roomImage = purchase.clean_room_image || purchase.original_room_image;
+                  const visualization = currentView?.visualization_image;
+                  const products = currentView?.products;
+
+                  console.log('[PurchaseDetail] Style This Further - setting design data:', {
+                    hasRoomImage: !!roomImage,
+                    roomImageLength: roomImage?.length || 0,
+                    hasVisualization: !!visualization,
+                    vizLength: visualization?.length || 0,
+                    productsCount: products?.length || 0,
+                  });
+
+                  try {
+                    if (roomImage) {
+                      sessionStorage.setItem('curatedRoomImage', roomImage);
+                      console.log('[PurchaseDetail] Set curatedRoomImage');
+                    }
+                    if (visualization) {
+                      sessionStorage.setItem('curatedVisualizationImage', visualization);
+                      console.log('[PurchaseDetail] Set curatedVisualizationImage');
+                    }
+                    if (products && products.length > 0) {
+                      sessionStorage.setItem('preselectedProducts', JSON.stringify(products));
+                      console.log('[PurchaseDetail] Set preselectedProducts');
+                    }
+                    // Set persistent bypass key for tier check - this key is NOT cleared by design page
+                    // when loading the data, so ProtectedRoute can use it for the tier bypass check
+                    sessionStorage.setItem('designAccessGranted', 'true');
+                    console.log('[PurchaseDetail] Set designAccessGranted for tier bypass');
+                  } catch (e) {
+                    console.error('[PurchaseDetail] SessionStorage quota error:', e);
+                    alert('Storage quota exceeded. Please close other tabs or clear browser data.');
+                    return;
+                  }
+
                   router.push('/upgrade?from=purchase');
                 }}
                 className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors"
@@ -313,7 +362,7 @@ export default function PurchaseDetailPage() {
                 Get More Looks
               </Link>
               <Link
-                href="/upgrade?redirect=curated"
+                href="/upgrade?redirect=design"
                 className="inline-flex items-center gap-2 px-6 py-3 bg-white text-gray-700 font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getCuratedLooks, CuratedLook } from '@/utils/api';
 import { useAuth, isAdmin } from '@/contexts/AuthContext';
@@ -30,25 +29,12 @@ const findLookByTheme = (looks: CuratedLook[], themeName: string): CuratedLook |
 };
 
 export default function HomePage() {
-  const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [looks, setLooks] = useState<CuratedLook[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Redirect authenticated users based on their subscription tier
-  useEffect(() => {
-    if (authLoading) return; // Wait for auth to load
-
-    if (isAuthenticated && user) {
-      // Admins and build_your_own users go to /curated
-      if (isAdmin(user) || user.subscription_tier === 'build_your_own') {
-        router.replace('/curated');
-      } else {
-        // Free users go to /homestyling/preferences
-        router.replace('/homestyling/preferences');
-      }
-    }
-  }, [isAuthenticated, user, authLoading, router]);
+  // Landing page is always accessible - no auto-redirect
+  // Users can navigate to their dashboard via "Home Styling" or "Curated" links
 
   useEffect(() => {
     const fetchLooks = async () => {
@@ -66,8 +52,8 @@ export default function HomePage() {
     fetchLooks();
   }, []);
 
-  // Show loading while checking auth
-  if (authLoading || (isAuthenticated && user)) {
+  // Show loading only while fetching looks (auth check no longer blocks the page)
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-neutral-900" />

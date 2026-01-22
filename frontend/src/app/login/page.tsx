@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, hasBuildYourOwn } from '@/contexts/AuthContext';
 
 type AuthMode = 'login' | 'register';
 
@@ -14,7 +14,7 @@ const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login, register, loginWithGoogle, isAuthenticated, isLoading } = useAuth();
+  const { login, register, loginWithGoogle, isAuthenticated, isLoading, user } = useAuth();
 
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
@@ -23,8 +23,8 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Get redirect URL from query params, sessionStorage, or default to /curated
-  const getRedirectUrl = () => {
+  // Get explicit redirect URL from query params or sessionStorage (returns null if none)
+  const getExplicitRedirectUrl = () => {
     // First check query params
     const queryRedirect = searchParams?.get('redirect');
     if (queryRedirect) return queryRedirect;
@@ -38,18 +38,20 @@ export default function LoginPage() {
       }
     }
 
-    // Default to curated looks
-    return '/curated';
+    // No explicit redirect - will be determined by user tier after login
+    return null;
   };
 
-  const redirectUrl = getRedirectUrl();
+  const explicitRedirectUrl = getExplicitRedirectUrl();
 
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
-      router.push(redirectUrl);
+      // Use explicit redirect if available, otherwise determine by user tier
+      const targetUrl = explicitRedirectUrl || (hasBuildYourOwn(user) ? '/curated' : '/homestyling');
+      router.push(targetUrl);
     }
-  }, [isAuthenticated, isLoading, router, redirectUrl]);
+  }, [isAuthenticated, isLoading, router, explicitRedirectUrl, user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,12 +59,15 @@ export default function LoginPage() {
     setSubmitting(true);
 
     try {
+      let loggedInUser;
       if (mode === 'login') {
-        await login(email, password);
+        loggedInUser = await login(email, password);
       } else {
-        await register(email, password, name);
+        loggedInUser = await register(email, password, name);
       }
-      router.push(redirectUrl);
+      // Use explicit redirect if available, otherwise determine by user tier
+      const targetUrl = explicitRedirectUrl || (hasBuildYourOwn(loggedInUser) ? '/curated' : '/homestyling');
+      router.push(targetUrl);
     } catch (err: any) {
       setError(err.message || 'An error occurred');
     } finally {
@@ -80,8 +85,10 @@ export default function LoginPage() {
     setError('');
 
     try {
-      await loginWithGoogle(credentialResponse.credential);
-      router.push(redirectUrl);
+      const loggedInUser = await loginWithGoogle(credentialResponse.credential);
+      // Use explicit redirect if available, otherwise determine by user tier
+      const targetUrl = explicitRedirectUrl || (hasBuildYourOwn(loggedInUser) ? '/curated' : '/homestyling');
+      router.push(targetUrl);
     } catch (err: any) {
       setError(err.message || 'Google login failed');
     } finally {

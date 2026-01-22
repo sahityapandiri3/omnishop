@@ -8,6 +8,7 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
   requiredRole?: UserRole;  // Optional: 'user' (default), 'admin', or 'super_admin'
   requiredTier?: SubscriptionTier;  // Optional: 'free' or 'build_your_own'
+  bypassTierWithSessionKeys?: string[];  // Optional: bypass tier check if any of these sessionStorage keys exist
 }
 
 /**
@@ -15,7 +16,7 @@ interface ProtectedRouteProps {
  * Redirects unauthenticated users to the login page.
  * Optionally restricts access based on user role and/or subscription tier.
  */
-export function ProtectedRoute({ children, requiredRole = 'user', requiredTier }: ProtectedRouteProps) {
+export function ProtectedRoute({ children, requiredRole = 'user', requiredTier, bypassTierWithSessionKeys }: ProtectedRouteProps) {
   const router = useRouter();
   const { isAuthenticated, isLoading, user } = useAuth();
 
@@ -48,9 +49,20 @@ export function ProtectedRoute({ children, requiredRole = 'user', requiredTier }
     if (!requiredTier) return true;
     // Check tier - build_your_own has access to everything
     if (user.subscription_tier === 'build_your_own') return true;
+    // Check for bypass via sessionStorage keys (e.g., coming from "Style This Further" flow)
+    if (bypassTierWithSessionKeys && bypassTierWithSessionKeys.length > 0) {
+      const hasBypassKey = bypassTierWithSessionKeys.some(key => {
+        try {
+          return sessionStorage.getItem(key) !== null;
+        } catch {
+          return false;
+        }
+      });
+      if (hasBypassKey) return true;
+    }
     // Free users only have access if requiredTier is 'free' or not specified
     return requiredTier === 'free';
-  }, [user, requiredTier]);
+  }, [user, requiredTier, bypassTierWithSessionKeys]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {

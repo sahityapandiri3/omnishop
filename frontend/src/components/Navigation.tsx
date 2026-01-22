@@ -77,35 +77,39 @@ export function Navigation() {
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-4">
             <div className="flex items-baseline space-x-1">
-              {/* Base navigation - always shown */}
-              {baseNavigation.map((item) => {
-                const isActive = pathname === item.href
-                return (
+              {/* Base navigation and Home Styling - only shown to authenticated users */}
+              {isAuthenticated && (
+                <>
+                  {baseNavigation.map((item) => {
+                    const isActive = pathname === item.href
+                    return (
+                      <Link
+                        key={item.name}
+                        href={item.href}
+                        className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                          isActive
+                            ? 'bg-gray-100 text-gray-900'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        {item.name}
+                      </Link>
+                    )
+                  })}
+
+                  {/* Home Styling - shown to authenticated users */}
                   <Link
-                    key={item.name}
-                    href={item.href}
+                    href="/homestyling"
                     className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                      isActive
+                      pathname?.startsWith('/homestyling')
                         ? 'bg-gray-100 text-gray-900'
                         : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
-                    {item.name}
+                    Home Styling
                   </Link>
-                )
-              })}
-
-              {/* Home Styling - shown to all users */}
-              <Link
-                href="/homestyling"
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  pathname?.startsWith('/homestyling')
-                    ? 'bg-gray-100 text-gray-900'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Home Styling
-              </Link>
+                </>
+              )}
 
               {/* Purchases - shown to authenticated users */}
               {isAuthenticated && (
@@ -277,37 +281,41 @@ export function Navigation() {
         {mobileMenuOpen && (
           <div className="md:hidden">
             <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 border-t border-gray-200">
-              {/* Base navigation - always shown */}
-              {baseNavigation.map((item) => {
-                const isActive = pathname === item.href
-                return (
+              {/* Base navigation and Home Styling - only shown to authenticated users */}
+              {isAuthenticated && (
+                <>
+                  {baseNavigation.map((item) => {
+                    const isActive = pathname === item.href
+                    return (
+                      <Link
+                        key={item.name}
+                        href={item.href}
+                        className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                          isActive
+                            ? 'bg-gray-100 text-gray-900'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                        onClick={() => setMobileMenuOpen(false)}
+                      >
+                        {item.name}
+                      </Link>
+                    )
+                  })}
+
+                  {/* Home Styling - shown to authenticated users */}
                   <Link
-                    key={item.name}
-                    href={item.href}
+                    href="/homestyling"
                     className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
-                      isActive
+                      pathname?.startsWith('/homestyling')
                         ? 'bg-gray-100 text-gray-900'
                         : 'text-gray-600 hover:text-gray-900'
                     }`}
                     onClick={() => setMobileMenuOpen(false)}
                   >
-                    {item.name}
+                    Home Styling
                   </Link>
-                )
-              })}
-
-              {/* Home Styling - shown to all users */}
-              <Link
-                href="/homestyling"
-                className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
-                  pathname?.startsWith('/homestyling')
-                    ? 'bg-gray-100 text-gray-900'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Home Styling
-              </Link>
+                </>
+              )}
 
               {/* Purchases - shown to authenticated users */}
               {isAuthenticated && (

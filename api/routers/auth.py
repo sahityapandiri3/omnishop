@@ -8,7 +8,16 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel
-from schemas.auth import AuthStatusResponse, GoogleAuthRequest, RefreshTokenRequest, RefreshTokenResponse, TokenResponse, UserLogin, UserRegister, UserResponse
+from schemas.auth import (
+    AuthStatusResponse,
+    GoogleAuthRequest,
+    RefreshTokenRequest,
+    RefreshTokenResponse,
+    TokenResponse,
+    UserLogin,
+    UserRegister,
+    UserResponse,
+)
 from services.auth_service import auth_service
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -229,6 +238,62 @@ async def refresh_token(
 
 
 # ============================================================================
+# Subscription Endpoints
+# ============================================================================
+
+
+class UpgradeRequest(BaseModel):
+    """Request to upgrade subscription tier"""
+
+    tier: str = "upgraded"  # Unified tier for all upgrade flows (Build Your Own, Style This Further)
+
+
+class UpgradeResponse(BaseModel):
+    """Response for subscription upgrade"""
+
+    success: bool
+    subscription_tier: str
+    message: str
+
+
+@router.post("/upgrade", response_model=UpgradeResponse)
+async def upgrade_subscription(
+    request: UpgradeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Upgrade user's subscription tier.
+
+    For now, this simulates a successful payment and upgrades to build_your_own.
+    TODO: Integrate with Razorpay/Stripe for actual payment processing.
+    """
+    try:
+        # Validate tier
+        valid_tiers = ["free", "upgraded"]
+        if request.tier not in valid_tiers:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid tier. Must be one of: {valid_tiers}")
+
+        # Update user's subscription tier
+        current_user.subscription_tier = request.tier
+        await db.commit()
+        await db.refresh(current_user)
+
+        logger.info(f"User {current_user.email} upgraded to {request.tier}")
+
+        return UpgradeResponse(
+            success=True, subscription_tier=request.tier, message=f"Successfully upgraded to {request.tier}"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error upgrading subscription for user {current_user.email}: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to upgrade subscription")
+
+
+# ============================================================================
 # Admin Endpoints (Protected by ADMIN_SECRET)
 # ============================================================================
 
@@ -266,6 +331,7 @@ async def get_user_count(
 ):
     """Get total user count in database."""
     from sqlalchemy import func
+
     result = await db.execute(select(func.count()).select_from(User))
     count = result.scalar()
     return {"total_users": count}

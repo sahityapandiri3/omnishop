@@ -70,19 +70,27 @@ export default function ChatPanel({
       console.log('[ChatPanel] Session already initialized, skipping');
       return;
     }
+    // CRITICAL: Set the guard BEFORE the async call to prevent race conditions
+    sessionInitializedRef.current = true;
 
     const initSession = async () => {
       try {
-        // If we have an initial session ID (from saved project), use it and load history
-        if (initialSessionId) {
-          console.log('[ChatPanel] Restoring existing session:', initialSessionId);
+        // Check sessionStorage for an existing session (survives component remounts)
+        // This handles the case where ChatPanel unmounts/remounts during navigation
+        const storedSessionId = sessionStorage.getItem('design_session_id');
+
+        // Priority: initialSessionId (from saved project) > storedSessionId > create new
+        const effectiveSessionId = initialSessionId || storedSessionId;
+
+        if (effectiveSessionId) {
+          console.log('[ChatPanel] Restoring existing session:', effectiveSessionId,
+            initialSessionId ? '(from project)' : '(from sessionStorage)');
           setIsRestoringSession(true); // Mark as restoring to prevent processing
-          sessionInitializedRef.current = true;
-          setSessionId(initialSessionId);
+          setSessionId(effectiveSessionId);
 
           // Load chat history from the existing session
           try {
-            const history = await getChatHistory(initialSessionId);
+            const history = await getChatHistory(effectiveSessionId);
             if (history.messages && history.messages.length > 0) {
               // Convert backend messages to frontend format
               const restoredMessages: Message[] = history.messages.map((msg: any) => ({
@@ -102,11 +110,18 @@ export default function ChatPanel({
 
               console.log('[ChatPanel] Restored', restoredMessages.length, 'messages from history');
             }
+
+            // Notify parent of the session ID (in case it came from sessionStorage)
+            if (onSessionIdChange && !initialSessionId) {
+              onSessionIdChange(effectiveSessionId);
+            }
           } catch (historyError) {
             console.error('[ChatPanel] Failed to load chat history:', historyError);
             // Session might be invalid/expired, create a new one
+            sessionStorage.removeItem('design_session_id');
             const response = await startChatSession();
             setSessionId(response.session_id);
+            sessionStorage.setItem('design_session_id', response.session_id);
             if (onSessionIdChange) {
               onSessionIdChange(response.session_id);
             }
@@ -115,11 +130,12 @@ export default function ChatPanel({
             setIsRestoringSession(false);
           }
         } else {
-          sessionInitializedRef.current = true;
           // No initial session, create a new one
           const response = await startChatSession();
           console.log('[ChatPanel] Created new session:', response.session_id);
           setSessionId(response.session_id);
+          // Store in sessionStorage to survive component remounts
+          sessionStorage.setItem('design_session_id', response.session_id);
           if (onSessionIdChange) {
             console.log('[ChatPanel] Calling onSessionIdChange with:', response.session_id);
             onSessionIdChange(response.session_id);
@@ -129,6 +145,8 @@ export default function ChatPanel({
         }
       } catch (error) {
         console.error('Failed to start chat session:', error);
+        // Reset the guard so user can retry
+        sessionInitializedRef.current = false;
       }
     };
     initSession();

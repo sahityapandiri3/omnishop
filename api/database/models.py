@@ -643,6 +643,7 @@ class HomeStylingSession(Base):
     # Images
     original_room_image = Column(Text, nullable=True)  # Base64 encoded
     clean_room_image = Column(Text, nullable=True)  # Furniture removed
+    source_session_id = Column(String(36), nullable=True)  # If set, image was copied from this session
 
     # Tier selection (no payment in Phase 1)
     selected_tier = Column(

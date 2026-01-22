@@ -2864,8 +2864,13 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     "furniture_type": p.get("furniture_type", "furniture"),
                     "image_url": p.get("image_url"),  # Product image for visual identification by Gemini
                 }
-                if p.get("id") and p["id"] in dimensions_map:
-                    enriched["dimensions"] = dimensions_map[p["id"]]
+                # Convert ID to int for dimensions lookup (might be string from frontend)
+                try:
+                    int_id = int(p["id"]) if p.get("id") else None
+                except (ValueError, TypeError):
+                    int_id = None
+                if int_id and int_id in dimensions_map:
+                    enriched["dimensions"] = dimensions_map[int_id]
                 else:
                     enriched["dimensions"] = {}
                 products_to_remove_enriched.append(enriched)
@@ -2950,19 +2955,31 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     "furniture_type": p.get("furniture_type", "furniture"),
                     "image_url": p.get("image_url"),  # Product image for visual identification by Gemini
                 }
-                if p.get("id") and p["id"] in dimensions_map:
-                    enriched["dimensions"] = dimensions_map[p["id"]]
+                # Convert ID to int for dimensions lookup (might be string from frontend)
+                try:
+                    int_id = int(p["id"]) if p.get("id") else None
+                except (ValueError, TypeError):
+                    int_id = None
+                if int_id and int_id in dimensions_map:
+                    enriched["dimensions"] = dimensions_map[int_id]
                 else:
                     enriched["dimensions"] = {}
                 products_to_remove_enriched.append(enriched)
 
             # Step 3: Enrich remaining products (products that stay in the visualization)
-            remaining_products_enriched = enrich_products_with_dimensions([dict(p) for p in (products or [])], dimensions_map)
+            # CRITICAL FIX: remaining_products should NOT include products being added!
+            # products_to_add are NEW products not yet in the image, so they shouldn't be in "existing_products"
+            products_to_add_ids = {str(p.get("id")) for p in products_to_add if p.get("id")}
+            remaining_products = [p for p in (products or []) if str(p.get("id")) not in products_to_add_ids]
+            remaining_products_enriched = enrich_products_with_dimensions(
+                [dict(p) for p in remaining_products], dimensions_map
+            )
 
             products_remove_log = [(p.get("full_name"), f"qty={p.get('quantity')}") for p in products_to_remove_enriched]
             logger.info(f"[Visualize] Products to remove: {products_remove_log}")
+            logger.info(f"[Visualize] Products to add (IDs): {products_to_add_ids}")
             logger.info(
-                f"[Visualize] Remaining products after removal: {[p.get('full_name') or p.get('name') for p in remaining_products_enriched]}"
+                f"[Visualize] Remaining products after removal (excluding new products): {[p.get('full_name') or p.get('name') for p in remaining_products_enriched]}"
             )
 
             try:
@@ -3009,16 +3026,20 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                                 p["images"] = images_by_product[p_id][:3]  # Max 3 images per product
 
                     logger.info(f"[Visualize] Step 2: Adding {len(products_to_add_enriched)} products incrementally")
-                    logger.info(
-                        f"[Visualize] Products to add: {[p.get('full_name') or p.get('name') for p in products_to_add_enriched]}"
-                    )
+                    products_to_add_log = [
+                        (p.get("full_name") or p.get("name"), f"qty={p.get('quantity', 1)}") for p in products_to_add_enriched
+                    ]
+                    logger.info(f"[Visualize] Products to add: {products_to_add_log}")
+                    logger.info(f"[Visualize] NOT passing existing_products to AI - they're already in the cleaned image")
 
                     # Step 6: Incrementally add new products to the cleaned image
-                    # Use the existing products (after removal) as context
+                    # IMPORTANT: Don't pass existing_products - the AI should just add new products
+                    # without touching anything else. Passing existing_products was causing the AI
+                    # to duplicate or re-add products that are already in the image.
                     visualization_result = await google_ai_service.generate_add_multiple_visualization(
                         room_image=cleaned_image,
                         products=products_to_add_enriched,
-                        existing_products=remaining_products_enriched,
+                        existing_products=[],  # Don't tell AI about existing products - they're already in the image
                         workflow_id=workflow_id,
                     )
 
@@ -3032,9 +3053,11 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                         context.visualization_history.append(visualization_result)
                         context.visualization_redo_stack = []
 
+                        # generate_add_multiple_visualization already returns with data URL prefix
+                        # (e.g., "data:image/png;base64,..."), so use it directly
                         return {
                             "visualization": {
-                                "rendered_image": f"data:image/jpeg;base64,{visualization_result}",
+                                "rendered_image": visualization_result,
                                 "processing_time": 0.0,
                                 "quality_metrics": {
                                     "overall_quality": 0.87,
@@ -3483,6 +3506,17 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 for p in products_for_viz:
                     has_image = bool(p.get("image_url"))
                     logger.info(f"  [ImageURL] {p.get('name')}: {'has image_url' if has_image else 'NO image_url'}")
+
+                # Debug: Verify no overlap between products to add and existing products
+                add_ids = {str(p.get("id")) for p in products_for_viz if p.get("id")}
+                existing_ids = {str(p.get("id")) for p in visualized_products if p.get("id")}
+                overlap = add_ids & existing_ids
+                if overlap:
+                    logger.error(f"[Incremental] BUG: Overlap between add and existing products! IDs: {overlap}")
+                else:
+                    logger.info(
+                        f"[Incremental] Good: No overlap between add ({len(add_ids)}) and existing ({len(existing_ids)}) products"
+                    )
 
                 current_image = await google_ai_service.generate_add_multiple_visualization(
                     room_image=base_image,  # Start with previous visualization (already has old products)
