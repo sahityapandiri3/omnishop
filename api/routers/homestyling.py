@@ -723,6 +723,20 @@ async def _generate_views_impl(session_id: str, db: AsyncSession):
         logger.error(f"Session {session_id} not found in background generation")
         return
 
+    # Double-check: if session is already completed, don't regenerate
+    if session.status == HomeStylingSessionStatus.COMPLETED:
+        logger.warning(f"Session {session_id} already completed, skipping background generation")
+        return
+
+    # Check if we already have enough views (prevents duplicates from concurrent calls)
+    max_views = session.views_count or 3
+    current_views = len(session.views) if session.views else 0
+    if current_views >= max_views:
+        logger.warning(f"Session {session_id} already has {current_views}/{max_views} views, marking as completed")
+        session.status = HomeStylingSessionStatus.COMPLETED
+        await db.commit()
+        return
+
     # Find matching curated looks WITH their products
     # STRICT style matching - only get looks that have the user's selected style
     # Also filter by budget tier if set
@@ -779,16 +793,7 @@ async def _generate_views_impl(session_id: str, db: AsyncSession):
     if user_room_image.startswith("data:"):
         user_room_image = user_room_image.split(",", 1)[1] if "," in user_room_image else user_room_image
 
-    logger.info(f"Generating {len(looks)} views for session {session_id}")
-
-    # Delete any existing views for this session to start fresh
-    existing_views_query = select(HomeStylingView).where(HomeStylingView.session_id == session_id)
-    existing_views_result = await db.execute(existing_views_query)
-    existing_views = existing_views_result.scalars().all()
-    for ev in existing_views:
-        await db.delete(ev)
-    await db.flush()
-    logger.info(f"Cleared {len(existing_views)} existing views for fresh generation")
+    logger.info(f"Generating {len(looks)} new views for session {session_id} (already have {current_views}/{max_views})")
 
     # Helper function to build products list for a look
     def build_products_for_viz(look):
