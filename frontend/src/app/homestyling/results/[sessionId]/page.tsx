@@ -125,10 +125,30 @@ export default function ResultsPage() {
           setCurrentViewNumber(completedViews);
           setTotalViews(sessionData.views_count || 1);
 
-          if (sessionData.status === 'completed' || sessionData.status === 'failed') {
+          if (sessionData.status === 'completed') {
             if (pollingInterval.current) {
               clearInterval(pollingInterval.current);
             }
+            if (timerInterval.current) {
+              clearInterval(timerInterval.current);
+            }
+            // Generation complete - redirect to purchase page
+            setGenerationStage('completed');
+            setIsGenerating(false);
+            retryCount.current = 0;
+            router.push(`/purchases/${sessionId}`);
+            return;
+          } else if (sessionData.status === 'failed') {
+            if (pollingInterval.current) {
+              clearInterval(pollingInterval.current);
+            }
+            if (timerInterval.current) {
+              clearInterval(timerInterval.current);
+            }
+            setGenerationStage('failed');
+            setError('Generation failed. Please try again.');
+            setIsGenerating(false);
+            return;
           }
 
           pollCount++;
@@ -137,22 +157,13 @@ export default function ResultsPage() {
         }
       }, 3000); // Poll every 3 seconds
 
-      // Wait for generation to complete
-      await generatePromise;
+      // Wait for generate API to return (now returns immediately with "started")
+      const generateResponse = await generatePromise;
+      console.log('Generate response:', generateResponse.data);
 
-      // Stop polling and timer
-      if (pollingInterval.current) {
-        clearInterval(pollingInterval.current);
-      }
-      if (timerInterval.current) {
-        clearInterval(timerInterval.current);
-      }
-
-      // Generation complete - redirect to purchase page
-      setGenerationStage('completed');
-      setIsGenerating(false);
-      retryCount.current = 0;
-      router.push(`/purchases/${sessionId}`);
+      // The generate endpoint now returns immediately - don't redirect yet!
+      // Continue polling until session status is 'completed'
+      // The polling interval above will handle the redirect when complete
 
     } catch (err: any) {
       console.error('Error during generation:', err);
