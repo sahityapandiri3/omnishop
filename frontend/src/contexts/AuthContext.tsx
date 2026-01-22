@@ -5,7 +5,7 @@ import { api } from '@/utils/api';
 
 // Types
 export type UserRole = 'user' | 'admin' | 'super_admin';
-export type SubscriptionTier = 'free' | 'build_your_own';
+export type SubscriptionTier = 'free' | 'build_your_own' | 'upgraded';
 
 export interface User {
   id: string;
