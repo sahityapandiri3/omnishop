@@ -2938,9 +2938,9 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 f"[Visualize] REMOVE_AND_ADD MODE: Removing {len(products_to_remove)} products, then adding {len(products_to_add)} new products"
             )
 
-            from services.google_ai_service import enrich_products_with_dimensions, load_product_dimensions
+            from services.google_ai_service import enrich_products_with_dimensions, load_product_dimensions, load_product_visual_attributes
 
-            # Step 1: Gather product IDs for dimension loading
+            # Step 1: Gather product IDs for dimension and visual attribute loading
             all_product_ids = []
             for p in products_to_remove:
                 if p.get("id"):
@@ -2953,8 +2953,10 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     all_product_ids.append(p["id"])
 
             dimensions_map = await load_product_dimensions(db, all_product_ids)
+            # Load visual attributes (color, material) for better visual identification during removal
+            visual_attrs_map = await load_product_visual_attributes(db, all_product_ids)
 
-            # Step 2: Enrich products to remove with image_url and description for visual identification
+            # Step 2: Enrich products to remove with image_url, color, material for visual identification
             products_to_remove_enriched = []
             for p in products_to_remove:
                 enriched = {
@@ -2967,7 +2969,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     "image_url": p.get("image_url"),  # Product image for visual identification by Gemini
                     "description": p.get("description", ""),  # Product description (color, material, style)
                 }
-                # Convert ID to int for dimensions lookup (might be string from frontend)
+                # Convert ID to int for dimensions/attributes lookup (might be string from frontend)
                 try:
                     int_id = int(p["id"]) if p.get("id") else None
                 except (ValueError, TypeError):
@@ -2976,6 +2978,10 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     enriched["dimensions"] = dimensions_map[int_id]
                 else:
                     enriched["dimensions"] = {}
+                # Add visual attributes (color, material) for better identification
+                if int_id and int_id in visual_attrs_map:
+                    enriched["color"] = visual_attrs_map[int_id].get("color")
+                    enriched["material"] = visual_attrs_map[int_id].get("material")
                 products_to_remove_enriched.append(enriched)
 
             # Step 3: Enrich remaining products (products that stay in the visualization)
