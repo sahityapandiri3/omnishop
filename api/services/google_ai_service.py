@@ -436,61 +436,36 @@ YOUR TASK:
         num_items_to_remove = len(products_to_remove)
         num_items_to_keep = len(remaining_products)
 
-        # Use a REMOVAL-SPECIFIC intro instead of the generic styling intro
-        return f"""You are an image inpainting tool. Your ONLY task is to REMOVE objects from images and fill the empty space with appropriate background.
+        # Use a simplified REMOVAL-ONLY prompt - do NOT list protected items (causes duplication)
+        return f"""You are a Photoshop content-aware fill tool. ERASE the specified item(s) and fill with background.
 
-*** CRITICAL: THIS IS A REMOVAL/DELETION TASK - NOT A STYLING TASK ***
+*** REMOVAL ONLY - DO NOT ADD OR DUPLICATE ANYTHING ***
 
-===============================================================
-TASK: DELETE EXACTLY {num_items_to_remove} ITEM(S) FROM IMAGE
-===============================================================
-
-[REMOVE] EXACTLY THIS/THESE {num_items_to_remove} ITEM(S) - NO MORE, NO LESS:
+REMOVE THIS/THESE {num_items_to_remove} ITEM(S):
 {removal_list}
 
-*** PROTECTED ITEMS - THESE {num_items_to_keep} ITEMS MUST STAY EXACTLY AS THEY ARE: ***
-{remaining_description}
+HOW TO IDENTIFY WHAT TO REMOVE:
+- Match by COLOR first - an ORANGE item is different from a BLACK item
+- Match by SHAPE second
+- Use the reference image(s) provided below to identify the exact item
+- If reference shows ORANGE furniture, remove the ORANGE one, not black/purple/other colors
 
-*** CRITICAL COUNTING RULE ***
-- You must remove EXACTLY {num_items_to_remove} piece(s) of furniture
-- You must keep EXACTLY {num_items_to_keep} piece(s) of furniture
-- If you remove more than {num_items_to_remove} item(s), you have FAILED
-- Count the furniture before and after - the difference should be EXACTLY {num_items_to_remove}
+RULES:
+1. ERASE only the item(s) listed above - nothing else
+2. Fill the empty space with floor/wall/background texture
+3. DO NOT DUPLICATE any furniture - no copies of sofas, lights, art, plants
+4. DO NOT ADD anything new to the image
+5. DO NOT MOVE or REARRANGE existing furniture
+6. Keep everything else EXACTLY as it appears in the original
 
-*** COLOR IS THE PRIMARY IDENTIFIER ***
-- Match items by COLOR FIRST, then shape/type
-- An ORANGE chair is NOT the same as a BLACK chair - colors must match EXACTLY
-- A PURPLE sofa is NOT the same as an ORANGE sofa
-- If the reference image shows an ORANGE item, remove the ORANGE item, not a black one
+*** CRITICAL: NO DUPLICATION ***
+- The room already has all furniture in correct positions
+- Your ONLY job is to ERASE/DELETE the specified item(s)
+- If there is 1 ceiling light, there should still be 1 ceiling light (not 2)
+- If there is 1 wall art, there should still be 1 wall art (not 2)
+- NEVER create copies of existing items
 
-MATCHING RULES - BE PRECISE:
-- ONLY remove items that match the reference image COLOR and SHAPE
-- Different COLORS mean DIFFERENT items - never remove wrong color
-- Different furniture types are DIFFERENT items (a bar cabinet is NOT a decorative item)
-- When in doubt, KEEP the item - only remove if COLOR and SHAPE match 100%
-
-WHAT YOU MUST DO:
-1. IDENTIFY the EXACT item(s) from the "REMOVE" list using the reference image
-2. DELETE/ERASE ONLY those specific item(s) - nothing else
-3. FILL the empty space with floor/wall texture (inpaint the background)
-4. VERIFY all {num_items_to_keep} protected items are still present and unchanged
-
-WHAT YOU MUST NOT DO:
-- DO NOT remove more items than listed ({num_items_to_remove} max)
-- DO NOT remove anything from the "PROTECTED ITEMS" list
-- DO NOT remove items that merely look similar - only exact matches
-- DO NOT add any new furniture
-- DO NOT rearrange existing furniture
-- DO NOT change anything except removing the specified items
-
-OUTPUT REQUIREMENTS:
-- Keep EXACT same image dimensions
-- Keep EXACT same camera angle
-- Keep EXACT same lighting
-- Only difference: EXACTLY {num_items_to_remove} item(s) are GONE, replaced with floor/wall
-- All {num_items_to_keep} protected items must be UNCHANGED
-
-Think of this as ERASING furniture and painting over with the background, like using Photoshop's content-aware fill.
+OUTPUT: Same image with ONLY the specified item(s) erased and background filled in.
 """
 
     @staticmethod
