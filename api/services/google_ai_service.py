@@ -457,11 +457,17 @@ TASK: DELETE EXACTLY {num_items_to_remove} ITEM(S) FROM IMAGE
 - If you remove more than {num_items_to_remove} item(s), you have FAILED
 - Count the furniture before and after - the difference should be EXACTLY {num_items_to_remove}
 
+*** COLOR IS THE PRIMARY IDENTIFIER ***
+- Match items by COLOR FIRST, then shape/type
+- An ORANGE chair is NOT the same as a BLACK chair - colors must match EXACTLY
+- A PURPLE sofa is NOT the same as an ORANGE sofa
+- If the reference image shows an ORANGE item, remove the ORANGE item, not a black one
+
 MATCHING RULES - BE PRECISE:
-- ONLY remove items that match the reference image provided (if any)
+- ONLY remove items that match the reference image COLOR and SHAPE
+- Different COLORS mean DIFFERENT items - never remove wrong color
 - Different furniture types are DIFFERENT items (a bar cabinet is NOT a decorative item)
-- A cabinet is NOT the same as a decorative piece, lamp, or artwork
-- When in doubt, KEEP the item - only remove if you are 100% certain it matches
+- When in doubt, KEEP the item - only remove if COLOR and SHAPE match 100%
 
 WHAT YOU MUST DO:
 1. IDENTIFY the EXACT item(s) from the "REMOVE" list using the reference image
@@ -2490,25 +2496,31 @@ Everything outside this area must remain IDENTICAL to the input image."""
             # Start with prompt and room image
             contents = [prompt, pil_image]
 
-            # Add ONE reference image for the first product to remove (Phase 1 - test approach)
-            # This helps Gemini visually identify what to remove instead of guessing from text only
-            if products_to_remove and products_to_remove[0].get("image_url"):
-                try:
-                    first_product = products_to_remove[0]
-                    product_name = first_product.get("full_name") or first_product.get("name", "item")
-                    ref_image_base64 = await self._download_image(first_product["image_url"])
-                    if ref_image_base64:
-                        ref_pil = Image.open(io.BytesIO(base64.b64decode(ref_image_base64)))
-                        if ref_pil.mode != "RGB":
-                            ref_pil = ref_pil.convert("RGB")
-                        # Clear label telling Gemini what this image is
-                        label = f"\n\n[REFERENCE IMAGE] This is what '{product_name}' looks like - FIND and REMOVE this exact item from the room above:"
-                        contents.extend([label, ref_pil])
-                        logger.info(f"[RemoveProducts] Added reference image for '{product_name}'")
-                except Exception as e:
-                    logger.warning(f"[RemoveProducts] Failed to download reference image: {e}")
+            # Add reference images for ALL products to remove with clear color-based labels
+            # This helps Gemini visually match what to remove instead of guessing from text
+            ref_images_added = 0
+            for idx, product in enumerate(products_to_remove):
+                if product.get("image_url"):
+                    try:
+                        product_name = product.get("full_name") or product.get("name", "item")
+                        color = product.get("color", "")
+                        color_hint = f" (COLOR: {color})" if color else ""
 
-            logger.info(f"[RemoveProducts] Sending prompt + room image + {len(contents) - 2} reference image(s)")
+                        ref_image_base64 = await self._download_image(product["image_url"])
+                        if ref_image_base64:
+                            ref_pil = Image.open(io.BytesIO(base64.b64decode(ref_image_base64)))
+                            if ref_pil.mode != "RGB":
+                                ref_pil = ref_pil.convert("RGB")
+
+                            # Very explicit label with color emphasis
+                            label = f"\n\n=== REMOVE THIS ITEM #{idx + 1} ===\nProduct: '{product_name}'{color_hint}\nLook at the COLOR and SHAPE. Find this EXACT item in the room image and ERASE it:"
+                            contents.extend([label, ref_pil])
+                            ref_images_added += 1
+                            logger.info(f"[RemoveProducts] Added reference image {idx + 1} for '{product_name}'{color_hint}")
+                    except Exception as e:
+                        logger.warning(f"[RemoveProducts] Failed to download reference image for {product.get('name')}: {e}")
+
+            logger.info(f"[RemoveProducts] Sending prompt + room image + {ref_images_added} reference image(s)")
 
             for attempt in range(max_retries):
                 try:
