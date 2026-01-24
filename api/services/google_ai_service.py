@@ -366,7 +366,7 @@ YOUR TASK:
             products_to_remove: Products being removed (with name, quantity, dimensions)
             remaining_products: Products that should stay (with dimensions for reference)
         """
-        # Format removal list with furniture type for better identification
+        # Format removal list with furniture type and description for better identification
         removal_lines = []
         for product in products_to_remove:
             name = product.get("full_name") or product.get("name", "furniture item")
@@ -391,10 +391,30 @@ YOUR TASK:
             else:
                 type_hint = " [TYPE: small decorative item / table decor]"
 
+            # Build visual hints from color and material attributes
+            visual_hints = []
+            if product.get("color"):
+                visual_hints.append(f"Color: {product['color']}")
+            if product.get("material"):
+                visual_hints.append(f"Material: {product['material']}")
+
+            # Also include description for additional visual identification
+            description = product.get("description", "")
+            if description:
+                # Truncate and clean up description
+                desc_clean = description[:100].strip()
+                if desc_clean:
+                    visual_hints.append(f"Description: {desc_clean}")
+
+            # Format visual hint string
+            visual_str = ""
+            if visual_hints:
+                visual_str = f"\n    Visual Appearance: {' | '.join(visual_hints)}"
+
             if qty > 1:
-                removal_lines.append(f'- "{name}"{type_hint}{dim_str} (remove {qty} copies)')
+                removal_lines.append(f'- "{name}"{type_hint}{dim_str} (remove {qty} copies){visual_str}')
             else:
-                removal_lines.append(f'- "{name}"{type_hint}{dim_str}')
+                removal_lines.append(f'- "{name}"{type_hint}{dim_str}{visual_str}')
 
         removal_list = "\n".join(removal_lines)
 
@@ -612,6 +632,59 @@ async def load_product_dimensions(db, product_ids: List[int]) -> Dict[int, Dict[
             pass
 
     return dimensions
+
+
+async def load_product_visual_attributes(db, product_ids: List[int]) -> Dict[int, Dict[str, str]]:
+    """
+    Load visual attributes (color, material) for products from ProductAttribute table.
+
+    These attributes help Gemini visually identify products for removal operations.
+
+    Args:
+        db: Database session
+        product_ids: List of product IDs to load attributes for
+
+    Returns:
+        Dict mapping product_id -> {"color": str, "material": str}
+    """
+    from sqlalchemy import select
+
+    from database.models import ProductAttribute
+
+    if not product_ids:
+        return {}
+
+    # Convert all product IDs to integers (they might be strings from frontend)
+    int_product_ids = []
+    for pid in product_ids:
+        try:
+            int_product_ids.append(int(pid))
+        except (ValueError, TypeError):
+            pass
+
+    if not int_product_ids:
+        return {}
+
+    visual_attrs = {pid: {} for pid in int_product_ids}
+
+    # Query for color and material attributes
+    result = await db.execute(
+        select(ProductAttribute).where(
+            ProductAttribute.product_id.in_(int_product_ids),
+            ProductAttribute.attribute_name.in_(["color_primary", "color", "material", "finish"]),
+        )
+    )
+    attributes = result.scalars().all()
+
+    for attr in attributes:
+        attr_name = attr.attribute_name.lower()
+        # Prioritize color_primary over color, material over finish
+        if "color" in attr_name and "color" not in visual_attrs[attr.product_id]:
+            visual_attrs[attr.product_id]["color"] = attr.attribute_value
+        elif attr_name in ("material", "finish") and "material" not in visual_attrs[attr.product_id]:
+            visual_attrs[attr.product_id]["material"] = attr.attribute_value
+
+    return visual_attrs
 
 
 def enrich_products_with_dimensions(
@@ -2414,11 +2487,28 @@ Everything outside this area must remain IDENTICAL to the input image."""
 
             model = "gemini-3-pro-image-preview"
 
-            # Simple contents: just prompt and room image
-            # Reference images were confusing Gemini and causing it to remove wrong items
+            # Start with prompt and room image
             contents = [prompt, pil_image]
 
-            logger.info(f"[RemoveProducts] Sending prompt + room image (no reference images)")
+            # Add ONE reference image for the first product to remove (Phase 1 - test approach)
+            # This helps Gemini visually identify what to remove instead of guessing from text only
+            if products_to_remove and products_to_remove[0].get("image_url"):
+                try:
+                    first_product = products_to_remove[0]
+                    product_name = first_product.get("full_name") or first_product.get("name", "item")
+                    ref_image_base64 = await self._download_image(first_product["image_url"])
+                    if ref_image_base64:
+                        ref_pil = Image.open(io.BytesIO(base64.b64decode(ref_image_base64)))
+                        if ref_pil.mode != "RGB":
+                            ref_pil = ref_pil.convert("RGB")
+                        # Clear label telling Gemini what this image is
+                        label = f"\n\n[REFERENCE IMAGE] This is what '{product_name}' looks like - FIND and REMOVE this exact item from the room above:"
+                        contents.extend([label, ref_pil])
+                        logger.info(f"[RemoveProducts] Added reference image for '{product_name}'")
+                except Exception as e:
+                    logger.warning(f"[RemoveProducts] Failed to download reference image: {e}")
+
+            logger.info(f"[RemoveProducts] Sending prompt + room image + {len(contents) - 2} reference image(s)")
 
             for attempt in range(max_retries):
                 try:

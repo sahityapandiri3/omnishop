@@ -2840,8 +2840,12 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         if removal_mode and products_to_remove and workflow_type == "PRODUCT_REMOVAL":
             logger.info(f"[Visualize] REMOVAL MODE: Removing {len(products_to_remove)} products from visualization")
 
-            # Load dimensions for products to remove and remaining products
-            from services.google_ai_service import enrich_products_with_dimensions, load_product_dimensions
+            # Load dimensions and visual attributes for products to remove and remaining products
+            from services.google_ai_service import (
+                enrich_products_with_dimensions,
+                load_product_dimensions,
+                load_product_visual_attributes,
+            )
 
             all_product_ids = []
             for p in products_to_remove:
@@ -2852,8 +2856,10 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     all_product_ids.append(p["id"])
 
             dimensions_map = await load_product_dimensions(db, all_product_ids)
+            # Load visual attributes (color, material) for better visual identification
+            visual_attrs_map = await load_product_visual_attributes(db, all_product_ids)
 
-            # Enrich products to remove with dimensions, quantity info, and image_url
+            # Enrich products to remove with dimensions, visual attributes, quantity info, and image_url
             products_to_remove_enriched = []
             for p in products_to_remove:
                 enriched = {
@@ -2864,7 +2870,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     "furniture_type": p.get("furniture_type", "furniture"),
                     "image_url": p.get("image_url"),  # Product image for visual identification by Gemini
                 }
-                # Convert ID to int for dimensions lookup (might be string from frontend)
+                # Convert ID to int for dimensions/attributes lookup (might be string from frontend)
                 try:
                     int_id = int(p["id"]) if p.get("id") else None
                 except (ValueError, TypeError):
@@ -2873,6 +2879,10 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     enriched["dimensions"] = dimensions_map[int_id]
                 else:
                     enriched["dimensions"] = {}
+                # Add visual attributes (color, material) for better identification
+                if int_id and int_id in visual_attrs_map:
+                    enriched["color"] = visual_attrs_map[int_id].get("color")
+                    enriched["material"] = visual_attrs_map[int_id].get("material")
                 products_to_remove_enriched.append(enriched)
 
             # Enrich remaining products with dimensions
@@ -2944,7 +2954,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
 
             dimensions_map = await load_product_dimensions(db, all_product_ids)
 
-            # Step 2: Enrich products to remove with image_url for visual identification
+            # Step 2: Enrich products to remove with image_url and description for visual identification
             products_to_remove_enriched = []
             for p in products_to_remove:
                 enriched = {
@@ -2952,8 +2962,10 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     "name": p.get("name"),
                     "full_name": p.get("full_name") or p.get("name"),
                     "quantity": p.get("remove_count", 1),
-                    "furniture_type": p.get("furniture_type", "furniture"),
+                    "furniture_type": p.get("furniture_type") or p.get("product_type", "furniture"),
+                    "product_type": p.get("product_type") or p.get("furniture_type", "furniture"),
                     "image_url": p.get("image_url"),  # Product image for visual identification by Gemini
+                    "description": p.get("description", ""),  # Product description (color, material, style)
                 }
                 # Convert ID to int for dimensions lookup (might be string from frontend)
                 try:
