@@ -2466,6 +2466,12 @@ Everything outside this area must remain IDENTICAL to the input image."""
 - The result should look like the room was photographed without the removed items ever being there.
 """
 
+            # LOG THE FULL PROMPT FOR DEBUGGING
+            logger.info(f"[RemoveProducts] ========== FULL PROMPT START ==========")
+            logger.info(f"[RemoveProducts] Products to remove data: {products_to_remove}")
+            logger.info(f"[RemoveProducts] PROMPT:\n{prompt}")
+            logger.info(f"[RemoveProducts] ========== FULL PROMPT END ==========")
+
             model = "gemini-3-pro-image-preview"
 
             # Start with prompt and room image
@@ -2474,6 +2480,7 @@ Everything outside this area must remain IDENTICAL to the input image."""
             # Add reference images for ALL products to remove with clear color-based labels
             # This helps Gemini visually match what to remove instead of guessing from text
             ref_images_added = 0
+            ref_labels = []
             for idx, product in enumerate(products_to_remove):
                 if product.get("image_url"):
                     try:
@@ -2491,10 +2498,12 @@ Everything outside this area must remain IDENTICAL to the input image."""
                             label = f"\n\n=== REMOVE THIS ITEM #{idx + 1} ===\nProduct: '{product_name}'{color_hint}\nLook at the COLOR and SHAPE. Find this EXACT item in the room image and ERASE it:"
                             contents.extend([label, ref_pil])
                             ref_images_added += 1
+                            ref_labels.append(label)
                             logger.info(f"[RemoveProducts] Added reference image {idx + 1} for '{product_name}'{color_hint}")
                     except Exception as e:
                         logger.warning(f"[RemoveProducts] Failed to download reference image for {product.get('name')}: {e}")
 
+            logger.info(f"[RemoveProducts] Reference image labels: {ref_labels}")
             logger.info(f"[RemoveProducts] Sending prompt + room image + {ref_images_added} reference image(s)")
 
             for attempt in range(max_retries):
