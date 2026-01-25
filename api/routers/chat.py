@@ -2938,7 +2938,11 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 f"[Visualize] REMOVE_AND_ADD MODE: Removing {len(products_to_remove)} products, then adding {len(products_to_add)} new products"
             )
 
-            from services.google_ai_service import enrich_products_with_dimensions, load_product_dimensions, load_product_visual_attributes
+            from services.google_ai_service import (
+                enrich_products_with_dimensions,
+                load_product_dimensions,
+                load_product_visual_attributes,
+            )
 
             # Step 1: Gather product IDs for dimension and visual attribute loading
             all_product_ids = []
@@ -6351,11 +6355,22 @@ async def get_paginated_products(
             .where(Product.is_available.is_(True))
         )
 
-        # Apply category filter using keywords
+        # Apply category filter using keywords with MATCH PRIORITY
+        # Products with exact category keyword in name rank higher than partial matches
+        match_priority_expr = None
         if category_keywords:
             category_conditions = []
-            for keyword in category_keywords:
+            # Build priority cases: first keyword gets priority 0, second gets 1, etc.
+            # This ensures "accent chair" matches rank before "armchair" matches
+            priority_cases = []
+            for idx, keyword in enumerate(category_keywords):
                 category_conditions.append(Product.name.ilike(f"%{keyword}%"))
+                # Use case for priority - lower number = higher priority
+                priority_cases.append((Product.name.ilike(f"%{keyword}%"), idx))
+
+            # match_priority: 0 = best match (first keyword), higher = worse match
+            # Default to 999 for no match (shouldn't happen due to filter)
+            match_priority_expr = case(*priority_cases, else_=999)
             query = query.where(or_(*category_conditions))
 
         # Apply budget filters
@@ -6381,8 +6396,12 @@ async def get_paginated_products(
                 )
             )
 
-        # Order by score (ascending = best first), then by id for deterministic ordering
-        query = query.order_by(score_expr.asc(), Product.id.asc())
+        # Order by match priority first (if category search), then score, then id for deterministic ordering
+        # match_priority ensures "accent chair" matches appear before "armchair" matches
+        if match_priority_expr is not None:
+            query = query.order_by(match_priority_expr.asc(), score_expr.asc(), Product.id.asc())
+        else:
+            query = query.order_by(score_expr.asc(), Product.id.asc())
 
         # Fetch one extra to check if there are more pages
         query = query.limit(request.page_size + 1)
@@ -6471,9 +6490,11 @@ def _get_category_keywords(category_id: str) -> List[str]:
     This is a simplified version of the category mapping used in _get_category_based_recommendations.
     """
     # Common category keyword mappings
+    # IMPORTANT: More specific keywords should come FIRST in the list for priority matching
     category_keyword_map = {
         "sofas": ["sofa", "couch", "sectional", "loveseat", "settee"],
         "chairs": ["chair", "armchair", "accent chair", "lounge chair"],
+        "accent_chairs": ["accent chair", "lounge chair", "armchair", "club chair", "wing chair", "occasional chair"],
         "coffee_tables": ["coffee table", "center table"],
         "side_tables": ["side table", "end table", "accent table"],
         "dining_tables": ["dining table"],
@@ -6483,20 +6504,24 @@ def _get_category_keywords(category_id: str) -> List[str]:
         "dressers": ["dresser", "chest of drawers"],
         "nightstands": ["nightstand", "bedside table"],
         "desks": ["desk", "writing desk", "computer desk"],
-        "office_chairs": ["office chair", "desk chair", "ergonomic chair"],
+        "office_chairs": ["office chair", "desk chair", "ergonomic chair", "task chair"],
         "bookcases": ["bookcase", "bookshelf", "shelving"],
         "tv_stands": ["tv stand", "tv unit", "media console", "entertainment center"],
         "rugs": ["rug", "carpet", "area rug"],
         "curtains": ["curtain", "drape", "window treatment"],
         "lighting": ["lamp", "light", "chandelier", "pendant", "sconce"],
+        "floor_lamps": ["floor lamp"],
+        "table_lamps": ["table lamp", "desk lamp"],
+        "chandeliers": ["chandelier", "pendant light", "hanging light"],
         "mirrors": ["mirror", "wall mirror"],
         "artwork": ["art", "painting", "print", "poster", "wall art"],
         "wallpapers": ["wallpaper", "wallpapers", "wall paper", "wall covering"],
-        "planters": ["planter", "pot", "vase"],
+        "planters": ["planter", "pot", "vase", "plant pot"],
         "decor_accents": ["decor", "accent", "decorative", "ornament"],
         "cushions": ["cushion", "pillow", "throw pillow"],
         "throws": ["throw", "blanket"],
         "storage": ["storage", "basket", "bin", "organizer"],
+        "benches": ["bench", "ottoman", "settee bench"],
     }
 
     # Return keywords for the category, or use the category_id itself as a keyword
