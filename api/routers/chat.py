@@ -2773,12 +2773,15 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         logger.info(
             f"[Visualize] Received request with curated_look_id={curated_look_id}, project_id={project_id}, session_id={session_id}, removal_mode={removal_mode}, visualized_products={len(visualized_products)}"
         )
-        # Debug: Log products_to_add details
+        # Debug: Log products_to_add details with quantities
         logger.info(
             f"[Visualize] products_to_remove: {len(products_to_remove)} items, products_to_add: {len(products_to_add)} items"
         )
         if products_to_add:
             logger.info(f"[Visualize] products_to_add details: {[p.get('name') or p.get('id') for p in products_to_add]}")
+            # DEBUG: Log each product with its quantity
+            for idx, p in enumerate(products_to_add):
+                logger.info(f"[Visualize] products_to_add[{idx}]: name='{p.get('name')}', id={p.get('id')}, quantity={p.get('quantity', 1)}")
 
         # Workflow detection for centralized prompts
         def detect_workflow_type() -> str:
@@ -3160,6 +3163,9 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             logger.info(
                 f"Incremental mode: Using frontend-provided base image. " f"Products to add: {len(new_products_to_visualize)}"
             )
+            # DEBUG: Log each product with quantity for incremental add
+            for idx, p in enumerate(new_products_to_visualize):
+                logger.info(f"[Incremental] product[{idx}]: name='{p.get('name')}', id={p.get('id')}, quantity={p.get('quantity', 1)}")
 
             # If no products to visualize, return the provided base image
             if not new_products_to_visualize:

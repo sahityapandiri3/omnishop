@@ -491,19 +491,34 @@ export default function CanvasPanel({
     const quantityIncreases: { product: any; delta: number }[] = [];
     const quantityDecreases: { product: any; delta: number }[] = [];
 
-    products.forEach(p => {
-      if (effectiveVisualizedIds.has(String(p.id))) {
-        const currentQty = p.quantity || 1;
-        const visualizedQty = visualizedQuantities.get(String(p.id)) || 1;
-        const delta = currentQty - visualizedQty;
+    // DEBUG: Log quantity comparison for all products
+    console.log('[CanvasPanel] Checking quantity changes for', products.length, 'products');
+    console.log('[CanvasPanel] visualizedQuantities map size:', visualizedQuantities.size);
+    console.log('[CanvasPanel] visualizedQuantities entries:', Array.from(visualizedQuantities.entries()));
 
+    products.forEach(p => {
+      const productIdStr = String(p.id);
+      const isInVisualized = effectiveVisualizedIds.has(productIdStr);
+      const currentQty = p.quantity || 1;
+      const visualizedQty = visualizedQuantities.get(productIdStr) || 1;
+      const delta = currentQty - visualizedQty;
+
+      // DEBUG: Log each product's quantity comparison
+      console.log(`[CanvasPanel] Product "${p.name}" (id=${productIdStr}): inVisualized=${isInVisualized}, current=${currentQty}, visualized=${visualizedQty}, delta=${delta}`);
+
+      if (isInVisualized) {
         if (delta > 0) {
           quantityIncreases.push({ product: p, delta });
+          console.log(`[CanvasPanel] -> QUANTITY INCREASE detected: +${delta}`);
         } else if (delta < 0) {
           quantityDecreases.push({ product: p, delta: Math.abs(delta) });
+          console.log(`[CanvasPanel] -> QUANTITY DECREASE detected: -${Math.abs(delta)}`);
         }
       }
     });
+
+    console.log(`[CanvasPanel] Total quantity increases detected: ${quantityIncreases.length}`);
+    console.log(`[CanvasPanel] Total quantity decreases detected: ${quantityDecreases.length}`);
 
     // Convert quantity increases to product entries for adding (same format as newProducts)
     const quantityIncreaseProducts = quantityIncreases.map(qi => ({
@@ -755,6 +770,13 @@ export default function CanvasPanel({
         productsToVisualize = changeInfo.newProducts!;
         isIncremental = true;
         console.log(`[CanvasPanel] Incremental visualization: adding ${productsToVisualize.length} new products`);
+        // DEBUG: Log all products being added with quantities
+        console.log('[CanvasPanel] Products to add (detailed):', productsToVisualize.map(p => ({
+          id: p.id,
+          name: p.name,
+          quantity: p.quantity || 1,
+          isQuantityIncrease: (p as any)._isQuantityIncrease || false
+        })));
       } else if (changeInfo.type === 'remove_and_add') {
         // OPTIMIZATION: Two-step workflow - remove then add incrementally
         // This avoids full reset when products are both removed and added
@@ -764,6 +786,13 @@ export default function CanvasPanel({
         productsToAdd = changeInfo.newProducts || [];
         removalMode = true;
         console.log(`[CanvasPanel] Remove and add: removing ${productsToRemove.length}, adding ${productsToAdd.length} products`);
+        // DEBUG: Log all products being added with quantities
+        console.log('[CanvasPanel] Products to add (detailed):', productsToAdd.map(p => ({
+          id: p.id,
+          name: p.name,
+          quantity: p.quantity || 1,
+          isQuantityIncrease: (p as any)._isQuantityIncrease || false
+        })));
       } else if (changeInfo.type === 'removal') {
         // Simple removal: use current visualization and remove specific products
         baseImage = visualizationResult!;
