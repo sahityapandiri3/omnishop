@@ -3026,7 +3026,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                         result = await db.execute(
                             select(ProductImage)
                             .where(ProductImage.product_id.in_(add_product_ids))
-                            .order_by(ProductImage.product_id, ProductImage.image_order)
+                            .order_by(ProductImage.product_id, ProductImage.id)
                         )
                         product_images = result.scalars().all()
 
