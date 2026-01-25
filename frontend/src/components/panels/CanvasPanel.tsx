@@ -485,43 +485,9 @@ export default function CanvasPanel({
     // Check for additions (products in canvas but not yet visualized)
     const newProducts = products.filter(p => !effectiveVisualizedIds.has(String(p.id)));
 
-    // OPTIMIZATION: If products are both removed AND added, use remove_and_add workflow
-    // This avoids full reset and instead: (1) removes products (2) adds new ones incrementally
-    if (removedProductIds.length > 0 && newProducts.length > 0 && visualizationResult) {
-      // Get full product info for removed products from visualizedProducts state
-      // CRITICAL: Must use visualizedProducts, NOT products - removed items aren't in products anymore!
-      const removedProductsInfo = removedProductIds.map(id => {
-        const product = visualizedProducts.find(p => String(p.id) === id);
-        return product || { id, name: `Product ${id}` };
-      });
-      console.log('[CanvasPanel] Detected removal AND addition, will use remove_and_add workflow');
-      console.log('[CanvasPanel] Removed:', removedProductsInfo.map(p => p.name || p.id), 'Added:', newProducts.map(p => p.name || p.id));
-      return {
-        type: 'remove_and_add',
-        removedProducts: removedProductsInfo,
-        newProducts,
-        reason: 'products_removed_and_added'
-      };
-    }
-
-    // Simple removal only (no additions) - use removal mode to erase products
-    if (removedProductIds.length > 0 && visualizationResult) {
-      // Get full product info for removed products from visualizedProducts state
-      const removedProductsInfo = removedProductIds.map(id => {
-        const product = visualizedProducts.find(p => String(p.id) === id);
-        return product || { id, name: `Product ${id}` };
-      });
-      console.log('[CanvasPanel] Detected removal only, will use removal mode');
-      console.log('[CanvasPanel] Products to remove:', removedProductsInfo.map(p => p.name || p.id));
-      return {
-        type: 'removal',
-        removedProducts: removedProductsInfo,
-        remainingProducts: products,
-        reason: 'products_removed'
-      };
-    }
-
-    // Check for quantity changes - handle incrementally instead of full reset
+    // CRITICAL FIX: Check for quantity changes BEFORE removal checks
+    // Otherwise, if user removes a product AND increases quantity of another,
+    // the quantity increase is silently ignored (the removal check returns early)
     const quantityIncreases: { product: any; delta: number }[] = [];
     const quantityDecreases: { product: any; delta: number }[] = [];
 
@@ -539,16 +505,52 @@ export default function CanvasPanel({
       }
     });
 
-    // Handle quantity increases incrementally - only add the new copies
-    if (quantityIncreases.length > 0 && quantityDecreases.length === 0) {
-      console.log('[CanvasPanel] Detected quantity increase only, will add delta copies incrementally');
-      console.log('[CanvasPanel] Quantity increases:', quantityIncreases.map(q =>
-        `${q.product.name}: +${q.delta} (${visualizedQuantities.get(String(q.product.id)) || 1} -> ${q.product.quantity})`
-      ));
+    // Convert quantity increases to product entries for adding (same format as newProducts)
+    const quantityIncreaseProducts = quantityIncreases.map(qi => ({
+      ...qi.product,
+      quantity: qi.delta, // Only the delta quantity
+      name: `${qi.product.name} (adding ${qi.delta} more)`,
+      _isQuantityIncrease: true
+    }));
+
+    // Combine new products AND quantity increases for the "add" part of any operation
+    const allProductsToAdd = [...newProducts, ...quantityIncreaseProducts];
+
+    // OPTIMIZATION: If products are both removed AND added (including quantity increases), use remove_and_add workflow
+    // This avoids full reset and instead: (1) removes products (2) adds new ones incrementally
+    if (removedProductIds.length > 0 && allProductsToAdd.length > 0 && visualizationResult) {
+      // Get full product info for removed products from visualizedProducts state
+      // CRITICAL: Must use visualizedProducts, NOT products - removed items aren't in products anymore!
+      const removedProductsInfo = removedProductIds.map(id => {
+        const product = visualizedProducts.find(p => String(p.id) === id);
+        return product || { id, name: `Product ${id}` };
+      });
+      console.log('[CanvasPanel] Detected removal AND addition (including quantity increases), will use remove_and_add workflow');
+      console.log('[CanvasPanel] Removed:', removedProductsInfo.map(p => p.name || p.id));
+      console.log('[CanvasPanel] New products:', newProducts.map(p => p.name || p.id));
+      console.log('[CanvasPanel] Quantity increases:', quantityIncreases.map(q => `${q.product.name}: +${q.delta}`));
       return {
-        type: 'quantity_increase',
-        quantityDeltas: quantityIncreases,
-        reason: 'quantity_increased'
+        type: 'remove_and_add',
+        removedProducts: removedProductsInfo,
+        newProducts: allProductsToAdd, // Include both new products AND quantity increases
+        reason: 'products_removed_and_added'
+      };
+    }
+
+    // Simple removal only (no additions, no quantity increases) - use removal mode to erase products
+    if (removedProductIds.length > 0 && visualizationResult) {
+      // Get full product info for removed products from visualizedProducts state
+      const removedProductsInfo = removedProductIds.map(id => {
+        const product = visualizedProducts.find(p => String(p.id) === id);
+        return product || { id, name: `Product ${id}` };
+      });
+      console.log('[CanvasPanel] Detected removal only, will use removal mode');
+      console.log('[CanvasPanel] Products to remove:', removedProductsInfo.map(p => p.name || p.id));
+      return {
+        type: 'removal',
+        removedProducts: removedProductsInfo,
+        remainingProducts: products,
+        reason: 'products_removed'
       };
     }
 
@@ -571,10 +573,23 @@ export default function CanvasPanel({
       return { type: 'reset', reason: 'mixed_quantity_changes' };
     }
 
-    // Simple addition only (no removals) - use incremental
-    if (newProducts.length > 0 && effectiveVisualizedIds.size > 0) {
-      console.log('[CanvasPanel] Detected additions only, will use incremental visualization');
-      return { type: 'additive', newProducts };
+    // Handle additions: new products AND/OR quantity increases (no removals, no decreases)
+    // This unified case handles:
+    // - Only new products
+    // - Only quantity increases
+    // - Both new products AND quantity increases
+    if (allProductsToAdd.length > 0 && effectiveVisualizedIds.size > 0) {
+      const reasons = [];
+      if (quantityIncreases.length > 0) reasons.push(`${quantityIncreases.length} quantity increases`);
+      if (newProducts.length > 0) reasons.push(`${newProducts.length} new products`);
+      console.log('[CanvasPanel] Detected additions (no removals), will use incremental visualization');
+      console.log('[CanvasPanel] Adding:', reasons.join(' + '));
+      if (quantityIncreases.length > 0) {
+        console.log('[CanvasPanel] Quantity increases:', quantityIncreases.map(q =>
+          `${q.product.name}: +${q.delta} (${visualizedQuantities.get(String(q.product.id)) || 1} -> ${q.product.quantity})`
+        ));
+      }
+      return { type: 'additive', newProducts: allProductsToAdd, reason: reasons.join('_and_') };
     }
 
     // Initial visualization (nothing visualized yet AND no existing visualization)
@@ -756,24 +771,6 @@ export default function CanvasPanel({
         productsToRemove = changeInfo.removedProducts || [];
         removalMode = true;
         console.log(`[CanvasPanel] Removal mode: removing ${productsToRemove.length} products`);
-      } else if (changeInfo.type === 'quantity_increase') {
-        // OPTIMIZED: Only add the delta copies incrementally
-        // Instead of re-visualizing everything, just add the new copies
-        baseImage = visualizationResult!;
-        isIncremental = true;
-
-        // Create products to add with only the DELTA quantity
-        // E.g., if going from 2 to 4, we only add 2 more copies
-        productsToVisualize = changeInfo.quantityDeltas!.map((qd: { product: any; delta: number }) => ({
-          ...qd.product,
-          quantity: qd.delta,  // Only the delta quantity
-          name: `${qd.product.name} (adding ${qd.delta} more)`,  // Help AI understand this is additional
-        }));
-
-        console.log(`[CanvasPanel] Quantity increase: adding ${changeInfo.quantityDeltas!.length} product types incrementally`);
-        changeInfo.quantityDeltas!.forEach((qd: { product: any; delta: number }) => {
-          console.log(`  - ${qd.product.name}: +${qd.delta} copies`);
-        });
       } else if (changeInfo.type === 'quantity_decrease') {
         // Remove extra copies using removal mode
         baseImage = visualizationResult!;
