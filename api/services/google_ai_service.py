@@ -393,8 +393,21 @@ YOUR TASK:
 
             # Build visual hints from color and material attributes
             visual_hints = []
-            if product.get("color"):
-                visual_hints.append(f"Color: {product['color']}")
+            color_val = product.get("color")
+            if color_val:
+                # Clean up color - it might be a stringified list like "['Red', 'Blue']"
+                # Extract just the first/primary color if so
+                if isinstance(color_val, str) and color_val.startswith("["):
+                    try:
+                        import ast
+                        color_list = ast.literal_eval(color_val)
+                        if color_list and len(color_list) > 0:
+                            color_val = color_list[0]  # Use first color option
+                    except:
+                        pass  # Keep original if parsing fails
+                # Only add if it's a simple color value now
+                if color_val and not color_val.startswith("["):
+                    visual_hints.append(f"Color: {color_val}")
             if product.get("material"):
                 visual_hints.append(f"Material: {product['material']}")
 
@@ -437,35 +450,36 @@ YOUR TASK:
         num_items_to_keep = len(remaining_products)
 
         # Use a simplified REMOVAL-ONLY prompt - do NOT list protected items (causes duplication)
-        return f"""You are a Photoshop content-aware fill tool. ERASE the specified item(s) and fill with background.
+        return f"""You are an image editor performing content-aware fill. Your task is to COMPLETELY ERASE and REMOVE a piece of furniture from this room image.
 
-*** REMOVAL ONLY - DO NOT ADD OR DUPLICATE ANYTHING ***
+*** IMPORTANT: LOOK AT THE REFERENCE IMAGE BELOW ***
+A reference image of the item to remove will be provided after the room image.
+FIND the furniture in the room that matches the reference image and ERASE IT COMPLETELY.
 
-REMOVE THIS/THESE {num_items_to_remove} ITEM(S):
+ITEM TO REMOVE:
 {removal_list}
 
-HOW TO IDENTIFY WHAT TO REMOVE:
-- Match by COLOR first - an ORANGE item is different from a BLACK item
-- Match by SHAPE second
-- Use the reference image(s) provided below to identify the exact item
-- If reference shows ORANGE furniture, remove the ORANGE one, not black/purple/other colors
+*** HOW TO FIND THE ITEM ***
+1. LOOK at the reference image provided below - it shows EXACTLY what the item looks like
+2. SCAN the room image for furniture matching the reference image's shape and color
+3. The item is likely a chair/sofa on one side of the room - LOOK CAREFULLY for it
+4. Once found, ERASE it completely and fill with floor/wall texture
 
-RULES:
-1. ERASE only the item(s) listed above - nothing else
-2. Fill the empty space with floor/wall/background texture
-3. DO NOT DUPLICATE any furniture - no copies of sofas, lights, art, plants
-4. DO NOT ADD anything new to the image
-5. DO NOT MOVE or REARRANGE existing furniture
-6. Keep everything else EXACTLY as it appears in the original
+*** REMOVAL INSTRUCTIONS ***
+- COMPLETELY REMOVE the item - it should be GONE from the output image
+- Fill the empty space with appropriate floor/wall/background texture
+- DO NOT leave any trace of the removed item
+- DO NOT move or change any OTHER furniture
+- DO NOT duplicate any existing furniture
 
-*** CRITICAL: NO DUPLICATION ***
-- The room already has all furniture in correct positions
-- Your ONLY job is to ERASE/DELETE the specified item(s)
-- If there is 1 ceiling light, there should still be 1 ceiling light (not 2)
-- If there is 1 wall art, there should still be 1 wall art (not 2)
-- NEVER create copies of existing items
+*** VERIFICATION ***
+Before outputting, verify:
+- The specified item is COMPLETELY GONE (not just faded or partially visible)
+- All OTHER furniture remains EXACTLY as before
+- No furniture has been duplicated
+- The empty space is filled naturally with floor/wall texture
 
-OUTPUT: Same image with ONLY the specified item(s) erased and background filled in.
+OUTPUT: The same room image with the specified item REMOVED and its space filled with background.
 """
 
     @staticmethod
@@ -2494,8 +2508,8 @@ Everything outside this area must remain IDENTICAL to the input image."""
                             if ref_pil.mode != "RGB":
                                 ref_pil = ref_pil.convert("RGB")
 
-                            # Very explicit label with color emphasis
-                            label = f"\n\n=== REMOVE THIS ITEM #{idx + 1} ===\nProduct: '{product_name}'{color_hint}\nLook at the COLOR and SHAPE. Find this EXACT item in the room image and ERASE it:"
+                            # Very explicit label emphasizing this is the item to DELETE
+                            label = f"\n\n{'='*60}\nREFERENCE IMAGE - THIS IS THE ITEM TO DELETE:\n{'='*60}\nProduct: '{product_name}'{color_hint}\n\nFIND furniture in the room above that looks like this image.\nOnce found, COMPLETELY ERASE IT from the room image.\n{'='*60}"
                             contents.extend([label, ref_pil])
                             ref_images_added += 1
                             ref_labels.append(label)
