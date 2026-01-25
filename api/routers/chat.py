@@ -2938,11 +2938,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 f"[Visualize] REMOVE_AND_ADD MODE: Removing {len(products_to_remove)} products, then adding {len(products_to_add)} new products"
             )
 
-            from services.google_ai_service import (
-                enrich_products_with_dimensions,
-                load_product_dimensions,
-                load_product_visual_attributes,
-            )
+            from services.google_ai_service import enrich_products_with_dimensions, load_product_dimensions, load_product_visual_attributes
 
             # Step 1: Gather product IDs for dimension and visual attribute loading
             all_product_ids = []
@@ -6320,14 +6316,25 @@ async def get_paginated_products(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Get paginated products for a category with consistent style-based ordering.
-    Uses cursor pagination for efficiency and consistency.
+    Get paginated products for a category with consistent ordering.
+
+    Supports two modes:
+    1. Vector search mode (when semantic_query provided): Uses embedding similarity for ranking
+       - Products ranked by weighted score: 45% vector similarity + style/attribute/budget factors
+       - Ensures semantic relevance (e.g., "accent chairs" ranks actual accent chairs higher)
+
+    2. SQL keyword mode (fallback): Uses SQL-based keyword matching and style scoring
+       - Faster but less semantically accurate
+       - Used when semantic_query is not provided
 
     This endpoint is used for infinite scroll - after the initial product load,
     subsequent pages are fetched using this endpoint with the cursor from the previous response.
     """
     try:
-        logger.info(f"[PAGINATED] Fetching page for category '{request.category_id}', page_size={request.page_size}")
+        logger.info(
+            f"[PAGINATED] Fetching page for category '{request.category_id}', "
+            f"page_size={request.page_size}, semantic_query={request.semantic_query}"
+        )
 
         # Extract style attributes for scoring
         style_attrs = request.style_attributes or {}
@@ -6335,6 +6342,171 @@ async def get_paginated_products(
         preferred_colors = style_attrs.get("colors", [])
         preferred_materials = style_attrs.get("materials", [])
         size_keywords = style_attrs.get("size_keywords", [])
+
+        # Map category_id to database category keywords
+        category_keywords = _get_category_keywords(request.category_id)
+
+        # ===================================================================
+        # VECTOR SEARCH MODE: Use embedding similarity for proper semantic ranking
+        # Same logic as admin curation page - order by vector similarity score
+        # This ensures "accent chairs" shows actual accent chairs first, not office chairs
+        # ===================================================================
+        if request.semantic_query:
+            logger.info(f"[PAGINATED] Using VECTOR SEARCH mode with query: {request.semantic_query}")
+
+            # Get vector similarity scores for all matching products
+            # Same approach as semantic_search_products() in admin_curated.py
+            semantic_scores = await _semantic_search(
+                query_text=request.semantic_query,
+                db=db,
+                store_filter=request.selected_stores,
+                price_min=request.budget_min,
+                price_max=request.budget_max,
+                limit=1000,  # Get enough candidates
+            )
+            logger.info(f"[PAGINATED] Got {len(semantic_scores)} semantic scores")
+
+            # Fetch candidate products using keyword matching (for filtering)
+            query = (
+                select(Product)
+                .options(selectinload(Product.images), selectinload(Product.attributes))
+                .where(Product.is_available.is_(True))
+            )
+
+            # Apply category filter using keywords
+            if category_keywords:
+                category_conditions = [Product.name.ilike(f"%{kw}%") for kw in category_keywords]
+                query = query.where(or_(*category_conditions))
+
+            # Apply budget filters
+            if request.budget_min is not None:
+                query = query.where(Product.price >= request.budget_min)
+            if request.budget_max is not None:
+                query = query.where(Product.price <= request.budget_max)
+
+            # Apply store filter
+            if request.selected_stores:
+                query = query.where(Product.source_website.in_(request.selected_stores))
+
+            # Execute query to get all matching products
+            result = await db.execute(query)
+            all_products = result.scalars().all()
+            logger.info(f"[PAGINATED] Fetched {len(all_products)} candidate products")
+
+            # Create a dict for quick product lookup by ID
+            products_by_id = {p.id: p for p in all_products}
+
+            # Build ordered list: products with semantic scores first (sorted by score desc),
+            # then products without semantic scores (keyword-only matches)
+            # Same logic as admin curation page's merge step
+            ordered_products: List[Tuple[Product, float]] = []
+            seen_ids = set()
+
+            # First: Add products that have semantic scores, ordered by similarity (descending)
+            semantic_sorted = sorted(semantic_scores.items(), key=lambda x: x[1], reverse=True)
+            for product_id, score in semantic_sorted:
+                if product_id in products_by_id and product_id not in seen_ids:
+                    ordered_products.append((products_by_id[product_id], score))
+                    seen_ids.add(product_id)
+
+            # Then: Add keyword-matched products without semantic scores
+            for product in all_products:
+                if product.id not in seen_ids:
+                    ordered_products.append((product, 0.0))
+                    seen_ids.add(product.id)
+
+            logger.info(
+                f"[PAGINATED] Ordered {len(ordered_products)} products "
+                f"({len([p for p, s in ordered_products if s > 0])} with semantic scores)"
+            )
+            if ordered_products:
+                top_3 = ordered_products[:3]
+                logger.info(
+                    f"[PAGINATED] Top 3: "
+                    + ", ".join([f"{p.name[:30]}:{s:.3f}" for p, s in top_3])
+                )
+
+            # Apply pagination using cursor (offset-based for vector search)
+            start_idx = 0
+            if request.cursor:
+                # Find the position of the cursor product in the ordered list
+                cursor_product_id = request.cursor.product_id
+                for idx, (product, _) in enumerate(ordered_products):
+                    if product.id == cursor_product_id:
+                        start_idx = idx + 1  # Start after the cursor product
+                        break
+                logger.info(f"[PAGINATED] Starting from index {start_idx} (after product {cursor_product_id})")
+
+            # Get the page of products
+            end_idx = start_idx + request.page_size
+            page_products = ordered_products[start_idx:end_idx]
+            has_more = end_idx < len(ordered_products)
+
+            # Build next cursor
+            next_cursor = None
+            if has_more and page_products:
+                last_product, last_score = page_products[-1]
+                next_cursor = PaginationCursor(
+                    style_score=float(last_score),
+                    product_id=last_product.id,
+                )
+
+            # Convert to product dicts
+            products = []
+            for product, similarity_score in page_products:
+                primary_image = None
+                if product.images:
+                    primary_image = next(
+                        (img for img in product.images if img.is_primary),
+                        product.images[0] if product.images else None,
+                    )
+
+                product_dict = {
+                    "id": product.id,
+                    "name": product.name,
+                    "price": product.price,
+                    "currency": product.currency,
+                    "brand": product.brand,
+                    "source_website": product.source_website,
+                    "source_url": product.source_url,
+                    "is_on_sale": product.is_on_sale,
+                    "ranking_score": similarity_score,  # Vector similarity score
+                    "style_score": similarity_score,  # For backward compatibility
+                    "description": product.description,
+                    "primary_image": {
+                        "url": primary_image.original_url if primary_image else None,
+                        "alt_text": primary_image.alt_text if primary_image else product.name,
+                    }
+                    if primary_image
+                    else None,
+                    "attributes": [
+                        {"attribute_name": attr.attribute_name, "attribute_value": attr.attribute_value}
+                        for attr in product.attributes
+                    ]
+                    if product.attributes
+                    else [],
+                }
+                products.append(product_dict)
+
+            total_estimated = len(ordered_products)
+
+            logger.info(
+                f"[PAGINATED VECTOR] Returning {len(products)} products for '{request.category_id}', "
+                f"has_more={has_more}, total={total_estimated}"
+            )
+
+            return PaginatedProductsResponse(
+                products=products,
+                next_cursor=next_cursor,
+                has_more=has_more,
+                total_estimated=total_estimated,
+            )
+
+        # ===================================================================
+        # SQL KEYWORD MODE (fallback): Use SQL-based keyword matching
+        # Used when semantic_query is not provided
+        # ===================================================================
+        logger.info("[PAGINATED] Using SQL KEYWORD mode (no semantic_query)")
 
         # Build the style score expression for SQL-level scoring
         score_expr = _build_style_score_expression(
@@ -6344,10 +6516,6 @@ async def get_paginated_products(
             size_keywords=size_keywords,
         )
 
-        # Map category_id to database category keywords
-        # This matches the logic in _get_category_based_recommendations
-        category_keywords = _get_category_keywords(request.category_id)
-
         # Build base query with filters
         query = (
             select(Product, score_expr.label("computed_score"))
@@ -6355,22 +6523,11 @@ async def get_paginated_products(
             .where(Product.is_available.is_(True))
         )
 
-        # Apply category filter using keywords with MATCH PRIORITY
-        # Products with exact category keyword in name rank higher than partial matches
-        match_priority_expr = None
+        # Apply category filter using keywords
         if category_keywords:
             category_conditions = []
-            # Build priority cases: first keyword gets priority 0, second gets 1, etc.
-            # This ensures "accent chair" matches rank before "armchair" matches
-            priority_cases = []
-            for idx, keyword in enumerate(category_keywords):
+            for keyword in category_keywords:
                 category_conditions.append(Product.name.ilike(f"%{keyword}%"))
-                # Use case for priority - lower number = higher priority
-                priority_cases.append((Product.name.ilike(f"%{keyword}%"), idx))
-
-            # match_priority: 0 = best match (first keyword), higher = worse match
-            # Default to 999 for no match (shouldn't happen due to filter)
-            match_priority_expr = case(*priority_cases, else_=999)
             query = query.where(or_(*category_conditions))
 
         # Apply budget filters
@@ -6396,12 +6553,8 @@ async def get_paginated_products(
                 )
             )
 
-        # Order by match priority first (if category search), then score, then id for deterministic ordering
-        # match_priority ensures "accent chair" matches appear before "armchair" matches
-        if match_priority_expr is not None:
-            query = query.order_by(match_priority_expr.asc(), score_expr.asc(), Product.id.asc())
-        else:
-            query = query.order_by(score_expr.asc(), Product.id.asc())
+        # Order by score (ascending = best first), then by id for deterministic ordering
+        query = query.order_by(score_expr.asc(), Product.id.asc())
 
         # Fetch one extra to check if there are more pages
         query = query.limit(request.page_size + 1)
@@ -6466,7 +6619,7 @@ async def get_paginated_products(
         total_estimated = await _get_category_product_count(request.category_id, category_keywords, db)
 
         logger.info(
-            f"[PAGINATED] Returning {len(products)} products for '{request.category_id}', has_more={has_more}, total_estimated={total_estimated}"
+            f"[PAGINATED SQL] Returning {len(products)} products for '{request.category_id}', has_more={has_more}, total_estimated={total_estimated}"
         )
 
         return PaginatedProductsResponse(
@@ -6490,11 +6643,9 @@ def _get_category_keywords(category_id: str) -> List[str]:
     This is a simplified version of the category mapping used in _get_category_based_recommendations.
     """
     # Common category keyword mappings
-    # IMPORTANT: More specific keywords should come FIRST in the list for priority matching
     category_keyword_map = {
         "sofas": ["sofa", "couch", "sectional", "loveseat", "settee"],
         "chairs": ["chair", "armchair", "accent chair", "lounge chair"],
-        "accent_chairs": ["accent chair", "lounge chair", "armchair", "club chair", "wing chair", "occasional chair"],
         "coffee_tables": ["coffee table", "center table"],
         "side_tables": ["side table", "end table", "accent table"],
         "dining_tables": ["dining table"],
@@ -6504,24 +6655,20 @@ def _get_category_keywords(category_id: str) -> List[str]:
         "dressers": ["dresser", "chest of drawers"],
         "nightstands": ["nightstand", "bedside table"],
         "desks": ["desk", "writing desk", "computer desk"],
-        "office_chairs": ["office chair", "desk chair", "ergonomic chair", "task chair"],
+        "office_chairs": ["office chair", "desk chair", "ergonomic chair"],
         "bookcases": ["bookcase", "bookshelf", "shelving"],
         "tv_stands": ["tv stand", "tv unit", "media console", "entertainment center"],
         "rugs": ["rug", "carpet", "area rug"],
         "curtains": ["curtain", "drape", "window treatment"],
         "lighting": ["lamp", "light", "chandelier", "pendant", "sconce"],
-        "floor_lamps": ["floor lamp"],
-        "table_lamps": ["table lamp", "desk lamp"],
-        "chandeliers": ["chandelier", "pendant light", "hanging light"],
         "mirrors": ["mirror", "wall mirror"],
         "artwork": ["art", "painting", "print", "poster", "wall art"],
         "wallpapers": ["wallpaper", "wallpapers", "wall paper", "wall covering"],
-        "planters": ["planter", "pot", "vase", "plant pot"],
+        "planters": ["planter", "pot", "vase"],
         "decor_accents": ["decor", "accent", "decorative", "ornament"],
         "cushions": ["cushion", "pillow", "throw pillow"],
         "throws": ["throw", "blanket"],
         "storage": ["storage", "basket", "bin", "organizer"],
-        "benches": ["bench", "ottoman", "settee bench"],
     }
 
     # Return keywords for the category, or use the category_id itself as a keyword

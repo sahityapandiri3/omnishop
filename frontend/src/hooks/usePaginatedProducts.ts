@@ -21,6 +21,12 @@ interface UsePaginatedProductsOptions {
   selectedStores?: string[];
   pageSize?: number;
   enabled?: boolean;
+  /**
+   * Search query for vector similarity ranking (e.g., "accent chairs").
+   * When provided, products are ranked by embedding similarity instead of keyword matching.
+   * This ensures semantic relevance - e.g., actual accent chairs rank higher than office chairs.
+   */
+  semanticQuery?: string;
 }
 
 /**
@@ -54,6 +60,7 @@ export function usePaginatedProducts({
   selectedStores,
   pageSize = 24,
   enabled = true,
+  semanticQuery,
 }: UsePaginatedProductsOptions) {
   return useInfiniteQuery<PaginatedProductsResponse, Error>({
     queryKey: [
@@ -64,6 +71,7 @@ export function usePaginatedProducts({
       budgetMin,
       budgetMax,
       selectedStores,
+      semanticQuery,
     ],
     queryFn: async ({ pageParam }): Promise<PaginatedProductsResponse> => {
       const cursor = pageParam as PaginationCursor | undefined;
@@ -76,6 +84,7 @@ export function usePaginatedProducts({
         budget_min: budgetMin,
         budget_max: budgetMax,
         selected_stores: selectedStores,
+        semantic_query: semanticQuery,
       };
 
       const response = await fetch(

@@ -233,6 +233,11 @@ class PaginatedProductsRequest(BaseModel):
     budget_min: Optional[float] = Field(default=None, description="Minimum price filter")
     budget_max: Optional[float] = Field(default=None, description="Maximum price filter")
     selected_stores: Optional[List[str]] = Field(default=None, description="Filter by store names")
+    semantic_query: Optional[str] = Field(
+        default=None,
+        description="Search query for vector similarity ranking (e.g., 'accent chairs'). "
+        "When provided, products are ranked by embedding similarity instead of keyword matching.",
+    )
 
 
 class PaginatedProductsResponse(BaseModel):

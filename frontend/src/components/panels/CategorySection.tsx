@@ -83,6 +83,12 @@ export default function CategorySection({
   // NOTE: Don't pass budget constraints - all products should be shown, sorted by score
   // Budget is used for scoring (products within budget ranked higher), not filtering
   const paginationEnabled = isExpanded && !!sessionId && initialHasMore;
+
+  // Derive semantic query from category display name for vector search consistency
+  // This ensures pagination uses the same vector search as initial load
+  // e.g., "Accent Chairs" → "accent chairs" for semantic search
+  const semanticQuery = category.display_name?.toLowerCase() || category.category_id.replace(/_/g, ' ');
+
   const {
     data: paginatedData,
     fetchNextPage,
@@ -94,6 +100,8 @@ export default function CategorySection({
     styleAttributes,
     // Don't pass budget constraints - show all products, ranked by score
     enabled: paginationEnabled,
+    // Use semantic query for vector search ranking (same as initial load)
+    semanticQuery: semanticQuery,
   });
 
   // Combine initial products with paginated products

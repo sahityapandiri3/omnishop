@@ -324,6 +324,8 @@ export interface PaginatedProductsRequest {
   budget_min?: number;
   budget_max?: number;
   selected_stores?: string[];
+  /** Search query for vector similarity ranking (e.g., "accent chairs") */
+  semantic_query?: string;
 }
 
 export interface PaginatedProductsResponse {
