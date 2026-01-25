@@ -1038,12 +1038,22 @@ export default function CanvasPanel({
       setVisualizedProductIds(previousState.productIds);
       setVisualizedProducts(previousState.products);
       onSetProducts(previousState.products);
+
+      // CRITICAL FIX: Also restore visualizedQuantities from the restored products
+      // Without this, quantity change detection fails after undo
+      const restoredQuantities = new Map<string, number>();
+      previousState.products.forEach((p: any) => {
+        restoredQuantities.set(String(p.id), p.quantity || 1);
+      });
+      setVisualizedQuantities(restoredQuantities);
+      console.log('[CanvasPanel] Restored visualizedQuantities:', restoredQuantities.size, 'entries');
     } else {
       // No previous state - clear visualization (back to base room image)
       console.log('[CanvasPanel] No previous state - clearing visualization');
       setVisualizationResult(null);
       setVisualizedProductIds(new Set());
       setVisualizedProducts([]);
+      setVisualizedQuantities(new Map()); // Also clear quantities
       onSetProducts([]);
     }
 
@@ -1078,7 +1088,16 @@ export default function CanvasPanel({
       setVisualizedProducts(stateToRestore.products);
       onSetProducts(stateToRestore.products);
 
+      // CRITICAL FIX: Also restore visualizedQuantities from the restored products
+      // Without this, quantity change detection fails after redo
+      const restoredQuantities = new Map<string, number>();
+      stateToRestore.products.forEach((p: any) => {
+        restoredQuantities.set(String(p.id), p.quantity || 1);
+      });
+      setVisualizedQuantities(restoredQuantities);
+
       console.log('[CanvasPanel] Restored state with', stateToRestore.products.length, 'products');
+      console.log('[CanvasPanel] Restored visualizedQuantities:', restoredQuantities.size, 'entries');
     }
 
     // Update redo stack and undo/redo availability
