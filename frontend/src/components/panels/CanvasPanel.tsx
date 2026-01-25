@@ -452,14 +452,31 @@ export default function CanvasPanel({
 
     // CRITICAL FIX: If we have a visualizationResult but visualizedProductIds is empty,
     // this is a sync issue (e.g., "Style This Further" scenario where sync hasn't happened yet).
-    // In this case, we should trigger a RESET to properly establish tracking state.
-    // This ensures the visualization runs and all tracking states are properly set.
+    // Instead of returning 'reset', we should use visualizedProducts as the source of truth
+    // if available, since it may have been synced even if visualizedProductIds wasn't.
     let effectiveVisualizedIds = visualizedProductIds;
     if (visualizationResult && visualizedProductIds.size === 0 && products.length > 0) {
       console.warn('[CanvasPanel] detectChangeType: visualizedProductIds empty with existing visualization');
-      console.warn('[CanvasPanel] Triggering reset to establish proper tracking state');
-      // Return reset to force a fresh visualization that will properly set tracking state
-      return { type: 'reset', reason: 'tracking_sync_needed' };
+
+      // Try to use visualizedProducts if available (these track the original products)
+      if (visualizedProducts.length > 0) {
+        effectiveVisualizedIds = new Set(visualizedProducts.map(p => String(p.id)));
+        console.log('[CanvasPanel] Using visualizedProducts as fallback:', effectiveVisualizedIds.size, 'products');
+      } else {
+        // Last resort: check if there are more products now than were visualized
+        // If same count, assume they're the same (no change)
+        // If different, we can't detect removals but can detect additions
+        console.warn('[CanvasPanel] visualizedProducts also empty - cannot detect removals');
+        console.warn('[CanvasPanel] Will treat current products as baseline (no removal detection possible)');
+        // Return 'initial' to do a fresh visualization with current products
+        // This is better than 'reset' because it preserves the existing visualization
+        // and only adds new products if any
+        if (currentIds.size === 0) {
+          return { type: 'no_change', reason: 'no_products' };
+        }
+        // Use current products as the baseline - this means no removals detected
+        effectiveVisualizedIds = currentIds;
+      }
     }
 
     // Check for removals (products that were visualized but no longer in canvas)
@@ -656,15 +673,11 @@ export default function CanvasPanel({
       hasVisualizationResult: !!visualizationResult,
     });
 
-    // SAFETY: If we have a visualization but visualizedProductIds is empty, sync now
-    // This shouldn't happen but guards against race conditions
-    if (visualizationResult && products.length > 0 && visualizedProductIds.size === 0) {
-      console.warn('[CanvasPanel] WARNING: visualizedProductIds empty with existing visualization - syncing now');
-      const productIds = new Set(products.map(p => String(p.id)));
-      setVisualizedProductIds(productIds);
-      setVisualizedProducts([...products]);
-      // Still continue with visualization, but log the issue
-    }
+    // NOTE: We used to have a "safety sync" here that would sync visualizedProductIds
+    // with current products if it was empty. This was WRONG because it would sync with
+    // the CURRENT products (after user removed some), not the ORIGINAL products.
+    // This made removal detection impossible.
+    // Now detectChangeType handles this case by using visualizedProducts as fallback.
 
     setIsVisualizing(true);
     setVisualizationStartTime(Date.now());
