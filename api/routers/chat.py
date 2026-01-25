@@ -2938,7 +2938,11 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 f"[Visualize] REMOVE_AND_ADD MODE: Removing {len(products_to_remove)} products, then adding {len(products_to_add)} new products"
             )
 
-            from services.google_ai_service import enrich_products_with_dimensions, load_product_dimensions, load_product_visual_attributes
+            from services.google_ai_service import (
+                enrich_products_with_dimensions,
+                load_product_dimensions,
+                load_product_visual_attributes,
+            )
 
             # Step 1: Gather product IDs for dimension and visual attribute loading
             all_product_ids = []
@@ -6421,10 +6425,7 @@ async def get_paginated_products(
             )
             if ordered_products:
                 top_3 = ordered_products[:3]
-                logger.info(
-                    f"[PAGINATED] Top 3: "
-                    + ", ".join([f"{p.name[:30]}:{s:.3f}" for p, s in top_3])
-                )
+                logger.info(f"[PAGINATED] Top 3: " + ", ".join([f"{p.name[:30]}:{s:.3f}" for p, s in top_3]))
 
             # Apply pagination using cursor (offset-based for vector search)
             start_idx = 0
@@ -6452,6 +6453,8 @@ async def get_paginated_products(
                 )
 
             # Convert to product dicts
+            # Primary match threshold: products with similarity > 0.3 are "Best Matches"
+            PRIMARY_MATCH_THRESHOLD = 0.3
             products = []
             for product, similarity_score in page_products:
                 primary_image = None
@@ -6460,6 +6463,10 @@ async def get_paginated_products(
                         (img for img in product.images if img.is_primary),
                         product.images[0] if product.images else None,
                     )
+
+                # Determine if this is a primary match based on similarity score
+                # Same logic as admin curation page - best matches have high similarity
+                is_primary_match = similarity_score > PRIMARY_MATCH_THRESHOLD
 
                 product_dict = {
                     "id": product.id,
@@ -6472,6 +6479,9 @@ async def get_paginated_products(
                     "is_on_sale": product.is_on_sale,
                     "ranking_score": similarity_score,  # Vector similarity score
                     "style_score": similarity_score,  # For backward compatibility
+                    "similarity_score": round(similarity_score, 3) if similarity_score > 0 else None,
+                    "is_primary_match": is_primary_match,  # For Best Matches vs More Products separation
+                    "primary_style": product.primary_style,  # For style filtering
                     "description": product.description,
                     "primary_image": {
                         "url": primary_image.original_url if primary_image else None,
