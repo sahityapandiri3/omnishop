@@ -246,7 +246,7 @@ export default function CategorySection({
           return 0;
       }
     });
-  }, [products, filters]);
+  }, [allProducts, filters]);
 
   // Check if product is in canvas
   const isInCanvas = (productId: string | number) => {
