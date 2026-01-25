@@ -6358,71 +6358,57 @@ async def get_paginated_products(
         if request.semantic_query:
             logger.info(f"[PAGINATED] Using VECTOR SEARCH mode with query: {request.semantic_query}")
 
-            # Get vector similarity scores for all matching products
-            # Same approach as semantic_search_products() in admin_curated.py
+            # Get vector similarity scores - semantic search handles relevance
+            # No keyword filtering needed - vector embeddings understand "carpets" = "rugs"
             semantic_scores = await _semantic_search(
                 query_text=request.semantic_query,
                 db=db,
                 store_filter=request.selected_stores,
                 price_min=request.budget_min,
                 price_max=request.budget_max,
-                limit=1000,  # Get enough candidates
+                limit=2000,  # Increase limit to get more candidates
             )
-            logger.info(f"[PAGINATED] Got {len(semantic_scores)} semantic scores")
+            logger.info(f"[PAGINATED] Got {len(semantic_scores)} products from semantic search")
 
-            # Fetch candidate products using keyword matching (for filtering)
+            if not semantic_scores:
+                logger.warning(f"[PAGINATED] No semantic scores returned, falling back to empty result")
+                return PaginatedProductsResponse(
+                    products=[],
+                    next_cursor=None,
+                    has_more=False,
+                    total_estimated=0,
+                )
+
+            # Fetch the actual product objects for products with semantic scores
+            # No keyword filtering - trust the semantic search results
+            product_ids = list(semantic_scores.keys())
             query = (
                 select(Product)
                 .options(selectinload(Product.images), selectinload(Product.attributes))
-                .where(Product.is_available.is_(True))
+                .where(Product.id.in_(product_ids))
             )
-
-            # Apply category filter using keywords
-            if category_keywords:
-                category_conditions = [Product.name.ilike(f"%{kw}%") for kw in category_keywords]
-                query = query.where(or_(*category_conditions))
-
-            # Apply budget filters
-            if request.budget_min is not None:
-                query = query.where(Product.price >= request.budget_min)
-            if request.budget_max is not None:
-                query = query.where(Product.price <= request.budget_max)
-
-            # Apply store filter
-            if request.selected_stores:
-                query = query.where(Product.source_website.in_(request.selected_stores))
-
-            # Execute query to get all matching products
             result = await db.execute(query)
             all_products = result.scalars().all()
-            logger.info(f"[PAGINATED] Fetched {len(all_products)} candidate products")
+            logger.info(f"[PAGINATED] Fetched {len(all_products)} products by ID from semantic search results")
 
-            # Create a dict for quick product lookup by ID
+            # Debug: Log products by store
+            store_counts = {}
+            for p in all_products:
+                store = p.source_website or "unknown"
+                store_counts[store] = store_counts.get(store, 0) + 1
+            logger.info(f"[PAGINATED] Products by store: {store_counts}")
+
+            # Create lookup dict
             products_by_id = {p.id: p for p in all_products}
 
-            # Build ordered list: products with semantic scores first (sorted by score desc),
-            # then products without semantic scores (keyword-only matches)
-            # Same logic as admin curation page's merge step
+            # Build ordered list by semantic similarity (descending)
             ordered_products: List[Tuple[Product, float]] = []
-            seen_ids = set()
-
-            # First: Add products that have semantic scores, ordered by similarity (descending)
             semantic_sorted = sorted(semantic_scores.items(), key=lambda x: x[1], reverse=True)
             for product_id, score in semantic_sorted:
-                if product_id in products_by_id and product_id not in seen_ids:
+                if product_id in products_by_id:
                     ordered_products.append((products_by_id[product_id], score))
-                    seen_ids.add(product_id)
 
-            # Then: Add keyword-matched products without semantic scores
-            for product in all_products:
-                if product.id not in seen_ids:
-                    ordered_products.append((product, 0.0))
-                    seen_ids.add(product.id)
-
-            logger.info(
-                f"[PAGINATED] Ordered {len(ordered_products)} products "
-                f"({len([p for p, s in ordered_products if s > 0])} with semantic scores)"
-            )
+            logger.info(f"[PAGINATED] Ordered {len(ordered_products)} products by semantic similarity")
             if ordered_products:
                 top_3 = ordered_products[:3]
                 logger.info(f"[PAGINATED] Top 3: " + ", ".join([f"{p.name[:30]}:{s:.3f}" for p, s in top_3]))
@@ -6653,6 +6639,9 @@ def _get_category_keywords(category_id: str) -> List[str]:
     This is a simplified version of the category mapping used in _get_category_based_recommendations.
     """
     # Common category keyword mappings
+    # Note: Include aliases (e.g., "carpets" -> same as "rugs") for flexible category naming
+    rug_carpet_keywords = ["rug", "carpet", "area rug", "dhurrie", "kilim", "floor rug"]
+
     category_keyword_map = {
         "sofas": ["sofa", "couch", "sectional", "loveseat", "settee"],
         "chairs": ["chair", "armchair", "accent chair", "lounge chair"],
@@ -6668,7 +6657,9 @@ def _get_category_keywords(category_id: str) -> List[str]:
         "office_chairs": ["office chair", "desk chair", "ergonomic chair"],
         "bookcases": ["bookcase", "bookshelf", "shelving"],
         "tv_stands": ["tv stand", "tv unit", "media console", "entertainment center"],
-        "rugs": ["rug", "carpet", "area rug"],
+        "rugs": rug_carpet_keywords,
+        "carpets": rug_carpet_keywords,  # Alias for rugs - same keywords
+        "carpet": rug_carpet_keywords,  # Alias for rugs - same keywords
         "curtains": ["curtain", "drape", "window treatment"],
         "lighting": ["lamp", "light", "chandelier", "pendant", "sconce"],
         "mirrors": ["mirror", "wall mirror"],
@@ -6681,8 +6672,9 @@ def _get_category_keywords(category_id: str) -> List[str]:
         "storage": ["storage", "basket", "bin", "organizer"],
     }
 
-    # Return keywords for the category, or use the category_id itself as a keyword
-    return category_keyword_map.get(category_id, [category_id.replace("_", " ")])
+    keywords = category_keyword_map.get(category_id, [category_id.replace("_", " ")])
+    logger.info(f"[CATEGORY KEYWORDS] category_id='{category_id}' -> keywords={keywords}")
+    return keywords
 
 
 async def _get_category_product_count(category_id: str, category_keywords: List[str], db: AsyncSession) -> int:
