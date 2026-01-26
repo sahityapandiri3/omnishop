@@ -194,7 +194,27 @@ export function detectChangeType({
   }));
 
   // Combine new products AND quantity increases for the "add" part
-  const allProductsToAdd = [...newProducts, ...quantityIncreaseProducts];
+  // DEFENSIVE: Deduplicate by product ID to prevent any edge cases
+  const combinedProducts = [...newProducts, ...quantityIncreaseProducts];
+  const seenIds = new Set<string>();
+  const allProductsToAdd = combinedProducts.filter(p => {
+    const id = normalizeProductId(p.id);
+    if (seenIds.has(id)) {
+      console.warn(`[detectChangeType] Duplicate product detected and removed: ${p.name} (id=${id})`);
+      return false;
+    }
+    seenIds.add(id);
+    return true;
+  });
+
+  // Log what we're about to add
+  if (allProductsToAdd.length > 0) {
+    console.log('[detectChangeType] Products to add:', allProductsToAdd.map(p => ({
+      id: p.id,
+      name: p.name,
+      quantity: p.quantity
+    })));
+  }
 
   // OPTIMIZATION: If products are both removed AND added, use remove_and_add workflow
   if (removedProductIds.length > 0 && allProductsToAdd.length > 0 && visualizationResult) {

@@ -367,6 +367,17 @@ export function useVisualization({
       const visualizedProductDetails = (visualizedProducts.length > 0 ? visualizedProducts : products)
         .map(formatProductForApi);
 
+      // Log what we're sending to help debug duplicates
+      console.log('[useVisualization] API Request Summary:', {
+        changeType: changeInfo.type,
+        isIncremental,
+        forceReset,
+        removalMode,
+        productsToSend: productDetails.map(p => ({ id: p.id, name: p.name, qty: p.quantity })),
+        allProducts: allProductDetails.map(p => ({ id: p.id, name: p.name, qty: p.quantity })),
+        visualizedProducts: isIncremental ? visualizedProductDetails.map(p => ({ id: p.id, name: p.name, qty: p.quantity })) : [],
+      });
+
       // Make API request
       const response = await fetchWithRetry(
         `${getApiUrl()}/api/chat/sessions/${sessionId}/visualize`,
