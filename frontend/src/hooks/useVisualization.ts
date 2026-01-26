@@ -527,9 +527,29 @@ export function useVisualization({
     setIsImprovingQuality(true);
     console.log('[useVisualization] Starting quality improvement with', products.length, 'products');
 
+    // Debug: Log all products being sent
+    products.forEach((p, i) => {
+      console.log(`[useVisualization] Product ${i + 1}:`, {
+        id: p.id,
+        name: p.name,
+        productType: p.productType || p.product_type,
+        hasImageUrl: !!p.image_url,
+        quantity: p.quantity || 1,
+      });
+    });
+
     try {
       const sessionId = await getOrCreateSession();
       const productDetails = products.map(formatProductForApi);
+
+      // Debug: Log formatted products
+      console.log('[useVisualization] Formatted products for API:', productDetails.map(p => ({
+        id: p.id,
+        name: p.name,
+        product_type: p.product_type,
+        hasImageUrl: !!p.image_url,
+        quantity: p.quantity,
+      })));
 
       const response = await fetch(
         `${getApiUrl()}/api/chat/sessions/${sessionId}/visualize`,
@@ -637,6 +657,8 @@ export function useVisualization({
   // ============================================================================
 
   const enterEditMode = useCallback(() => {
+    console.log('[useVisualization] enterEditMode called, visualizationImage exists:', !!visualizationImage);
+
     if (!visualizationImage) {
       alert('Please create a visualization first.');
       return;
@@ -646,6 +668,7 @@ export function useVisualization({
     setPreEditVisualization(visualizationImage);
     setIsEditingPositions(true);
     setEditInstructions('');
+    console.log('[useVisualization] isEditingPositions set to true');
   }, [visualizationImage]);
 
   const exitEditMode = useCallback(() => {
