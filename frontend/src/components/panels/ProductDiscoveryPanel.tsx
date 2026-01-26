@@ -53,6 +53,7 @@ export default function ProductDiscoveryPanel({
   // Filter states
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
   const [priceRange, setPriceRange] = useState<{ min: number; max: number }>({ min: 0, max: Infinity });
+  const [showFilters, setShowFilters] = useState(false);
 
   // Ref for the scrollable products container
   const productsContainerRef = useRef<HTMLDivElement>(null);
@@ -274,10 +275,40 @@ export default function ProductDiscoveryPanel({
     selectedCategories.length > 0 &&
     Object.values(productsByCategory).some(prods => prods && prods.length > 0);
 
+  // Get all products across all categories for filter options
+  const allCategoryProducts = hasCategoryProducts
+    ? Object.values(productsByCategory!).flat().filter(Boolean)
+    : [];
+
   // Calculate total products across all categories
-  const totalCategoryProducts = hasCategoryProducts
-    ? Object.values(productsByCategory!).reduce((sum, prods) => sum + (prods?.length || 0), 0)
-    : 0;
+  const totalCategoryProducts = allCategoryProducts.length;
+
+  // Get unique stores from category products
+  const uniqueCategoryStores = Array.from(
+    new Set(allCategoryProducts.map((p: any) => p.source_website || p.source).filter(Boolean))
+  ).sort() as string[];
+
+  // Filter products in a category based on selected filters
+  const filterCategoryProducts = (categoryProducts: any[]) => {
+    if (selectedStores.length === 0 && priceRange.min === 0 && priceRange.max === Infinity) {
+      return categoryProducts; // No filters applied
+    }
+    return categoryProducts.filter((product: any) => {
+      const price = parseFloat(product.price) || 0;
+      const store = product.source_website || product.source;
+
+      // Price filter
+      if (price < priceRange.min || price > priceRange.max) return false;
+
+      // Store filter
+      if (selectedStores.length > 0 && !selectedStores.includes(store)) return false;
+
+      return true;
+    });
+  };
+
+  // Check if any filters are active
+  const hasActiveFilters = selectedStores.length > 0 || priceRange.min > 0 || priceRange.max < Infinity;
 
   // Empty state - show if no products in either mode
   if (products.length === 0 && !hasCategoryProducts) {
@@ -370,9 +401,9 @@ export default function ProductDiscoveryPanel({
     // CAROUSEL MODE - Default view with horizontal scrolling carousels
     return (
       <div className="flex flex-col h-full">
-        {/* Header */}
+        {/* Header with Filter Toggle */}
         <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-2">
             <div>
               <h2 className="font-semibold text-neutral-900 dark:text-white">
                 Curated for You
@@ -381,29 +412,151 @@ export default function ProductDiscoveryPanel({
                 {selectedCategories.length} categories • {totalCategoryProducts} items
               </p>
             </div>
-            {totalBudget && (
-              <div className="text-right">
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">Budget</p>
-                <p className="font-semibold text-primary-600 dark:text-primary-400">
-                  ₹{(totalBudget / 1000).toFixed(0)}K
-                </p>
-              </div>
-            )}
+            <div className="flex items-center gap-3">
+              {/* Filter Toggle Button */}
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                  hasActiveFilters
+                    ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 border border-primary-300 dark:border-primary-700'
+                    : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-600'
+                }`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                Filter
+                {hasActiveFilters && (
+                  <span className="w-1.5 h-1.5 bg-primary-500 rounded-full"></span>
+                )}
+              </button>
+              {totalBudget && (
+                <div className="text-right">
+                  <p className="text-[10px] text-neutral-500 dark:text-neutral-400">Budget</p>
+                  <p className="text-sm font-semibold text-primary-600 dark:text-primary-400">
+                    ₹{(totalBudget / 1000).toFixed(0)}K
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
+
+          {/* Collapsible Filter Panel */}
+          {showFilters && (
+            <div className="pt-3 mt-3 border-t border-neutral-200 dark:border-neutral-700 space-y-3">
+              {/* Store Filter */}
+              {uniqueCategoryStores.length > 0 && (
+                <div>
+                  <label className="text-xs text-neutral-600 dark:text-neutral-400 mb-1.5 block font-medium">
+                    Store
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {uniqueCategoryStores.map(store => (
+                      <button
+                        key={store}
+                        onClick={() => toggleStore(store)}
+                        className={`text-[10px] px-2 py-1 rounded-full transition-colors ${
+                          selectedStores.includes(store)
+                            ? 'bg-primary-600 text-white'
+                            : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-600'
+                        }`}
+                      >
+                        {store}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Price Range Filter */}
+              <div>
+                <label className="text-xs text-neutral-600 dark:text-neutral-400 mb-1.5 block font-medium">
+                  Price Range
+                </label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="number"
+                    placeholder="Min"
+                    value={priceRange.min === 0 ? '' : priceRange.min}
+                    onChange={(e) => setPriceRange({ ...priceRange, min: Number(e.target.value) || 0 })}
+                    className="w-20 text-xs px-2 py-1.5 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                  <span className="text-neutral-400 text-xs">-</span>
+                  <input
+                    type="number"
+                    placeholder="Max"
+                    value={priceRange.max === Infinity ? '' : priceRange.max}
+                    onChange={(e) => setPriceRange({ ...priceRange, max: Number(e.target.value) || Infinity })}
+                    className="w-20 text-xs px-2 py-1.5 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+              </div>
+
+              {/* Clear Filters */}
+              {hasActiveFilters && (
+                <button
+                  onClick={clearFilters}
+                  className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
+                >
+                  Clear all filters
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Active Filters Summary (shown when filter panel is collapsed) */}
+          {!showFilters && hasActiveFilters && (
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              {selectedStores.map(store => (
+                <span
+                  key={store}
+                  className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full"
+                >
+                  {store}
+                  <button
+                    onClick={() => toggleStore(store)}
+                    className="hover:text-primary-900 dark:hover:text-primary-100"
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </span>
+              ))}
+              {(priceRange.min > 0 || priceRange.max < Infinity) && (
+                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full">
+                  ₹{priceRange.min > 0 ? priceRange.min : '0'} - ₹{priceRange.max < Infinity ? priceRange.max : '∞'}
+                  <button
+                    onClick={() => setPriceRange({ min: 0, max: Infinity })}
+                    className="hover:text-primary-900 dark:hover:text-primary-100"
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Category Carousels */}
         <div ref={productsContainerRef} className="flex-1 overflow-y-auto">
-          {selectedCategories.sort((a, b) => a.priority - b.priority).map((category) => (
-            <CategoryCarousel
-              key={category.category_id}
-              category={category}
-              products={productsByCategory![category.category_id] || []}
-              onAddToCanvas={onAddToCanvas}
-              canvasProducts={canvasProducts}
-              onViewAll={() => handleViewAll(category.category_id)}
-            />
-          ))}
+          {selectedCategories.sort((a, b) => a.priority - b.priority).map((category) => {
+            const filteredProducts = filterCategoryProducts(productsByCategory![category.category_id] || []);
+            // Skip categories with no products after filtering
+            if (filteredProducts.length === 0) return null;
+            return (
+              <CategoryCarousel
+                key={category.category_id}
+                category={category}
+                products={filteredProducts}
+                onAddToCanvas={onAddToCanvas}
+                canvasProducts={canvasProducts}
+                onViewAll={() => handleViewAll(category.category_id)}
+              />
+            );
+          })}
         </div>
       </div>
     );
