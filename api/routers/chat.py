@@ -6417,7 +6417,6 @@ async def get_paginated_products(
             logger.info(f"[PAGINATED] Using VECTOR SEARCH mode with query: {request.semantic_query}")
 
             # Get vector similarity scores - semantic search handles relevance
-            # No keyword filtering needed - vector embeddings understand "carpets" = "rugs"
             # Optimization: Limit to 500 instead of 2000 - pagination will fetch more if needed
             # This reduces the Python-side similarity computation time significantly
             semantic_scores = await _semantic_search(
@@ -6429,6 +6428,34 @@ async def get_paginated_products(
                 limit=500,  # Reduced from 2000 - pagination provides infinite scroll anyway
             )
             logger.info(f"[PAGINATED] Got {len(semantic_scores)} products from semantic search")
+
+            # CRITICAL FIX: Apply keyword filtering to prevent category confusion
+            # e.g., "wallpaper" shouldn't return "wall art" just because embeddings are similar
+            # Only apply for specific categories that tend to get confused
+            confusable_categories = {"wallpapers", "wall_art", "rugs", "carpets", "mats"}
+            if request.category_id in confusable_categories and semantic_scores:
+                # Filter semantic results by category keywords
+                keyword_filtered_ids = set()
+                keyword_conditions = []
+                for keyword in category_keywords:
+                    keyword_conditions.append(Product.name.ilike(f"%{keyword}%"))
+
+                if keyword_conditions:
+                    filter_query = (
+                        select(Product.id)
+                        .where(Product.is_available.is_(True))
+                        .where(Product.id.in_(list(semantic_scores.keys())))
+                        .where(or_(*keyword_conditions))
+                    )
+                    filter_result = await db.execute(filter_query)
+                    keyword_filtered_ids = {row[0] for row in filter_result.fetchall()}
+
+                    original_count = len(semantic_scores)
+                    semantic_scores = {k: v for k, v in semantic_scores.items() if k in keyword_filtered_ids}
+                    logger.info(
+                        f"[PAGINATED] Keyword filter for '{request.category_id}': {original_count} -> {len(semantic_scores)} products "
+                        f"(keywords: {category_keywords[:3]}...)"
+                    )
 
             if not semantic_scores:
                 logger.warning(f"[PAGINATED] No semantic scores returned, falling back to empty result")
