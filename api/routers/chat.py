@@ -2781,7 +2781,9 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             logger.info(f"[Visualize] products_to_add details: {[p.get('name') or p.get('id') for p in products_to_add]}")
             # DEBUG: Log each product with its quantity
             for idx, p in enumerate(products_to_add):
-                logger.info(f"[Visualize] products_to_add[{idx}]: name='{p.get('name')}', id={p.get('id')}, quantity={p.get('quantity', 1)}")
+                logger.info(
+                    f"[Visualize] products_to_add[{idx}]: name='{p.get('name')}', id={p.get('id')}, quantity={p.get('quantity', 1)}"
+                )
 
         # Workflow detection for centralized prompts
         def detect_workflow_type() -> str:
@@ -3165,7 +3167,9 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             )
             # DEBUG: Log each product with quantity for incremental add
             for idx, p in enumerate(new_products_to_visualize):
-                logger.info(f"[Incremental] product[{idx}]: name='{p.get('name')}', id={p.get('id')}, quantity={p.get('quantity', 1)}")
+                logger.info(
+                    f"[Incremental] product[{idx}]: name='{p.get('name')}', id={p.get('id')}, quantity={p.get('quantity', 1)}"
+                )
 
             # If no products to visualize, return the provided base image
             if not new_products_to_visualize:
@@ -6037,6 +6041,10 @@ async def _get_category_based_recommendations(
                         (img for img in product.images if img.is_primary), product.images[0] if product.images else None
                     )
 
+                # Determine if this is a primary match based on ranking score
+                # Top-scored products (score > 0.5) are considered primary matches
+                is_primary_match = final_score > 0.5
+
                 product_dict = {
                     "id": product.id,
                     "name": product.name,
@@ -6048,6 +6056,9 @@ async def _get_category_based_recommendations(
                     "is_on_sale": product.is_on_sale,
                     "ranking_score": final_score,  # New deterministic score (higher = better)
                     "ranking_breakdown": breakdown,  # Explainable score components
+                    "similarity_score": round(final_score, 3) if final_score > 0 else None,
+                    "is_primary_match": is_primary_match,  # For Best Matches vs More Products separation
+                    "primary_style": product.primary_style,  # For style filtering
                     "description": product.description,  # Include for AI visualization context
                     "primary_image": {
                         "url": primary_image.original_url if primary_image else None,
