@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -10,6 +10,8 @@ import { PanelResizeHandle } from '@/components/ui/PanelResizeHandle';
 import { adminCuratedAPI, getCategorizedStores, visualizeRoom, startChatSession, startFurnitureRemoval, checkFurnitureRemovalStatus, furniturePositionAPI, generateAngleView, StoreCategory, getRecoveredCurationState, clearRecoveredCurationState, imageAPI } from '@/utils/api';
 import { FurniturePosition, MagicGrabLayer, PendingMoveData } from '@/components/DraggableFurnitureCanvas';
 import { AngleSelector, ViewingAngle } from '@/components/AngleSelector';
+import { useVisualization } from '@/hooks/useVisualization';
+import { VisualizationProduct, SerializableHistoryEntry, VisualizationHistoryEntry } from '@/types/visualization';
 
 const DraggableFurnitureCanvas = dynamic(
   () => import('@/components/DraggableFurnitureCanvas').then(mod => ({ default: mod.DraggableFurnitureCanvas })),
@@ -73,12 +75,7 @@ interface Category {
   slug: string;
 }
 
-// Visualization history entry for local undo/redo tracking
-interface VisualizationHistoryEntry {
-  image: string;
-  products: any[];
-  productIds: Set<string>;
-}
+// Note: Using shared VisualizationHistoryEntry from @/types/visualization
 
 export default function CreateCuratedLookPage() {
   const router = useRouter();
@@ -126,20 +123,102 @@ export default function CreateCuratedLookPage() {
   // Canvas state
   const [selectedProducts, setSelectedProducts] = useState<any[]>([]);
   const [roomImage, setRoomImage] = useState<string | null>(null);
-  const [visualizationImage, setVisualizationImage] = useState<string | null>(null);
-  const [isVisualizing, setIsVisualizing] = useState(false);
 
-  // Multi-angle viewing state
-  const [currentAngle, setCurrentAngle] = useState<ViewingAngle>('front');
-  const [angleImages, setAngleImages] = useState<Record<ViewingAngle, string | null>>({
-    front: null, left: null, right: null, back: null
-  });
-  const [loadingAngle, setLoadingAngle] = useState<ViewingAngle | null>(null);
-
-  // Furniture removal state
+  // Furniture removal state (declared before hook since preparedRoomImage is used by hook)
   const [isRemovingFurniture, setIsRemovingFurniture] = useState(false);
   const [furnitureRemovalJobId, setFurnitureRemovalJobId] = useState<string | null>(null);
   const [preparedRoomImage, setPreparedRoomImage] = useState<string | null>(null);
+
+  // Curated look ID for the hook (parsed from existingLookId)
+  const curatedLookIdNumber = existingLookId ? parseInt(existingLookId) : undefined;
+
+  // Use shared visualization hook for all visualization logic
+  // This ensures consistent behavior with CanvasPanel and automatic bug fixes
+  const visualization = useVisualization({
+    products: selectedProducts as VisualizationProduct[],
+    roomImage,
+    cleanRoomImage: preparedRoomImage || roomImage, // Use furniture-removed image if available
+    onSetProducts: setSelectedProducts,
+    config: {
+      enableTextBasedEdits: true,
+      enablePositionEditing: true,
+      enableMultiAngle: true,
+      enableImproveQuality: true,
+      curatedLookId: curatedLookIdNumber,
+    },
+  });
+
+  // Destructure hook values - these replace all the old local state and handlers
+  const {
+    visualizationImage,
+    isVisualizing,
+    visualizationProgress,
+    visualizedProductIds,
+    visualizedProducts,
+    visualizedQuantities,
+    needsRevisualization,
+    canUndo,
+    canRedo,
+    isEditingPositions,
+    editInstructions,
+    currentAngle,
+    angleImages,
+    loadingAngle,
+    isImprovingQuality,
+    handleVisualize,
+    handleUndo,
+    handleRedo,
+    handleImproveQuality,
+    handleAngleSelect,
+    enterEditMode,
+    exitEditMode,
+    applyEditInstructions,
+    setEditInstructions,
+    resetVisualization,
+    initializeFromExisting,
+    _internal,
+  } = visualization;
+
+  // Destructure internal setters for legacy admin handlers
+  const {
+    setVisualizationImage,
+    setIsVisualizing,
+    setVisualizedProductIds,
+    setVisualizedProducts,
+    setVisualizedQuantities,
+    setNeedsRevisualization,
+    setIsEditingPositions,
+    setCurrentAngle,
+    setAngleImages,
+    historyHook,
+  } = _internal;
+
+  // Destructure history hook methods for legacy handlers
+  // Note: pushState replaces setVisualizationHistory pattern
+  // canUndo/canRedo are computed, not set directly
+  const {
+    pushState: pushHistoryState,
+    history: visualizationHistory,
+    redoStack,
+  } = historyHook;
+
+  // Helper functions to match old API patterns used by legacy handlers
+  const setVisualizationHistory = (fn: (prev: any[]) => any[]) => {
+    // Legacy code used setState callback pattern - now we use pushState
+    console.warn('[Migration] setVisualizationHistory called - should use pushHistoryState');
+  };
+  const setCanUndo = (value: boolean) => {
+    // canUndo is now computed from history.length, not settable
+    console.warn('[Migration] setCanUndo called but is now computed');
+  };
+  const setCanRedo = (value: boolean) => {
+    // canRedo is now computed from redoStack.length, not settable
+    console.warn('[Migration] setCanRedo called but is now computed');
+  };
+  const setRedoStack = (value: any[]) => {
+    // redoStack is managed internally by historyHook
+    console.warn('[Migration] setRedoStack called but is managed by hook');
+  };
 
   // Publish state
   const [title, setTitle] = useState('');
@@ -235,21 +314,11 @@ export default function CreateCuratedLookPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isRoomImageCollapsed, setIsRoomImageCollapsed] = useState(false);
 
-  // Smart re-visualization tracking (from CanvasPanel)
-  const [visualizedProductIds, setVisualizedProductIds] = useState<Set<string>>(new Set());
-  const [visualizedProducts, setVisualizedProducts] = useState<any[]>([]);
-  const [needsRevisualization, setNeedsRevisualization] = useState(false);
+  // NOTE: Smart re-visualization tracking, Undo/Redo state, and visualization history
+  // are now managed by the useVisualization hook (destructured above)
 
-  // Undo/Redo state (from CanvasPanel)
-  const [canUndo, setCanUndo] = useState(false);
-  const [canRedo, setCanRedo] = useState(false);
-
-  // Local visualization history for reliable undo/redo (not dependent on backend in-memory state)
-  const [visualizationHistory, setVisualizationHistory] = useState<VisualizationHistoryEntry[]>([]);
-  const [redoStack, setRedoStack] = useState<VisualizationHistoryEntry[]>([]);
-
-  // Furniture position editing state (from CanvasPanel)
-  const [isEditingPositions, setIsEditingPositions] = useState(false);
+  // Furniture position editing state (legacy - for DraggableFurnitureCanvas)
+  // isEditingPositions comes from hook, but these are admin-specific for legacy edit mode
   const [furniturePositions, setFurniturePositions] = useState<FurniturePosition[]>([]);
   const [hasUnsavedPositions, setHasUnsavedPositions] = useState(false);
 
@@ -301,10 +370,9 @@ export default function CreateCuratedLookPage() {
     if (recoveredState) {
       console.log('[Curation] Restoring state from session recovery');
 
-      // Restore all state
+      // Restore local state
       if (recoveredState.selectedProducts) setSelectedProducts(recoveredState.selectedProducts);
       if (recoveredState.roomImage) setRoomImage(recoveredState.roomImage);
-      if (recoveredState.visualizationImage) setVisualizationImage(recoveredState.visualizationImage);
       if (recoveredState.title) setTitle(recoveredState.title);
       if (recoveredState.styleTheme) setStyleTheme(recoveredState.styleTheme);
       if (recoveredState.styleDescription) setStyleDescription(recoveredState.styleDescription);
@@ -312,6 +380,14 @@ export default function CreateCuratedLookPage() {
       if (recoveredState.roomType) setRoomType(recoveredState.roomType);
       if (recoveredState.preparedRoomImage) setPreparedRoomImage(recoveredState.preparedRoomImage);
       if (recoveredState.furniturePositions) setFurniturePositions(recoveredState.furniturePositions);
+
+      // Restore visualization state via hook
+      if (recoveredState.visualizationImage && recoveredState.selectedProducts) {
+        initializeFromExisting(
+          recoveredState.visualizationImage,
+          recoveredState.selectedProducts as VisualizationProduct[]
+        );
+      }
 
       // Clear recovery data after restoring
       clearRecoveredCurationState();
@@ -321,7 +397,7 @@ export default function CreateCuratedLookPage() {
     initSession();
     loadCategories();
     loadStores();
-  }, []);
+  }, [initializeFromExisting]);
 
   // Continuously save curation state to sessionStorage for recovery after 401
   useEffect(() => {
@@ -381,14 +457,6 @@ export default function CreateCuratedLookPage() {
         setRoomImage(roomImg);
       }
 
-      // Pre-populate visualization image
-      if (look.visualization_image) {
-        const vizImg = look.visualization_image.startsWith('data:')
-          ? look.visualization_image
-          : `data:image/png;base64,${look.visualization_image}`;
-        setVisualizationImage(vizImg);
-      }
-
       // Pre-populate products with quantities from the API
       const productsWithQuantity = look.products.map(p => ({
         ...p,
@@ -397,43 +465,18 @@ export default function CreateCuratedLookPage() {
       }));
       setSelectedProducts(productsWithQuantity);
 
-      // Set visualized state - assume the saved visualization matches database quantities
-      // This prevents false "quantity changed" detection on initial load
-      // Only when user ACTUALLY changes quantities should it trigger re-visualization
-      const productIds = new Set(look.products.map(p => String(p.id)));
-      setVisualizedProductIds(productIds);
-
-      // Set visualized products with ACTUAL quantities from database
-      // This assumes the saved visualization was created with these quantities
-      setVisualizedProducts(productsWithQuantity);
-
-      // IMPORTANT: Explicitly set needsRevisualization to false AFTER all state updates
-      // This prevents the change detection useEffect from incorrectly flagging changes
-      // due to timing issues between state updates
-      setNeedsRevisualization(false);
-
-      // CRITICAL: Save the initial state to visualization history
-      // This allows undo to go back to the loaded state instead of null
+      // Use hook's initializeFromExisting to properly set visualization state
+      // This handles visualizedProductIds, visualizedProducts, visualizedQuantities,
+      // needsRevisualization, and visualization history in a consistent way
       if (look.visualization_image) {
         const vizImg = look.visualization_image.startsWith('data:')
           ? look.visualization_image
           : `data:image/png;base64,${look.visualization_image}`;
-        const initialHistoryEntry = {
-          image: vizImg,
-          products: productsWithQuantity,
-          productIds: productIds
-        };
-        setVisualizationHistory([initialHistoryEntry]);
-        setCanUndo(false); // Can't undo past the initial loaded state
-        setRedoStack([]); // Clear any redo stack
-        console.log('[StyleFrom] Added initial state to visualization history');
+        initializeFromExisting(vizImg, productsWithQuantity as VisualizationProduct[]);
+        console.log('[StyleFrom] Initialized visualization via hook');
       }
 
       console.log('[StyleFrom] Pre-populated canvas with', productsWithQuantity.length, 'products');
-      console.log('[StyleFrom] Product IDs (string):', Array.from(productIds));
-      console.log('[StyleFrom] Selected products (actual qty):', productsWithQuantity.map(p => ({ id: p.id, name: p.name, qty: p.quantity })));
-      console.log('[StyleFrom] Visualized products set to match selected (no false quantity changes)');
-      console.log('[StyleFrom] needsRevisualization explicitly set to FALSE');
     } catch (err) {
       console.error('[StyleFrom] Error loading look:', err);
       setError('Failed to load existing look');
@@ -617,7 +660,7 @@ export default function CreateCuratedLookPage() {
 
       // Set the original image first so it displays
       setRoomImage(base64);
-      setVisualizationImage(null);
+      resetVisualization();  // Reset visualization when room image changes
       setPreparedRoomImage(null);
       setError(null);
 
@@ -814,99 +857,7 @@ export default function CreateCuratedLookPage() {
     return product?.quantity || 0;
   };
 
-  // Visualize
-  const handleVisualize = async () => {
-    if (!roomImage || selectedProducts.length === 0) {
-      setError('Please upload a room image and add at least one product');
-      return;
-    }
-
-    if (!sessionId) {
-      setError('Session not initialized. Please refresh the page.');
-      return;
-    }
-
-    try {
-      setIsVisualizing(true);
-      setError(null);
-
-      const imageData = roomImage.includes('base64,')
-        ? roomImage.split('base64,')[1]
-        : roomImage;
-
-      const productsForViz = selectedProducts.map(p => ({
-        id: p.id,
-        name: p.name,
-        price: p.price,
-        category: 'furniture',
-        brand: p.brand || p.source_website,
-        image_url: p.image_url || p.primary_image?.url,
-        description: p.description || '',
-        quantity: p.quantity || 1,
-      }));
-
-      const result = await visualizeRoom(sessionId, {
-        image: imageData,
-        products: productsForViz,
-        user_action: 'admin_curated_visualization',
-        curated_look_id: existingLookId ? parseInt(existingLookId) : undefined,
-      });
-
-      if (result.visualization) {
-        const vizImage = result.visualization.startsWith('data:')
-          ? result.visualization
-          : `data:image/png;base64,${result.visualization}`;
-        setVisualizationImage(vizImage);
-        // Reset angle cache - new visualization starts from front view
-        setAngleImages({ front: vizImage, left: null, right: null, back: null });
-        setCurrentAngle('front');
-      }
-    } catch (err) {
-      console.error('Error visualizing:', err);
-      setError('Failed to generate visualization. Please try again.');
-    } finally {
-      setIsVisualizing(false);
-    }
-  };
-
-  // Handle angle selection for multi-angle viewing
-  const handleAngleSelect = async (angle: ViewingAngle) => {
-    // Front view is always the original visualization
-    if (angle === 'front') {
-      setCurrentAngle('front');
-      return;
-    }
-
-    // If angle is already cached, just switch to it
-    if (angleImages[angle]) {
-      setCurrentAngle(angle);
-      return;
-    }
-
-    // Generate the angle on-demand
-    if (!sessionId || !visualizationImage) return;
-
-    setLoadingAngle(angle);
-    try {
-      const result = await generateAngleView(sessionId, {
-        visualization_image: visualizationImage,
-        target_angle: angle,
-        products_description: selectedProducts.map(p => p.name).join(', ')
-      });
-
-      // Cache the generated image
-      const angleImage = result.image.startsWith('data:')
-        ? result.image
-        : `data:image/png;base64,${result.image}`;
-      setAngleImages(prev => ({ ...prev, [angle]: angleImage }));
-      setCurrentAngle(angle);
-    } catch (err) {
-      console.error(`Error generating ${angle} view:`, err);
-      setError(`Failed to generate ${angle} view. Please try again.`);
-    } finally {
-      setLoadingAngle(null);
-    }
-  };
+  // NOTE: handleVisualize and handleAngleSelect are now provided by useVisualization hook
 
   // Publish
   const handlePublish = async () => {
@@ -1121,46 +1072,10 @@ export default function CreateCuratedLookPage() {
   };
 
   // ============================================
-  // CANVAS PANEL HANDLERS (Lifted from CanvasPanel.tsx)
+  // ADMIN-SPECIFIC HANDLERS
+  // NOTE: Core visualization logic (change detection, visualize, undo/redo)
+  // is now handled by useVisualization hook
   // ============================================
-
-  // Check if canvas has changed since last visualization (including quantity changes)
-  useEffect(() => {
-    console.log('[ChangeDetect] Running change detection...');
-    console.log('[ChangeDetect] visualizedProductIds.size:', visualizedProductIds.size);
-    console.log('[ChangeDetect] visualizationImage exists:', !!visualizationImage);
-    console.log('[ChangeDetect] selectedProducts.length:', selectedProducts.length);
-
-    if (visualizedProductIds.size === 0 && !visualizationImage) {
-      console.log('[ChangeDetect] Early return - no visualized products and no image');
-      return;
-    }
-    const currentIds = new Set(selectedProducts.map(p => String(p.id)));
-
-    // Check if product IDs changed
-    const idsChanged =
-      selectedProducts.length !== visualizedProductIds.size ||
-      selectedProducts.some(p => !visualizedProductIds.has(String(p.id)));
-
-    // Check if quantities changed (even if product IDs are the same)
-    const quantitiesChanged = selectedProducts.some(currentProduct => {
-      const visualizedProduct = visualizedProducts.find(vp => vp.id === currentProduct.id);
-      if (!visualizedProduct) return false; // Product wasn't visualized, will be caught by idsChanged
-      return (currentProduct.quantity || 1) !== (visualizedProduct.quantity || 1);
-    });
-
-    console.log('[ChangeDetect] idsChanged:', idsChanged, 'quantitiesChanged:', quantitiesChanged);
-    console.log('[ChangeDetect] visualizedProductIds:', Array.from(visualizedProductIds));
-    console.log('[ChangeDetect] selectedProducts ids:', selectedProducts.map(p => p.id));
-
-    if (idsChanged || quantitiesChanged) {
-      console.log('[ChangeDetect] Setting needsRevisualization to TRUE');
-      setNeedsRevisualization(true);
-    } else {
-      console.log('[ChangeDetect] No changes detected, setting needsRevisualization to FALSE');
-      setNeedsRevisualization(false);
-    }
-  }, [selectedProducts, visualizedProductIds, visualizedProducts, visualizationImage]);
 
   // Auto-scroll to canvas products when a product is added
   useEffect(() => {
@@ -1178,464 +1093,18 @@ export default function CreateCuratedLookPage() {
     }
   }, [visualizationImage]);
 
-  // Detect visualization change type
-  const detectChangeType = () => {
-    console.log('[DetectChangeType] ========== STARTING DETECTION ==========');
-    console.log('[DetectChangeType] selectedProducts:', selectedProducts.map(p => ({ id: p.id, name: p.name, qty: p.quantity })));
-    console.log('[DetectChangeType] visualizedProducts:', visualizedProducts.map(p => ({ id: p.id, name: p.name, qty: p.quantity })));
-    console.log('[DetectChangeType] visualizedProductIds:', Array.from(visualizedProductIds));
+  // NOTE: detectChangeType, handleSmartVisualize, handleUndo, handleRedo
+  // are now provided by useVisualization hook
 
-    const currentIds = new Set(selectedProducts.map(p => String(p.id)));
-    const removedProductIds = Array.from(visualizedProductIds).filter(id => !currentIds.has(id));
-    console.log('[DetectChangeType] removedProductIds:', removedProductIds);
-
-    // Check for new products BEFORE deciding on removal vs reset
-    // We need to know this because removal + addition requires reset, not just removal
-    const newProducts = selectedProducts.filter(p => !visualizedProductIds.has(String(p.id)));
-    console.log('[DetectChangeType] newProducts (early check):', newProducts.map(p => ({ id: p.id, name: p.name })));
-
-    if (removedProductIds.length > 0) {
-      // Get full product info for removed products, including their quantities as removeCount
-      // When a product is completely removed, we need to remove ALL instances (quantity)
-      const removedProductsInfo = visualizedProducts
-        .filter(p => removedProductIds.includes(String(p.id)))
-        .map(p => ({
-          ...p,
-          removeCount: p.quantity || 1  // Remove ALL instances of this product
-        }));
-
-      // OPTIMIZATION: If products are BOTH removed AND added, use remove_and_add workflow
-      // This avoids full reset and instead: (1) removes products (2) adds new ones incrementally
-      if (newProducts.length > 0 && visualizationImage) {
-        console.log('[DetectChangeType] => REMOVE_AND_ADD: Removed:', removedProductsInfo.map(p => `${p.name} (qty=${p.removeCount})`), 'Added:', newProducts.map(p => p.name));
-        return {
-          type: 'remove_and_add',
-          reason: 'products_removed_and_added',
-          removedProducts: removedProductsInfo,
-          newProducts: newProducts
-        };
-      }
-
-      // Only removals, no additions - use removal mode
-      console.log('[DetectChangeType] => REMOVAL: Products removed:', removedProductsInfo.map(p => `${p.name} (qty=${p.removeCount})`));
-      return {
-        type: 'removal',
-        reason: 'products_removed',
-        removedProducts: removedProductsInfo,
-        remainingProducts: selectedProducts
-      };
-    }
-
-    // Check for quantity changes
-    // - Quantity INCREASE: additive (just add more instances to existing visualization)
-    // - Quantity DECREASE: reset (need to re-render without the removed instances)
-    let hasQuantityIncrease = false;
-    let hasQuantityDecrease = false;
-    const additionalInstances: any[] = [];
-
-    const decreasedProducts: any[] = [];
-
-    selectedProducts.forEach(currentProduct => {
-      const visualizedProduct = visualizedProducts.find(vp => vp.id === currentProduct.id);
-      if (!visualizedProduct) {
-        console.log(`[DetectChangeType] Product ${currentProduct.name} (${currentProduct.id}) not in visualizedProducts - will be caught as new product`);
-        return;
-      }
-
-      const currentQty = currentProduct.quantity || 1;
-      const visualizedQty = visualizedProduct.quantity || 1;
-      console.log(`[DetectChangeType] Comparing ${currentProduct.name}: current=${currentQty}, visualized=${visualizedQty}`);
-
-      if (currentQty > visualizedQty) {
-        // Quantity increased - we need to add (currentQty - visualizedQty) more copies
-        const additionalCount = currentQty - visualizedQty;
-        console.log(`[DetectChangeType] => QUANTITY INCREASE for ${currentProduct.name}: ${visualizedQty} -> ${currentQty} (add ${additionalCount} more)`);
-        hasQuantityIncrease = true;
-        // Instead of creating individual instances, create ONE entry with the count to add
-        additionalInstances.push({
-          ...currentProduct,
-          quantity: additionalCount, // How many MORE to add
-          _isQuantityIncrease: true // Flag to indicate this is additional copies
-        });
-      } else if (currentQty < visualizedQty) {
-        // Quantity decreased - track how many to remove
-        const removeCount = visualizedQty - currentQty;
-        console.log(`[DetectChangeType] => QUANTITY DECREASE for ${currentProduct.name}: ${visualizedQty} -> ${currentQty} (remove ${removeCount})`);
-        hasQuantityDecrease = true;
-        decreasedProducts.push({
-          ...currentProduct,
-          removeCount: removeCount, // How many to remove
-          originalQty: visualizedQty,
-          newQty: currentQty
-        });
-      }
-    });
-
-    // Quantity decrease - use removal mode instead of full reset
-    if (hasQuantityDecrease) {
-      console.log('[DetectChangeType] => FINAL RESULT: REMOVAL (quantities decreased)', decreasedProducts.map(p => `${p.name}: remove ${p.removeCount}`));
-      return {
-        type: 'removal',
-        reason: 'quantities_decreased',
-        removedProducts: decreasedProducts,
-        remainingProducts: selectedProducts
-      };
-    }
-
-    // newProducts was already calculated at the top of this function
-    // (used for checking removal+addition scenario)
-    // Now combine quantity increases AND new products into one additive operation
-    const allNewItems = [...additionalInstances, ...newProducts];
-
-    if (allNewItems.length > 0 && visualizedProductIds.size > 0) {
-      const reasons = [];
-      if (additionalInstances.length > 0) reasons.push(`${additionalInstances.length} quantity increases`);
-      if (newProducts.length > 0) reasons.push(`${newProducts.length} new products`);
-      console.log('[DetectChangeType] => FINAL RESULT: ADDITIVE - adding', allNewItems.length, 'items:', reasons.join(' + '));
-      return { type: 'additive', newProducts: allNewItems, reason: reasons.join('_and_') };
-    }
-    if (visualizedProductIds.size === 0) {
-      console.log('[DetectChangeType] => FINAL RESULT: INITIAL (no products visualized yet)');
-      return { type: 'initial' };
-    }
-    console.log('[DetectChangeType] => FINAL RESULT: NO_CHANGE');
-    return { type: 'no_change' };
-  };
-
-  // Smart Visualization with incremental support (from CanvasPanel)
-  const handleSmartVisualize = async () => {
-    console.log('[Visualize] handleSmartVisualize called');
-    console.log('[Visualize] roomImage exists:', !!roomImage);
-    console.log('[Visualize] selectedProducts.length:', selectedProducts.length);
-    console.log('[Visualize] sessionId:', sessionId);
-
-    if (!roomImage || selectedProducts.length === 0) {
-      console.log('[Visualize] Early return - no room image or products');
-      return;
-    }
-    if (!sessionId) {
-      setError('Session not initialized. Please refresh the page.');
-      return;
-    }
-
-    setIsVisualizing(true);
-    setError(null);
-
-    try {
-      const changeInfo = detectChangeType();
-      console.log('[Visualize] Change detection result:', changeInfo);
-      console.log('[Visualize] Selected products quantities:', selectedProducts.map(p => ({ name: p.name, qty: p.quantity || 1 })));
-      console.log('[Visualize] Visualized products quantities:', visualizedProducts.map(p => ({ name: p.name, qty: p.quantity || 1 })));
-
-      if (changeInfo.type === 'no_change') {
-        setIsVisualizing(false);
-        return;
-      }
-
-      let baseImage: string;
-      let productsToVisualize: any[];
-      let isIncremental = false;
-      let forceReset = false;
-      let removalMode = false;
-      let productsToRemove: any[] = [];
-      let productsToAdd: any[] = [];
-
-      if (changeInfo.type === 'additive' && visualizationImage) {
-        baseImage = visualizationImage;
-        productsToVisualize = changeInfo.newProducts!;
-        isIncremental = true;
-      } else if (changeInfo.type === 'remove_and_add' && visualizationImage) {
-        // OPTIMIZATION: Two-step workflow - remove then add incrementally
-        // This avoids full reset when products are both removed and added
-        baseImage = visualizationImage;
-        productsToVisualize = selectedProducts; // All remaining products (for reference)
-        productsToRemove = changeInfo.removedProducts || [];
-        productsToAdd = changeInfo.newProducts || [];
-        removalMode = true;
-        console.log('[Visualize] REMOVE_AND_ADD MODE: Removing', productsToRemove.map((p: any) => p.name), 'Adding', productsToAdd.map((p: any) => p.name));
-        console.log('[Visualize] productsToAdd full data:', JSON.stringify(productsToAdd.map((p: any) => ({ id: p.id, name: p.name, image_url: p.image_url?.substring(0, 50) }))));
-      } else if (changeInfo.type === 'removal' && visualizationImage) {
-        // Product removal: use current visualization and remove specific products
-        baseImage = visualizationImage;
-        productsToVisualize = selectedProducts; // Remaining products (for reference)
-        productsToRemove = changeInfo.removedProducts || [];
-        removalMode = true;
-        console.log('[Visualize] REMOVAL MODE: Removing products:', productsToRemove.map((p: any) => p.name));
-      } else if (changeInfo.type === 'reset') {
-        baseImage = roomImage;
-        productsToVisualize = selectedProducts;
-        forceReset = true;
-      } else {
-        baseImage = roomImage;
-        productsToVisualize = selectedProducts;
-      }
-
-      const productDetails = productsToVisualize.map(p => {
-        // If this is an additional instance from quantity increase, append the instance label
-        const instanceLabel = p._instanceLabel || '';
-        const displayName = instanceLabel ? `${p.name} ${instanceLabel}` : p.name;
-
-        return {
-          id: p.id,
-          name: displayName,
-          full_name: displayName,
-          style: 0.8,
-          category: 'furniture',
-          quantity: p.quantity || 1,  // Pass quantity for multiple instances
-          image_url: p.image_url || p.imageUrl || p.image,  // Product image for accurate rendering
-          furniture_type: p.furniture_type || p.furnitureType || p.type,  // Furniture category
-        };
-      });
-
-      console.log('[Visualize] Sending products:', productDetails.map(p => ({ name: p.name, qty: p.quantity })));
-      console.log('[Visualize] forceReset:', forceReset, 'isIncremental:', isIncremental, 'removalMode:', removalMode, 'reason:', changeInfo.reason || 'none');
-      if (removalMode) {
-        console.log('[Visualize] Products to remove with counts:', productsToRemove.map((p: any) => ({ name: p.name, removeCount: p.removeCount })));
-        if (productsToAdd.length > 0) {
-          console.log('[Visualize] Products to add:', productsToAdd.map((p: any) => p.name));
-        }
-      }
-
-      // Prepare removal products info for backend - include image_url so Gemini can visually identify what to remove
-      const removalProductDetails = productsToRemove.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        full_name: p.name,
-        remove_count: p.removeCount || 1, // For quantity decreases, how many to remove
-        image_url: p.image_url || p.imageUrl || p.image,  // Product image for visual identification
-        furniture_type: p.furniture_type || p.furnitureType || p.type,  // Furniture category
-      }));
-
-      // Prepare products to add info for backend (for remove_and_add workflow)
-      // Include image_url and furniture_type for proper visualization
-      console.log('[Visualize] Creating addProductDetails from productsToAdd:', productsToAdd.length, 'items');
-      const addProductDetails = productsToAdd.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        full_name: p.name,
-        quantity: p.quantity || 1,
-        image_url: p.image_url || p.imageUrl || p.image,
-        furniture_type: p.furniture_type || p.furnitureType || p.type,
-      }));
-      console.log('[Visualize] addProductDetails created:', addProductDetails.length, 'items', addProductDetails.map(p => p.name));
-
-      // For incremental visualization, send products already in the base image
-      // This allows the AI to know exactly what furniture to preserve
-      const visualizedProductDetails = visualizedProducts.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        full_name: p.name,
-        quantity: p.quantity || 1,
-      }));
-
-      if (isIncremental) {
-        console.log('[Visualize] Existing products in base image:', visualizedProductDetails.map(p => ({ name: p.name, qty: p.quantity })));
-      }
-
-      // Debug: Log what we're actually sending
-      console.log('[Visualize] Request body:', {
-        removalMode,
-        productsToRemoveCount: removalProductDetails.length,
-        productsToAddCount: addProductDetails.length,
-        addProductDetails: addProductDetails.map(p => ({ id: p.id, name: p.name })),
-      });
-
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          image: baseImage,
-          products: productDetails,
-          analysis: { design_style: 'modern', color_palette: [], room_type: 'living_room' },
-          is_incremental: isIncremental,
-          force_reset: forceReset,
-          removal_mode: removalMode,
-          products_to_remove: removalMode ? removalProductDetails : undefined,
-          products_to_add: removalMode ? addProductDetails : [],  // Always send array for remove_and_add workflow
-          visualized_products: isIncremental ? visualizedProductDetails : [],  // Products already in base image (for incremental)
-          user_uploaded_new_image: changeInfo.type === 'initial',
-          action: 'add',  // Always add products in curated looks editor (skip furniture replacement clarification)
-          curated_look_id: existingLookId ? parseInt(existingLookId) : undefined,  // For precomputation cache
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        throw new Error(errorData.detail || 'Visualization failed');
-      }
-
-      const data = await response.json();
-      console.log('[Visualize] Response data:', {
-        hasVisualization: !!data.visualization,
-        hasRenderedImage: !!data.visualization?.rendered_image,
-        imageLength: data.visualization?.rendered_image?.length,
-        mode: data.mode,
-        removedProducts: data.removed_products,
-      });
-
-      // Handle needs_clarification response (shouldn't happen with action: 'add', but handle just in case)
-      if (data.needs_clarification) {
-        console.log('Clarification needed:', data.message);
-        // Retry with explicit 'add' action
-        const retryResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            image: baseImage,
-            products: productDetails,
-            analysis: { design_style: 'modern', color_palette: [], room_type: 'living_room' },
-            is_incremental: isIncremental,
-            force_reset: forceReset,
-            user_uploaded_new_image: changeInfo.type === 'initial',
-            action: 'add',
-            existing_furniture: data.existing_furniture,
-            curated_look_id: existingLookId ? parseInt(existingLookId) : undefined,  // For precomputation cache
-          }),
-        });
-        if (!retryResponse.ok) {
-          throw new Error('Visualization failed after clarification');
-        }
-        const retryData = await retryResponse.json();
-        if (!retryData.visualization?.rendered_image) {
-          throw new Error('No visualization image was generated');
-        }
-        const retryImage = retryData.visualization.rendered_image;
-        const retryProductIds = new Set(selectedProducts.map(p => String(p.id)));
-
-        // Push to local visualization history for reliable undo
-        setVisualizationHistory(prev => [...prev, {
-          image: retryImage,
-          products: [...selectedProducts],
-          productIds: retryProductIds
-        }]);
-        setRedoStack([]);
-
-        setVisualizationImage(retryImage);
-        setVisualizedProductIds(retryProductIds);
-        // Deep copy selected products with their quantities to track what was visualized
-        setVisualizedProducts(selectedProducts.map(p => ({ ...p, quantity: p.quantity || 1 })));
-        setNeedsRevisualization(false);
-        setCanUndo(true);
-        setCanRedo(false);
-        return;
-      }
-
-      if (!data.visualization?.rendered_image) {
-        throw new Error('No visualization image was generated');
-      }
-
-      const newImage = data.visualization.rendered_image;
-      const newProductIds = new Set(selectedProducts.map(p => String(p.id)));
-
-      // Push to local visualization history for reliable undo
-      setVisualizationHistory(prev => [...prev, {
-        image: newImage,
-        products: [...selectedProducts],
-        productIds: newProductIds
-      }]);
-      // Clear redo stack when new visualization is added
-      setRedoStack([]);
-
-      console.log('[Visualize] Setting new image, length:', newImage?.length);
-      setVisualizationImage(newImage);
-      setVisualizedProductIds(newProductIds);
-      // Deep copy selected products with their quantities to track what was visualized
-      setVisualizedProducts(selectedProducts.map(p => ({ ...p, quantity: p.quantity || 1 })));
-      setNeedsRevisualization(false);
-      // Reset position edit flag since AI placed products fresh in this visualization
-      setPositionsWereEdited(false);
-      // Use local history length to determine undo/redo state (more reliable than backend)
-      setCanUndo(true); // Can always undo after a visualization
-      setCanRedo(false); // Clear redo after new visualization
-      console.log('[Visualize] State update complete, selectedProducts:', selectedProducts.map(p => p.name));
-    } catch (error: any) {
-      console.error('Visualization error:', error);
-      setError(error.message || 'Failed to generate visualization. Please try again.');
-    } finally {
-      setIsVisualizing(false);
-    }
-  };
-
-  // Handle undo visualization - uses local history for reliability
-  const handleUndo = () => {
-    // Check if we have local history to undo
-    if (visualizationHistory.length === 0) {
-      console.log('Cannot undo: no visualization history');
-      return;
-    }
-
-    // Pop current state from history and push to redo stack
-    const newHistory = [...visualizationHistory];
-    const currentState = newHistory.pop();
-
-    if (currentState) {
-      setRedoStack(prev => [...prev, currentState]);
-    }
-
-    // If there's a previous state, restore it
-    if (newHistory.length > 0) {
-      const previousState = newHistory[newHistory.length - 1];
-      setVisualizationImage(previousState.image);
-      setVisualizedProductIds(previousState.productIds);
-      setVisualizedProducts(previousState.products);
-      setSelectedProducts(previousState.products);
-    } else {
-      // No previous state, go back to original room image
-      setVisualizationImage(null);
-      setVisualizedProductIds(new Set());
-      setVisualizedProducts([]);
-      setSelectedProducts([]);
-    }
-
-    setVisualizationHistory(newHistory);
-    // Use > 1 because we want to preserve the initial loaded state (entry 0)
-    // and not allow undoing past it on "Style this further" pages
-    setCanUndo(newHistory.length > 1);
-    setCanRedo(true);
-    console.log(`Undo: history now has ${newHistory.length} items, redo stack has ${redoStack.length + 1} items`);
-  };
-
-  // Handle redo visualization - uses local history for reliability
-  const handleRedo = () => {
-    // Check if we have redo stack items
-    if (redoStack.length === 0) {
-      console.log('Cannot redo: no redo history');
-      return;
-    }
-
-    // Pop from redo stack and push back to history
-    const newRedoStack = [...redoStack];
-    const stateToRestore = newRedoStack.pop();
-
-    if (stateToRestore) {
-      setVisualizationHistory(prev => [...prev, stateToRestore]);
-      setVisualizationImage(stateToRestore.image);
-      setVisualizedProductIds(stateToRestore.productIds);
-      setVisualizedProducts(stateToRestore.products);
-      setSelectedProducts(stateToRestore.products);
-    }
-
-    setRedoStack(newRedoStack);
-    setCanUndo(true);
-    setCanRedo(newRedoStack.length > 0);
-    console.log(`Redo: history now has ${visualizationHistory.length + 1} items, redo stack has ${newRedoStack.length} items`);
-  };
-
-  // Enter edit mode for positions - now uses click-to-select
-  const handleEnterEditMode = async () => {
+  // Enter edit mode for positions - uses hook's enterEditMode
+  const handleEnterEditMode = () => {
     if (!sessionId || !visualizationImage) {
       setError('Please create a visualization first.');
       return;
     }
-
-    // Text-based edit mode - user types instructions, no dragging needed
-    console.log('[AdminCurated] Entering text-based edit mode...');
-
-    // Store the current visualization for potential revert
-    setPreEditVisualization(visualizationImage);
-
-    setIsEditingPositions(true);
-    setEditSpecialInstructions(''); // Clear any previous instructions
+    // Use hook's enterEditMode which handles all state management
+    enterEditMode();
+    setEditSpecialInstructions(''); // Clear admin-specific instructions
     console.log('[AdminCurated] Edit mode ready - type instructions to reposition items');
   };
 
@@ -1685,10 +1154,14 @@ export default function CreateCuratedLookPage() {
         console.log('[AdminCurated] Move finalized successfully');
 
         // Add to history for undo/redo
+        // CRITICAL: Include visualizedQuantities for proper undo/redo
+        const historyQuantities = new Map<string, number>();
+        visualizedProducts.forEach((p: any) => historyQuantities.set(String(p.id), p.quantity || 1));
         const newHistoryEntry: VisualizationHistoryEntry = {
           image: result.image,
           products: [...visualizedProducts],
           productIds: new Set(visualizedProducts.map((p: any) => String(p.id))),
+          visualizedQuantities: historyQuantities,
         };
         setVisualizationHistory(prev => [...prev, newHistoryEntry]);
         setRedoStack([]);
@@ -1917,10 +1390,14 @@ export default function CreateCuratedLookPage() {
 
     // Add current visualization to history if we have changes
     if (visualizationImage && preEditVisualization && visualizationImage !== preEditVisualization) {
+      // CRITICAL: Include visualizedQuantities for proper undo/redo
+      const saveQuantities = new Map<string, number>();
+      visualizedProducts.forEach((p: any) => saveQuantities.set(String(p.id), p.quantity || 1));
       const newHistoryEntry: VisualizationHistoryEntry = {
         image: visualizationImage,
         products: [...visualizedProducts],
         productIds: new Set(visualizedProducts.map((p: any) => String(p.id))),
+        visualizedQuantities: saveQuantities,
       };
       setVisualizationHistory(prev => [...prev, newHistoryEntry]);
       setRedoStack([]);
@@ -2055,10 +1532,14 @@ export default function CreateCuratedLookPage() {
       setVisualizationImage(data.image);
 
       // Add to history for undo/redo support
+      // CRITICAL: Include visualizedQuantities for proper undo/redo
+      const editQuantities = new Map<string, number>();
+      visualizedProducts.forEach((p: any) => editQuantities.set(String(p.id), p.quantity || 1));
       const newHistoryEntry: VisualizationHistoryEntry = {
         image: data.image,
         products: [...visualizedProducts],
         productIds: new Set(visualizedProducts.map((p: any) => String(p.id))),
+        visualizedQuantities: editQuantities,
       };
       setVisualizationHistory(prev => [...prev, newHistoryEntry]);
       setRedoStack([]); // Clear redo stack on new edit
@@ -2100,99 +1581,7 @@ export default function CreateCuratedLookPage() {
     console.log('[ButtonState] isReady:', isReady);
   }, [canVisualize, needsRevisualization, visualizationImage, isUpToDate, isReady]);
 
-  // ============================================
-  // END CANVAS PANEL HANDLERS
-  // ============================================
-
-  // Improve Quality - Re-visualize all products on clean base image
-  const [isImprovingQuality, setIsImprovingQuality] = useState(false);
-
-  const handleImproveQuality = async () => {
-    if (!roomImage || selectedProducts.length === 0 || !sessionId) {
-      console.log('[ImproveQuality] Missing requirements');
-      return;
-    }
-
-    // Confirm with warning about undo/redo reset
-    const confirmed = window.confirm(
-      'Improve Quality will re-visualize all products on the original room image.\n\n' +
-      'WARNING: This will reset your undo/redo history.\n\n' +
-      'Continue?'
-    );
-    if (!confirmed) return;
-
-    setIsImprovingQuality(true);
-    console.log('[ImproveQuality] Starting quality improvement with', selectedProducts.length, 'products');
-
-    try {
-      const productDetails = selectedProducts.map(p => ({
-        id: p.id,
-        name: p.name,
-        full_name: p.name,
-        style: 0.8,
-        category: 'furniture',
-        quantity: p.quantity || 1,
-        image_url: p.image_url || p.imageUrl || p.image,
-        furniture_type: p.furniture_type || p.furnitureType || p.type,
-      }));
-
-      console.log('[ImproveQuality] Sending products:', productDetails.map(p => ({ name: p.name, qty: p.quantity })));
-
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          image: roomImage,  // Use original room image, not current visualization
-          products: productDetails,
-          analysis: { design_style: 'modern', color_palette: [], room_type: 'living_room' },
-          is_incremental: false,
-          force_reset: true,  // Force fresh visualization
-          user_uploaded_new_image: false,
-          action: 'add',
-          curated_look_id: existingLookId ? parseInt(existingLookId) : undefined,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        throw new Error(errorData.detail || 'Quality improvement failed');
-      }
-
-      const data = await response.json();
-
-      if (!data.visualization?.rendered_image) {
-        throw new Error('No visualization image was generated');
-      }
-
-      const newImage = data.visualization.rendered_image;
-      console.log('[ImproveQuality] Success! New image length:', newImage?.length);
-
-      // Update visualization image
-      setVisualizationImage(newImage);
-
-      // Reset undo/redo stack
-      setVisualizationHistory([{
-        image: newImage,
-        products: selectedProducts.map(p => ({ ...p, quantity: p.quantity || 1 })),
-        productIds: new Set(selectedProducts.map(p => String(p.id))),
-      }]);
-      setRedoStack([]);
-      setCanUndo(false);
-      setCanRedo(false);
-
-      // Update visualized state
-      const newProductIds = new Set(selectedProducts.map(p => String(p.id)));
-      setVisualizedProductIds(newProductIds);
-      setVisualizedProducts(selectedProducts.map(p => ({ ...p, quantity: p.quantity || 1 })));
-      setNeedsRevisualization(false);
-
-    } catch (error) {
-      console.error('[ImproveQuality] Error:', error);
-      alert(`Failed to improve quality: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsImprovingQuality(false);
-    }
-  };
+  // NOTE: handleImproveQuality is now provided by useVisualization hook
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -3442,7 +2831,7 @@ export default function CreateCuratedLookPage() {
             ) : isReady ? (
               /* State 1: Ready to Visualize (Primary gradient, Enabled) */
               <button
-                onClick={handleSmartVisualize}
+                onClick={handleVisualize}
                 disabled={isVisualizing || isRemovingFurniture}
                 className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
               >

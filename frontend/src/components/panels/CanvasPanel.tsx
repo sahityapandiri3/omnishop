@@ -6,6 +6,9 @@ import dynamic from 'next/dynamic';
 import { FurniturePosition, MagicGrabLayer } from '../DraggableFurnitureCanvas';
 import { furniturePositionAPI, generateAngleView } from '@/utils/api';
 import { AngleSelector, ViewingAngle } from '../AngleSelector';
+import { useVisualization } from '@/hooks/useVisualization';
+import { VisualizationProduct, VisualizationHistoryEntry } from '@/types/visualization';
+import { fetchWithRetry } from '@/utils/visualization-helpers';
 
 const DraggableFurnitureCanvas = dynamic(
   () => import('../DraggableFurnitureCanvas').then(mod => ({ default: mod.DraggableFurnitureCanvas })),
@@ -67,13 +70,8 @@ interface Product {
   attributes?: ProductAttribute[];  // Product attributes including dimensions (width, height, depth)
 }
 
-// Visualization history entry for local undo/redo tracking
-// This fixes the issue where backend in-memory state is lost on server restart
-interface VisualizationHistoryEntry {
-  image: string;
-  products: Product[];
-  productIds: Set<string>;
-}
+// NOTE: VisualizationHistoryEntry is now imported from @/types/visualization
+// and includes visualizedQuantities for proper quantity tracking
 
 interface CanvasPanelProps {
   products: Product[];
@@ -116,33 +114,88 @@ export default function CanvasPanel({
   curatedLookId,
   projectId,
 }: CanvasPanelProps) {
+  // ============================================================================
+  // Use shared visualization hook - replaces most local state and handlers
+  // ============================================================================
+  const visualization = useVisualization({
+    products: products as VisualizationProduct[],
+    roomImage,
+    cleanRoomImage: cleanRoomImage || roomImage,
+    onSetProducts: onSetProducts as (products: VisualizationProduct[]) => void,
+    config: {
+      enableTextBasedEdits: false,  // CanvasPanel uses DraggableFurnitureCanvas instead
+      enablePositionEditing: true,
+      enableMultiAngle: true,
+      enableImproveQuality: true,
+      curatedLookId,
+      projectId,
+    },
+    onVisualizationHistoryChange,
+    onVisualizationImageChange,
+    initialVisualizationImage,
+    initialVisualizationHistory,
+  });
+
+  // Destructure hook values
+  const {
+    visualizationImage,
+    isVisualizing,
+    visualizationProgress,
+    visualizedProductIds,
+    visualizedProducts,
+    visualizedQuantities,
+    needsRevisualization,
+    canUndo,
+    canRedo,
+    isEditingPositions,
+    currentAngle,
+    angleImages,
+    loadingAngle,
+    isImprovingQuality,
+    handleVisualize,
+    handleUndo,
+    handleRedo,
+    handleImproveQuality,
+    handleAngleSelect,
+    enterEditMode,
+    exitEditMode,
+    resetVisualization,
+    initializeFromExisting,
+    _internal,
+  } = visualization;
+
+  // Alias for backward compatibility with existing code
+  const visualizationResult = visualizationImage;
+
+  // Internal setters for legacy handlers (DraggableFurnitureCanvas callbacks)
+  const {
+    setVisualizationImage: setVisualizationResult,
+    setIsVisualizing,
+    setVisualizationProgress,
+    setVisualizedProductIds,
+    setVisualizedProducts,
+    setVisualizedQuantities,
+    setNeedsRevisualization,
+    setIsEditingPositions,
+    setCurrentAngle,
+    setAngleImages,
+    historyHook,
+  } = _internal;
+
+  // History hook access for legacy patterns (DraggableFurnitureCanvas callbacks)
+  const {
+    pushState: pushHistoryState,
+  } = historyHook;
+
+  // ============================================================================
+  // Local UI state (not part of visualization logic)
+  // ============================================================================
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [isVisualizing, setIsVisualizing] = useState(false);
-  const [visualizationProgress, setVisualizationProgress] = useState<string>('');
   const [visualizationStartTime, setVisualizationStartTime] = useState<number | null>(null);
-  const [visualizationResult, setVisualizationResult] = useState<string | null>(null);
   // Start expanded if user needs to upload their room image (no roomImage but has curated visualization)
   const [isRoomImageCollapsed, setIsRoomImageCollapsed] = useState(false);
 
-  // Smart re-visualization tracking
-  const [visualizedProductIds, setVisualizedProductIds] = useState<Set<string>>(new Set());
-  const [visualizedProducts, setVisualizedProducts] = useState<Product[]>([]); // Track all visualized products
-  const [visualizedQuantities, setVisualizedQuantities] = useState<Map<string, number>>(new Map()); // Track quantities at time of visualization
-  const [needsRevisualization, setNeedsRevisualization] = useState(false);
-
-  // Undo/Redo state
-  const [canUndo, setCanUndo] = useState(false);
-  const [canRedo, setCanRedo] = useState(false);
-
-  // Local visualization history for reliable undo/redo (fixes server restart issue)
-  const [visualizationHistory, setVisualizationHistory] = useState<VisualizationHistoryEntry[]>(
-    initialVisualizationHistory || []
-  );
-  const [redoStack, setRedoStack] = useState<VisualizationHistoryEntry[]>([]);
-  const [historyInitialized, setHistoryInitialized] = useState(false);
-
-  // Furniture position editing state
-  const [isEditingPositions, setIsEditingPositions] = useState(false);
+  // Furniture position editing state (DraggableFurnitureCanvas-specific)
   const [furniturePositions, setFurniturePositions] = useState<FurniturePosition[]>([]);
   const [hasUnsavedPositions, setHasUnsavedPositions] = useState(false);
 
@@ -161,12 +214,8 @@ export default function CanvasPanel({
   const [pendingMoveData, setPendingMoveData] = useState<any>(null);  // Pending move for Re-visualize
   const [preEditVisualization, setPreEditVisualization] = useState<string | null>(null);  // For Exit button
 
-  // Multi-angle viewing state
-  const [currentAngle, setCurrentAngle] = useState<ViewingAngle>('front');
-  const [angleImages, setAngleImages] = useState<Record<ViewingAngle, string | null>>({
-    front: null, left: null, right: null, back: null
-  });
-  const [loadingAngle, setLoadingAngle] = useState<ViewingAngle | null>(null);
+  // NOTE: Multi-angle viewing state (currentAngle, angleImages, loadingAngle)
+  // is now provided by useVisualization hook
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasProductsRef = useRef<HTMLDivElement>(null);
@@ -205,34 +254,7 @@ export default function CanvasPanel({
     return () => clearInterval(interval);
   }, [isVisualizing, visualizationStartTime]);
 
-  // Check if canvas has changed since last visualization
-  useEffect(() => {
-    // Don't trigger on initial load or if never visualized
-    if (visualizedProductIds.size === 0 && !visualizationResult) {
-      return;
-    }
-
-    // Compare current products with last visualized products
-    // Ensure IDs are strings for consistent comparison
-    const currentIds = new Set(products.map(p => String(p.id)));
-    const productsChanged =
-      products.length !== visualizedProductIds.size ||
-      products.some(p => !visualizedProductIds.has(String(p.id)));
-
-    // Also check if any quantities have changed
-    const quantitiesChanged = products.some(p => {
-      const currentQty = p.quantity || 1;
-      const visualizedQty = visualizedQuantities.get(String(p.id)) || 0;
-      return currentQty !== visualizedQty;
-    });
-
-    if (productsChanged || quantitiesChanged) {
-      setNeedsRevisualization(true);
-      if (quantitiesChanged && !productsChanged) {
-        console.log('[CanvasPanel] Quantity changed, needs re-visualization');
-      }
-    }
-  }, [products, visualizedProductIds, visualizedQuantities, visualizationResult]);
+  // NOTE: Change detection is now handled by useVisualization hook internally
 
   // Auto-scroll to canvas products when a product is added
   useEffect(() => {
@@ -258,153 +280,11 @@ export default function CanvasPanel({
     }
   }, [visualizationResult]); // Trigger when visualization result changes
 
-  // Debug logging for curated visualization
-  useEffect(() => {
-    console.log('[CanvasPanel] Props received:', {
-      hasInitialVisualizationImage: !!initialVisualizationImage,
-      initialVisualizationImageLength: initialVisualizationImage?.length || 0,
-      hasRoomImage: !!roomImage,
-      productsCount: products.length,
-      currentVisualizationResult: !!visualizationResult,
-    });
-  }, [initialVisualizationImage, roomImage, products.length, visualizationResult]);
-
-  // Initialize history from props (only once when loaded from saved project)
-  useEffect(() => {
-    if (initialVisualizationHistory && initialVisualizationHistory.length > 0 && !historyInitialized) {
-      console.log('[CanvasPanel] Initializing history from saved project:', initialVisualizationHistory.length, 'entries');
-      setVisualizationHistory(initialVisualizationHistory);
-      setCanUndo(initialVisualizationHistory.length > 1);
-      setHistoryInitialized(true);
-
-      // Also set the visualization result from the last history entry
-      const lastEntry = initialVisualizationHistory[initialVisualizationHistory.length - 1];
-      if (lastEntry?.image) {
-        setVisualizationResult(lastEntry.image);
-        setVisualizedProductIds(lastEntry.productIds || new Set());
-        setVisualizedProducts(lastEntry.products || []);
-      }
-    }
-  }, [initialVisualizationHistory, historyInitialized]);
-
-  // Notify parent when visualization history changes
-  useEffect(() => {
-    if (onVisualizationHistoryChange && historyInitialized) {
-      onVisualizationHistoryChange(visualizationHistory);
-    }
-  }, [visualizationHistory, onVisualizationHistoryChange, historyInitialized]);
-
-  // Notify parent when visualization image changes
-  useEffect(() => {
-    if (onVisualizationImageChange) {
-      onVisualizationImageChange(visualizationResult);
-    }
-  }, [visualizationResult, onVisualizationImageChange]);
-
-  // Initialize visualization from curated look (pre-loaded image)
-  // This runs when initialVisualizationImage is provided (e.g., from curated looks)
-  useEffect(() => {
-    console.log('[CanvasPanel] Init effect running:', {
-      hasInitialViz: !!initialVisualizationImage,
-      hasCurrentViz: !!visualizationResult,
-    });
-
-    if (initialVisualizationImage && !visualizationResult) {
-      console.log('[CanvasPanel] Initializing visualization from curated look image, length:', initialVisualizationImage.length);
-      // Format the image properly (ensure data URI format)
-      const formattedImage = formatImageSrc(initialVisualizationImage);
-
-      console.log('[CanvasPanel] Setting visualizationResult with formatted image, starts with data:', formattedImage.startsWith('data:'));
-      setVisualizationResult(formattedImage);
-
-      // Also track the initial products as visualized
-      const productIds = new Set(products.map(p => String(p.id)));
-      setVisualizedProductIds(productIds);
-      setVisualizedProducts([...products]);
-
-      // CRITICAL: Also sync quantities to prevent false "quantity changed" detection
-      const quantitiesMap = new Map<string, number>();
-      products.forEach(p => quantitiesMap.set(String(p.id), p.quantity || 1));
-      setVisualizedQuantities(quantitiesMap);
-      console.log('[CanvasPanel] Synced visualizedQuantities with products:', quantitiesMap.size, 'entries');
-
-      // Add to history for undo support
-      setVisualizationHistory([{
-        image: formattedImage,
-        products: [...products],
-        productIds: productIds
-      }]);
-      setCanUndo(false); // No previous state to undo to initially
-
-      console.log('[CanvasPanel] Curated visualization initialized successfully');
-    }
-  }, [initialVisualizationImage, visualizationResult, products]); // Include visualizationResult to prevent re-running after set
-
-  // Keep visualizedProducts in sync when products change and we have a visualization
-  // This handles the case where products load after the initial visualization is set
-  // CRITICAL: This must sync visualizedProductIds so change detection works correctly
-  useEffect(() => {
-    // If we have a visualization (from curated look) but visualizedProductIds is empty,
-    // we need to sync from products so change detection works
-    if (visualizationResult && products.length > 0 && visualizedProductIds.size === 0) {
-      const productIds = products.map(p => String(p.id));
-      console.log('[CanvasPanel] CRITICAL SYNC: visualizedProductIds was empty, syncing from products:', {
-        productsCount: products.length,
-        productIds,
-        productNames: products.map(p => p.name).slice(0, 5),
-        visualizedProductsLength: visualizedProducts.length,
-      });
-      setVisualizedProducts([...products]);
-      setVisualizedProductIds(new Set(productIds));
-      // Also sync quantities
-      const quantitiesMap = new Map<string, number>();
-      products.forEach(p => quantitiesMap.set(String(p.id), p.quantity || 1));
-      setVisualizedQuantities(quantitiesMap);
-    }
-  }, [products, visualizationResult, visualizedProductIds.size]);
-
-  // Keep visualizedProducts quantities in sync with canvas products
-  // NOTE: Do NOT sync removals here - visualizedProducts should retain removed products
-  // until visualization is triggered, so detectChangeType can detect the removal
-  useEffect(() => {
-    if (visualizedProducts.length === 0 || !visualizationResult) return;
-
-    // Build a map of current canvas products by ID
-    const currentProductMap = new Map(products.map(p => [String(p.id), p]));
-
-    // Only check for quantity changes, NOT removals
-    // Removals are intentionally kept in visualizedProducts for detection
-    let needsQuantitySync = false;
-    for (const vp of visualizedProducts) {
-      const currentProduct = currentProductMap.get(String(vp.id));
-      // Only sync if product exists in canvas AND quantity changed
-      if (currentProduct && (currentProduct.quantity || 1) !== (vp.quantity || 1)) {
-        needsQuantitySync = true;
-        break;
-      }
-    }
-
-    if (needsQuantitySync) {
-      // Sync only quantities, keep all visualized products (including removed ones)
-      const syncedProducts = visualizedProducts.map(vp => {
-        const currentProduct = currentProductMap.get(String(vp.id));
-        if (currentProduct) {
-          // Product still in canvas - update quantity
-          return { ...vp, quantity: currentProduct.quantity || 1 };
-        }
-        // Product removed from canvas - keep as-is for removal detection
-        return vp;
-      });
-
-      console.log('[CanvasPanel] Syncing visualizedProducts quantities:', {
-        before: visualizedProducts.map(p => ({ name: p.name, qty: p.quantity || 1 })),
-        after: syncedProducts.map(p => ({ name: p.name, qty: p.quantity || 1 })),
-      });
-
-      setVisualizedProducts(syncedProducts);
-      // DO NOT update visualizedProductIds - keep removed products in the set for detection
-    }
-  }, [products, visualizedProducts, visualizationResult]);
+  // NOTE: The following are now handled by useVisualization hook:
+  // - History initialization from props
+  // - Parent notifications for history and image changes
+  // - Curated look initialization
+  // - Product ID and quantity sync
 
   // Handle file upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -429,15 +309,7 @@ export default function CanvasPanel({
       const imageData = event.target?.result as string;
       onRoomImageUpload(imageData);
       // Clear visualization and reset state when new room image is uploaded
-      setVisualizationResult(null);
-      setVisualizedProductIds(new Set());
-      setVisualizedProducts([]);
-      setNeedsRevisualization(false);
-      // Clear visualization history when uploading new room
-      setVisualizationHistory([]);
-      setRedoStack([]);
-      setCanUndo(false);
-      setCanRedo(false);
+      resetVisualization();
     };
     reader.readAsDataURL(file);
 
@@ -445,821 +317,8 @@ export default function CanvasPanel({
     e.target.value = '';
   };
 
-  // Detect visualization change type
-  const detectChangeType = () => {
-    // Ensure IDs are strings for consistent comparison
-    const currentIds = new Set(products.map(p => String(p.id)));
-
-    // CRITICAL FIX: If we have a visualizationResult but visualizedProductIds is empty,
-    // this is a sync issue (e.g., "Style This Further" scenario where sync hasn't happened yet).
-    // Instead of returning 'reset', we should use visualizedProducts as the source of truth
-    // if available, since it may have been synced even if visualizedProductIds wasn't.
-    let effectiveVisualizedIds = visualizedProductIds;
-    if (visualizationResult && visualizedProductIds.size === 0 && products.length > 0) {
-      console.warn('[CanvasPanel] detectChangeType: visualizedProductIds empty with existing visualization');
-
-      // Try to use visualizedProducts if available (these track the original products)
-      if (visualizedProducts.length > 0) {
-        effectiveVisualizedIds = new Set(visualizedProducts.map(p => String(p.id)));
-        console.log('[CanvasPanel] Using visualizedProducts as fallback:', effectiveVisualizedIds.size, 'products');
-      } else {
-        // Last resort: check if there are more products now than were visualized
-        // If same count, assume they're the same (no change)
-        // If different, we can't detect removals but can detect additions
-        console.warn('[CanvasPanel] visualizedProducts also empty - cannot detect removals');
-        console.warn('[CanvasPanel] Will treat current products as baseline (no removal detection possible)');
-        // Return 'initial' to do a fresh visualization with current products
-        // This is better than 'reset' because it preserves the existing visualization
-        // and only adds new products if any
-        if (currentIds.size === 0) {
-          return { type: 'no_change', reason: 'no_products' };
-        }
-        // Use current products as the baseline - this means no removals detected
-        effectiveVisualizedIds = currentIds;
-      }
-    }
-
-    // Check for removals (products that were visualized but no longer in canvas)
-    const removedProductIds = Array.from(effectiveVisualizedIds).filter(id => !currentIds.has(id));
-
-    // Check for additions (products in canvas but not yet visualized)
-    const newProducts = products.filter(p => !effectiveVisualizedIds.has(String(p.id)));
-
-    // CRITICAL FIX: Check for quantity changes BEFORE removal checks
-    // Otherwise, if user removes a product AND increases quantity of another,
-    // the quantity increase is silently ignored (the removal check returns early)
-    const quantityIncreases: { product: any; delta: number }[] = [];
-    const quantityDecreases: { product: any; delta: number }[] = [];
-
-    // DEBUG: Log quantity comparison for all products
-    console.log('[CanvasPanel] Checking quantity changes for', products.length, 'products');
-    console.log('[CanvasPanel] visualizedQuantities map size:', visualizedQuantities.size);
-    console.log('[CanvasPanel] visualizedQuantities entries:', Array.from(visualizedQuantities.entries()));
-
-    products.forEach(p => {
-      const productIdStr = String(p.id);
-      const isInVisualized = effectiveVisualizedIds.has(productIdStr);
-      const currentQty = p.quantity || 1;
-      const visualizedQty = visualizedQuantities.get(productIdStr) || 1;
-      const delta = currentQty - visualizedQty;
-
-      // DEBUG: Log each product's quantity comparison
-      console.log(`[CanvasPanel] Product "${p.name}" (id=${productIdStr}): inVisualized=${isInVisualized}, current=${currentQty}, visualized=${visualizedQty}, delta=${delta}`);
-
-      if (isInVisualized) {
-        if (delta > 0) {
-          quantityIncreases.push({ product: p, delta });
-          console.log(`[CanvasPanel] -> QUANTITY INCREASE detected: +${delta}`);
-        } else if (delta < 0) {
-          quantityDecreases.push({ product: p, delta: Math.abs(delta) });
-          console.log(`[CanvasPanel] -> QUANTITY DECREASE detected: -${Math.abs(delta)}`);
-        }
-      }
-    });
-
-    console.log(`[CanvasPanel] Total quantity increases detected: ${quantityIncreases.length}`);
-    console.log(`[CanvasPanel] Total quantity decreases detected: ${quantityDecreases.length}`);
-
-    // Convert quantity increases to product entries for adding (same format as newProducts)
-    const quantityIncreaseProducts = quantityIncreases.map(qi => ({
-      ...qi.product,
-      quantity: qi.delta, // Only the delta quantity
-      name: `${qi.product.name} (adding ${qi.delta} more)`,
-      _isQuantityIncrease: true
-    }));
-
-    // Combine new products AND quantity increases for the "add" part of any operation
-    const allProductsToAdd = [...newProducts, ...quantityIncreaseProducts];
-
-    // OPTIMIZATION: If products are both removed AND added (including quantity increases), use remove_and_add workflow
-    // This avoids full reset and instead: (1) removes products (2) adds new ones incrementally
-    if (removedProductIds.length > 0 && allProductsToAdd.length > 0 && visualizationResult) {
-      // Get full product info for removed products from visualizedProducts state
-      // CRITICAL: Must use visualizedProducts, NOT products - removed items aren't in products anymore!
-      const removedProductsInfo = removedProductIds.map(id => {
-        const product = visualizedProducts.find(p => String(p.id) === id);
-        return product || { id, name: `Product ${id}` };
-      });
-      console.log('[CanvasPanel] Detected removal AND addition (including quantity increases), will use remove_and_add workflow');
-      console.log('[CanvasPanel] Removed:', removedProductsInfo.map(p => p.name || p.id));
-      console.log('[CanvasPanel] New products:', newProducts.map(p => p.name || p.id));
-      console.log('[CanvasPanel] Quantity increases:', quantityIncreases.map(q => `${q.product.name}: +${q.delta}`));
-      return {
-        type: 'remove_and_add',
-        removedProducts: removedProductsInfo,
-        newProducts: allProductsToAdd, // Include both new products AND quantity increases
-        reason: 'products_removed_and_added'
-      };
-    }
-
-    // Simple removal only (no additions, no quantity increases) - use removal mode to erase products
-    if (removedProductIds.length > 0 && visualizationResult) {
-      // Get full product info for removed products from visualizedProducts state
-      const removedProductsInfo = removedProductIds.map(id => {
-        const product = visualizedProducts.find(p => String(p.id) === id);
-        return product || { id, name: `Product ${id}` };
-      });
-      console.log('[CanvasPanel] Detected removal only, will use removal mode');
-      console.log('[CanvasPanel] Products to remove:', removedProductsInfo.map(p => p.name || p.id));
-      return {
-        type: 'removal',
-        removedProducts: removedProductsInfo,
-        remainingProducts: products,
-        reason: 'products_removed'
-      };
-    }
-
-    // Handle quantity decreases - need to remove extra copies
-    if (quantityDecreases.length > 0 && quantityIncreases.length === 0) {
-      console.log('[CanvasPanel] Detected quantity decrease only, will remove extra copies');
-      console.log('[CanvasPanel] Quantity decreases:', quantityDecreases.map(q =>
-        `${q.product.name}: -${q.delta} (${visualizedQuantities.get(String(q.product.id)) || 1} -> ${q.product.quantity})`
-      ));
-      return {
-        type: 'quantity_decrease',
-        quantityDeltas: quantityDecreases,
-        reason: 'quantity_decreased'
-      };
-    }
-
-    // Mixed quantity changes (some increase, some decrease) - use reset for simplicity
-    if (quantityIncreases.length > 0 && quantityDecreases.length > 0) {
-      console.log('[CanvasPanel] Detected mixed quantity changes, will reset visualization');
-      return { type: 'reset', reason: 'mixed_quantity_changes' };
-    }
-
-    // Handle additions: new products AND/OR quantity increases (no removals, no decreases)
-    // This unified case handles:
-    // - Only new products
-    // - Only quantity increases
-    // - Both new products AND quantity increases
-    if (allProductsToAdd.length > 0 && effectiveVisualizedIds.size > 0) {
-      const reasons = [];
-      if (quantityIncreases.length > 0) reasons.push(`${quantityIncreases.length} quantity increases`);
-      if (newProducts.length > 0) reasons.push(`${newProducts.length} new products`);
-      console.log('[CanvasPanel] Detected additions (no removals), will use incremental visualization');
-      console.log('[CanvasPanel] Adding:', reasons.join(' + '));
-      if (quantityIncreases.length > 0) {
-        console.log('[CanvasPanel] Quantity increases:', quantityIncreases.map(q =>
-          `${q.product.name}: +${q.delta} (${visualizedQuantities.get(String(q.product.id)) || 1} -> ${q.product.quantity})`
-        ));
-      }
-      return { type: 'additive', newProducts: allProductsToAdd, reason: reasons.join('_and_') };
-    }
-
-    // Initial visualization (nothing visualized yet AND no existing visualization)
-    if (effectiveVisualizedIds.size === 0 && !visualizationResult) {
-      console.log('[CanvasPanel] Initial visualization');
-      return { type: 'initial' };
-    }
-
-    return { type: 'no_change' };
-  };
-
-  // Helper function to make fetch request with timeout and retry
-  const fetchWithRetry = async (
-    url: string,
-    options: RequestInit,
-    maxRetries: number = 2,
-    timeoutMs: number = 180000,  // 3 minutes default
-    retryDelayMs: number = 2000  // 2 seconds initial delay
-  ): Promise<Response> => {
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        console.error(`[CanvasPanel] Request timeout after ${timeoutMs / 1000}s (attempt ${attempt + 1}/${maxRetries + 1})`);
-        controller.abort();
-      }, timeoutMs);
-
-      try {
-        if (attempt > 0) {
-          const delay = retryDelayMs * Math.pow(2, attempt - 1);  // Exponential backoff
-          console.log(`[CanvasPanel] Retry attempt ${attempt}/${maxRetries} after ${delay}ms delay...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-
-        console.log(`[CanvasPanel] Starting request (attempt ${attempt + 1}/${maxRetries + 1})...`);
-        const requestStartTime = Date.now();
-
-        const response = await fetch(url, {
-          ...options,
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        const fetchTime = Date.now() - requestStartTime;
-        console.log(`[CanvasPanel] HTTP response received in ${fetchTime}ms, status: ${response.status}`);
-
-        // Don't retry on client errors (4xx), only on server errors (5xx) or network issues
-        if (response.ok || (response.status >= 400 && response.status < 500)) {
-          return response;
-        }
-
-        // Server error - will retry
-        const errorText = await response.text().catch(() => 'Unknown server error');
-        lastError = new Error(`Server error ${response.status}: ${errorText}`);
-        console.error(`[CanvasPanel] Server error on attempt ${attempt + 1}:`, lastError.message);
-
-      } catch (error: any) {
-        clearTimeout(timeoutId);
-        lastError = error;
-
-        if (error.name === 'AbortError') {
-          console.error(`[CanvasPanel] Request timed out on attempt ${attempt + 1}`);
-          // Continue to retry on timeout
-        } else if (error.message?.includes('fetch') || error.message?.includes('network')) {
-          console.error(`[CanvasPanel] Network error on attempt ${attempt + 1}:`, error.message);
-          // Continue to retry on network errors
-        } else {
-          // Unknown error - don't retry
-          throw error;
-        }
-      }
-    }
-
-    // All retries exhausted
-    throw lastError || new Error('Request failed after all retries');
-  };
-
-  // V1 Visualization: Smart re-visualization with incremental support
-  const handleVisualize = async () => {
-    // Need at least one base image (prefer cleanRoomImage) and products
-    if ((!roomImage && !cleanRoomImage) || products.length === 0) return;
-
-    // Debug: Log what images we have
-    console.log('[CanvasPanel] handleVisualize called with:', {
-      hasCleanRoomImage: !!cleanRoomImage,
-      cleanRoomImageLength: cleanRoomImage?.length || 0,
-      cleanRoomImagePrefix: cleanRoomImage?.substring(0, 50) || 'null',
-      hasRoomImage: !!roomImage,
-      roomImageLength: roomImage?.length || 0,
-      roomImagePrefix: roomImage?.substring(0, 50) || 'null',
-      productsCount: products.length,
-      productNames: products.map(p => p.name).slice(0, 5),
-      visualizedProductIdsSize: visualizedProductIds.size,
-      hasVisualizationResult: !!visualizationResult,
-    });
-
-    // NOTE: We used to have a "safety sync" here that would sync visualizedProductIds
-    // with current products if it was empty. This was WRONG because it would sync with
-    // the CURRENT products (after user removed some), not the ORIGINAL products.
-    // This made removal detection impossible.
-    // Now detectChangeType handles this case by using visualizedProducts as fallback.
-
-    setIsVisualizing(true);
-    setVisualizationStartTime(Date.now());
-    setVisualizationProgress('Preparing visualization...');
-
-    try {
-      // Detect change type
-      const changeInfo = detectChangeType();
-      console.log('[CanvasPanel] Change detection result:', {
-        type: changeInfo.type,
-        reason: changeInfo.reason,
-        visualizedProductIdsCount: visualizedProductIds.size,
-        visualizedProductIds: Array.from(visualizedProductIds),
-        currentProductIds: products.map(p => String(p.id)),
-        removedCount: changeInfo.removedProducts?.length || 0,
-        newProductsCount: changeInfo.newProducts?.length || 0,
-      });
-
-      if (changeInfo.type === 'no_change') {
-        console.log('[CanvasPanel] No changes detected, skipping visualization');
-        setIsVisualizing(false);
-        setVisualizationStartTime(null);
-        setVisualizationProgress('');
-        return;
-      }
-
-      // Get or create session ID
-      let sessionId = sessionStorage.getItem('design_session_id');
-      if (!sessionId) {
-        // Create new session
-        const sessionResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({})
-        });
-
-        if (!sessionResponse.ok) {
-          throw new Error('Failed to create session');
-        }
-
-        const sessionData = await sessionResponse.json();
-        sessionId = sessionData.session_id;
-        if (sessionId) {
-          sessionStorage.setItem('design_session_id', sessionId);
-        }
-      }
-
-      // Prepare API request based on change type
-      let baseImage: string;
-      let productsToVisualize: Product[];
-      let isIncremental = false;
-      let forceReset = false;
-      let removalMode = false;
-      let productsToRemove: any[] = [];
-      let productsToAdd: Product[] = [];
-
-      if (changeInfo.type === 'additive') {
-        // Use previous visualization as base, only add new products
-        baseImage = visualizationResult!;
-        productsToVisualize = changeInfo.newProducts!;
-        isIncremental = true;
-        console.log(`[CanvasPanel] Incremental visualization: adding ${productsToVisualize.length} new products`);
-        // DEBUG: Log all products being added with quantities
-        console.log('[CanvasPanel] Products to add (detailed):', productsToVisualize.map(p => ({
-          id: p.id,
-          name: p.name,
-          quantity: p.quantity || 1,
-          isQuantityIncrease: (p as any)._isQuantityIncrease || false
-        })));
-      } else if (changeInfo.type === 'remove_and_add') {
-        // OPTIMIZATION: Two-step workflow - remove then add incrementally
-        // This avoids full reset when products are both removed and added
-        baseImage = visualizationResult!;
-        productsToVisualize = products;  // All remaining products (for reference)
-        productsToRemove = changeInfo.removedProducts || [];
-        productsToAdd = changeInfo.newProducts || [];
-        removalMode = true;
-        console.log(`[CanvasPanel] Remove and add: removing ${productsToRemove.length}, adding ${productsToAdd.length} products`);
-        // DEBUG: Log all products being added with quantities
-        console.log('[CanvasPanel] Products to add (detailed):', productsToAdd.map(p => ({
-          id: p.id,
-          name: p.name,
-          quantity: p.quantity || 1,
-          isQuantityIncrease: (p as any)._isQuantityIncrease || false
-        })));
-      } else if (changeInfo.type === 'removal') {
-        // Simple removal: use current visualization and remove specific products
-        baseImage = visualizationResult!;
-        productsToVisualize = products;  // Remaining products (for reference)
-        productsToRemove = changeInfo.removedProducts || [];
-        removalMode = true;
-        console.log(`[CanvasPanel] Removal mode: removing ${productsToRemove.length} products`);
-      } else if (changeInfo.type === 'quantity_decrease') {
-        // Remove extra copies using removal mode
-        baseImage = visualizationResult!;
-        removalMode = true;
-        productsToVisualize = products;
-
-        // Create removal entries for the extra copies
-        productsToRemove = changeInfo.quantityDeltas!.map((qd: { product: any; delta: number }) => ({
-          ...qd.product,
-          remove_count: qd.delta,  // Number of copies to remove
-          name: qd.product.name,
-        }));
-
-        console.log(`[CanvasPanel] Quantity decrease: removing extra copies from ${changeInfo.quantityDeltas!.length} product types`);
-        changeInfo.quantityDeltas!.forEach((qd: { product: any; delta: number }) => {
-          console.log(`  - ${qd.product.name}: -${qd.delta} copies`);
-        });
-      } else if (changeInfo.type === 'reset') {
-        // Reset: use CLEAN room image to ensure removed products don't appear
-        // This is critical when using curated looks where roomImage might have products baked in
-        if (cleanRoomImage) {
-          baseImage = cleanRoomImage;
-          console.log('[CanvasPanel] Reset visualization: using clean room image (no products baked in)');
-        } else if (roomImage) {
-          // No clean room available - this may happen with curated looks that don't have room_image
-          // The backend will need to handle this with furniture removal or exclusive_products mode
-          baseImage = roomImage;
-          console.log('[CanvasPanel] Reset visualization: WARNING - no clean room available, using roomImage (may have baked-in products)');
-        } else {
-          // No image available at all - cannot proceed
-          console.error('[CanvasPanel] Reset visualization: No room image available');
-          return;
-        }
-        productsToVisualize = products;
-        forceReset = true;
-        console.log('[CanvasPanel] Reset visualization: re-visualizing all products from scratch');
-      } else {
-        // Initial: prefer clean room image if available, otherwise use room image
-        const imageToUse = cleanRoomImage || roomImage;
-        if (!imageToUse) {
-          console.error('[CanvasPanel] Initial visualization: No room image available');
-          return;
-        }
-        baseImage = imageToUse;
-        productsToVisualize = products;
-        console.log(`[CanvasPanel] Initial visualization: visualizing all products (using ${cleanRoomImage ? 'clean room' : 'room image'})`);
-        console.log(`[CanvasPanel] Base image length: ${baseImage?.length || 0}, prefix: ${baseImage?.substring(0, 80) || 'null'}`);
-      }
-
-      // Helper function to format product for API
-      const formatProductForApi = (p: Product) => ({
-        id: p.id,
-        name: p.name,
-        full_name: p.name,
-        image_url: p.image_url || getProductImageUrl(p),  // Include product image for AI reference
-        description: p.description || '',  // Include description for AI context (materials, colors, style)
-        product_type: p.productType || 'furniture',
-        furniture_type: p.productType || 'furniture',  // Also send as furniture_type for backend compatibility
-        style: 0.8,
-        category: p.productType || 'furniture',
-        quantity: p.quantity || 1,  // Include quantity for placing multiple of same product
-        dimensions: extractDimensions(p.attributes)  // Include actual dimensions (width, height, depth in inches)
-      });
-
-      // Prepare products for V1 API with complete context
-      // Including image_url and description is crucial for AI to render exact product appearance
-      const productDetails = productsToVisualize.map(formatProductForApi);
-
-      // Also send ALL products currently in the scene (for backend history accuracy)
-      // This is important because the frontend manages undo/redo locally and the backend
-      // needs to know the complete state of all products in the scene.
-      const allProductDetails = products.map(formatProductForApi);
-
-      // For incremental visualization, send the products already in the base image
-      // This allows the AI to know exactly what furniture to preserve
-      // CRITICAL FIX: If visualizedProducts is empty but we have a visualizationResult (from curated look),
-      // use the current products as the visualized products for proper tracking
-      const effectiveVisualizedProducts = visualizedProducts.length > 0
-        ? visualizedProducts
-        : (visualizationResult ? products : []);
-      const visualizedProductDetails = effectiveVisualizedProducts.map(formatProductForApi);
-
-      console.log('[CanvasPanel] Preparing visualization request:', {
-        isIncremental,
-        forceReset,
-        removalMode,
-        visualizedProductsCount: visualizedProducts.length,
-        effectiveVisualizedProductsCount: effectiveVisualizedProducts.length,
-        productsToVisualizeCount: productsToVisualize.length,
-      });
-
-      // V1 Visualization API call with timeout and retry
-      const requestStartTime = Date.now();
-      const response = await fetchWithRetry(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            image: baseImage,
-            products: productDetails,  // Products to visualize in this request (may be subset for incremental)
-            all_products: allProductDetails,  // All products currently in the scene (for backend history)
-            visualized_products: isIncremental ? visualizedProductDetails : [],  // Products already in base image (for incremental)
-            analysis: {
-              design_style: 'modern',
-              color_palette: [],
-              room_type: 'living_room',
-            },
-            is_incremental: isIncremental,
-            force_reset: forceReset,
-            removal_mode: removalMode,  // Enable remove_and_add workflow
-            products_to_remove: removalMode ? productsToRemove.map(formatProductForApi) : undefined,  // Products to remove
-            products_to_add: removalMode ? productsToAdd.map(formatProductForApi) : undefined,  // Products to add after removal
-            user_uploaded_new_image: changeInfo.type === 'initial',
-            curated_look_id: curatedLookId,  // Pass curated look ID for precomputation cache
-            project_id: projectId,  // Pass project ID for room analysis cache
-          }),
-        },
-        2,  // maxRetries: 2 retries (3 total attempts)
-        300000,  // timeout: 5 minutes per attempt (needed for batch processing 10+ products)
-        3000  // retryDelay: 3 seconds initial delay
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        throw new Error(errorData.detail || 'Visualization failed');
-      }
-
-      // Parse JSON response - this can take time for large images
-      console.log('[CanvasPanel] Parsing JSON response...');
-      const parseStartTime = Date.now();
-      const data = await response.json();
-      const parseTime = Date.now() - parseStartTime;
-      console.log(`[CanvasPanel] JSON parsed in ${parseTime}ms, total time: ${Date.now() - requestStartTime}ms`);
-      console.log('[CanvasPanel] Visualization response received, image length:', data.visualization?.rendered_image?.length || 0);
-
-      if (!data.visualization?.rendered_image) {
-        throw new Error('No visualization image was generated');
-      }
-
-      // Set visualization result and update tracking
-      const newImage = data.visualization.rendered_image;
-      const newProductIds = new Set(products.map(p => String(p.id)));
-
-      // Track quantities at time of visualization
-      const newQuantities = new Map<string, number>();
-      products.forEach(p => {
-        newQuantities.set(String(p.id), p.quantity || 1);
-      });
-
-      setVisualizationResult(newImage);
-      // Ensure IDs are strings for consistency with undo/redo
-      setVisualizedProductIds(newProductIds); // Track all current products as visualized
-      setVisualizedProducts([...products]); // Store actual product objects for edit mode
-      setVisualizedQuantities(newQuantities); // Track quantities at visualization time
-      setNeedsRevisualization(false); // Reset change flag
-
-      // Push to local visualization history for reliable undo (fixes server restart issue)
-      setVisualizationHistory(prev => [...prev, {
-        image: newImage,
-        products: [...products],
-        productIds: newProductIds
-      }]);
-      // Clear redo stack when new visualization is added
-      setRedoStack([]);
-      setCanUndo(true);
-      setCanRedo(false);
-
-      console.log(`[CanvasPanel] Visualization successful. Tracked ${products.length} products as visualized. History size: ${visualizationHistory.length + 1}`);
-    } catch (error: any) {
-      console.error('[CanvasPanel] Visualization error:', error);
-
-      // Provide more specific error messages
-      let errorMessage = 'Failed to generate visualization. Please try again.';
-
-      if (error.name === 'AbortError') {
-        errorMessage = 'Visualization request timed out after multiple attempts. Please try with fewer products or a simpler image.';
-      } else if (error.message?.includes('fetch') || error.message?.includes('network')) {
-        errorMessage = 'Network error: Unable to reach the server. Please check your connection and try again.';
-      } else if (error.message?.includes('after all retries')) {
-        errorMessage = 'Server is temporarily unavailable. Please try again in a few moments.';
-      } else if (error.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-
-      alert(errorMessage);
-    } finally {
-      setIsVisualizing(false);
-      setVisualizationStartTime(null);
-      setVisualizationProgress('');
-    }
-  };
-
-  // Update undo/redo state from backend
-  const updateUndoRedoState = async (sessionId: string) => {
-    try {
-      // We can check undo/redo availability by calling a lightweight endpoint
-      // For now, we'll just check after each visualization response
-      // The backend returns can_undo and can_redo in undo/redo responses
-      // After visualization, we assume undo is available
-      setCanUndo(true);
-      setCanRedo(false); // Redo is cleared after new visualization
-    } catch (error) {
-      console.error('[CanvasPanel] Error updating undo/redo state:', error);
-    }
-  };
-
-  // Handle undo visualization - uses local history instead of backend API
-  // This fixes the issue where backend in-memory state is lost on server restart
-  const handleUndo = () => {
-    if (visualizationHistory.length === 0) {
-      console.log('[CanvasPanel] Cannot undo: no visualization history');
-      return;
-    }
-
-    console.log('[CanvasPanel] Undoing visualization using local history...');
-    console.log('[CanvasPanel] Current history size:', visualizationHistory.length);
-
-    // Pop the current state from history
-    const newHistory = [...visualizationHistory];
-    const currentState = newHistory.pop();
-
-    // Push current state to redo stack
-    if (currentState) {
-      setRedoStack(prev => [...prev, currentState]);
-    }
-
-    // Restore previous state
-    if (newHistory.length > 0) {
-      const previousState = newHistory[newHistory.length - 1];
-      console.log('[CanvasPanel] Restoring previous state with', previousState.products.length, 'products');
-
-      setVisualizationResult(previousState.image);
-      setVisualizedProductIds(previousState.productIds);
-      setVisualizedProducts(previousState.products);
-      onSetProducts(previousState.products);
-
-      // CRITICAL FIX: Also restore visualizedQuantities from the restored products
-      // Without this, quantity change detection fails after undo
-      const restoredQuantities = new Map<string, number>();
-      previousState.products.forEach((p: any) => {
-        restoredQuantities.set(String(p.id), p.quantity || 1);
-      });
-      setVisualizedQuantities(restoredQuantities);
-      console.log('[CanvasPanel] Restored visualizedQuantities:', restoredQuantities.size, 'entries');
-    } else {
-      // No previous state - clear visualization (back to base room image)
-      console.log('[CanvasPanel] No previous state - clearing visualization');
-      setVisualizationResult(null);
-      setVisualizedProductIds(new Set());
-      setVisualizedProducts([]);
-      setVisualizedQuantities(new Map()); // Also clear quantities
-      onSetProducts([]);
-    }
-
-    // Update history and undo/redo availability
-    setVisualizationHistory(newHistory);
-    setCanUndo(newHistory.length > 0);
-    setCanRedo(true);
-
-    console.log('[CanvasPanel] Undo successful. New history size:', newHistory.length);
-  };
-
-  // Handle redo visualization - uses local redo stack instead of backend API
-  // This fixes the issue where backend in-memory state is lost on server restart
-  const handleRedo = () => {
-    if (redoStack.length === 0) {
-      console.log('[CanvasPanel] Cannot redo: no redo history');
-      return;
-    }
-
-    console.log('[CanvasPanel] Redoing visualization using local redo stack...');
-    console.log('[CanvasPanel] Current redo stack size:', redoStack.length);
-
-    // Pop state from redo stack
-    const newRedoStack = [...redoStack];
-    const stateToRestore = newRedoStack.pop();
-
-    if (stateToRestore) {
-      // Push to history and restore state
-      setVisualizationHistory(prev => [...prev, stateToRestore]);
-      setVisualizationResult(stateToRestore.image);
-      setVisualizedProductIds(stateToRestore.productIds);
-      setVisualizedProducts(stateToRestore.products);
-      onSetProducts(stateToRestore.products);
-
-      // CRITICAL FIX: Also restore visualizedQuantities from the restored products
-      // Without this, quantity change detection fails after redo
-      const restoredQuantities = new Map<string, number>();
-      stateToRestore.products.forEach((p: any) => {
-        restoredQuantities.set(String(p.id), p.quantity || 1);
-      });
-      setVisualizedQuantities(restoredQuantities);
-
-      console.log('[CanvasPanel] Restored state with', stateToRestore.products.length, 'products');
-      console.log('[CanvasPanel] Restored visualizedQuantities:', restoredQuantities.size, 'entries');
-    }
-
-    // Update redo stack and undo/redo availability
-    setRedoStack(newRedoStack);
-    setCanUndo(true);
-    setCanRedo(newRedoStack.length > 0);
-
-    console.log('[CanvasPanel] Redo successful. Remaining redo stack size:', newRedoStack.length);
-  };
-
-  // Improve Quality - Re-visualize all products on clean base image
-  const [isImprovingQuality, setIsImprovingQuality] = useState(false);
-
-  const handleImproveQuality = async () => {
-    const sessionId = sessionStorage.getItem('design_session_id');
-    const baseImage = cleanRoomImage || roomImage;
-
-    if (!baseImage || products.length === 0 || !sessionId) {
-      console.log('[ImproveQuality] Missing requirements');
-      return;
-    }
-
-    // Confirm with warning about undo/redo reset
-    const confirmed = window.confirm(
-      'Improve Quality will re-visualize all products on the original room image.\n\n' +
-      'WARNING: This will reset your undo/redo history.\n\n' +
-      'Continue?'
-    );
-    if (!confirmed) return;
-
-    setIsImprovingQuality(true);
-    console.log('[ImproveQuality] Starting quality improvement with', products.length, 'products');
-
-    try {
-      const productDetails = products.map(p => ({
-        id: p.id,
-        name: p.name,
-        full_name: p.name,
-        style: 0.8,
-        category: p.productType || 'furniture',
-        quantity: p.quantity || 1,
-        image_url: p.image_url || getProductImageUrl(p),
-        furniture_type: p.productType || 'furniture',
-        description: p.description || '',
-        dimensions: extractDimensions(p.attributes),
-      }));
-
-      console.log('[ImproveQuality] Sending products:', productDetails.map(p => ({ name: p.name, qty: p.quantity })));
-
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/chat/sessions/${sessionId}/visualize`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            image: baseImage,  // Use original/clean room image
-            products: productDetails,
-            analysis: { design_style: 'modern', color_palette: [], room_type: 'living_room' },
-            is_incremental: false,
-            force_reset: true,  // Force fresh visualization
-            user_uploaded_new_image: false,
-            action: 'add',
-            curated_look_id: curatedLookId,
-            project_id: projectId,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        throw new Error(errorData.detail || 'Quality improvement failed');
-      }
-
-      const data = await response.json();
-
-      if (!data.visualization?.rendered_image) {
-        throw new Error('No visualization image was generated');
-      }
-
-      const newImage = data.visualization.rendered_image;
-      console.log('[ImproveQuality] Success! New image length:', newImage?.length);
-
-      // Update visualization result
-      setVisualizationResult(newImage);
-
-      // Reset undo/redo history
-      const newHistoryEntry: VisualizationHistoryEntry = {
-        image: newImage,
-        products: products.map(p => ({ ...p, quantity: p.quantity || 1 })),
-        productIds: new Set(products.map(p => String(p.id))),
-      };
-      setVisualizationHistory([newHistoryEntry]);
-      setRedoStack([]);
-      setCanUndo(false);
-      setCanRedo(false);
-
-      // Update visualized state
-      const newProductIds = new Set(products.map(p => String(p.id)));
-      setVisualizedProductIds(newProductIds);
-      setVisualizedProducts(products.map(p => ({ ...p, quantity: p.quantity || 1 })));
-      setNeedsRevisualization(false);
-
-      // Notify parent
-      if (onVisualizationImageChange) {
-        onVisualizationImageChange(newImage);
-      }
-      if (onVisualizationHistoryChange) {
-        onVisualizationHistoryChange([newHistoryEntry]);
-      }
-
-    } catch (error) {
-      console.error('[ImproveQuality] Error:', error);
-      alert(`Failed to improve quality: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsImprovingQuality(false);
-    }
-  };
-
-  // Handle angle selection for multi-angle viewing
-  const handleAngleSelect = async (angle: ViewingAngle) => {
-    // If front, just switch to it (front is always the main visualization)
-    if (angle === 'front') {
-      setCurrentAngle('front');
-      return;
-    }
-
-    // Check if we already have this angle cached
-    if (angleImages[angle]) {
-      setCurrentAngle(angle);
-      return;
-    }
-
-    // Generate the angle on-demand
-    const sessionId = sessionStorage.getItem('design_session_id');
-    if (!sessionId || !visualizationResult) {
-      console.error('[CanvasPanel] Cannot generate angle: no session or visualization');
-      return;
-    }
-
-    setLoadingAngle(angle);
-    try {
-      const result = await generateAngleView(sessionId, {
-        visualization_image: visualizationResult,
-        target_angle: angle,
-        products_description: products.map(p => p.name).join(', ')
-      });
-
-      // Cache the generated angle image
-      const formattedImage = result.image.startsWith('data:')
-        ? result.image
-        : `data:image/png;base64,${result.image}`;
-
-      setAngleImages(prev => ({ ...prev, [angle]: formattedImage }));
-      setCurrentAngle(angle);
-    } catch (error) {
-      console.error('[CanvasPanel] Failed to generate angle view:', error);
-      alert('Failed to generate angle view. Please try again.');
-    } finally {
-      setLoadingAngle(null);
-    }
-  };
-
+  // NOTE: detectChangeType, fetchWithRetry, handleVisualize, handleUndo, handleRedo,
+  // handleImproveQuality, and handleAngleSelect are now provided by useVisualization hook
   // Reset angle state when visualization changes (sync front angle with main visualization)
   useEffect(() => {
     if (visualizationResult) {
@@ -1307,18 +366,12 @@ export default function CanvasPanel({
     console.log('[CanvasPanel] Click-to-Select final image received');
     setVisualizationResult(newImage);
 
-    // Add to visualization history for undo/redo
-    const newProductIds = new Set(products.map(p => String(p.id)));
-    setVisualizationHistory(prev => [...prev, {
+    // Add to visualization history for undo/redo using hook's pushState
+    // This properly tracks visualizedQuantities for change detection
+    pushHistoryState({
       image: newImage,
-      products: [...products],
-      productIds: newProductIds
-    }]);
-
-    // Clear redo stack and update undo state
-    setRedoStack([]);
-    setCanUndo(true);
-    setCanRedo(false);
+      products: products as VisualizationProduct[],
+    });
 
     // Clear pending move
     setPendingMoveData(null);
@@ -1326,7 +379,7 @@ export default function CanvasPanel({
 
     console.log('[CanvasPanel] Edit position added to history for undo');
     // Stay in edit mode so user can move more objects
-  }, [products]);
+  }, [products, pushHistoryState]);
 
   // Handle pending move changes from DraggableFurnitureCanvas
   const handlePendingMoveChange = useCallback((hasPending: boolean, moveData?: any) => {
@@ -1429,16 +482,12 @@ export default function CanvasPanel({
         // Update visualization with composited result
         setVisualizationResult(result.image);
 
-        // Add to history for undo
-        const newProductIds = new Set(products.map(p => String(p.id)));
-        setVisualizationHistory(prev => [...prev, {
+        // Add to history for undo using hook's pushState
+        // This properly tracks visualizedQuantities for change detection
+        pushHistoryState({
           image: result.image,
-          products: [...products],
-          productIds: newProductIds
-        }]);
-        setRedoStack([]);
-        setCanUndo(true);
-        setCanRedo(false);
+          products: products as VisualizationProduct[],
+        });
 
         // Exit edit mode
         setIsEditingPositions(false);
@@ -1564,9 +613,11 @@ export default function CanvasPanel({
             curated_look_id: curatedLookId,  // Pass curated look ID for precomputation cache
           }),
         },
-        2,  // maxRetries
-        180000,  // timeout: 3 minutes
-        3000  // retryDelay: 3 seconds
+        {
+          maxRetries: 2,
+          timeoutMs: 180000,  // 3 minutes
+          retryDelayMs: 3000  // 3 seconds
+        }
       );
 
       if (!response.ok) {
@@ -2254,7 +1305,7 @@ export default function CanvasPanel({
                       const primaryImage = p.images?.find(img => img.is_primary) || p.images?.[0];
                       const imageUrl = primaryImage?.medium_url || primaryImage?.original_url || p.image_url;
                       return {
-                        id: parseInt(p.id) || 0,
+                        id: typeof p.id === 'number' ? p.id : parseInt(String(p.id)) || 0,
                         name: p.name,
                         image_url: imageUrl
                       };
