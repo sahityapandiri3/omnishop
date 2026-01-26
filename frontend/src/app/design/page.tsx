@@ -7,9 +7,19 @@ import ProductDiscoveryPanel from '@/components/panels/ProductDiscoveryPanel';
 import CanvasPanel from '@/components/panels/CanvasPanel';
 import { ProductDetailModal } from '@/components/ProductDetailModal';
 import { ResizablePanelLayout } from '@/components/panels/ResizablePanelLayout';
-import { ModeToggle, KeywordSearchPanel } from '@/components/products';
+import { ModeToggle, KeywordSearchPanel, SearchFilters } from '@/components/products';
 
 type SearchMode = 'ai' | 'keyword';
+
+// Default filter values
+const DEFAULT_FILTERS: SearchFilters = {
+  selectedStores: [],
+  selectedStyles: [],
+  selectedColors: [],
+  selectedMaterials: [],
+  priceMin: 0,
+  priceMax: Infinity,
+};
 import { checkFurnitureRemovalStatus, startFurnitureRemoval, getCategorizedStores, projectsAPI, restoreDesignStateFromRecovery, CategorizedStoresResponse, StoreCategory, imageAPI } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigationGuard } from '@/hooks/useNavigationGuard';
@@ -51,6 +61,10 @@ function DesignPageContent() {
     hasMore: boolean;
     isSearching: boolean;
   } | null>(null);
+
+  // Global filter state (persists across mode switches)
+  const [searchFilters, setSearchFilters] = useState<SearchFilters>(DEFAULT_FILTERS);
+  const [showSearchFilters, setShowSearchFilters] = useState(false);
 
   // Furniture removal state
   const [isProcessingFurniture, setIsProcessingFurniture] = useState(false);
@@ -1678,6 +1692,10 @@ function DesignPageContent() {
                       compact={false}
                       showResultsInline={false}
                       onSearchResults={setKeywordSearchResults}
+                      filters={searchFilters}
+                      onFiltersChange={setSearchFilters}
+                      showFilters={showSearchFilters}
+                      onShowFiltersChange={setShowSearchFilters}
                     />
                   )}
                 </div>
@@ -1760,6 +1778,10 @@ function DesignPageContent() {
                     compact={true}
                     showResultsInline={false}
                     onSearchResults={setKeywordSearchResults}
+                    filters={searchFilters}
+                    onFiltersChange={setSearchFilters}
+                    showFilters={showSearchFilters}
+                    onShowFiltersChange={setShowSearchFilters}
                   />
                 )}
               </div>

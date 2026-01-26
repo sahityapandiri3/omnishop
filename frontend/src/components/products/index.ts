@@ -22,6 +22,8 @@ export {
   KeywordSearchPanel,
 } from './KeywordSearchPanel';
 
+export type { SearchFilters } from './KeywordSearchPanel';
+
 export {
   ProductSearchPanel,
   KeywordOnlySearchPanel,

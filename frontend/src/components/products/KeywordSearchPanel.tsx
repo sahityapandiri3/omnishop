@@ -9,6 +9,16 @@ import { ProductFilterPanel, FilterToggleButton } from './ProductFilterPanel';
 import { ProductFilters, useProductFilters } from '@/hooks/useProductFilters';
 import { ProductDetailModal } from '../ProductDetailModal';
 
+// Filter state interface for external control
+export interface SearchFilters {
+  selectedStores: string[];
+  selectedStyles: string[];
+  selectedColors: string[];
+  selectedMaterials: string[];
+  priceMin: number;
+  priceMax: number;
+}
+
 interface KeywordSearchPanelProps {
   /** Callback when product is added to canvas */
   onAddProduct: (product: ExtendedProduct) => void;
@@ -33,6 +43,14 @@ interface KeywordSearchPanelProps {
   }) => void;
   /** Callback for loading more results */
   onLoadMore?: () => void;
+  /** External filter state (for persistence across mode switches) */
+  filters?: SearchFilters;
+  /** Callback when filters change */
+  onFiltersChange?: (filters: SearchFilters) => void;
+  /** Whether to show filters (for external control) */
+  showFilters?: boolean;
+  /** Callback when filter visibility changes */
+  onShowFiltersChange?: (show: boolean) => void;
 }
 
 /**
@@ -50,6 +68,10 @@ export function KeywordSearchPanel({
   compact = false,
   showResultsInline = true,
   onSearchResults,
+  filters: externalFilters,
+  onFiltersChange,
+  showFilters: externalShowFilters,
+  onShowFiltersChange,
 }: KeywordSearchPanelProps) {
   // Search state
   const [searchQuery, setSearchQuery] = useState(initialQuery);
@@ -67,16 +89,26 @@ export function KeywordSearchPanel({
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  // Filter state
-  const [showFilters, setShowFilters] = useState(false);
+  // Internal filter state (used when no external filters provided)
+  const [internalShowFilters, setInternalShowFilters] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
-  const [selectedStores, setSelectedStores] = useState<string[]>([]);
-  const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
-  const [selectedColors, setSelectedColors] = useState<string[]>([]);
-  const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
-  const [priceMin, setPriceMin] = useState<number>(0);
-  const [priceMax, setPriceMax] = useState<number>(Infinity);
+  const [internalSelectedStores, setInternalSelectedStores] = useState<string[]>([]);
+  const [internalSelectedStyles, setInternalSelectedStyles] = useState<string[]>([]);
+  const [internalSelectedColors, setInternalSelectedColors] = useState<string[]>([]);
+  const [internalSelectedMaterials, setInternalSelectedMaterials] = useState<string[]>([]);
+  const [internalPriceMin, setInternalPriceMin] = useState<number>(0);
+  const [internalPriceMax, setInternalPriceMax] = useState<number>(Infinity);
   const [sortBy, setSortBy] = useState<'relevance' | 'price-low' | 'price-high'>('relevance');
+
+  // Use external or internal filter state
+  const isExternallyControlled = !!onFiltersChange;
+  const showFilters = externalShowFilters !== undefined ? externalShowFilters : internalShowFilters;
+  const selectedStores = externalFilters?.selectedStores ?? internalSelectedStores;
+  const selectedStyles = externalFilters?.selectedStyles ?? internalSelectedStyles;
+  const selectedColors = externalFilters?.selectedColors ?? internalSelectedColors;
+  const selectedMaterials = externalFilters?.selectedMaterials ?? internalSelectedMaterials;
+  const priceMin = externalFilters?.priceMin ?? internalPriceMin;
+  const priceMax = externalFilters?.priceMax ?? internalPriceMax;
 
   // Store categories for grouped filtering
   const [storeCategories, setStoreCategories] = useState<StoreCategory[]>([]);
@@ -193,51 +225,81 @@ export function KeywordSearchPanel({
     handleSearch(true);
   };
 
+  // Helper to update filters (either external or internal)
+  const updateFilters = useCallback((updates: Partial<SearchFilters>) => {
+    if (isExternallyControlled && onFiltersChange) {
+      onFiltersChange({
+        selectedStores,
+        selectedStyles,
+        selectedColors,
+        selectedMaterials,
+        priceMin,
+        priceMax,
+        ...updates,
+      });
+    } else {
+      // Update internal state
+      if (updates.selectedStores !== undefined) setInternalSelectedStores(updates.selectedStores);
+      if (updates.selectedStyles !== undefined) setInternalSelectedStyles(updates.selectedStyles);
+      if (updates.selectedColors !== undefined) setInternalSelectedColors(updates.selectedColors);
+      if (updates.selectedMaterials !== undefined) setInternalSelectedMaterials(updates.selectedMaterials);
+      if (updates.priceMin !== undefined) setInternalPriceMin(updates.priceMin);
+      if (updates.priceMax !== undefined) setInternalPriceMax(updates.priceMax);
+    }
+  }, [isExternallyControlled, onFiltersChange, selectedStores, selectedStyles, selectedColors, selectedMaterials, priceMin, priceMax]);
+
+  // Toggle filter visibility
+  const handleToggleFilters = () => {
+    if (onShowFiltersChange) {
+      onShowFiltersChange(!showFilters);
+    } else {
+      setInternalShowFilters(!showFilters);
+    }
+  };
+
   // Toggle store filter
   const toggleStore = (store: string) => {
-    setSelectedStores(prev =>
-      prev.includes(store)
-        ? prev.filter(s => s !== store)
-        : [...prev, store]
-    );
+    const newStores = selectedStores.includes(store)
+      ? selectedStores.filter(s => s !== store)
+      : [...selectedStores, store];
+    updateFilters({ selectedStores: newStores });
   };
 
   // Toggle style filter
   const toggleStyle = (style: string) => {
-    setSelectedStyles(prev =>
-      prev.includes(style)
-        ? prev.filter(s => s !== style)
-        : [...prev, style]
-    );
+    const newStyles = selectedStyles.includes(style)
+      ? selectedStyles.filter(s => s !== style)
+      : [...selectedStyles, style];
+    updateFilters({ selectedStyles: newStyles });
   };
 
   // Toggle color filter
   const toggleColor = (color: string) => {
-    setSelectedColors(prev =>
-      prev.includes(color)
-        ? prev.filter(c => c !== color)
-        : [...prev, color]
-    );
+    const newColors = selectedColors.includes(color)
+      ? selectedColors.filter(c => c !== color)
+      : [...selectedColors, color];
+    updateFilters({ selectedColors: newColors });
   };
 
   // Toggle material filter
   const toggleMaterial = (material: string) => {
-    setSelectedMaterials(prev =>
-      prev.includes(material)
-        ? prev.filter(m => m !== material)
-        : [...prev, material]
-    );
+    const newMaterials = selectedMaterials.includes(material)
+      ? selectedMaterials.filter(m => m !== material)
+      : [...selectedMaterials, material];
+    updateFilters({ selectedMaterials: newMaterials });
   };
 
   // Clear all filters
   const clearFilters = () => {
     setSelectedCategory(null);
-    setSelectedStores([]);
-    setSelectedStyles([]);
-    setSelectedColors([]);
-    setSelectedMaterials([]);
-    setPriceMin(0);
-    setPriceMax(Infinity);
+    updateFilters({
+      selectedStores: [],
+      selectedStyles: [],
+      selectedColors: [],
+      selectedMaterials: [],
+      priceMin: 0,
+      priceMax: Infinity,
+    });
   };
 
   // Check if any filters are active
@@ -317,7 +379,7 @@ export function KeywordSearchPanel({
           </div>
           <FilterToggleButton
             isOpen={showFilters}
-            onClick={() => setShowFilters(!showFilters)}
+            onClick={handleToggleFilters}
             hasActiveFilters={hasActiveFilters}
           />
         </div>
@@ -332,7 +394,7 @@ export function KeywordSearchPanel({
                   <label className="text-xs text-neutral-600 dark:text-neutral-400 font-medium">Stores</label>
                   {selectedStores.length > 0 && (
                     <button
-                      onClick={() => setSelectedStores([])}
+                      onClick={() => updateFilters({ selectedStores: [] })}
                       className="text-xs text-primary-600 hover:text-primary-700"
                     >
                       Clear ({selectedStores.length})
@@ -374,7 +436,7 @@ export function KeywordSearchPanel({
                 <label className="text-xs text-neutral-600 dark:text-neutral-400 font-medium">Style</label>
                 {selectedStyles.length > 0 && (
                   <button
-                    onClick={() => setSelectedStyles([])}
+                    onClick={() => updateFilters({ selectedStyles: [] })}
                     className="text-xs text-primary-600 hover:text-primary-700"
                   >
                     Clear ({selectedStyles.length})
@@ -409,7 +471,7 @@ export function KeywordSearchPanel({
                 <label className="text-xs text-neutral-600 dark:text-neutral-400 font-medium">Color</label>
                 {selectedColors.length > 0 && (
                   <button
-                    onClick={() => setSelectedColors([])}
+                    onClick={() => updateFilters({ selectedColors: [] })}
                     className="text-xs text-primary-600 hover:text-primary-700"
                   >
                     Clear ({selectedColors.length})
@@ -441,7 +503,7 @@ export function KeywordSearchPanel({
                 <label className="text-xs text-neutral-600 dark:text-neutral-400 font-medium">Material</label>
                 {selectedMaterials.length > 0 && (
                   <button
-                    onClick={() => setSelectedMaterials([])}
+                    onClick={() => updateFilters({ selectedMaterials: [] })}
                     className="text-xs text-primary-600 hover:text-primary-700"
                   >
                     Clear ({selectedMaterials.length})
@@ -475,7 +537,7 @@ export function KeywordSearchPanel({
                   type="number"
                   placeholder="Min"
                   value={priceMin === 0 ? '' : priceMin}
-                  onChange={(e) => setPriceMin(Number(e.target.value) || 0)}
+                  onChange={(e) => updateFilters({ priceMin: Number(e.target.value) || 0 })}
                   className="flex-1 text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
                 />
                 <span className="text-neutral-400 text-xs">-</span>
@@ -483,7 +545,7 @@ export function KeywordSearchPanel({
                   type="number"
                   placeholder="Max"
                   value={priceMax >= 999999 || priceMax === Infinity ? '' : priceMax}
-                  onChange={(e) => setPriceMax(Number(e.target.value) || Infinity)}
+                  onChange={(e) => updateFilters({ priceMax: Number(e.target.value) || Infinity })}
                   className="flex-1 text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
                 />
               </div>
