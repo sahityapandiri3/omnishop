@@ -6414,13 +6414,31 @@ async def get_paginated_products(
         # This ensures "accent chairs" shows actual accent chairs first, not office chairs
         # ===================================================================
         if request.semantic_query:
-            logger.info(f"[PAGINATED] Using VECTOR SEARCH mode with query: {request.semantic_query}")
+            # CRITICAL FIX: Expand semantic query with category synonyms
+            # "carpets" and "rugs" should return the same results since they're synonyms
+            # But their embeddings might be different, causing different search results
+            # By expanding the query with synonyms, we get more consistent results
+            synonym_expansions = {
+                "carpets": "rugs carpets area rug floor covering dhurrie kilim",
+                "carpet": "rugs carpets area rug floor covering dhurrie kilim",
+                "rugs": "rugs carpets area rug floor covering dhurrie kilim",
+                "rug": "rugs carpets area rug floor covering dhurrie kilim",
+                "rugs & carpets": "rugs carpets area rug floor covering dhurrie kilim",
+                "wallpapers": "wallpaper wall paper wall covering wallpapers",
+                "wallpaper": "wallpaper wall paper wall covering wallpapers",
+            }
+            query_lower = request.semantic_query.lower().strip()
+            expanded_query = synonym_expansions.get(query_lower, request.semantic_query)
+
+            if expanded_query != request.semantic_query:
+                logger.info(f"[PAGINATED] Expanded semantic query: '{request.semantic_query}' -> '{expanded_query}'")
+            logger.info(f"[PAGINATED] Using VECTOR SEARCH mode with query: {expanded_query}")
 
             # Get vector similarity scores - semantic search handles relevance
             # Optimization: Limit to 500 instead of 2000 - pagination will fetch more if needed
             # This reduces the Python-side similarity computation time significantly
             semantic_scores = await _semantic_search(
-                query_text=request.semantic_query,
+                query_text=expanded_query,
                 db=db,
                 store_filter=request.selected_stores,
                 price_min=request.budget_min,
