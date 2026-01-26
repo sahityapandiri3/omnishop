@@ -5576,6 +5576,27 @@ CATEGORY_EXCLUSIONS = {
         "throw pillow",
     ],
     "decor": ["potpourri", "scented"],
+    # Throws should not include bed blankets (full-size blankets for beds)
+    "throws": [
+        "king size",
+        "queen size",
+        "double bed",
+        "single bed",
+        "bed ac blanket",
+        "bed blanket",
+        "comforter",
+        "dohar",
+        # Kitchen/tableware should not appear in throws
+        "bowl",
+        "bowls",
+        "platter",
+        "platters",
+        "plate",
+        "pitcher",
+        "cup",
+        "mug",
+        "tray",
+    ],
 }
 
 # Special category handling - for categories where we need to search in a parent category
@@ -6450,7 +6471,7 @@ async def get_paginated_products(
             # CRITICAL FIX: Apply keyword filtering to prevent category confusion
             # e.g., "wallpaper" shouldn't return "wall art" just because embeddings are similar
             # Only apply for specific categories that tend to get confused
-            confusable_categories = {"wallpapers", "wall_art", "rugs", "carpets", "mats"}
+            confusable_categories = {"wallpapers", "wall_art", "rugs", "carpets", "mats", "throws"}
             if request.category_id in confusable_categories and semantic_scores:
                 # Filter semantic results by category keywords
                 keyword_filtered_ids = set()
@@ -6473,6 +6494,38 @@ async def get_paginated_products(
                     logger.info(
                         f"[PAGINATED] Keyword filter for '{request.category_id}': {original_count} -> {len(semantic_scores)} products "
                         f"(keywords: {category_keywords[:3]}...)"
+                    )
+
+                # Special exclusion for throws - exclude bed blankets (king/queen/double/single bed)
+                if request.category_id == "throws" and semantic_scores:
+                    bed_exclusions = [
+                        "king size",
+                        "queen size",
+                        "double bed",
+                        "single bed",
+                        "bed ac blanket",
+                        "bed blanket",
+                        "comforter",
+                        "dohar",
+                    ]
+                    exclusion_conditions = []
+                    for exclusion in bed_exclusions:
+                        exclusion_conditions.append(Product.name.ilike(f"%{exclusion}%"))
+
+                    # Get IDs of products that match exclusions (to remove them)
+                    exclude_query = (
+                        select(Product.id)
+                        .where(Product.id.in_(list(semantic_scores.keys())))
+                        .where(or_(*exclusion_conditions))
+                    )
+                    exclude_result = await db.execute(exclude_query)
+                    excluded_ids = {row[0] for row in exclude_result.fetchall()}
+
+                    before_exclusion = len(semantic_scores)
+                    semantic_scores = {k: v for k, v in semantic_scores.items() if k not in excluded_ids}
+                    logger.info(
+                        f"[PAGINATED] Throws exclusion filter: {before_exclusion} -> {len(semantic_scores)} products "
+                        f"(excluded {len(excluded_ids)} bed blankets)"
                     )
 
             if not semantic_scores:
