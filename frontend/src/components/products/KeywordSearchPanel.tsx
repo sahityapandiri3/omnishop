@@ -22,6 +22,17 @@ interface KeywordSearchPanelProps {
   searchPlaceholder?: string;
   /** Compact mode for smaller panels */
   compact?: boolean;
+  /** Whether to show results inline (false = results via callback only) */
+  showResultsInline?: boolean;
+  /** Callback when search results are available (for external display) */
+  onSearchResults?: (results: {
+    products: ExtendedProduct[];
+    totalProducts: number;
+    hasMore: boolean;
+    isSearching: boolean;
+  }) => void;
+  /** Callback for loading more results */
+  onLoadMore?: () => void;
 }
 
 /**
@@ -37,6 +48,8 @@ export function KeywordSearchPanel({
   showSearchInput = true,
   searchPlaceholder = 'Search furniture...',
   compact = false,
+  showResultsInline = true,
+  onSearchResults,
 }: KeywordSearchPanelProps) {
   // Search state
   const [searchQuery, setSearchQuery] = useState(initialQuery);
@@ -162,31 +175,17 @@ export function KeywordSearchPanel({
     }
   }, [isLoadingMore, hasMore, currentPage, buildSearchParams]);
 
-  // Debounced search on query change
+  // Notify parent when search results change (for external display in Panel 2)
   useEffect(() => {
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
+    if (onSearchResults) {
+      onSearchResults({
+        products,
+        totalProducts,
+        hasMore,
+        isSearching,
+      });
     }
-
-    if (searchQuery.trim()) {
-      searchTimeoutRef.current = setTimeout(() => {
-        handleSearch(true);
-      }, 300);
-    }
-
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
-    };
-  }, [searchQuery]);
-
-  // Re-search when filters change
-  useEffect(() => {
-    if (products.length > 0 || selectedStores.length > 0 || selectedStyles.length > 0) {
-      handleSearch(true);
-    }
-  }, [selectedStores, selectedStyles, selectedColors, selectedMaterials, priceMin, priceMax, selectedCategory]);
+  }, [products, totalProducts, hasMore, isSearching, onSearchResults]);
 
   // Handle search form submit
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -264,27 +263,38 @@ export function KeywordSearchPanel({
         {/* Search Input */}
         {showSearchInput && (
           <form onSubmit={handleSearchSubmit} className="mb-3">
-            <div className="relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={searchPlaceholder}
-                className="w-full px-4 py-2 pl-10 text-sm border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
-              <svg
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={searchPlaceholder}
+                  className="w-full px-4 py-2 pl-10 text-sm border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                />
+                <svg
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+              <button
+                type="submit"
+                disabled={isSearching || (!searchQuery.trim() && selectedStores.length === 0 && selectedStyles.length === 0)}
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              {isSearching && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <div className="w-4 h-4 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
-                </div>
-              )}
+                {isSearching ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                )}
+                Search
+              </button>
             </div>
           </form>
         )}
@@ -506,40 +516,42 @@ export function KeywordSearchPanel({
         )}
       </div>
 
-      {/* Search Results */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {searchError ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <svg className="w-12 h-12 text-red-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <p className="text-red-500 dark:text-red-400">{searchError}</p>
-            <button
-              onClick={() => handleSearch(true)}
-              className="mt-3 text-sm text-primary-600 hover:text-primary-700"
-            >
-              Try again
-            </button>
-          </div>
-        ) : (
-          <ProductResultsGrid
-            products={products}
-            onAddProduct={onAddProduct}
-            canvasProducts={canvasProducts}
-            onViewDetails={setSelectedProduct}
-            showSeparation={true}
-            enableInfiniteScroll={true}
-            onLoadMore={handleLoadMore}
-            hasMore={hasMore}
-            isLoadingMore={isLoadingMore}
-            totalCount={totalProducts}
-            isLoading={isSearching && products.length === 0}
-            emptyMessage={searchQuery ? 'No products found for your search' : 'Enter a search term to find products'}
-            gridClassName={compact ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-2 md:grid-cols-3 gap-2'}
-            cardSize={compact ? 'small' : 'medium'}
-          />
-        )}
-      </div>
+      {/* Search Results - Only show inline if showResultsInline is true */}
+      {showResultsInline && (
+        <div className="flex-1 overflow-y-auto p-4">
+          {searchError ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <svg className="w-12 h-12 text-red-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <p className="text-red-500 dark:text-red-400">{searchError}</p>
+              <button
+                onClick={() => handleSearch(true)}
+                className="mt-3 text-sm text-primary-600 hover:text-primary-700"
+              >
+                Try again
+              </button>
+            </div>
+          ) : (
+            <ProductResultsGrid
+              products={products}
+              onAddProduct={onAddProduct}
+              canvasProducts={canvasProducts}
+              onViewDetails={setSelectedProduct}
+              showSeparation={true}
+              enableInfiniteScroll={true}
+              onLoadMore={handleLoadMore}
+              hasMore={hasMore}
+              isLoadingMore={isLoadingMore}
+              totalCount={totalProducts}
+              isLoading={isSearching && products.length === 0}
+              emptyMessage={searchQuery ? 'No products found for your search' : 'Enter a search term to find products'}
+              gridClassName={compact ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-2 md:grid-cols-3 gap-2'}
+              cardSize={compact ? 'small' : 'medium'}
+            />
+          )}
+        </div>
+      )}
 
       {/* Product Detail Modal */}
       {selectedProduct && (

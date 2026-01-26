@@ -44,6 +44,14 @@ function DesignPageContent() {
   const [productsByCategory, setProductsByCategory] = useState<Record<string, any[]> | null>(null);
   const [totalBudget, setTotalBudget] = useState<number | null>(null);
 
+  // Keyword search results state (when in keyword mode, results display in Panel 2)
+  const [keywordSearchResults, setKeywordSearchResults] = useState<{
+    products: any[];
+    totalProducts: number;
+    hasMore: boolean;
+    isSearching: boolean;
+  } | null>(null);
+
   // Furniture removal state
   const [isProcessingFurniture, setIsProcessingFurniture] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<string>('');
@@ -1668,6 +1676,8 @@ function DesignPageContent() {
                       canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
                       showSearchInput={true}
                       compact={false}
+                      showResultsInline={false}
+                      onSearchResults={setKeywordSearchResults}
                     />
                   )}
                 </div>
@@ -1683,6 +1693,8 @@ function DesignPageContent() {
                 enableModeToggle={false}
                 totalBudget={totalBudget}
                 sessionId={chatSessionId}
+                isKeywordSearchMode={searchMode === 'keyword'}
+                keywordSearchResults={keywordSearchResults}
               />
             }
             canvasPanel={
@@ -1746,6 +1758,8 @@ function DesignPageContent() {
                     canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
                     showSearchInput={true}
                     compact={true}
+                    showResultsInline={false}
+                    onSearchResults={setKeywordSearchResults}
                   />
                 )}
               </div>
@@ -1761,6 +1775,8 @@ function DesignPageContent() {
               totalBudget={totalBudget}
               sessionId={chatSessionId}
               enableModeToggle={false}
+              isKeywordSearchMode={searchMode === 'keyword'}
+              keywordSearchResults={keywordSearchResults}
             />
           </div>
           <div className={`h-full ${activeTab === 'canvas' ? 'block' : 'hidden'}`}>

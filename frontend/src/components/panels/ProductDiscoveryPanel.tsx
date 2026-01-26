@@ -17,9 +17,17 @@ import {
   calculateDiscountPercentage,
 } from '@/utils/product-transforms';
 // Shared product search components
-import { KeywordSearchPanel, ModeToggle } from '../products';
+import { ProductResultsGrid } from '../products/ProductResultsGrid';
 
 type SearchMode = 'ai' | 'keyword';
+
+// Keyword search results from Panel 1
+interface KeywordSearchResults {
+  products: ExtendedProduct[];
+  totalProducts: number;
+  hasMore: boolean;
+  isSearching: boolean;
+}
 
 interface ProductDiscoveryPanelProps {
   products: any[];  // Raw products from API (legacy flat list)
@@ -34,6 +42,12 @@ interface ProductDiscoveryPanelProps {
   // Search mode toggle
   enableModeToggle?: boolean;
   defaultSearchMode?: SearchMode;
+  // Keyword search results from Panel 1 (when in keyword mode)
+  keywordSearchResults?: KeywordSearchResults | null;
+  // Callback for loading more keyword search results
+  onLoadMoreKeywordResults?: () => void;
+  // Whether we're currently in keyword search mode
+  isKeywordSearchMode?: boolean;
 }
 
 /**
@@ -50,6 +64,9 @@ export default function ProductDiscoveryPanel({
   sessionId,
   enableModeToggle = true,
   defaultSearchMode = 'ai',
+  keywordSearchResults,
+  onLoadMoreKeywordResults,
+  isKeywordSearchMode = false,
 }: ProductDiscoveryPanelProps) {
   console.log('[ProductDiscoveryPanel] Received products:', products.length, 'products');
   console.log('[ProductDiscoveryPanel] Category mode:', selectedCategories ? 'YES' : 'NO');
@@ -62,9 +79,6 @@ export default function ProductDiscoveryPanel({
   if (selectedCategories) {
     console.log('[ProductDiscoveryPanel] selectedCategories:', selectedCategories.map(c => c.category_id));
   }
-
-  // Search mode state
-  const [searchMode, setSearchMode] = useState<SearchMode>(defaultSearchMode);
 
   const [selectedProduct, setSelectedProduct] = useState<ExtendedProduct | null>(null);
   const [sortBy, setSortBy] = useState<'relevance' | 'price-low' | 'price-high'>(
@@ -289,38 +303,77 @@ export default function ProductDiscoveryPanel({
   // Check if any filters are active
   const hasActiveFilters = selectedStores.length > 0 || priceRange.min > 0 || priceRange.max < Infinity;
 
-  // Render mode toggle header
-  const renderModeToggleHeader = () => (
-    <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-700">
-      <div className="flex items-center justify-between">
-        <h2 className="font-semibold text-neutral-900 dark:text-white">
-          Product Discovery
-        </h2>
-        {enableModeToggle && (
-          <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
-        )}
-      </div>
-      <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-        {searchMode === 'ai'
-          ? 'AI-recommended products based on your room'
-          : 'Search and filter products directly'}
-      </p>
-    </div>
-  );
+  // If in keyword search mode, display keyword search results from Panel 1
+  if (isKeywordSearchMode) {
+    const hasKeywordResults = keywordSearchResults && keywordSearchResults.products.length > 0;
+    const isLoading = keywordSearchResults?.isSearching && !hasKeywordResults;
 
-  // If in keyword search mode, render the KeywordSearchPanel
-  if (searchMode === 'keyword') {
     return (
       <div className="flex flex-col h-full">
-        {renderModeToggleHeader()}
-        <div className="flex-1 overflow-hidden">
-          <KeywordSearchPanel
-            onAddProduct={(product) => onAddToCanvas(product)}
-            canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
-            showSearchInput={true}
-            compact={false}
-          />
+        {/* Header */}
+        <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-700">
+          <h2 className="font-semibold text-neutral-900 dark:text-white">
+            Search Results
+          </h2>
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            {hasKeywordResults
+              ? `${keywordSearchResults.totalProducts} products found`
+              : 'Use the search panel to find products'}
+          </p>
         </div>
+
+        {/* Results */}
+        <div ref={productsContainerRef} className="flex-1 overflow-y-auto p-4">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600 mb-4"></div>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">Searching products...</p>
+            </div>
+          ) : hasKeywordResults ? (
+            <ProductResultsGrid
+              products={keywordSearchResults.products}
+              onAddProduct={(product) => onAddToCanvas(product)}
+              canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
+              onViewDetails={setSelectedProduct}
+              showSeparation={true}
+              enableInfiniteScroll={true}
+              onLoadMore={onLoadMoreKeywordResults}
+              hasMore={keywordSearchResults.hasMore}
+              isLoadingMore={keywordSearchResults.isSearching && keywordSearchResults.products.length > 0}
+              totalCount={keywordSearchResults.totalProducts}
+              isLoading={false}
+              emptyMessage="No products found"
+              gridClassName="grid grid-cols-2 md:grid-cols-3 gap-3"
+              cardSize="medium"
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="w-20 h-20 bg-neutral-100 dark:bg-neutral-700 rounded-full flex items-center justify-center mb-4">
+                <svg className="w-10 h-10 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-2">
+                Ready to Search
+              </h3>
+              <p className="text-sm text-neutral-600 dark:text-neutral-400 max-w-sm">
+                Enter a search term in the search panel and click Search to find products.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Product Detail Modal */}
+        {selectedProduct && (
+          <ProductDetailModal
+            product={selectedProduct}
+            isOpen={true}
+            onClose={() => setSelectedProduct(null)}
+            onAddToCanvas={handleAddToCanvasFromModal}
+            inCanvas={isInCanvas(selectedProduct.id)}
+            canvasQuantity={getCanvasQuantity(selectedProduct.id)}
+          />
+        )}
       </div>
     );
   }
@@ -329,7 +382,15 @@ export default function ProductDiscoveryPanel({
   if (products.length === 0 && !hasCategoryProducts) {
     return (
       <div className="flex flex-col h-full">
-        {enableModeToggle && renderModeToggleHeader()}
+        {/* Header */}
+        <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-700">
+          <h2 className="font-semibold text-neutral-900 dark:text-white">
+            AI Recommendations
+          </h2>
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            Products curated for your room
+          </p>
+        </div>
         <div className="flex flex-col items-center justify-center flex-1 p-8 text-center">
           <div className="w-24 h-24 bg-neutral-100 dark:bg-neutral-700 rounded-full flex items-center justify-center mb-4">
             <svg
@@ -342,16 +403,16 @@ export default function ProductDiscoveryPanel({
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
               />
             </svg>
           </div>
           <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-2">
-            No Products Yet
+            No Recommendations Yet
           </h3>
           <p className="text-sm text-neutral-600 dark:text-neutral-400 max-w-sm">
-            Start chatting with the AI assistant to get personalized furniture
-            recommendations, or switch to Keyword Search mode.
+            Start chatting with the AI Stylist to get personalized furniture
+            recommendations for your room.
           </p>
         </div>
       </div>
@@ -419,16 +480,6 @@ export default function ProductDiscoveryPanel({
     // CAROUSEL MODE - Default view with horizontal scrolling carousels
     return (
       <div className="flex flex-col h-full">
-        {/* Mode Toggle Header */}
-        {enableModeToggle && (
-          <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-700 flex items-center justify-between">
-            <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-              Search Mode
-            </span>
-            <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
-          </div>
-        )}
-
         {/* Header with Filter Toggle */}
         <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
           <div className="flex items-center justify-between mb-2">
@@ -597,16 +648,6 @@ export default function ProductDiscoveryPanel({
   return (
     <>
       <div className="flex flex-col h-full">
-        {/* Mode Toggle Header */}
-        {enableModeToggle && (
-          <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-700 flex items-center justify-between">
-            <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-              Search Mode
-            </span>
-            <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
-          </div>
-        )}
-
         {/* Header */}
         <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
           <div className="flex items-center justify-between mb-3">
