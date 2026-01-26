@@ -8,21 +8,16 @@ import { ProductDetailModal } from '../ProductDetailModal';
 import InfiniteScrollTrigger from '../InfiniteScrollTrigger';
 import { usePaginatedProducts, flattenPaginatedProducts } from '@/hooks/usePaginatedProducts';
 import { getCategorizedStores, StoreCategory } from '@/utils/api';
-
-// Product style options (matches Product.primary_style values) - same as admin curation page
-const PRODUCT_STYLES = [
-  { value: 'modern', label: 'Modern' },
-  { value: 'modern_luxury', label: 'Modern Luxury' },
-  { value: 'indian_contemporary', label: 'Indian Contemporary' },
-  { value: 'minimalist', label: 'Minimalist' },
-  { value: 'japandi', label: 'Japandi' },
-  { value: 'scandinavian', label: 'Scandinavian' },
-  { value: 'mid_century_modern', label: 'Mid-Century Modern' },
-  { value: 'boho', label: 'Boho' },
-  { value: 'industrial', label: 'Industrial' },
-  { value: 'contemporary', label: 'Contemporary' },
-  { value: 'eclectic', label: 'Eclectic' },
-];
+// Shared constants and utilities
+import { PRODUCT_STYLES } from '@/constants/products';
+import {
+  transformProduct as transformProductUtil,
+  separateProductMatches,
+  ExtendedProduct,
+  getProductImageUrl,
+  isProductInCanvas,
+  getCanvasQuantity as getCanvasQuantityUtil,
+} from '@/utils/product-transforms';
 
 // Types for category recommendations from API
 export interface BudgetAllocation {
@@ -84,7 +79,7 @@ export default function CategorySection({
   nextCursor,
   styleAttributes,
 }: CategorySectionProps) {
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<ExtendedProduct | null>(null);
   // NOTE: Don't initialize price filters to budget allocation values
   // All products should be shown by default (sorted by relevance/score)
   // Users can manually apply budget filters if they want
@@ -163,47 +158,9 @@ export default function CategorySection({
     }
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
-  // Transform raw product to Product type
-  const transformProduct = (rawProduct: any): Product => {
-    let images = [];
-    if (rawProduct.primary_image && rawProduct.primary_image.url) {
-      images = [{
-        id: 1,
-        original_url: rawProduct.primary_image.url,
-        is_primary: true,
-        alt_text: rawProduct.primary_image.alt_text || rawProduct.name
-      }];
-    } else if (rawProduct.images && Array.isArray(rawProduct.images)) {
-      images = rawProduct.images;
-    } else if (rawProduct.image_url) {
-      images = [{
-        id: 1,
-        original_url: rawProduct.image_url,
-        is_primary: true,
-        alt_text: rawProduct.name
-      }];
-    }
-
-    return {
-      id: parseInt(rawProduct.id) || rawProduct.id,
-      name: rawProduct.name,
-      description: rawProduct.description,
-      price: parseFloat(rawProduct.price) || 0,
-      original_price: rawProduct.original_price ? parseFloat(rawProduct.original_price) : undefined,
-      currency: rawProduct.currency || 'INR',
-      brand: rawProduct.brand,
-      source_website: rawProduct.source || rawProduct.source_website,
-      source_url: rawProduct.source_url,
-      is_available: rawProduct.is_available !== false,
-      is_on_sale: rawProduct.is_on_sale || false,
-      images: images,
-      category: rawProduct.category,
-      sku: rawProduct.sku,
-      // Preserve these for Best Matches vs More Products separation and style filtering
-      is_primary_match: rawProduct.is_primary_match,
-      primary_style: rawProduct.primary_style,
-      similarity_score: rawProduct.similarity_score,
-    } as Product & { is_primary_match?: boolean; primary_style?: string; similarity_score?: number };
+  // Transform raw product to Product type (using shared utility)
+  const transformProduct = (rawProduct: any): ExtendedProduct => {
+    return transformProductUtil(rawProduct);
   };
 
   // Get unique stores from products (use allProducts to include paginated)
@@ -248,15 +205,14 @@ export default function CategorySection({
     });
   }, [allProducts, filters]);
 
-  // Check if product is in canvas
+  // Check if product is in canvas (using shared utility)
   const isInCanvas = (productId: string | number) => {
-    return canvasProducts.some((p) => p.id?.toString() === productId?.toString());
+    return isProductInCanvas(productId, canvasProducts);
   };
 
-  // Get quantity of product in canvas
+  // Get quantity of product in canvas (using shared utility)
   const getCanvasQuantity = (productId: string | number) => {
-    const product = canvasProducts.find((p) => p.id?.toString() === productId?.toString());
-    return product?.quantity || 0;
+    return getCanvasQuantityUtil(productId, canvasProducts);
   };
 
   // Toggle store filter
@@ -288,12 +244,9 @@ export default function CategorySection({
     }));
   };
 
-  // Separate products into Best Matches and More Products (same as admin curation page)
-  const { primaryProducts, relatedProducts } = useMemo(() => {
-    type ExtendedProduct = Product & { is_primary_match?: boolean };
-    const primary = filteredProducts.filter((p: ExtendedProduct) => p.is_primary_match === true);
-    const related = filteredProducts.filter((p: ExtendedProduct) => p.is_primary_match !== true);
-    return { primaryProducts: primary, relatedProducts: related };
+  // Separate products into Best Matches and More Products (using shared utility)
+  const { bestMatches: primaryProducts, moreProducts: relatedProducts } = useMemo(() => {
+    return separateProductMatches(filteredProducts as ExtendedProduct[]);
   }, [filteredProducts]);
 
   // Handle add to canvas from modal
@@ -304,14 +257,9 @@ export default function CategorySection({
     }
   };
 
-  // Get image URL helper
-  const getImageUrl = (product: Product) => {
-    if (product.images && Array.isArray(product.images) && product.images.length > 0) {
-      const primaryImage = product.images.find((img: any) => img.is_primary);
-      const image = primaryImage || product.images[0];
-      return image.large_url || image.medium_url || image.original_url;
-    }
-    return (product as any).image_url || '/placeholder-product.jpg';
+  // Get image URL helper (using shared utility)
+  const getImageUrl = (product: Product | ExtendedProduct) => {
+    return getProductImageUrl(product);
   };
 
   // Format budget hint

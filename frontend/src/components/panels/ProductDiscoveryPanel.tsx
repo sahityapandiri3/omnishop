@@ -7,6 +7,19 @@ import { Product } from '@/types';
 import { formatCurrency } from '@/utils/format';
 import CategorySection, { CategoryRecommendation } from './CategorySection';
 import CategoryCarousel from './CategoryCarousel';
+// Shared utilities
+import {
+  transformProduct as transformProductUtil,
+  ExtendedProduct,
+  getProductImageUrl,
+  isProductInCanvas,
+  getCanvasQuantity as getCanvasQuantityUtil,
+  calculateDiscountPercentage,
+} from '@/utils/product-transforms';
+// Shared product search components
+import { KeywordSearchPanel, ModeToggle } from '../products';
+
+type SearchMode = 'ai' | 'keyword';
 
 interface ProductDiscoveryPanelProps {
   products: any[];  // Raw products from API (legacy flat list)
@@ -18,6 +31,9 @@ interface ProductDiscoveryPanelProps {
   totalBudget?: number | null;
   // Session ID for pagination/infinite scroll
   sessionId?: string | null;
+  // Search mode toggle
+  enableModeToggle?: boolean;
+  defaultSearchMode?: SearchMode;
 }
 
 /**
@@ -32,6 +48,8 @@ export default function ProductDiscoveryPanel({
   productsByCategory,
   totalBudget,
   sessionId,
+  enableModeToggle = true,
+  defaultSearchMode = 'ai',
 }: ProductDiscoveryPanelProps) {
   console.log('[ProductDiscoveryPanel] Received products:', products.length, 'products');
   console.log('[ProductDiscoveryPanel] Category mode:', selectedCategories ? 'YES' : 'NO');
@@ -45,7 +63,10 @@ export default function ProductDiscoveryPanel({
     console.log('[ProductDiscoveryPanel] selectedCategories:', selectedCategories.map(c => c.category_id));
   }
 
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  // Search mode state
+  const [searchMode, setSearchMode] = useState<SearchMode>(defaultSearchMode);
+
+  const [selectedProduct, setSelectedProduct] = useState<ExtendedProduct | null>(null);
   const [sortBy, setSortBy] = useState<'relevance' | 'price-low' | 'price-high'>(
     'relevance'
   );
@@ -151,65 +172,23 @@ export default function ProductDiscoveryPanel({
     }
   }, [products]);
 
-  // Transform raw product to Product type
-  const transformProduct = (rawProduct: any): Product => {
-    // Handle different image formats from API
-    let images = [];
-
-    // Backend returns primary_image.url from chat API
-    if (rawProduct.primary_image && rawProduct.primary_image.url) {
-      images = [{
-        id: 1,
-        original_url: rawProduct.primary_image.url,
-        is_primary: true,
-        alt_text: rawProduct.primary_image.alt_text || rawProduct.name
-      }];
-    }
-    // Fallback: Check for images array
-    else if (rawProduct.images && Array.isArray(rawProduct.images)) {
-      images = rawProduct.images;
-    }
-    // Fallback: Check for image_url
-    else if (rawProduct.image_url) {
-      images = [{
-        id: 1,
-        original_url: rawProduct.image_url,
-        is_primary: true,
-        alt_text: rawProduct.name
-      }];
-    }
-
-    return {
-      id: parseInt(rawProduct.id) || rawProduct.id,
-      name: rawProduct.name,
-      description: rawProduct.description,
-      price: parseFloat(rawProduct.price) || 0,
-      original_price: rawProduct.original_price ? parseFloat(rawProduct.original_price) : undefined,
-      currency: rawProduct.currency || 'INR',
-      brand: rawProduct.brand,
-      source_website: rawProduct.source || rawProduct.source_website,
-      source_url: rawProduct.source_url,
-      is_available: rawProduct.is_available !== false,
-      is_on_sale: rawProduct.is_on_sale || false,
-      images: images,
-      category: rawProduct.category,
-      sku: rawProduct.sku,
-    } as Product;
+  // Transform raw product to Product type (using shared utility)
+  const transformProduct = (rawProduct: any): ExtendedProduct => {
+    return transformProductUtil(rawProduct);
   };
 
-  // Check if product is in canvas and get quantity
+  // Check if product is in canvas and get quantity (using shared utility)
   const isInCanvas = (productId: string | number) => {
-    return canvasProducts.some((p) => p.id.toString() === productId.toString());
+    return isProductInCanvas(productId, canvasProducts);
   };
 
-  // Get quantity of product in canvas
+  // Get quantity of product in canvas (using shared utility)
   const getCanvasQuantity = (productId: string | number) => {
-    const product = canvasProducts.find((p) => p.id.toString() === productId.toString());
-    return product?.quantity || 0;
+    return getCanvasQuantityUtil(productId, canvasProducts);
   };
 
   // Handle product click (open modal)
-  const handleProductClick = (product: Product) => {
+  const handleProductClick = (product: ExtendedProduct) => {
     setSelectedProduct(product);
   };
 
@@ -310,32 +289,71 @@ export default function ProductDiscoveryPanel({
   // Check if any filters are active
   const hasActiveFilters = selectedStores.length > 0 || priceRange.min > 0 || priceRange.max < Infinity;
 
-  // Empty state - show if no products in either mode
+  // Render mode toggle header
+  const renderModeToggleHeader = () => (
+    <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-700">
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold text-neutral-900 dark:text-white">
+          Product Discovery
+        </h2>
+        {enableModeToggle && (
+          <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
+        )}
+      </div>
+      <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+        {searchMode === 'ai'
+          ? 'AI-recommended products based on your room'
+          : 'Search and filter products directly'}
+      </p>
+    </div>
+  );
+
+  // If in keyword search mode, render the KeywordSearchPanel
+  if (searchMode === 'keyword') {
+    return (
+      <div className="flex flex-col h-full">
+        {renderModeToggleHeader()}
+        <div className="flex-1 overflow-hidden">
+          <KeywordSearchPanel
+            onAddProduct={(product) => onAddToCanvas(product)}
+            canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
+            showSearchInput={true}
+            compact={false}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Empty state - show if no products in AI mode
   if (products.length === 0 && !hasCategoryProducts) {
     return (
-      <div className="flex flex-col items-center justify-center h-full p-8 text-center">
-        <div className="w-24 h-24 bg-neutral-100 dark:bg-neutral-700 rounded-full flex items-center justify-center mb-4">
-          <svg
-            className="w-12 h-12 text-neutral-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
+      <div className="flex flex-col h-full">
+        {enableModeToggle && renderModeToggleHeader()}
+        <div className="flex flex-col items-center justify-center flex-1 p-8 text-center">
+          <div className="w-24 h-24 bg-neutral-100 dark:bg-neutral-700 rounded-full flex items-center justify-center mb-4">
+            <svg
+              className="w-12 h-12 text-neutral-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-2">
+            No Products Yet
+          </h3>
+          <p className="text-sm text-neutral-600 dark:text-neutral-400 max-w-sm">
+            Start chatting with the AI assistant to get personalized furniture
+            recommendations, or switch to Keyword Search mode.
+          </p>
         </div>
-        <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-2">
-          No Products Yet
-        </h3>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 max-w-sm">
-          Start chatting with the AI assistant to get personalized furniture
-          recommendations for your space.
-        </p>
       </div>
     );
   }
@@ -401,6 +419,16 @@ export default function ProductDiscoveryPanel({
     // CAROUSEL MODE - Default view with horizontal scrolling carousels
     return (
       <div className="flex flex-col h-full">
+        {/* Mode Toggle Header */}
+        {enableModeToggle && (
+          <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-700 flex items-center justify-between">
+            <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+              Search Mode
+            </span>
+            <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
+          </div>
+        )}
+
         {/* Header with Filter Toggle */}
         <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
           <div className="flex items-center justify-between mb-2">
@@ -569,6 +597,16 @@ export default function ProductDiscoveryPanel({
   return (
     <>
       <div className="flex flex-col h-full">
+        {/* Mode Toggle Header */}
+        {enableModeToggle && (
+          <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-700 flex items-center justify-between">
+            <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+              Search Mode
+            </span>
+            <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
+          </div>
+        )}
+
         {/* Header */}
         <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
           <div className="flex items-center justify-between mb-3">

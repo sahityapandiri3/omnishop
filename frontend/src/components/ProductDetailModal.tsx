@@ -2,11 +2,30 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { Product } from '@/types';
+import { Product, ProductImage } from '@/types';
 import { formatCurrency } from '@/utils/format';
 
+// Flexible product type that works with both Product and ExtendedProduct
+interface ProductLike {
+  id: number;
+  name: string;
+  description?: string;
+  price: number;
+  original_price?: number;
+  currency: string;
+  brand?: string;
+  source_website?: string;
+  source_url?: string;
+  is_available?: boolean;
+  is_on_sale?: boolean;
+  images?: ProductImage[];
+  sku?: string;
+  // Allow any additional properties
+  [key: string]: any;
+}
+
 interface ProductDetailModalProps {
-  product: Product;
+  product: Product | ProductLike;
   isOpen: boolean;
   onClose: () => void;
   onAddToCanvas?: () => void;

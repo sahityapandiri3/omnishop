@@ -6,6 +6,15 @@ import { Product } from '@/types';
 import { formatCurrency } from '@/utils/format';
 import { ProductDetailModal } from '../ProductDetailModal';
 import { CategoryRecommendation } from './CategorySection';
+// Shared utilities
+import {
+  transformProduct as transformProductUtil,
+  separateProductMatches,
+  ExtendedProduct,
+  getProductImageUrl,
+  isProductInCanvas,
+  getCanvasQuantity as getCanvasQuantityUtil,
+} from '@/utils/product-transforms';
 
 interface CategoryCarouselProps {
   category: CategoryRecommendation;
@@ -14,9 +23,6 @@ interface CategoryCarouselProps {
   canvasProducts: any[];
   onViewAll: () => void;
 }
-
-// Extended product type with is_primary_match flag
-type ExtendedProduct = Product & { is_primary_match?: boolean };
 
 /**
  * CategoryCarousel Component
@@ -30,67 +36,26 @@ export default function CategoryCarousel({
   onViewAll,
 }: CategoryCarouselProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<ExtendedProduct | null>(null);
 
-  // Transform raw product to Product type
-  const transformProduct = (rawProduct: any): Product => {
-    let images = [];
-    if (rawProduct.primary_image && rawProduct.primary_image.url) {
-      images = [{
-        id: 1,
-        original_url: rawProduct.primary_image.url,
-        is_primary: true,
-        alt_text: rawProduct.primary_image.alt_text || rawProduct.name
-      }];
-    } else if (rawProduct.images && Array.isArray(rawProduct.images)) {
-      images = rawProduct.images;
-    } else if (rawProduct.image_url) {
-      images = [{
-        id: 1,
-        original_url: rawProduct.image_url,
-        is_primary: true,
-        alt_text: rawProduct.name
-      }];
-    }
-
-    return {
-      id: parseInt(rawProduct.id) || rawProduct.id,
-      name: rawProduct.name,
-      description: rawProduct.description,
-      price: parseFloat(rawProduct.price) || 0,
-      original_price: rawProduct.original_price ? parseFloat(rawProduct.original_price) : undefined,
-      currency: rawProduct.currency || 'INR',
-      brand: rawProduct.brand,
-      source_website: rawProduct.source || rawProduct.source_website,
-      source_url: rawProduct.source_url,
-      is_available: rawProduct.is_available !== false,
-      is_on_sale: rawProduct.is_on_sale || false,
-      images: images,
-      category: rawProduct.category,
-      sku: rawProduct.sku,
-      is_primary_match: rawProduct.is_primary_match,  // Preserve the flag for separation
-    } as ExtendedProduct;
+  // Transform raw product to Product type (using shared utility)
+  const transformProduct = (rawProduct: any): ExtendedProduct => {
+    return transformProductUtil(rawProduct);
   };
 
-  // Check if product is in canvas
+  // Check if product is in canvas (using shared utility)
   const isInCanvas = (productId: string | number) => {
-    return canvasProducts.some((p) => p.id?.toString() === productId?.toString());
+    return isProductInCanvas(productId, canvasProducts);
   };
 
-  // Get quantity of product in canvas
+  // Get quantity of product in canvas (using shared utility)
   const getCanvasQuantity = (productId: string | number) => {
-    const product = canvasProducts.find((p) => p.id?.toString() === productId?.toString());
-    return product?.quantity || 0;
+    return getCanvasQuantityUtil(productId, canvasProducts);
   };
 
-  // Get image URL helper
-  const getImageUrl = (product: Product) => {
-    if (product.images && Array.isArray(product.images) && product.images.length > 0) {
-      const primaryImage = product.images.find((img: any) => img.is_primary);
-      const image = primaryImage || product.images[0];
-      return image.large_url || image.medium_url || image.original_url;
-    }
-    return (product as any).image_url || '/placeholder-product.jpg';
+  // Get image URL helper (using shared utility)
+  const getImageUrl = (product: Product | ExtendedProduct) => {
+    return getProductImageUrl(product);
   };
 
   // Scroll handlers
@@ -107,11 +72,9 @@ export default function CategoryCarousel({
   // Transform products
   const transformedProducts = products.map(transformProduct);
 
-  // Separate Best Matches from More Products based on is_primary_match flag
+  // Separate Best Matches from More Products (using shared utility)
   const { bestMatches, moreProducts } = useMemo(() => {
-    const best = transformedProducts.filter((p: ExtendedProduct) => (p as any).is_primary_match === true);
-    const more = transformedProducts.filter((p: ExtendedProduct) => (p as any).is_primary_match !== true);
-    return { bestMatches: best, moreProducts: more };
+    return separateProductMatches(transformedProducts);
   }, [transformedProducts]);
 
   // Format budget hint

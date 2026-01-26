@@ -12,62 +12,29 @@ import { FurniturePosition, MagicGrabLayer, PendingMoveData } from '@/components
 import { AngleSelector, ViewingAngle } from '@/components/AngleSelector';
 import { useVisualization } from '@/hooks/useVisualization';
 import { VisualizationProduct, SerializableHistoryEntry, VisualizationHistoryEntry } from '@/types/visualization';
+// Shared constants and utilities
+import {
+  PRODUCT_STYLES,
+  FURNITURE_COLORS,
+  PRODUCT_MATERIALS,
+  STYLE_LABEL_OPTIONS,
+  BUDGET_TIER_OPTIONS,
+  FURNITURE_QUANTITY_RULES,
+} from '@/constants/products';
+import {
+  extractProductType,
+  calculateBudgetTier,
+  ExtendedProduct,
+} from '@/utils/product-transforms';
+// Shared product search components
+import { KeywordOnlySearchPanel } from '@/components/products';
 
 const DraggableFurnitureCanvas = dynamic(
   () => import('@/components/DraggableFurnitureCanvas').then(mod => ({ default: mod.DraggableFurnitureCanvas })),
   { ssr: false }
 );
 
-// Common furniture colors for filtering
-const FURNITURE_COLORS = [
-  { name: 'White', value: 'white', color: '#FFFFFF', border: true },
-  { name: 'Black', value: 'black', color: '#000000' },
-  { name: 'Brown', value: 'brown', color: '#8B4513' },
-  { name: 'Beige', value: 'beige', color: '#F5F5DC' },
-  { name: 'Gray', value: 'gray', color: '#808080' },
-  { name: 'Blue', value: 'blue', color: '#4169E1' },
-  { name: 'Green', value: 'green', color: '#228B22' },
-  { name: 'Red', value: 'red', color: '#DC143C' },
-  { name: 'Yellow', value: 'yellow', color: '#FFD700' },
-  { name: 'Orange', value: 'orange', color: '#FF8C00' },
-  { name: 'Pink', value: 'pink', color: '#FFB6C1' },
-  { name: 'Purple', value: 'purple', color: '#9370DB' },
-];
-
-// Product style options (matches Product.primary_style values)
-const PRODUCT_STYLES = [
-  { value: 'modern', label: 'Modern' },
-  { value: 'modern_luxury', label: 'Modern Luxury' },
-  { value: 'indian_contemporary', label: 'Indian Contemporary' },
-  { value: 'minimalist', label: 'Minimalist' },
-  { value: 'japandi', label: 'Japandi' },
-  { value: 'scandinavian', label: 'Scandinavian' },
-  { value: 'mid_century_modern', label: 'Mid-Century Modern' },
-  { value: 'boho', label: 'Boho' },
-  { value: 'industrial', label: 'Industrial' },
-  { value: 'contemporary', label: 'Contemporary' },
-  { value: 'eclectic', label: 'Eclectic' },
-];
-
-// Common material options for filtering
-const PRODUCT_MATERIALS = [
-  { value: 'wood', label: 'Wood' },
-  { value: 'metal', label: 'Metal' },
-  { value: 'glass', label: 'Glass' },
-  { value: 'fabric', label: 'Fabric' },
-  { value: 'leather', label: 'Leather' },
-  { value: 'ceramic', label: 'Ceramic' },
-  { value: 'marble', label: 'Marble' },
-  { value: 'brass', label: 'Brass' },
-  { value: 'iron', label: 'Iron' },
-  { value: 'concrete', label: 'Concrete' },
-  { value: 'linen', label: 'Linen' },
-  { value: 'velvet', label: 'Velvet' },
-  { value: 'cotton', label: 'Cotton' },
-  { value: 'stone', label: 'Stone' },
-  { value: 'bamboo', label: 'Bamboo' },
-  { value: 'rattan', label: 'Rattan' },
-];
+// Note: FURNITURE_COLORS, PRODUCT_STYLES, PRODUCT_MATERIALS imported from @/constants/products
 
 interface Category {
   id: number;
@@ -226,37 +193,8 @@ export default function CreateCuratedLookPage() {
   const [styleDescription, setStyleDescription] = useState('');
   const [styleLabels, setStyleLabels] = useState<string[]>([]);
   const [roomType, setRoomType] = useState<'living_room' | 'bedroom'>('living_room');
-  // Budget tier options (auto-calculated based on total price)
-  // Must match backend BudgetTier enum in database/models.py
-  const BUDGET_TIER_OPTIONS = [
-    { value: 'pocket_friendly', label: 'Pocket-friendly', range: '< ₹2L' },
-    { value: 'mid_tier', label: 'Mid-tier', range: '₹2L – ₹8L' },
-    { value: 'premium', label: 'Premium', range: '₹8L – ₹15L' },
-    { value: 'luxury', label: 'Luxury', range: '₹15L+' },
-  ];
-
-  // Auto-calculate budget tier based on total price
-  const calculateBudgetTier = (price: number): { value: string; label: string; range: string } => {
-    if (price < 200000) return BUDGET_TIER_OPTIONS[0]; // Pocket-friendly
-    if (price < 800000) return BUDGET_TIER_OPTIONS[1]; // Mid-tier
-    if (price < 1500000) return BUDGET_TIER_OPTIONS[2]; // Premium
-    return BUDGET_TIER_OPTIONS[3]; // Luxury
-  };
-
-  // Available style labels for multi-select
-  const STYLE_LABEL_OPTIONS = [
-    { value: 'modern', label: 'Modern' },
-    { value: 'modern_luxury', label: 'Modern Luxury' },
-    { value: 'indian_contemporary', label: 'Indian Contemporary' },
-    { value: 'minimalist', label: 'Minimalist' },
-    { value: 'japandi', label: 'Japandi' },
-    { value: 'scandinavian', label: 'Scandinavian' },
-    { value: 'mid_century_modern', label: 'Mid-Century Modern' },
-    { value: 'bohemian', label: 'Bohemian' },
-    { value: 'industrial', label: 'Industrial' },
-    { value: 'contemporary', label: 'Contemporary' },
-    { value: 'eclectic', label: 'Eclectic' },
-  ];
+  // Note: BUDGET_TIER_OPTIONS, STYLE_LABEL_OPTIONS imported from @/constants/products
+  // Note: calculateBudgetTier imported from @/utils/product-transforms
   const [saving, setSaving] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -265,47 +203,8 @@ export default function CreateCuratedLookPage() {
   const isSavingRef = useRef(false);
   const isSavingDraftRef = useRef(false);
 
-  // Furniture quantity rules - same as user experience
-  // SINGLE_INSTANCE: Only one of this type allowed in the canvas (replaces existing)
-  // UNLIMITED: Multiple instances allowed (always adds new)
-  const FURNITURE_QUANTITY_RULES = {
-    SINGLE_INSTANCE: ['sofa', 'bed', 'coffee_table', 'floor_rug', 'ceiling_lamp'],
-    UNLIMITED: ['planter', 'floor_lamp', 'standing_lamp', 'side_table', 'ottoman', 'table_lamp'],
-  };
-
-  // Extract product type from product name
-  const extractProductType = (productName: string): string => {
-    const name = productName.toLowerCase();
-
-    // Check for specific product types (order matters - check specific types first)
-    if (name.includes('sofa') || name.includes('couch') || name.includes('sectional')) return 'sofa';
-    if (name.includes('coffee table') || name.includes('center table') || name.includes('centre table')) return 'coffee_table';
-    if (name.includes('side table') || name.includes('end table') || name.includes('nightstand')) return 'side_table';
-    if (name.includes('dining table')) return 'dining_table';
-    if (name.includes('console table')) return 'console_table';
-    if (name.includes('accent chair') || name.includes('armchair')) return 'accent_chair';
-    if (name.includes('dining chair')) return 'dining_chair';
-    if (name.includes('office chair')) return 'office_chair';
-    if (name.includes('table lamp') || name.includes('desk lamp')) return 'table_lamp';
-    if (name.includes('floor lamp') || name.includes('standing lamp')) return 'floor_lamp';
-    if (name.includes('ceiling lamp') || name.includes('pendant') || name.includes('chandelier')) return 'ceiling_lamp';
-    if (name.includes('lamp') || name.includes('light')) return 'lamp';
-    if (name.includes('bed')) return 'bed';
-    if (name.includes('dresser')) return 'dresser';
-    if (name.includes('mirror')) return 'mirror';
-    if (name.includes('rug') || name.includes('carpet')) {
-      if (name.includes('wall') || name.includes('hanging') || name.includes('tapestry')) {
-        return 'wall_rug';
-      }
-      return 'floor_rug';
-    }
-    if (name.includes('planter') || name.includes('plant') || name.includes('vase')) return 'planter';
-    if (name.includes('ottoman') || name.includes('pouf')) return 'ottoman';
-    if (name.includes('bench')) return 'bench';
-    if (name.includes('table')) return 'table';
-    if (name.includes('chair')) return 'chair';
-    return 'other';
-  };
+  // Note: FURNITURE_QUANTITY_RULES imported from @/constants/products
+  // Note: extractProductType imported from @/utils/product-transforms
 
   // Product detail modal state
   const [detailProduct, setDetailProduct] = useState<any | null>(null);
@@ -1663,514 +1562,23 @@ export default function CreateCuratedLookPage() {
           id="omnishop-curated-panels"
           className="h-full"
         >
-          {/* Panel 1: Filters */}
-          <Panel
-            id="filters-panel"
-            defaultSize={15}
-            minSize={10}
-            className="bg-white overflow-hidden border-r border-gray-200"
-          >
-            <div className="h-full flex flex-col">
-              <div className="p-3 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50 flex justify-between items-center">
-                <div>
-                  <h2 className="font-semibold text-gray-900 text-sm">Filters</h2>
-                  {activeFiltersCount > 0 && (
-                    <p className="text-xs text-purple-600">{activeFiltersCount} filter(s) active</p>
-                  )}
-                </div>
-                {activeFiltersCount > 0 && (
-                  <button
-                    onClick={clearFilters}
-                    className="text-xs text-gray-500 hover:text-gray-700"
-                  >
-                    Clear all
-                  </button>
-                )}
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-3 space-y-4">
-            {/* Search Bar */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                placeholder="Search products..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
-            </div>
-
-            {/* Price Range Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Price Range</label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  value={minPrice}
-                  onChange={(e) => setMinPrice(e.target.value)}
-                  placeholder="Min"
-                  className="w-1/2 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
-                />
-                <input
-                  type="number"
-                  value={maxPrice}
-                  onChange={(e) => setMaxPrice(e.target.value)}
-                  placeholder="Max"
-                  className="w-1/2 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-              <div className="flex gap-1 mt-2 flex-wrap">
-                {[
-                  { label: '<10K', min: '', max: '10000' },
-                  { label: '10-25K', min: '10000', max: '25000' },
-                  { label: '25-50K', min: '25000', max: '50000' },
-                  { label: '50K+', min: '50000', max: '' },
-                ].map((range) => (
-                  <button
-                    key={range.label}
-                    onClick={() => {
-                      // Toggle: if already selected, clear the filter
-                      if (minPrice === range.min && maxPrice === range.max) {
-                        setMinPrice('');
-                        setMaxPrice('');
-                      } else {
-                        setMinPrice(range.min);
-                        setMaxPrice(range.max);
-                      }
-                    }}
-                    className={`px-2 py-1 text-xs rounded-full transition-colors ${
-                      minPrice === range.min && maxPrice === range.max
-                        ? 'bg-purple-100 text-purple-700 border border-purple-300'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {range.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Store Filter - Categorized by Budget Tier */}
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <label className="block text-sm font-medium text-gray-700">Stores</label>
-                <button
-                  onClick={toggleAllStores}
-                  className="text-xs text-purple-600 hover:text-purple-700"
-                >
-                  {selectedStores.length === stores.length ? 'Deselect all' : 'Select all'}
-                </button>
-              </div>
-              <div className="space-y-3 max-h-60 overflow-y-auto">
-                {storeCategories.map((category) => (
-                  <div key={category.tier}>
-                    {/* Category Header */}
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                        {category.label}
-                      </span>
-                      <span className="text-xs text-gray-400">({category.stores.length})</span>
-                    </div>
-                    {/* Stores in this category */}
-                    <div className="space-y-1 pl-2 border-l-2 border-gray-200">
-                      {category.stores.map((store) => (
-                        <label
-                          key={store.name}
-                          className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1.5 rounded"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedStores.includes(store.name)}
-                            onChange={() => toggleStore(store.name)}
-                            className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                          />
-                          <span className="text-sm text-gray-700">{store.display_name}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Color Filter */}
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <label className="block text-sm font-medium text-gray-700">Colors</label>
-                {selectedColors.length > 0 && (
-                  <button
-                    onClick={() => setSelectedColors([])}
-                    className="text-xs text-purple-600 hover:text-purple-700"
-                  >
-                    Clear ({selectedColors.length})
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {FURNITURE_COLORS.map((color) => (
-                  <button
-                    key={color.value}
-                    onClick={() => toggleColor(color.value)}
-                    className={`w-7 h-7 rounded-full transition-all flex items-center justify-center ${
-                      selectedColors.includes(color.value)
-                        ? 'ring-2 ring-purple-500 ring-offset-1'
-                        : 'hover:scale-110'
-                    } ${color.border ? 'border border-gray-300' : ''}`}
-                    style={{ backgroundColor: color.color }}
-                    title={color.name}
-                  >
-                    {selectedColors.includes(color.value) && (
-                      <svg
-                        className={`w-4 h-4 ${
-                          ['white', 'beige', 'yellow'].includes(color.value)
-                            ? 'text-gray-800'
-                            : 'text-white'
-                        }`}
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={3}
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Style Filter */}
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <label className="block text-sm font-medium text-gray-700">Style</label>
-                {selectedProductStyles.length > 0 && (
-                  <button
-                    onClick={() => setSelectedProductStyles([])}
-                    className="text-xs text-purple-600 hover:text-purple-700"
-                  >
-                    Clear ({selectedProductStyles.length})
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {PRODUCT_STYLES.map((style) => (
-                  <button
-                    key={style.value}
-                    onClick={() => toggleProductStyle(style.value)}
-                    className={`px-2 py-1 text-xs rounded-full transition-all ${
-                      selectedProductStyles.includes(style.value)
-                        ? 'bg-purple-100 text-purple-700 border border-purple-300'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-transparent'
-                    }`}
-                  >
-                    {selectedProductStyles.includes(style.value) && (
-                      <svg className="w-3 h-3 inline mr-0.5 -ml-0.5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                    {style.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Material Filter */}
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <label className="block text-sm font-medium text-gray-700">Material</label>
-                {selectedMaterials.length > 0 && (
-                  <button
-                    onClick={() => setSelectedMaterials([])}
-                    className="text-xs text-purple-600 hover:text-purple-700"
-                  >
-                    Clear ({selectedMaterials.length})
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                {PRODUCT_MATERIALS.map((material) => (
-                  <button
-                    key={material.value}
-                    onClick={() => toggleMaterial(material.value)}
-                    className={`px-2 py-1 text-xs rounded-full transition-all ${
-                      selectedMaterials.includes(material.value)
-                        ? 'bg-blue-100 text-blue-700 border border-blue-300'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-transparent'
-                    }`}
-                  >
-                    {selectedMaterials.includes(material.value) && (
-                      <svg className="w-3 h-3 inline mr-0.5 -ml-0.5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                    {material.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Apply Filters Button */}
-          <div className="p-3 border-t border-gray-200">
-            <button
-              onClick={handleSearch}
-              disabled={searching}
-              className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
-            >
-              {searching ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  Searching...
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  Apply Filters
-                </>
-              )}
-            </button>
-          </div>
-            </div>
-          </Panel>
-
-          <PanelResizeHandle id="filters-products-handle" />
-
-          {/* Panel 2: Product Discovery */}
+          {/* Panel 1: Product Discovery (Search + Filters + Results) */}
           <Panel
             id="products-panel"
-            defaultSize={40}
-            minSize={25}
+            defaultSize={55}
+            minSize={35}
             className="bg-white overflow-hidden border-r border-gray-200"
           >
-            <div className="h-full flex flex-col">
-              <div className="p-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50">
-                <div className="flex justify-between items-center">
-                  <h2 className="font-semibold text-gray-900 text-sm">Products</h2>
-                  {totalProducts > 0 && (
-                    <span className="text-xs text-purple-600 font-medium">
-                      {discoveredProducts.length} of {totalProducts} found
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-gray-500 mt-1">Click to add to canvas</p>
-              </div>
-
-              {/* Product Grid */}
-              <div
-                ref={productsContainerRef}
-                className="flex-1 overflow-y-auto p-3"
-                onScroll={handleScroll}
-              >
-                {searching ? (
-              <div className="flex items-center justify-center h-32">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-              </div>
-            ) : discoveredProducts.length > 0 ? (
-              <>
-              {/* Separate products into primary matches and related */}
-              {(() => {
-                const primaryProducts = discoveredProducts.filter((p: any) => p.is_primary_match);
-                const relatedProducts = discoveredProducts.filter((p: any) => !p.is_primary_match);
-
-                // Debug logging
-                console.log(`[Products] Total: ${discoveredProducts.length}, Primary: ${primaryProducts.length}, Related: ${relatedProducts.length}, totalPrimary: ${totalPrimary}, totalRelated: ${totalRelated}`);
-
-                const renderProductGrid = (products: any[], keyPrefix: string) => (
-                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                    {products.map((product: any, index: number) => {
-                  const quantity = getProductQuantity(product.id);
-                  const isInCanvas = quantity > 0;
-                  const imageUrl = getProductImage(product);
-                  return (
-                    <div
-                      key={`${product.id}-${index}`}
-                      className={`group rounded-lg border-2 overflow-hidden transition-all ${
-                        isInCanvas
-                          ? 'border-green-500 bg-green-50'
-                          : 'border-gray-200 hover:border-purple-400 hover:shadow-md'
-                      }`}
-                    >
-                      <div className="aspect-square relative bg-gray-100">
-                        {imageUrl ? (
-                          <Image
-                            src={imageUrl}
-                            alt={product.name}
-                            fill
-                            className="object-cover"
-                            sizes="150px"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                          </div>
-                        )}
-                        {/* Quantity badge when in canvas */}
-                        {isInCanvas && (
-                          <div className="absolute top-1 left-1 bg-purple-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                            {quantity}x
-                          </div>
-                        )}
-                        {/* Hover Action Buttons - Show for all products */}
-                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
-                          {isInCanvas ? (
-                            <>
-                              {/* Quantity controls for products in canvas */}
-                              <div className="flex items-center gap-1.5 bg-white rounded-lg px-2 py-1">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    decrementQuantity(product.id);
-                                  }}
-                                  className="w-6 h-6 bg-gray-200 hover:bg-gray-300 rounded text-sm font-bold flex items-center justify-center"
-                                >
-                                  -
-                                </button>
-                                <span className="w-5 text-center font-semibold text-sm">{quantity}</span>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    incrementQuantity(product.id);
-                                  }}
-                                  className="w-6 h-6 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-bold flex items-center justify-center"
-                                >
-                                  +
-                                </button>
-                              </div>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  removeProduct(product.id);
-                                }}
-                                className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium rounded-lg flex items-center gap-1"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                                Remove
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  addProduct(product);
-                                }}
-                                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg flex items-center gap-1"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                </svg>
-                                Add to Canvas
-                              </button>
-                            </>
-                          )}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDetailProduct(product);
-                            }}
-                            className="px-3 py-1.5 bg-white/90 hover:bg-white text-gray-800 text-xs font-medium rounded-lg flex items-center gap-1"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            View Details
-                          </button>
-                        </div>
-                      </div>
-                      <div className="p-2">
-                        <p className="font-medium text-gray-900 text-xs line-clamp-2">{product.name}</p>
-                        <div className="flex justify-between items-center mt-1">
-                          <span className="text-[10px] text-gray-500 capitalize">{product.source_website || product.source}</span>
-                          <span className="text-xs font-semibold text-purple-600">{formatPrice(product.price || 0)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                    })}
-                  </div>
-                );
-
-                return (
-                  <>
-                    {/* Primary Matches Section */}
-                    {primaryProducts.length > 0 && (
-                      <>
-                        <div className="mb-2">
-                          <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-1 rounded">
-                            Best Matches ({totalPrimary > 0 ? totalPrimary : primaryProducts.length})
-                          </span>
-                        </div>
-                        {renderProductGrid(primaryProducts, 'primary')}
-                      </>
-                    )}
-
-                    {/* More Products Section */}
-                    {relatedProducts.length > 0 && (
-                      <>
-                        <div className={`mb-2 ${primaryProducts.length > 0 ? 'mt-4 pt-3 border-t border-gray-200' : ''}`}>
-                          <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-1 rounded">
-                            {primaryProducts.length > 0 ? 'More Products' : 'Products'} ({totalRelated > 0 ? totalRelated : relatedProducts.length})
-                          </span>
-                        </div>
-                        {renderProductGrid(relatedProducts, 'related')}
-                      </>
-                    )}
-
-                    {/* Show More Products header even if none loaded yet (but we know they exist) */}
-                    {relatedProducts.length === 0 && totalRelated > 0 && primaryProducts.length > 0 && (
-                      <div className="mb-2 mt-4 pt-3 border-t border-gray-200">
-                        <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-1 rounded">
-                          More Products ({totalRelated})
-                        </span>
-                        <p className="text-xs text-gray-400 mt-1">Scroll down to load more...</p>
-                      </div>
-                    )}
-
-                    {/* Fallback if no is_primary_match flag (backwards compatibility) */}
-                    {primaryProducts.length === 0 && relatedProducts.length === 0 && discoveredProducts.length > 0 && (
-                      renderProductGrid(discoveredProducts, 'all')
-                    )}
-                  </>
-                );
-              })()}
-              {/* Infinite scroll loading indicator */}
-              {loadingMore && (
-                <div className="flex items-center justify-center py-4">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
-                  <span className="ml-2 text-sm text-gray-500">Loading more...</span>
-                </div>
-              )}
-              {hasMore && !loadingMore && (
-                <div className="text-center py-3">
-                  <span className="text-xs text-gray-400">Scroll for more</span>
-                </div>
-              )}
-              </>
-            ) : (
-              <div className="flex items-center justify-center h-full text-center text-gray-400">
-                <div>
-                  <svg className="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                  </svg>
-                  <p className="text-sm">Apply filters or search to find products</p>
-                </div>
-              </div>
-            )}
-          </div>
-            </div>
+            <KeywordOnlySearchPanel
+              onAddProduct={addProduct}
+              canvasProducts={selectedProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
+              title="Product Discovery"
+            />
           </Panel>
 
           <PanelResizeHandle id="products-canvas-handle" />
 
-          {/* Panel 3: Canvas & Visualization */}
+          {/* Panel 2: Canvas & Visualization */}
           <Panel
             id="canvas-panel"
             defaultSize={45}
