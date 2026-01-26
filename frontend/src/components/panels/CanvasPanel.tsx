@@ -9,6 +9,7 @@ import { AngleSelector, ViewingAngle } from '../AngleSelector';
 import { useVisualization } from '@/hooks/useVisualization';
 import { VisualizationProduct, VisualizationHistoryEntry } from '@/types/visualization';
 import { fetchWithRetry } from '@/utils/visualization-helpers';
+import { TextBasedEditControls } from '@/components/visualization';
 
 const DraggableFurnitureCanvas = dynamic(
   () => import('../DraggableFurnitureCanvas').then(mod => ({ default: mod.DraggableFurnitureCanvas })),
@@ -123,7 +124,7 @@ export default function CanvasPanel({
     cleanRoomImage: cleanRoomImage || roomImage,
     onSetProducts: onSetProducts as (products: VisualizationProduct[]) => void,
     config: {
-      enableTextBasedEdits: false,  // CanvasPanel uses DraggableFurnitureCanvas instead
+      enableTextBasedEdits: true,  // Use text-based position editing
       enablePositionEditing: true,
       enableMultiAngle: true,
       enableImproveQuality: true,
@@ -148,6 +149,7 @@ export default function CanvasPanel({
     canUndo,
     canRedo,
     isEditingPositions,
+    editInstructions,
     currentAngle,
     angleImages,
     loadingAngle,
@@ -159,6 +161,8 @@ export default function CanvasPanel({
     handleAngleSelect,
     enterEditMode,
     exitEditMode,
+    applyEditInstructions,
+    setEditInstructions,
     resetVisualization,
     initializeFromExisting,
     _internal,
@@ -1197,30 +1201,17 @@ export default function CanvasPanel({
                 Visualization Result
               </h3>
               <div className="flex items-center gap-2">
-                {/* Edit Positions button */}
+                {/* Edit Positions button - uses text-based editing */}
                 {!isEditingPositions && (
                   <button
-                    onClick={handleEnterEditMode}
-                    disabled={isExtractingLayers}
-                    className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white text-xs font-medium transition-colors flex items-center gap-1.5 disabled:cursor-not-allowed"
-                    title="Edit furniture positions"
+                    onClick={enterEditMode}
+                    className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors flex items-center gap-1.5"
+                    title="Edit furniture positions with text instructions"
                   >
-                    {isExtractingLayers ? (
-                      <>
-                        <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Extracting Layers...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                        Edit Positions
-                      </>
-                    )}
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Edit Positions
                   </button>
                 )}
 
@@ -1286,46 +1277,10 @@ export default function CanvasPanel({
               </div>
             )}
 
-            {/* Image/Canvas Container - aspect-video only when NOT editing positions */}
-            <div className={`relative ${isEditingPositions ? '' : 'aspect-video'} bg-neutral-100 dark:bg-neutral-700 rounded-lg overflow-hidden ${needsRevisualization ? 'ring-2 ring-amber-400 dark:ring-amber-600' : ''} ${isEditingPositions ? 'ring-2 ring-purple-400 dark:ring-purple-600' : ''}`}>
-              {isEditingPositions ? (
-                useMagicGrab ? (
-                  // Click-to-Select mode - click on objects, then drag
-                  <DraggableFurnitureCanvas
-                    mode="click-to-select"
-                    visualizationImage={visualizationResult!}
-                    sessionId={sessionStorage.getItem('design_session_id') || ''}
-                    onFinalImage={handleClickToSelectFinalImage}
-                    onPendingMoveChange={handlePendingMoveChange}
-                    containerWidth={800}
-                    containerHeight={450}
-                    curatedProducts={(visualizedProducts.length > 0 ? visualizedProducts : products).map(p => {
-                      // Use visualizedProducts (products IN the visualization) for matching
-                      // Fall back to current products if visualizedProducts is empty
-                      const primaryImage = p.images?.find(img => img.is_primary) || p.images?.[0];
-                      const imageUrl = primaryImage?.medium_url || primaryImage?.original_url || p.image_url;
-                      return {
-                        id: typeof p.id === 'number' ? p.id : parseInt(String(p.id)) || 0,
-                        name: p.name,
-                        image_url: imageUrl
-                      };
-                    })}
-                  />
-                ) : (
-                  // Legacy marker mode
-                  <DraggableFurnitureCanvas
-                    mode="legacy"
-                    visualizationImage={visualizationResult!}
-                    baseRoomLayer={baseRoomLayer}
-                    furnitureLayers={furnitureLayers}
-                    furniturePositions={furniturePositions}
-                    onPositionsChange={handlePositionsChange}
-                    products={products}
-                    containerWidth={800}
-                    containerHeight={450}
-                  />
-                )
-              ) : (
+            {/* Image/Canvas Container */}
+            <div className={`relative aspect-video bg-neutral-100 dark:bg-neutral-700 rounded-lg overflow-hidden ${needsRevisualization ? 'ring-2 ring-amber-400 dark:ring-amber-600' : ''} ${isEditingPositions ? 'ring-2 ring-purple-400 dark:ring-purple-600' : ''}`}>
+              {/* Always show the visualization image */}
+              {visualizationResult && (
                 <>
                   {/* Display current angle image (front = main visualization, others = generated on-demand) */}
                   {(() => {
@@ -1383,44 +1338,15 @@ export default function CanvasPanel({
               )}
             </div>
 
-            {/* Edit Mode Actions - Only show for legacy mode since click-to-select has its own buttons */}
-            {isEditingPositions && !useMagicGrab && (
-              <div className="mt-3 flex items-center gap-2">
-                <button
-                  onClick={handleExitEditMode}
-                  className="px-4 py-2 rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-sm font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-
-            {/* Save & Exit / Exit buttons for click-to-select mode */}
-            {isEditingPositions && useMagicGrab && (
-              <div className="mt-3 flex items-center justify-center gap-2">
-                <button
-                  onClick={handleSaveAndExitEditMode}
-                  className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors"
-                >
-                  Save & Exit
-                </button>
-                <button
-                  onClick={handleExitEditMode}
-                  className="px-4 py-2 rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-sm font-medium transition-colors"
-                >
-                  Exit
-                </button>
-              </div>
-            )}
-
-            {/* Unsaved Changes Warning */}
-            {hasUnsavedPositions && isEditingPositions && (
-              <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 text-center flex items-center justify-center gap-1">
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-                You have unsaved position changes
-              </p>
+            {/* Text-based Edit Mode Controls */}
+            {isEditingPositions && (
+              <TextBasedEditControls
+                instructions={editInstructions}
+                onInstructionsChange={setEditInstructions}
+                onApply={() => applyEditInstructions(editInstructions)}
+                onExit={exitEditMode}
+                isProcessing={isVisualizing}
+              />
             )}
 
             {!needsRevisualization && !isEditingPositions && (
