@@ -7,6 +7,9 @@ import ProductDiscoveryPanel from '@/components/panels/ProductDiscoveryPanel';
 import CanvasPanel from '@/components/panels/CanvasPanel';
 import { ProductDetailModal } from '@/components/ProductDetailModal';
 import { ResizablePanelLayout } from '@/components/panels/ResizablePanelLayout';
+import { ModeToggle, KeywordSearchPanel } from '@/components/products';
+
+type SearchMode = 'ai' | 'keyword';
 import { checkFurnitureRemovalStatus, startFurnitureRemoval, getCategorizedStores, projectsAPI, restoreDesignStateFromRecovery, CategorizedStoresResponse, StoreCategory, imageAPI } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigationGuard } from '@/hooks/useNavigationGuard';
@@ -23,6 +26,9 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 function DesignPageContent() {
   // Mobile tab state
   const [activeTab, setActiveTab] = useState<'chat' | 'products' | 'canvas'>('chat');
+
+  // Search mode state - AI Stylist (chat) or Keyword Search
+  const [searchMode, setSearchMode] = useState<SearchMode>('ai');
 
   // Shared state for cross-panel communication
   const [roomImage, setRoomImage] = useState<string | null>(null);
@@ -1621,22 +1627,50 @@ function DesignPageContent() {
         <div className="hidden md:block h-full">
           <ResizablePanelLayout
             chatPanel={
-              <div className="relative h-full">
-                {/* Always render ChatPanel - use key to only remount when project changes */}
-                <ChatPanel
-                  key={projectId || 'new-project'}
-                  onProductRecommendations={handleProductRecommendations}
-                  roomImage={roomImage}
-                  selectedStores={selectedStores}
-                  initialSessionId={chatSessionId}
-                  onSessionIdChange={setChatSessionId}
-                />
-                {/* Loading overlay - shows on top while project is loading */}
-                {!projectLoaded && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+              <div className="flex flex-col h-full">
+                {/* Mode Toggle Header */}
+                <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0">
+                  <div className="flex items-center justify-between">
+                    <h2 className="font-semibold text-neutral-900 dark:text-white text-sm">
+                      {searchMode === 'ai' ? 'AI Stylist' : 'Product Search'}
+                    </h2>
+                    <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
                   </div>
-                )}
+                  <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                    {searchMode === 'ai'
+                      ? 'Chat to get personalized recommendations'
+                      : 'Search and filter products directly'}
+                  </p>
+                </div>
+
+                {/* Content based on mode */}
+                <div className="relative flex-1 overflow-hidden">
+                  {searchMode === 'ai' ? (
+                    <>
+                      <ChatPanel
+                        key={projectId || 'new-project'}
+                        onProductRecommendations={handleProductRecommendations}
+                        roomImage={roomImage}
+                        selectedStores={selectedStores}
+                        initialSessionId={chatSessionId}
+                        onSessionIdChange={setChatSessionId}
+                      />
+                      {/* Loading overlay - shows on top while project is loading */}
+                      {!projectLoaded && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <KeywordSearchPanel
+                      onAddProduct={handleAddToCanvas}
+                      canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
+                      showSearchInput={true}
+                      compact={false}
+                    />
+                  )}
+                </div>
               </div>
             }
             productsPanel={
@@ -1646,6 +1680,7 @@ function DesignPageContent() {
                 canvasProducts={canvasProducts}
                 selectedCategories={selectedCategories}
                 productsByCategory={productsByCategory}
+                enableModeToggle={false}
                 totalBudget={totalBudget}
                 sessionId={chatSessionId}
               />
@@ -1675,22 +1710,45 @@ function DesignPageContent() {
         {/* Mobile & Tablet: Single panel with tabs */}
         <div className="md:hidden h-full">
           <div className={`h-full ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
-            <div className="relative h-full">
-              {/* Always render ChatPanel - use key to only remount when project changes */}
-              <ChatPanel
-                key={projectId || 'new-project'}
-                onProductRecommendations={handleProductRecommendations}
-                roomImage={roomImage}
-                selectedStores={selectedStores}
-                initialSessionId={chatSessionId}
-                onSessionIdChange={setChatSessionId}
-              />
-              {/* Loading overlay - shows on top while project is loading */}
-              {!projectLoaded && (
-                <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+            <div className="flex flex-col h-full">
+              {/* Mode Toggle Header */}
+              <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-semibold text-neutral-900 dark:text-white text-sm">
+                    {searchMode === 'ai' ? 'AI Stylist' : 'Product Search'}
+                  </h2>
+                  <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
                 </div>
-              )}
+              </div>
+
+              {/* Content based on mode */}
+              <div className="relative flex-1 overflow-hidden">
+                {searchMode === 'ai' ? (
+                  <>
+                    <ChatPanel
+                      key={projectId || 'new-project'}
+                      onProductRecommendations={handleProductRecommendations}
+                      roomImage={roomImage}
+                      selectedStores={selectedStores}
+                      initialSessionId={chatSessionId}
+                      onSessionIdChange={setChatSessionId}
+                    />
+                    {/* Loading overlay - shows on top while project is loading */}
+                    {!projectLoaded && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <KeywordSearchPanel
+                    onAddProduct={handleAddToCanvas}
+                    canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
+                    showSearchInput={true}
+                    compact={true}
+                  />
+                )}
+              </div>
             </div>
           </div>
           <div className={`h-full ${activeTab === 'products' ? 'block' : 'hidden'}`}>
@@ -1702,6 +1760,7 @@ function DesignPageContent() {
               productsByCategory={productsByCategory}
               totalBudget={totalBudget}
               sessionId={chatSessionId}
+              enableModeToggle={false}
             />
           </div>
           <div className={`h-full ${activeTab === 'canvas' ? 'block' : 'hidden'}`}>
