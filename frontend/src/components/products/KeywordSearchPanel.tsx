@@ -43,6 +43,8 @@ interface KeywordSearchPanelProps {
   onSearchResults?: (results: {
     products: ExtendedProduct[];
     totalProducts: number;
+    totalPrimary: number;
+    totalRelated: number;
     hasMore: boolean;
     isSearching: boolean;
   }) => void;
@@ -225,11 +227,13 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
       onSearchResults({
         products,
         totalProducts,
+        totalPrimary,
+        totalRelated,
         hasMore,
         isSearching,
       });
     }
-  }, [products, totalProducts, hasMore, isSearching, onSearchResults]);
+  }, [products, totalProducts, totalPrimary, totalRelated, hasMore, isSearching, onSearchResults]);
 
   // Handle search form submit
   const handleSearchSubmit = (e: React.FormEvent) => {

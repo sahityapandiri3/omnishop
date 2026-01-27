@@ -25,6 +25,8 @@ type SearchMode = 'ai' | 'keyword';
 interface KeywordSearchResults {
   products: ExtendedProduct[];
   totalProducts: number;
+  totalPrimary: number;
+  totalRelated: number;
   hasMore: boolean;
   isSearching: boolean;
 }
@@ -341,6 +343,8 @@ export default function ProductDiscoveryPanel({
               hasMore={keywordSearchResults.hasMore}
               isLoadingMore={keywordSearchResults.isSearching && keywordSearchResults.products.length > 0}
               totalCount={keywordSearchResults.totalProducts}
+              totalPrimaryCount={keywordSearchResults.totalPrimary}
+              totalRelatedCount={keywordSearchResults.totalRelated}
               isLoading={false}
               emptyMessage="No products found"
               gridClassName="grid grid-cols-2 md:grid-cols-3 gap-3"

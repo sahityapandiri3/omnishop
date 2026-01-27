@@ -173,6 +173,10 @@ interface ProductResultsGridProps {
   isLoadingMore?: boolean;
   /** Total product count for display */
   totalCount?: number;
+  /** Total primary/best matches count from API (for showing accurate counts before all loaded) */
+  totalPrimaryCount?: number;
+  /** Total related/more products count from API */
+  totalRelatedCount?: number;
   /** Grid columns class */
   gridClassName?: string;
   /** Card size */
@@ -205,6 +209,8 @@ export function ProductResultsGrid({
   hasMore = false,
   isLoadingMore = false,
   totalCount,
+  totalPrimaryCount,
+  totalRelatedCount,
   gridClassName = 'grid grid-cols-2 md:grid-cols-3 gap-2',
   cardSize = 'medium',
   isLoading = false,
@@ -344,15 +350,20 @@ export function ProductResultsGrid({
     );
   }
 
+  // Use API counts if available, otherwise use loaded counts
+  const displayPrimaryCount = totalPrimaryCount ?? bestMatches.length;
+  const displayRelatedCount = totalRelatedCount ?? moreProducts.length;
+  const hasMoreProducts = displayRelatedCount > 0 || moreProducts.length > 0;
+
   // Standard grid display with optional separation
   return (
     <div>
       {/* Best Matches Section */}
-      {bestMatches.length > 0 && (
+      {(bestMatches.length > 0 || displayPrimaryCount > 0) && (
         <>
           <div className="mb-2">
             <span className="text-xs font-semibold text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">
-              Best Matches ({bestMatches.length})
+              Best Matches ({bestMatches.length}{displayPrimaryCount > bestMatches.length ? ` of ${displayPrimaryCount}` : ''})
             </span>
           </div>
           <div className={gridClassName}>
@@ -361,20 +372,24 @@ export function ProductResultsGrid({
         </>
       )}
 
-      {/* More Products Section */}
-      {moreProducts.length > 0 && (
+      {/* More Products Section - Show even if not loaded yet, if API says there are more */}
+      {hasMoreProducts && (
         <>
           <div className={`mb-2 ${bestMatches.length > 0 ? 'mt-4 pt-3 border-t border-neutral-200 dark:border-neutral-700' : ''}`}>
             <span className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-1 rounded">
-              {bestMatches.length > 0 ? 'More Products' : 'Products'} ({moreProducts.length})
-              {totalCount && totalCount > products.length && (
-                <span className="ml-1 text-neutral-400">of {totalCount}</span>
-              )}
+              {bestMatches.length > 0 ? 'More Products' : 'Products'} ({moreProducts.length}{displayRelatedCount > moreProducts.length ? ` of ${displayRelatedCount}` : ''})
             </span>
+            {moreProducts.length === 0 && displayRelatedCount > 0 && (
+              <span className="ml-2 text-xs text-neutral-500 dark:text-neutral-400">
+                Scroll down to load
+              </span>
+            )}
           </div>
-          <div className={gridClassName}>
-            {moreProducts.map(product => renderProductCard(product, false))}
-          </div>
+          {moreProducts.length > 0 && (
+            <div className={gridClassName}>
+              {moreProducts.map(product => renderProductCard(product, false))}
+            </div>
+          )}
         </>
       )}
 

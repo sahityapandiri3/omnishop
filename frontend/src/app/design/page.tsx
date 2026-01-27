@@ -58,6 +58,8 @@ function DesignPageContent() {
   const [keywordSearchResults, setKeywordSearchResults] = useState<{
     products: any[];
     totalProducts: number;
+    totalPrimary: number;
+    totalRelated: number;
     hasMore: boolean;
     isSearching: boolean;
   } | null>(null);
@@ -105,6 +107,15 @@ function DesignPageContent() {
 
   // Ref for KeywordSearchPanel to call loadMore from ProductDiscoveryPanel
   const keywordSearchRef = useRef<KeywordSearchPanelRef>(null);
+
+  // Track if we're on mobile (for conditional rendering of KeywordSearchPanel)
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Track if we have unsaved changes
   const hasUnsavedChanges = saveStatus === 'unsaved' || saveStatus === 'saving';
@@ -1658,22 +1669,24 @@ function DesignPageContent() {
                   <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
                 </div>
 
-                {/* Filters - Always visible in both modes */}
-                <div className="flex-shrink-0">
-                  <KeywordSearchPanel
-                    ref={keywordSearchRef}
-                    onAddProduct={handleAddToCanvas}
-                    canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
-                    showSearchInput={searchMode === 'keyword'}
-                    compact={false}
-                    showResultsInline={false}
-                    onSearchResults={setKeywordSearchResults}
-                    filters={searchFilters}
-                    onFiltersChange={setSearchFilters}
-                    showFilters={showSearchFilters}
-                    onShowFiltersChange={setShowSearchFilters}
-                  />
-                </div>
+                {/* Filters - Always visible in both modes (only render on desktop) */}
+                {!isMobile && (
+                  <div className="flex-shrink-0">
+                    <KeywordSearchPanel
+                      ref={keywordSearchRef}
+                      onAddProduct={handleAddToCanvas}
+                      canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
+                      showSearchInput={searchMode === 'keyword'}
+                      compact={false}
+                      showResultsInline={false}
+                      onSearchResults={setKeywordSearchResults}
+                      filters={searchFilters}
+                      onFiltersChange={setSearchFilters}
+                      showFilters={showSearchFilters}
+                      onShowFiltersChange={setShowSearchFilters}
+                    />
+                  </div>
+                )}
 
                 {/* AI Chat Panel - Only visible in AI mode */}
                 {searchMode === 'ai' && (
@@ -1742,22 +1755,24 @@ function DesignPageContent() {
                 <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
               </div>
 
-              {/* Filters - Always visible in both modes */}
-              <div className="flex-shrink-0">
-                <KeywordSearchPanel
-                  ref={keywordSearchRef}
-                  onAddProduct={handleAddToCanvas}
-                  canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
-                  showSearchInput={searchMode === 'keyword'}
-                  compact={true}
-                  showResultsInline={false}
-                  onSearchResults={setKeywordSearchResults}
-                  filters={searchFilters}
-                  onFiltersChange={setSearchFilters}
-                  showFilters={showSearchFilters}
-                  onShowFiltersChange={setShowSearchFilters}
-                />
-              </div>
+              {/* Filters - Always visible in both modes (only render on mobile) */}
+              {isMobile && (
+                <div className="flex-shrink-0">
+                  <KeywordSearchPanel
+                    ref={keywordSearchRef}
+                    onAddProduct={handleAddToCanvas}
+                    canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
+                    showSearchInput={searchMode === 'keyword'}
+                    compact={true}
+                    showResultsInline={false}
+                    onSearchResults={setKeywordSearchResults}
+                    filters={searchFilters}
+                    onFiltersChange={setSearchFilters}
+                    showFilters={showSearchFilters}
+                    onShowFiltersChange={setShowSearchFilters}
+                  />
+                </div>
+              )}
 
               {/* AI Chat Panel - Only visible in AI mode */}
               {searchMode === 'ai' && (
