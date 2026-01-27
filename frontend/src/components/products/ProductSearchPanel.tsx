@@ -36,31 +36,25 @@ function ModeToggle({
   onModeChange: (mode: SearchMode) => void;
 }) {
   return (
-    <div className="flex items-center gap-1 p-1 bg-neutral-100 dark:bg-neutral-800 rounded-lg">
+    <div className="inline-flex items-center p-0.5 bg-neutral-100 dark:bg-neutral-800 rounded-lg">
       <button
         onClick={() => onModeChange('keyword')}
-        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all text-center ${
           mode === 'keyword'
             ? 'bg-white dark:bg-neutral-700 text-primary-600 dark:text-primary-400 shadow-sm'
             : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
         }`}
       >
-        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
         Keyword Search
       </button>
       <button
         onClick={() => onModeChange('ai')}
-        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all text-center ${
           mode === 'ai'
             ? 'bg-white dark:bg-neutral-700 text-primary-600 dark:text-primary-400 shadow-sm'
             : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
         }`}
       >
-        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-        </svg>
         AI Stylist
       </button>
     </div>

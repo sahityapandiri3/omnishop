@@ -1650,30 +1650,32 @@ function DesignPageContent() {
           <ResizablePanelLayout
             chatPanel={
               <div className="flex flex-col h-full">
-                {/* Compact Mode Toggle */}
-                <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0">
+                {/* Centered Mode Toggle */}
+                <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0 flex justify-center">
                   <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
                 </div>
 
-                {/* Search & Filters - Always visible */}
-                <div className="flex-shrink-0">
-                  <KeywordSearchPanel
-                    onAddProduct={handleAddToCanvas}
-                    canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
-                    showSearchInput={true}
-                    compact={false}
-                    showResultsInline={false}
-                    onSearchResults={setKeywordSearchResults}
-                    filters={searchFilters}
-                    onFiltersChange={setSearchFilters}
-                    showFilters={showSearchFilters}
-                    onShowFiltersChange={setShowSearchFilters}
-                  />
-                </div>
+                {/* Search & Filters - Only in Keyword Search mode */}
+                {searchMode === 'keyword' && (
+                  <div className="flex-shrink-0">
+                    <KeywordSearchPanel
+                      onAddProduct={handleAddToCanvas}
+                      canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
+                      showSearchInput={true}
+                      compact={false}
+                      showResultsInline={false}
+                      onSearchResults={setKeywordSearchResults}
+                      filters={searchFilters}
+                      onFiltersChange={setSearchFilters}
+                      showFilters={showSearchFilters}
+                      onShowFiltersChange={setShowSearchFilters}
+                    />
+                  </div>
+                )}
 
                 {/* AI Chat Panel - Only visible in AI mode */}
                 {searchMode === 'ai' && (
-                  <div className="relative flex-1 overflow-hidden border-t border-neutral-200 dark:border-neutral-700">
+                  <div className="relative flex-1 overflow-hidden">
                     <ChatPanel
                       key={projectId || 'new-project'}
                       onProductRecommendations={handleProductRecommendations}
@@ -1732,30 +1734,32 @@ function DesignPageContent() {
         <div className="md:hidden h-full">
           <div className={`h-full ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
             <div className="flex flex-col h-full">
-              {/* Compact Mode Toggle */}
-              <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0">
+              {/* Centered Mode Toggle */}
+              <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0 flex justify-center">
                 <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
               </div>
 
-              {/* Search & Filters - Always visible */}
-              <div className="flex-shrink-0">
-                <KeywordSearchPanel
-                  onAddProduct={handleAddToCanvas}
-                  canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
-                  showSearchInput={true}
-                  compact={true}
-                  showResultsInline={false}
-                  onSearchResults={setKeywordSearchResults}
-                  filters={searchFilters}
-                  onFiltersChange={setSearchFilters}
-                  showFilters={showSearchFilters}
-                  onShowFiltersChange={setShowSearchFilters}
-                />
-              </div>
+              {/* Search & Filters - Only in Keyword Search mode */}
+              {searchMode === 'keyword' && (
+                <div className="flex-shrink-0">
+                  <KeywordSearchPanel
+                    onAddProduct={handleAddToCanvas}
+                    canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
+                    showSearchInput={true}
+                    compact={true}
+                    showResultsInline={false}
+                    onSearchResults={setKeywordSearchResults}
+                    filters={searchFilters}
+                    onFiltersChange={setSearchFilters}
+                    showFilters={showSearchFilters}
+                    onShowFiltersChange={setShowSearchFilters}
+                  />
+                </div>
+              )}
 
               {/* AI Chat Panel - Only visible in AI mode */}
               {searchMode === 'ai' && (
-                <div className="relative flex-1 overflow-hidden border-t border-neutral-200 dark:border-neutral-700">
+                <div className="relative flex-1 overflow-hidden">
                   <ChatPanel
                     key={projectId || 'new-project'}
                     onProductRecommendations={handleProductRecommendations}
