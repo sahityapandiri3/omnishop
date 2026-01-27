@@ -361,20 +361,30 @@ export function KeywordSearchPanel({
           </form>
         )}
 
-        {/* Results Info & Filter Toggle */}
+        {/* Filter Toggle - Always visible */}
         <div className="flex items-center justify-between">
           <div className="text-sm text-neutral-600 dark:text-neutral-400">
-            {products.length > 0 ? (
-              <span>
-                {totalPrimary > 0 && (
-                  <span className="text-primary-600 dark:text-primary-400 font-medium">{totalPrimary} best matches</span>
-                )}
-                {totalPrimary > 0 && totalRelated > 0 && <span> + </span>}
-                {totalRelated > 0 && <span>{totalRelated} more</span>}
-                {totalPrimary === 0 && totalRelated === 0 && <span>{totalProducts} products</span>}
-              </span>
+            {showSearchInput ? (
+              // Keyword search mode - show search results info
+              products.length > 0 ? (
+                <span>
+                  {totalPrimary > 0 && (
+                    <span className="text-primary-600 dark:text-primary-400 font-medium">{totalPrimary} best matches</span>
+                  )}
+                  {totalPrimary > 0 && totalRelated > 0 && <span> + </span>}
+                  {totalRelated > 0 && <span>{totalRelated} more</span>}
+                  {totalPrimary === 0 && totalRelated === 0 && <span>{totalProducts} products</span>}
+                </span>
+              ) : (
+                <span>Search for products</span>
+              )
             ) : (
-              <span>Search for products</span>
+              // AI mode - show filter info
+              hasActiveFilters ? (
+                <span className="text-primary-600 dark:text-primary-400 font-medium">Filters active</span>
+              ) : (
+                <span>Filter recommendations</span>
+              )
             )}
           </div>
           <FilterToggleButton

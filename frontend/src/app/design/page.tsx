@@ -1655,27 +1655,25 @@ function DesignPageContent() {
                   <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
                 </div>
 
-                {/* Search & Filters - Only in Keyword Search mode */}
-                {searchMode === 'keyword' && (
-                  <div className="flex-shrink-0">
-                    <KeywordSearchPanel
-                      onAddProduct={handleAddToCanvas}
-                      canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
-                      showSearchInput={true}
-                      compact={false}
-                      showResultsInline={false}
-                      onSearchResults={setKeywordSearchResults}
-                      filters={searchFilters}
-                      onFiltersChange={setSearchFilters}
-                      showFilters={showSearchFilters}
-                      onShowFiltersChange={setShowSearchFilters}
-                    />
-                  </div>
-                )}
+                {/* Filters - Always visible in both modes */}
+                <div className="flex-shrink-0">
+                  <KeywordSearchPanel
+                    onAddProduct={handleAddToCanvas}
+                    canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
+                    showSearchInput={searchMode === 'keyword'}
+                    compact={false}
+                    showResultsInline={false}
+                    onSearchResults={setKeywordSearchResults}
+                    filters={searchFilters}
+                    onFiltersChange={setSearchFilters}
+                    showFilters={showSearchFilters}
+                    onShowFiltersChange={setShowSearchFilters}
+                  />
+                </div>
 
                 {/* AI Chat Panel - Only visible in AI mode */}
                 {searchMode === 'ai' && (
-                  <div className="relative flex-1 overflow-hidden">
+                  <div className="relative flex-1 overflow-hidden border-t border-neutral-200 dark:border-neutral-700">
                     <ChatPanel
                       key={projectId || 'new-project'}
                       onProductRecommendations={handleProductRecommendations}
@@ -1739,27 +1737,25 @@ function DesignPageContent() {
                 <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
               </div>
 
-              {/* Search & Filters - Only in Keyword Search mode */}
-              {searchMode === 'keyword' && (
-                <div className="flex-shrink-0">
-                  <KeywordSearchPanel
-                    onAddProduct={handleAddToCanvas}
-                    canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
-                    showSearchInput={true}
-                    compact={true}
-                    showResultsInline={false}
-                    onSearchResults={setKeywordSearchResults}
-                    filters={searchFilters}
-                    onFiltersChange={setSearchFilters}
-                    showFilters={showSearchFilters}
-                    onShowFiltersChange={setShowSearchFilters}
-                  />
-                </div>
-              )}
+              {/* Filters - Always visible in both modes */}
+              <div className="flex-shrink-0">
+                <KeywordSearchPanel
+                  onAddProduct={handleAddToCanvas}
+                  canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
+                  showSearchInput={searchMode === 'keyword'}
+                  compact={true}
+                  showResultsInline={false}
+                  onSearchResults={setKeywordSearchResults}
+                  filters={searchFilters}
+                  onFiltersChange={setSearchFilters}
+                  showFilters={showSearchFilters}
+                  onShowFiltersChange={setShowSearchFilters}
+                />
+              </div>
 
               {/* AI Chat Panel - Only visible in AI mode */}
               {searchMode === 'ai' && (
-                <div className="relative flex-1 overflow-hidden">
+                <div className="relative flex-1 overflow-hidden border-t border-neutral-200 dark:border-neutral-700">
                   <ChatPanel
                     key={projectId || 'new-project'}
                     onProductRecommendations={handleProductRecommendations}
