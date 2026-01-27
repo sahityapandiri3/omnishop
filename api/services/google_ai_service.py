@@ -159,6 +159,8 @@ ROOM PRESERVATION RULES (MANDATORY):
 8. NO ZOOM: Show full room view
 9. NO ADDITIONS: Only add explicitly requested furniture
 10. PHOTOREALISM: Output must look like a real photograph
+11. NO HALLUCINATED STRUCTURES: Do NOT add, extend, or assume any walls, ceilings, floors, or architectural elements that are not visible in the input image. Only use what is shown in the base image as background.
+12. VISIBLE BOUNDARIES ONLY: If the image shows a partial room view (e.g., only one wall visible), do NOT generate or assume other walls or room structures beyond what is visible.
 """
 
     @staticmethod
@@ -400,6 +402,7 @@ YOUR TASK:
                 if isinstance(color_val, str) and color_val.startswith("["):
                     try:
                         import ast
+
                         color_list = ast.literal_eval(color_val)
                         if color_list and len(color_list) > 0:
                             color_val = color_list[0]  # Use first color option
