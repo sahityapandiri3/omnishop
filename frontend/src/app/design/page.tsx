@@ -62,6 +62,7 @@ function DesignPageContent() {
     totalRelated: number;
     hasMore: boolean;
     isSearching: boolean;
+    isLoadingMore: boolean;
   } | null>(null);
 
   // Global filter state (persists across mode switches)

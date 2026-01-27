@@ -355,7 +355,38 @@ export function ProductResultsGrid({
   const displayRelatedCount = totalRelatedCount ?? moreProducts.length;
   const hasMoreProducts = displayRelatedCount > 0 || moreProducts.length > 0;
 
-  // Standard grid display with optional separation
+  // When showSeparation is false, show all products in a single grid
+  // but still mark best matches with badges
+  if (!showSeparation) {
+    return (
+      <div>
+        {/* Single Products Section - no separation, but badges on best matches */}
+        <div className="mb-2">
+          <span className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-1 rounded">
+            Products ({products.length}{totalCount && totalCount > products.length ? ` of ${totalCount}` : ''})
+          </span>
+        </div>
+        {products.length > 0 && (
+          <div className={gridClassName}>
+            {products.map(product => renderProductCard(product, product.is_primary_match === true))}
+          </div>
+        )}
+
+        {/* Infinite Scroll Trigger */}
+        {enableInfiniteScroll && onLoadMore && (
+          <InfiniteScrollTrigger
+            onLoadMore={onLoadMore}
+            hasMore={hasMore}
+            isLoading={isLoadingMore}
+            loadedCount={products.length}
+            totalCount={totalCount}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Standard grid display with separation
   return (
     <div>
       {/* Best Matches Section */}

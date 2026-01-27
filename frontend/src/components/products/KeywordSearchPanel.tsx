@@ -47,6 +47,7 @@ interface KeywordSearchPanelProps {
     totalRelated: number;
     hasMore: boolean;
     isSearching: boolean;
+    isLoadingMore: boolean;
   }) => void;
   /** Callback for loading more results */
   onLoadMore?: () => void;
@@ -231,9 +232,10 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
         totalRelated,
         hasMore,
         isSearching,
+        isLoadingMore,
       });
     }
-  }, [products, totalProducts, totalPrimary, totalRelated, hasMore, isSearching, onSearchResults]);
+  }, [products, totalProducts, totalPrimary, totalRelated, hasMore, isSearching, isLoadingMore, onSearchResults]);
 
   // Handle search form submit
   const handleSearchSubmit = (e: React.FormEvent) => {

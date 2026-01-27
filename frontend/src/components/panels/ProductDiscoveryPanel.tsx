@@ -29,6 +29,7 @@ interface KeywordSearchResults {
   totalRelated: number;
   hasMore: boolean;
   isSearching: boolean;
+  isLoadingMore: boolean;
 }
 
 interface ProductDiscoveryPanelProps {
@@ -337,11 +338,11 @@ export default function ProductDiscoveryPanel({
               onAddProduct={(product) => onAddToCanvas(product)}
               canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
               onViewDetails={setSelectedProduct}
-              showSeparation={true}
+              showSeparation={false}
               enableInfiniteScroll={true}
               onLoadMore={onLoadMoreKeywordResults}
               hasMore={keywordSearchResults.hasMore}
-              isLoadingMore={keywordSearchResults.isSearching && keywordSearchResults.products.length > 0}
+              isLoadingMore={keywordSearchResults.isLoadingMore}
               totalCount={keywordSearchResults.totalProducts}
               totalPrimaryCount={keywordSearchResults.totalPrimary}
               totalRelatedCount={keywordSearchResults.totalRelated}
