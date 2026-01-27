@@ -7,7 +7,7 @@ import ProductDiscoveryPanel from '@/components/panels/ProductDiscoveryPanel';
 import CanvasPanel from '@/components/panels/CanvasPanel';
 import { ProductDetailModal } from '@/components/ProductDetailModal';
 import { ResizablePanelLayout } from '@/components/panels/ResizablePanelLayout';
-import { ModeToggle, KeywordSearchPanel, SearchFilters } from '@/components/products';
+import { ModeToggle, KeywordSearchPanel, SearchFilters, KeywordSearchPanelRef } from '@/components/products';
 
 type SearchMode = 'ai' | 'keyword';
 
@@ -102,6 +102,9 @@ function DesignPageContent() {
 
   // Track if we're currently creating a project (to prevent duplicate creation from React re-renders)
   const isCreatingProjectRef = useRef<boolean>(false);
+
+  // Ref for KeywordSearchPanel to call loadMore from ProductDiscoveryPanel
+  const keywordSearchRef = useRef<KeywordSearchPanelRef>(null);
 
   // Track if we have unsaved changes
   const hasUnsavedChanges = saveStatus === 'unsaved' || saveStatus === 'saving';
@@ -1658,6 +1661,7 @@ function DesignPageContent() {
                 {/* Filters - Always visible in both modes */}
                 <div className="flex-shrink-0">
                   <KeywordSearchPanel
+                    ref={keywordSearchRef}
                     onAddProduct={handleAddToCanvas}
                     canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
                     showSearchInput={searchMode === 'keyword'}
@@ -1704,6 +1708,7 @@ function DesignPageContent() {
                 sessionId={chatSessionId}
                 isKeywordSearchMode={searchMode === 'keyword'}
                 keywordSearchResults={keywordSearchResults}
+                onLoadMoreKeywordResults={() => keywordSearchRef.current?.loadMore()}
               />
             }
             canvasPanel={
@@ -1740,6 +1745,7 @@ function DesignPageContent() {
               {/* Filters - Always visible in both modes */}
               <div className="flex-shrink-0">
                 <KeywordSearchPanel
+                  ref={keywordSearchRef}
                   onAddProduct={handleAddToCanvas}
                   canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
                   showSearchInput={searchMode === 'keyword'}
@@ -1786,6 +1792,7 @@ function DesignPageContent() {
               enableModeToggle={false}
               isKeywordSearchMode={searchMode === 'keyword'}
               keywordSearchResults={keywordSearchResults}
+              onLoadMoreKeywordResults={() => keywordSearchRef.current?.loadMore()}
             />
           </div>
           <div className={`h-full ${activeTab === 'canvas' ? 'block' : 'hidden'}`}>

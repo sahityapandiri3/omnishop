@@ -22,7 +22,7 @@ export {
   KeywordSearchPanel,
 } from './KeywordSearchPanel';
 
-export type { SearchFilters } from './KeywordSearchPanel';
+export type { SearchFilters, KeywordSearchPanelRef } from './KeywordSearchPanel';
 
 export {
   ProductSearchPanel,
