@@ -532,10 +532,10 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
   // =============================================
   if (showSearchInput) {
     return (
-      <div className={`flex flex-col ${showResultsInline ? 'h-full' : ''}`}>
-        <form onSubmit={handleSearchSubmit} className={`flex flex-col ${compact ? 'p-3' : 'p-4'}`}>
+      <div className="flex flex-col h-full">
+        <form onSubmit={handleSearchSubmit} className={`flex flex-col h-full ${compact ? 'p-3' : 'p-4'}`}>
           {/* Search Input at top */}
-          <div className="relative mb-3">
+          <div className="relative mb-3 flex-shrink-0">
             <input
               type="text"
               value={searchQuery}
@@ -553,14 +553,14 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
             </svg>
           </div>
 
-          {/* Filters always expanded */}
-          <div className="max-h-[50vh] overflow-y-auto border-t border-b border-neutral-200 dark:border-neutral-700 py-3 mb-3">
+          {/* Filters always expanded - fills available space */}
+          <div className="flex-1 overflow-y-auto border-t border-b border-neutral-200 dark:border-neutral-700 py-3 mb-3 min-h-0">
             {renderFilterContent()}
           </div>
 
           {/* Search Results Info */}
           {products.length > 0 && (
-            <div className="text-xs text-neutral-600 dark:text-neutral-400 mb-2 text-center">
+            <div className="text-xs text-neutral-600 dark:text-neutral-400 mb-2 text-center flex-shrink-0">
               {totalPrimary > 0 && (
                 <span className="text-primary-600 dark:text-primary-400 font-medium">{totalPrimary} best matches</span>
               )}
@@ -574,7 +574,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
           <button
             type="submit"
             disabled={isSearching || (!searchQuery.trim() && selectedStores.length === 0 && selectedStyles.length === 0)}
-            className="w-full py-2.5 bg-primary-600 hover:bg-primary-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+            className="w-full py-2.5 bg-primary-600 hover:bg-primary-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 flex-shrink-0"
           >
             {isSearching ? (
               <>

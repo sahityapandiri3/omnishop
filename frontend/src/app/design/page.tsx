@@ -1670,8 +1670,9 @@ function DesignPageContent() {
                 </div>
 
                 {/* Filters - Always visible in both modes (only render on desktop) */}
+                {/* In keyword mode, expand to fill available space; in AI mode, shrink to fit */}
                 {!isMobile && (
-                  <div className="flex-shrink-0">
+                  <div className={searchMode === 'keyword' ? 'flex-1 min-h-0' : 'flex-shrink-0'}>
                     <KeywordSearchPanel
                       ref={keywordSearchRef}
                       onAddProduct={handleAddToCanvas}
@@ -1756,8 +1757,9 @@ function DesignPageContent() {
               </div>
 
               {/* Filters - Always visible in both modes (only render on mobile) */}
+              {/* In keyword mode, expand to fill available space; in AI mode, shrink to fit */}
               {isMobile && (
-                <div className="flex-shrink-0">
+                <div className={searchMode === 'keyword' ? 'flex-1 min-h-0' : 'flex-shrink-0'}>
                   <KeywordSearchPanel
                     ref={keywordSearchRef}
                     onAddProduct={handleAddToCanvas}
