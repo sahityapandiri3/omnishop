@@ -38,7 +38,7 @@ function DesignPageContent() {
   const [activeTab, setActiveTab] = useState<'chat' | 'products' | 'canvas'>('chat');
 
   // Search mode state - AI Stylist (chat) or Keyword Search
-  const [searchMode, setSearchMode] = useState<SearchMode>('ai');
+  const [searchMode, setSearchMode] = useState<SearchMode>('keyword');
 
   // Shared state for cross-panel communication
   const [roomImage, setRoomImage] = useState<string | null>(null);
@@ -1650,55 +1650,46 @@ function DesignPageContent() {
           <ResizablePanelLayout
             chatPanel={
               <div className="flex flex-col h-full">
-                {/* Mode Toggle Header */}
-                <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0">
-                  <div className="flex items-center justify-between">
-                    <h2 className="font-semibold text-neutral-900 dark:text-white text-sm">
-                      {searchMode === 'ai' ? 'AI Stylist' : 'Product Search'}
-                    </h2>
-                    <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
-                  </div>
-                  <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                    {searchMode === 'ai'
-                      ? 'Chat to get personalized recommendations'
-                      : 'Search and filter products directly'}
-                  </p>
+                {/* Compact Mode Toggle */}
+                <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0">
+                  <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
                 </div>
 
-                {/* Content based on mode */}
-                <div className="relative flex-1 overflow-hidden">
-                  {searchMode === 'ai' ? (
-                    <>
-                      <ChatPanel
-                        key={projectId || 'new-project'}
-                        onProductRecommendations={handleProductRecommendations}
-                        roomImage={roomImage}
-                        selectedStores={selectedStores}
-                        initialSessionId={chatSessionId}
-                        onSessionIdChange={setChatSessionId}
-                      />
-                      {/* Loading overlay - shows on top while project is loading */}
-                      {!projectLoaded && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <KeywordSearchPanel
-                      onAddProduct={handleAddToCanvas}
-                      canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
-                      showSearchInput={true}
-                      compact={false}
-                      showResultsInline={false}
-                      onSearchResults={setKeywordSearchResults}
-                      filters={searchFilters}
-                      onFiltersChange={setSearchFilters}
-                      showFilters={showSearchFilters}
-                      onShowFiltersChange={setShowSearchFilters}
-                    />
-                  )}
+                {/* Search & Filters - Always visible */}
+                <div className="flex-shrink-0">
+                  <KeywordSearchPanel
+                    onAddProduct={handleAddToCanvas}
+                    canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
+                    showSearchInput={true}
+                    compact={false}
+                    showResultsInline={false}
+                    onSearchResults={setKeywordSearchResults}
+                    filters={searchFilters}
+                    onFiltersChange={setSearchFilters}
+                    showFilters={showSearchFilters}
+                    onShowFiltersChange={setShowSearchFilters}
+                  />
                 </div>
+
+                {/* AI Chat Panel - Only visible in AI mode */}
+                {searchMode === 'ai' && (
+                  <div className="relative flex-1 overflow-hidden border-t border-neutral-200 dark:border-neutral-700">
+                    <ChatPanel
+                      key={projectId || 'new-project'}
+                      onProductRecommendations={handleProductRecommendations}
+                      roomImage={roomImage}
+                      selectedStores={selectedStores}
+                      initialSessionId={chatSessionId}
+                      onSessionIdChange={setChatSessionId}
+                    />
+                    {/* Loading overlay - shows on top while project is loading */}
+                    {!projectLoaded && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             }
             productsPanel={
@@ -1741,50 +1732,46 @@ function DesignPageContent() {
         <div className="md:hidden h-full">
           <div className={`h-full ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
             <div className="flex flex-col h-full">
-              {/* Mode Toggle Header */}
-              <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0">
-                <div className="flex items-center justify-between">
-                  <h2 className="font-semibold text-neutral-900 dark:text-white text-sm">
-                    {searchMode === 'ai' ? 'AI Stylist' : 'Product Search'}
-                  </h2>
-                  <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
-                </div>
+              {/* Compact Mode Toggle */}
+              <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0">
+                <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
               </div>
 
-              {/* Content based on mode */}
-              <div className="relative flex-1 overflow-hidden">
-                {searchMode === 'ai' ? (
-                  <>
-                    <ChatPanel
-                      key={projectId || 'new-project'}
-                      onProductRecommendations={handleProductRecommendations}
-                      roomImage={roomImage}
-                      selectedStores={selectedStores}
-                      initialSessionId={chatSessionId}
-                      onSessionIdChange={setChatSessionId}
-                    />
-                    {/* Loading overlay - shows on top while project is loading */}
-                    {!projectLoaded && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <KeywordSearchPanel
-                    onAddProduct={handleAddToCanvas}
-                    canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
-                    showSearchInput={true}
-                    compact={true}
-                    showResultsInline={false}
-                    onSearchResults={setKeywordSearchResults}
-                    filters={searchFilters}
-                    onFiltersChange={setSearchFilters}
-                    showFilters={showSearchFilters}
-                    onShowFiltersChange={setShowSearchFilters}
-                  />
-                )}
+              {/* Search & Filters - Always visible */}
+              <div className="flex-shrink-0">
+                <KeywordSearchPanel
+                  onAddProduct={handleAddToCanvas}
+                  canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
+                  showSearchInput={true}
+                  compact={true}
+                  showResultsInline={false}
+                  onSearchResults={setKeywordSearchResults}
+                  filters={searchFilters}
+                  onFiltersChange={setSearchFilters}
+                  showFilters={showSearchFilters}
+                  onShowFiltersChange={setShowSearchFilters}
+                />
               </div>
+
+              {/* AI Chat Panel - Only visible in AI mode */}
+              {searchMode === 'ai' && (
+                <div className="relative flex-1 overflow-hidden border-t border-neutral-200 dark:border-neutral-700">
+                  <ChatPanel
+                    key={projectId || 'new-project'}
+                    onProductRecommendations={handleProductRecommendations}
+                    roomImage={roomImage}
+                    selectedStores={selectedStores}
+                    initialSessionId={chatSessionId}
+                    onSessionIdChange={setChatSessionId}
+                  />
+                  {/* Loading overlay - shows on top while project is loading */}
+                  {!projectLoaded && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           <div className={`h-full ${activeTab === 'products' ? 'block' : 'hidden'}`}>

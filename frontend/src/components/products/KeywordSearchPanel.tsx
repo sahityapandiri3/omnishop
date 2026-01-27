@@ -319,9 +319,9 @@ export function KeywordSearchPanel({
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className={`flex flex-col ${showResultsInline ? 'h-full' : ''}`}>
       {/* Search Header */}
-      <div className={`${compact ? 'p-3' : 'p-4'} border-b border-neutral-200 dark:border-neutral-700`}>
+      <div className={`${compact ? 'p-3' : 'p-4'} ${showResultsInline ? 'border-b border-neutral-200 dark:border-neutral-700' : ''}`}>
         {/* Search Input */}
         {showSearchInput && (
           <form onSubmit={handleSearchSubmit} className="mb-3">
@@ -384,9 +384,9 @@ export function KeywordSearchPanel({
           />
         </div>
 
-        {/* Filter Panel */}
+        {/* Filter Panel - Scrollable */}
         {showFilters && (
-          <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700">
+          <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700 max-h-[60vh] overflow-y-auto">
             {/* Store Categories */}
             {storeCategories.length > 0 && (
               <div className="mb-3">
