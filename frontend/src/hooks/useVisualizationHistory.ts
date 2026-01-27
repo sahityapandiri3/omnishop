@@ -248,7 +248,8 @@ export function useVisualizationHistory({
     // State
     history,
     redoStack,
-    canUndo: history.length > 0,
+    // Need at least 2 entries to undo - current state + previous state to restore
+    canUndo: history.length > 1,
     canRedo: redoStack.length > 0,
     historyInitialized,
 
