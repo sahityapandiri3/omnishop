@@ -353,6 +353,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
             <label className="text-xs text-neutral-600 dark:text-neutral-400 font-medium">Stores</label>
             {selectedStores.length > 0 && (
               <button
+                type="button"
                 onClick={() => updateFilters({ selectedStores: [] })}
                 className="text-xs text-primary-600 hover:text-primary-700"
               >
@@ -371,6 +372,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
                 <div className="flex flex-wrap gap-1 pl-2 border-l-2 border-neutral-200 dark:border-neutral-600">
                   {category.stores.map((store) => (
                     <button
+                      type="button"
                       key={store.name}
                       onClick={() => toggleStore(store.name)}
                       className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
@@ -395,6 +397,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
           <label className="text-xs text-neutral-600 dark:text-neutral-400 font-medium">Style</label>
           {selectedStyles.length > 0 && (
             <button
+              type="button"
               onClick={() => updateFilters({ selectedStyles: [] })}
               className="text-xs text-primary-600 hover:text-primary-700"
             >
@@ -405,6 +408,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
         <div className="flex flex-wrap gap-1">
           {PRODUCT_STYLES.map((style) => (
             <button
+              type="button"
               key={style.value}
               onClick={() => toggleStyle(style.value)}
               className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
@@ -430,6 +434,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
           <label className="text-xs text-neutral-600 dark:text-neutral-400 font-medium">Color</label>
           {selectedColors.length > 0 && (
             <button
+              type="button"
               onClick={() => updateFilters({ selectedColors: [] })}
               className="text-xs text-primary-600 hover:text-primary-700"
             >
@@ -440,6 +445,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
         <div className="flex flex-wrap gap-1.5">
           {FURNITURE_COLORS.map((color) => (
             <button
+              type="button"
               key={color.value}
               onClick={() => toggleColor(color.value)}
               title={color.name}
@@ -462,6 +468,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
           <label className="text-xs text-neutral-600 dark:text-neutral-400 font-medium">Material</label>
           {selectedMaterials.length > 0 && (
             <button
+              type="button"
               onClick={() => updateFilters({ selectedMaterials: [] })}
               className="text-xs text-primary-600 hover:text-primary-700"
             >
@@ -472,6 +479,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
         <div className="flex flex-wrap gap-1">
           {PRODUCT_MATERIALS.map((material) => (
             <button
+              type="button"
               key={material.value}
               onClick={() => toggleMaterial(material.value)}
               className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
@@ -526,6 +534,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
         </div>
         {hasActiveFilters && (
           <button
+            type="button"
             onClick={clearFilters}
             className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
           >
