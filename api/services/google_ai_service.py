@@ -829,23 +829,49 @@ class GoogleAIStudioService:
             # Don't fail the main request if logging fails
             logger.warning(f"Failed to persist API usage to database: {e}")
 
-    def _log_streaming_operation(self, operation: str, model: str, workflow_id: str = None):
+    def _log_streaming_operation(
+        self, operation: str, model: str, workflow_id: str = None, final_chunk=None
+    ):
         """
         Log a streaming API operation to the database.
-        Streaming APIs don't return token counts, so we log the operation without token data.
-        This helps track that visualization operations occurred even without exact token counts.
+
+        Args:
+            operation: Name of the operation
+            model: Model used
+            workflow_id: Optional workflow ID for tracking
+            final_chunk: The final chunk from streaming response (contains usage_metadata)
         """
+        # Extract token counts from final chunk if available
+        prompt_tokens = None
+        completion_tokens = None
+        total_tokens = None
+
+        if final_chunk and hasattr(final_chunk, "usage_metadata"):
+            metadata = final_chunk.usage_metadata
+            prompt_tokens = getattr(metadata, "prompt_token_count", None)
+            completion_tokens = getattr(metadata, "candidates_token_count", None)
+            total_tokens = getattr(metadata, "total_token_count", None)
+
         usage = {
             "timestamp": datetime.now().isoformat(),
             "provider": "gemini",
             "model": model,
             "operation": operation,
-            "prompt_tokens": None,
-            "completion_tokens": None,
-            "total_tokens": None,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
             "workflow_id": workflow_id,
         }
-        logger.info(f"[Streaming API] {operation} - model={model} (token counts unavailable for streaming)")
+
+        if total_tokens:
+            logger.info(
+                f"[Streaming API] {operation} - model={model}, "
+                f"prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}"
+            )
+        else:
+            logger.info(f"[Streaming API] {operation} - model={model} (token counts not available)")
+
+        self.last_usage_metadata = usage
         self.token_usage_history.append(usage)
         self._persist_usage_to_db(usage)
 
@@ -1761,15 +1787,22 @@ RESPOND WITH JSON ONLY - NO OTHER TEXT."""
             )
 
             response_text = ""
+            final_chunk = None  # Capture final chunk for usage_metadata
             for chunk in self.genai_client.models.generate_content_stream(
                 model="gemini-3-pro-preview",  # Use Gemini 3 for analysis
                 contents=contents,
                 config=generate_content_config,
             ):
+                final_chunk = chunk  # Always keep reference to last chunk
                 if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
                     for part in chunk.candidates[0].content.parts:
                         if part.text:
                             response_text += part.text
+
+            # Log with token tracking from final chunk
+            self._log_streaming_operation(
+                "validate_space_fitness", "gemini-3-pro-preview", final_chunk=final_chunk
+            )
 
             # Parse JSON response
             try:
@@ -3058,11 +3091,13 @@ The room structure, walls, and camera angle MUST be identical to the input image
             def _run_generate_add():
                 """Run the streaming generation in a thread for timeout support."""
                 result_image = None
+                final_chunk = None  # Capture final chunk for usage_metadata
                 for chunk in self.genai_client.models.generate_content_stream(
                     model="gemini-3-pro-image-preview",
                     contents=contents,
                     config=generate_content_config,
                 ):
+                    final_chunk = chunk  # Always keep reference to last chunk
                     if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
                         for part in chunk.candidates[0].content.parts:
                             if part.inline_data and part.inline_data.data:
@@ -3091,15 +3126,18 @@ The room structure, walls, and camera angle MUST be identical to the input image
 
                                 result_image = f"data:{mime_type};base64,{image_base64}"
                                 logger.info("Generated ADD visualization")
-                return result_image
+                return (result_image, final_chunk)  # Return tuple with final chunk for token tracking
 
             generated_image = None
+            final_chunk = None
             for attempt in range(max_retries):
                 try:
                     loop = asyncio.get_event_loop()
-                    generated_image = await asyncio.wait_for(
+                    result = await asyncio.wait_for(
                         loop.run_in_executor(None, _run_generate_add), timeout=timeout_seconds
                     )
+                    if result:
+                        generated_image, final_chunk = result
                     if generated_image:
                         break
                 except asyncio.TimeoutError:
@@ -3130,8 +3168,10 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 logger.error(f"AI failed to generate ADD visualization after {max_retries} attempts")
                 raise ValueError("AI failed to generate visualization image")
 
-            # Log visualization operation (streaming API doesn't return token counts)
-            self._log_streaming_operation("generate_add_visualization", "gemini-3-pro-image-preview")
+            # Log visualization operation with token tracking from final chunk
+            self._log_streaming_operation(
+                "generate_add_visualization", "gemini-3-pro-image-preview", final_chunk=final_chunk
+            )
 
             return generated_image
 
@@ -3637,11 +3677,13 @@ The room structure, walls, and camera angle MUST be identical to the input image
             def _run_generate_add_multiple():
                 """Run the streaming generation in a thread for timeout support."""
                 result_image = None
+                final_chunk = None  # Capture final chunk for usage_metadata
                 for chunk in self.genai_client.models.generate_content_stream(
                     model="gemini-3-pro-image-preview",
                     contents=contents,
                     config=generate_content_config,
                 ):
+                    final_chunk = chunk  # Always keep reference to last chunk
                     if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
                         for part in chunk.candidates[0].content.parts:
                             if part.inline_data and part.inline_data.data:
@@ -3670,15 +3712,18 @@ The room structure, walls, and camera angle MUST be identical to the input image
 
                                 result_image = f"data:{mime_type};base64,{image_base64}"
                                 logger.info(f"Generated ADD MULTIPLE visualization for {num_products} products")
-                return result_image
+                return (result_image, final_chunk)  # Return tuple with final chunk for token tracking
 
             generated_image = None
+            final_chunk = None
             for attempt in range(max_retries):
                 try:
                     loop = asyncio.get_event_loop()
-                    generated_image = await asyncio.wait_for(
+                    result = await asyncio.wait_for(
                         loop.run_in_executor(None, _run_generate_add_multiple), timeout=timeout_seconds
                     )
+                    if result:
+                        generated_image, final_chunk = result
                     if generated_image:
                         break
                 except asyncio.TimeoutError:
@@ -3709,9 +3754,9 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 logger.error(f"AI failed to generate ADD MULTIPLE visualization after {max_retries} attempts")
                 raise ValueError("AI failed to generate visualization image")
 
-            # Log visualization operation (streaming API doesn't return token counts)
+            # Log visualization operation with token tracking from final chunk
             self._log_streaming_operation(
-                "generate_add_multiple_visualization", "gemini-3-pro-image-preview", workflow_id=workflow_id
+                "generate_add_multiple_visualization", "gemini-3-pro-image-preview", workflow_id=workflow_id, final_chunk=final_chunk
             )
 
             return generated_image
@@ -3869,11 +3914,13 @@ Generate a photorealistic image of the room with the {product_name} replacing th
             def _run_generate_replace():
                 """Run the streaming generation in a thread for timeout support."""
                 result_image = None
+                final_chunk = None  # Capture final chunk for usage_metadata
                 for chunk in self.genai_client.models.generate_content_stream(
                     model="gemini-3-pro-image-preview",
                     contents=contents,
                     config=generate_content_config,
                 ):
+                    final_chunk = chunk  # Always keep reference to last chunk
                     if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
                         for part in chunk.candidates[0].content.parts:
                             if part.inline_data and part.inline_data.data:
@@ -3902,15 +3949,18 @@ Generate a photorealistic image of the room with the {product_name} replacing th
 
                                 result_image = f"data:{mime_type};base64,{image_base64}"
                                 logger.info("Generated REPLACE visualization")
-                return result_image
+                return (result_image, final_chunk)  # Return tuple with final chunk for token tracking
 
             generated_image = None
+            final_chunk = None
             for attempt in range(max_retries):
                 try:
                     loop = asyncio.get_event_loop()
-                    generated_image = await asyncio.wait_for(
+                    result = await asyncio.wait_for(
                         loop.run_in_executor(None, _run_generate_replace), timeout=timeout_seconds
                     )
+                    if result:
+                        generated_image, final_chunk = result
                     if generated_image:
                         break
                 except asyncio.TimeoutError:
@@ -3941,8 +3991,10 @@ Generate a photorealistic image of the room with the {product_name} replacing th
                 logger.error(f"AI failed to generate REPLACE visualization after {max_retries} attempts")
                 raise ValueError("AI failed to generate visualization image")
 
-            # Log visualization operation (streaming API doesn't return token counts)
-            self._log_streaming_operation("generate_replace_visualization", "gemini-3-pro-image-preview")
+            # Log visualization operation with token tracking from final chunk
+            self._log_streaming_operation(
+                "generate_replace_visualization", "gemini-3-pro-image-preview", final_chunk=final_chunk
+            )
 
             return generated_image
 
@@ -4545,12 +4597,14 @@ Create a photorealistic interior design visualization that addresses the user's 
                     # Use a helper to wrap the streaming loop with asyncio timeout
                     visualization_timeout = 90  # 1.5 minutes max per attempt (with retries)
                     stream_start_time = time.time()
+                    final_chunk = None  # Capture final chunk for usage_metadata
 
                     for chunk in self.genai_client.models.generate_content_stream(
                         model=model,
                         contents=contents,
                         config=generate_content_config,
                     ):
+                        final_chunk = chunk  # Always keep reference to last chunk
                         # Check timeout between chunks to prevent indefinite hanging
                         elapsed = time.time() - stream_start_time
                         if elapsed > visualization_timeout:
@@ -4595,6 +4649,11 @@ Create a photorealistic interior design visualization that addresses the user's 
 
                             elif part.text:
                                 transformation_description += part.text
+
+                    # Log with token tracking from final chunk
+                    self._log_streaming_operation(
+                        "visualize_curated_look", model, final_chunk=final_chunk
+                    )
 
                     # If we got here without exception, break the retry loop
                     break
@@ -4771,6 +4830,7 @@ QUALITY REQUIREMENTS:
 
             transformed_image = None
             transformation_description = ""
+            final_chunk = None  # Capture final chunk for usage_metadata
 
             # Stream response
             for chunk in self.genai_client.models.generate_content_stream(
@@ -4778,6 +4838,7 @@ QUALITY REQUIREMENTS:
                 contents=contents,
                 config=generate_content_config,
             ):
+                final_chunk = chunk  # Always keep reference to last chunk
                 if (
                     chunk.candidates is None
                     or chunk.candidates[0].content is None
@@ -4799,6 +4860,11 @@ QUALITY REQUIREMENTS:
 
                     elif part.text:
                         transformation_description += part.text
+
+            # Log with token tracking from final chunk
+            self._log_streaming_operation(
+                "generate_text_based_visualization", model, final_chunk=final_chunk
+            )
 
             processing_time = time.time() - start_time
 
@@ -4913,6 +4979,7 @@ QUALITY REQUIREMENTS:
 
             transformed_image = None
             transformation_description = ""
+            final_chunk = None  # Capture final chunk for usage_metadata
 
             # Stream response with timeout protection
             timeout_seconds = 60  # 60 second timeout for iterative modifications
@@ -4924,6 +4991,7 @@ QUALITY REQUIREMENTS:
                     contents=contents,
                     config=generate_content_config,
                 ):
+                    final_chunk = chunk  # Always keep reference to last chunk
                     # Check for timeout between chunks
                     if time.time() - last_chunk_time > timeout_seconds:
                         raise asyncio.TimeoutError(f"No response from Gemini API for {timeout_seconds}s")
@@ -4951,6 +5019,11 @@ QUALITY REQUIREMENTS:
 
                         elif part.text:
                             transformation_description += part.text
+
+                # Log with token tracking from final chunk
+                self._log_streaming_operation(
+                    "generate_iterative_visualization", model, final_chunk=final_chunk
+                )
 
             except asyncio.TimeoutError as te:
                 logger.error(f"TIMEOUT: {str(te)}")

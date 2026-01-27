@@ -8,7 +8,7 @@ This document maps which Gemini API methods are used in the codebase.
 |--------|---------|----------------|
 | `BatchEmbedContents` | Generate embeddings for semantic search | No |
 | `GenerateContent` | Text/JSON responses, image editing | Yes |
-| `StreamGenerateContent` | Image generation (visualizations) | No (streaming) |
+| `StreamGenerateContent` | Image generation (visualizations) | Yes (from final chunk) |
 
 ---
 
@@ -106,7 +106,7 @@ visualization_instruction = "Replace ONE of the existing {furniture}s with the s
 visualization_instruction = "Replace ALL existing {furniture}s with the selected product."
 ```
 
-**Note:** Streaming API does not return token usage metadata, so these operations are logged without token counts.
+**Note:** Streaming API token usage is extracted from the final chunk's `usage_metadata` attribute, enabling full token tracking for all image generation operations.
 
 ---
 
