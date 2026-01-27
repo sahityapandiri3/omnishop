@@ -363,7 +363,7 @@ export function ProductResultsGrid({
         {/* Single Products Section - no separation, but badges on best matches */}
         <div className="mb-2">
           <span className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-1 rounded">
-            Products ({products.length}{totalCount && totalCount > products.length ? ` of ${totalCount}` : ''})
+            Products ({totalCount || products.length})
           </span>
         </div>
         {products.length > 0 && (
@@ -394,7 +394,7 @@ export function ProductResultsGrid({
         <>
           <div className="mb-2">
             <span className="text-xs font-semibold text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">
-              Best Matches ({bestMatches.length}{displayPrimaryCount > bestMatches.length ? ` of ${displayPrimaryCount}` : ''})
+              Best Matches ({displayPrimaryCount || bestMatches.length})
             </span>
           </div>
           <div className={gridClassName}>
@@ -408,7 +408,7 @@ export function ProductResultsGrid({
         <>
           <div className={`mb-2 ${bestMatches.length > 0 ? 'mt-4 pt-3 border-t border-neutral-200 dark:border-neutral-700' : ''}`}>
             <span className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-1 rounded">
-              {bestMatches.length > 0 ? 'More Products' : 'Products'} ({moreProducts.length}{displayRelatedCount > moreProducts.length ? ` of ${displayRelatedCount}` : ''})
+              {bestMatches.length > 0 ? 'More Products' : 'Products'} ({displayRelatedCount || moreProducts.length})
             </span>
             {moreProducts.length === 0 && displayRelatedCount > 0 && (
               <span className="ml-2 text-xs text-neutral-500 dark:text-neutral-400">
