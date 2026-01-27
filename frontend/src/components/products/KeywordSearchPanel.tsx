@@ -197,6 +197,9 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
   }, [searchQuery, buildSearchParams, currentPage, selectedStores, selectedStyles]);
 
   // Load more products
+  // IMPORTANT: Products from page 2+ are marked as non-primary to always append
+  // to "More Products" section, avoiding confusing scroll jumps when new "Best Matches"
+  // would otherwise be inserted above the user's scroll position.
   const handleLoadMore = useCallback(async () => {
     if (isLoadingMore || !hasMore) return;
 
@@ -206,7 +209,11 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
 
       const response = await adminCuratedAPI.searchProducts(buildSearchParams(nextPage));
 
-      const transformedProducts = response.products.map(transformProduct);
+      // Mark all products from page 2+ as non-primary so they append to "More Products"
+      const transformedProducts = response.products.map(p => ({
+        ...transformProduct(p),
+        is_primary_match: false, // Force to More Products section
+      }));
       setProducts(prev => [...prev, ...transformedProducts]);
       setCurrentPage(nextPage);
       setHasMore(response.has_more);

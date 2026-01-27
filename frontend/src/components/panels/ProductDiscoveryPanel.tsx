@@ -338,7 +338,7 @@ export default function ProductDiscoveryPanel({
               onAddProduct={(product) => onAddToCanvas(product)}
               canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
               onViewDetails={setSelectedProduct}
-              showSeparation={false}
+              showSeparation={true}
               enableInfiniteScroll={true}
               onLoadMore={onLoadMoreKeywordResults}
               hasMore={keywordSearchResults.hasMore}
