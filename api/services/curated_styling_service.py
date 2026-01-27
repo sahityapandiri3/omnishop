@@ -165,7 +165,7 @@ class CuratedStylingService:
 
         try:
             # Step 1: Detect room type using Google AI
-            room_analysis = await google_ai_service.analyze_room_image(room_image)
+            room_analysis = await google_ai_service.analyze_room_image(room_image, session_id=session_id)
             room_type = self._normalize_room_type(room_analysis.room_type)
             logger.info(f"Detected room type: {room_type}")
 

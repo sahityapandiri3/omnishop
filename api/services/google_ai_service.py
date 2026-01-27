@@ -755,7 +755,13 @@ class GoogleAIStudioService:
         self.last_usage_metadata = None
 
     def extract_usage_metadata(
-        self, response, operation: str = "unknown", model_override: str = None, workflow_id: str = None
+        self,
+        response,
+        operation: str = "unknown",
+        model_override: str = None,
+        workflow_id: str = None,
+        user_id: str = None,
+        session_id: str = None,
     ) -> Dict[str, Any]:
         """
         Extract token usage metadata from Gemini API response and persist to database.
@@ -765,6 +771,8 @@ class GoogleAIStudioService:
             operation: Type of operation (visualize, analyze_room, chat, etc.)
             model_override: Override model name if known
             workflow_id: Optional workflow ID to track all API calls from a single user action
+            user_id: Optional user ID for tracking
+            session_id: Optional session ID for tracking
 
         Returns:
             Dictionary with token counts and model info
@@ -778,6 +786,8 @@ class GoogleAIStudioService:
             "completion_tokens": None,
             "total_tokens": None,
             "workflow_id": workflow_id,
+            "user_id": user_id,
+            "session_id": session_id,
         }
 
         try:
@@ -813,24 +823,32 @@ class GoogleAIStudioService:
             with get_sync_db_session() as db:
                 record = ApiUsage(
                     timestamp=datetime.now(),
+                    user_id=usage.get("user_id"),
+                    session_id=usage.get("session_id") or usage.get("workflow_id"),
                     provider=usage.get("provider", "gemini"),
                     model=usage.get("model", "unknown"),
                     operation=usage.get("operation", "unknown"),
                     prompt_tokens=usage.get("prompt_tokens"),
                     completion_tokens=usage.get("completion_tokens"),
                     total_tokens=usage.get("total_tokens"),
-                    session_id=usage.get("workflow_id"),  # Store workflow_id in session_id column
                 )
                 db.add(record)
                 # Commit happens automatically via context manager
-            workflow_info = f", workflow={usage.get('workflow_id')[:8]}..." if usage.get("workflow_id") else ""
-            logger.debug(f"[API Usage] Persisted to database: {usage['operation']}{workflow_info}")
+            user_info = f", user={usage.get('user_id')[:8]}..." if usage.get("user_id") else ""
+            session_info = f", session={usage.get('session_id')[:8]}..." if usage.get("session_id") else ""
+            logger.debug(f"[API Usage] Persisted to database: {usage['operation']}{user_info}{session_info}")
         except Exception as e:
             # Don't fail the main request if logging fails
             logger.warning(f"Failed to persist API usage to database: {e}")
 
     def _log_streaming_operation(
-        self, operation: str, model: str, workflow_id: str = None, final_chunk=None
+        self,
+        operation: str,
+        model: str,
+        workflow_id: str = None,
+        final_chunk=None,
+        user_id: str = None,
+        session_id: str = None,
     ):
         """
         Log a streaming API operation to the database.
@@ -840,6 +858,8 @@ class GoogleAIStudioService:
             model: Model used
             workflow_id: Optional workflow ID for tracking
             final_chunk: The final chunk from streaming response (contains usage_metadata)
+            user_id: Optional user ID for tracking
+            session_id: Optional session ID for tracking
         """
         # Extract token counts from final chunk if available
         prompt_tokens = None
@@ -861,6 +881,8 @@ class GoogleAIStudioService:
             "completion_tokens": completion_tokens,
             "total_tokens": total_tokens,
             "workflow_id": workflow_id,
+            "user_id": user_id,
+            "session_id": session_id,
         }
 
         if total_tokens:
@@ -977,7 +999,13 @@ class GoogleAIStudioService:
         return self.session
 
     async def _make_api_request(
-        self, endpoint: str, payload: Dict[str, Any], operation: str = "unknown", workflow_id: str = None
+        self,
+        endpoint: str,
+        payload: Dict[str, Any],
+        operation: str = "unknown",
+        workflow_id: str = None,
+        user_id: str = None,
+        session_id: str = None,
     ) -> Dict[str, Any]:
         """Make authenticated API request to Google AI Studio
 
@@ -986,6 +1014,8 @@ class GoogleAIStudioService:
             payload: Request payload
             operation: Operation name for usage tracking
             workflow_id: Optional workflow ID to track all API calls from a single user action
+            user_id: Optional user ID for tracking
+            session_id: Optional session ID for tracking
         """
         await self.rate_limiter.acquire()
 
@@ -1010,7 +1040,7 @@ class GoogleAIStudioService:
                     self.usage_stats["total_processing_time"] += processing_time
 
                     # Log usage from REST API response
-                    self._log_rest_api_usage(result, operation, model_name, workflow_id)
+                    self._log_rest_api_usage(result, operation, model_name, workflow_id, user_id, session_id)
 
                     logger.info(f"Google AI API request successful - Time: {processing_time:.2f}s")
                     return result
@@ -1025,7 +1055,15 @@ class GoogleAIStudioService:
             logger.error(f"Google AI API request failed: {e}")
             raise
 
-    def _log_rest_api_usage(self, result: Dict[str, Any], operation: str, model: str, workflow_id: str = None):
+    def _log_rest_api_usage(
+        self,
+        result: Dict[str, Any],
+        operation: str,
+        model: str,
+        workflow_id: str = None,
+        user_id: str = None,
+        session_id: str = None,
+    ):
         """Log token usage from REST API response."""
         try:
             usage_metadata = result.get("usageMetadata", {})
@@ -1039,6 +1077,8 @@ class GoogleAIStudioService:
                 "completion_tokens": usage_metadata.get("candidatesTokenCount"),
                 "total_tokens": usage_metadata.get("totalTokenCount"),
                 "workflow_id": workflow_id,
+                "user_id": user_id,
+                "session_id": session_id,
             }
 
             if usage["total_tokens"]:
@@ -1053,7 +1093,9 @@ class GoogleAIStudioService:
         except Exception as e:
             logger.warning(f"Failed to log REST API usage: {e}")
 
-    async def analyze_room_image(self, image_data: str, workflow_id: str = None) -> RoomAnalysis:
+    async def analyze_room_image(
+        self, image_data: str, workflow_id: str = None, user_id: str = None, session_id: str = None
+    ) -> RoomAnalysis:
         """Analyze room image for spatial understanding"""
         try:
             # Prepare image for analysis
@@ -1123,7 +1165,12 @@ For recommended_furniture_zone: Place furniture against solid walls, NOT windows
             }
 
             result = await self._make_api_request(
-                "models/gemini-3-pro-preview:generateContent", payload, operation="analyze_room_image", workflow_id=workflow_id
+                "models/gemini-3-pro-preview:generateContent",
+                payload,
+                operation="analyze_room_image",
+                workflow_id=workflow_id,
+                user_id=user_id,
+                session_id=session_id,
             )
 
             # Parse response
@@ -1800,9 +1847,7 @@ RESPOND WITH JSON ONLY - NO OTHER TEXT."""
                             response_text += part.text
 
             # Log with token tracking from final chunk
-            self._log_streaming_operation(
-                "validate_space_fitness", "gemini-3-pro-preview", final_chunk=final_chunk
-            )
+            self._log_streaming_operation("validate_space_fitness", "gemini-3-pro-preview", final_chunk=final_chunk)
 
             # Parse JSON response
             try:
@@ -2058,7 +2103,7 @@ OUTPUT: Same image with corrected perspective - walls perfectly vertical, lines 
             return None
 
     async def remove_furniture(
-        self, image_base64: str, max_retries: int = 5, workflow_id: str = None
+        self, image_base64: str, max_retries: int = 5, workflow_id: str = None, user_id: str = None, session_id: str = None
     ) -> Optional[Dict[str, Any]]:
         """
         Remove all furniture from room image using Gemini image model.
@@ -2071,6 +2116,8 @@ OUTPUT: Same image with corrected perspective - walls perfectly vertical, lines 
             image_base64: Base64 encoded source image
             max_retries: Number of retry attempts
             workflow_id: Optional workflow ID for tracking all API calls from a single user action
+            user_id: Optional user ID for tracking
+            session_id: Optional session ID for tracking
 
         Returns: Dict with 'image' (base64) and 'room_analysis' (dict), or None on failure
         """
@@ -2079,7 +2126,9 @@ OUTPUT: Same image with corrected perspective - walls perfectly vertical, lines 
             viewing_angle = "straight_on"  # default
             room_analysis_dict = None
             try:
-                room_analysis = await self.analyze_room_image(image_base64, workflow_id=workflow_id)
+                room_analysis = await self.analyze_room_image(
+                    image_base64, workflow_id=workflow_id, user_id=user_id, session_id=session_id
+                )
                 viewing_angle = room_analysis.camera_view_analysis.get("viewing_angle", "straight_on")
                 # Capture full room analysis for return
                 room_analysis_dict = {
@@ -2244,6 +2293,8 @@ FAILURE IS NOT ACCEPTABLE: Every piece of furniture and ceiling light MUST be re
                             operation="remove_furniture",
                             model_override="gemini-3-pro-image-preview",
                             workflow_id=workflow_id,
+                            user_id=user_id,
+                            session_id=session_id,
                         )
 
                         result_image = None
@@ -2471,6 +2522,8 @@ Everything outside this area must remain IDENTICAL to the input image."""
         products_to_remove: List[Dict[str, Any]],
         remaining_products: Optional[List[Dict[str, Any]]] = None,
         max_retries: int = 3,
+        user_id: str = None,
+        session_id: str = None,
     ) -> Optional[str]:
         """
         Remove specific products from a visualization while preserving everything else.
@@ -2481,6 +2534,8 @@ Everything outside this area must remain IDENTICAL to the input image."""
             products_to_remove: List of product dicts with name, quantity, dimensions, and image_url
             remaining_products: List of product dicts that should stay (with dimensions)
             max_retries: Number of retry attempts
+            user_id: Optional user ID for tracking
+            session_id: Optional session ID for tracking
 
         Returns: base64 encoded image with products removed, or None if failed
         """
@@ -2576,7 +2631,13 @@ Everything outside this area must remain IDENTICAL to the input image."""
                         timeout=90,
                     )
                     # Extract and log token usage
-                    self.extract_usage_metadata(response, operation="remove_products_from_visualization", model_override=model)
+                    self.extract_usage_metadata(
+                        response,
+                        operation="remove_products_from_visualization",
+                        model_override=model,
+                        user_id=user_id,
+                        session_id=session_id,
+                    )
 
                     if response.candidates:
                         for part in response.candidates[0].content.parts:
@@ -2636,7 +2697,13 @@ Everything outside this area must remain IDENTICAL to the input image."""
             return None
 
     async def generate_add_visualization(
-        self, room_image: str, product_name: str, product_image: Optional[str] = None, product_color: Optional[str] = None
+        self,
+        room_image: str,
+        product_name: str,
+        product_image: Optional[str] = None,
+        product_color: Optional[str] = None,
+        user_id: str = None,
+        session_id: str = None,
     ) -> str:
         """
         Generate visualization with product ADDED to room
@@ -2647,6 +2714,8 @@ Everything outside this area must remain IDENTICAL to the input image."""
             product_name: Name of the product (may include color prefix)
             product_image: URL of product reference image
             product_color: Explicit color from product attributes (e.g., "beige", "cream", "walnut")
+            user_id: Optional user ID for tracking
+            session_id: Optional session ID for tracking
         """
         try:
             # Use editing preprocessor to preserve quality for visualization output
@@ -3133,9 +3202,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
             for attempt in range(max_retries):
                 try:
                     loop = asyncio.get_event_loop()
-                    result = await asyncio.wait_for(
-                        loop.run_in_executor(None, _run_generate_add), timeout=timeout_seconds
-                    )
+                    result = await asyncio.wait_for(loop.run_in_executor(None, _run_generate_add), timeout=timeout_seconds)
                     if result:
                         generated_image, final_chunk = result
                     if generated_image:
@@ -3170,7 +3237,11 @@ The room structure, walls, and camera angle MUST be identical to the input image
 
             # Log visualization operation with token tracking from final chunk
             self._log_streaming_operation(
-                "generate_add_visualization", "gemini-3-pro-image-preview", final_chunk=final_chunk
+                "generate_add_visualization",
+                "gemini-3-pro-image-preview",
+                final_chunk=final_chunk,
+                user_id=user_id,
+                session_id=session_id,
             )
 
             return generated_image
@@ -3183,7 +3254,13 @@ The room structure, walls, and camera angle MUST be identical to the input image
             raise ValueError(f"Visualization generation failed: {e}")
 
     async def generate_add_multiple_visualization(
-        self, room_image: str, products: list[dict], existing_products: Optional[list[dict]] = None, workflow_id: str = None
+        self,
+        room_image: str,
+        products: list[dict],
+        existing_products: Optional[list[dict]] = None,
+        workflow_id: str = None,
+        user_id: str = None,
+        session_id: str = None,
     ) -> str:
         """
         Generate visualization with MULTIPLE products added to room in a SINGLE API call.
@@ -3194,6 +3271,8 @@ The room structure, walls, and camera angle MUST be identical to the input image
             products: List of dicts with 'name' and optional 'image_url' keys (NEW products to add)
             existing_products: List of dicts for products ALREADY in the room image that must be preserved
             workflow_id: Optional workflow ID for tracking all API calls from a single user action
+            user_id: Optional user ID for tracking
+            session_id: Optional session ID for tracking
 
         Returns: base64 image data
         """
@@ -3756,7 +3835,12 @@ The room structure, walls, and camera angle MUST be identical to the input image
 
             # Log visualization operation with token tracking from final chunk
             self._log_streaming_operation(
-                "generate_add_multiple_visualization", "gemini-3-pro-image-preview", workflow_id=workflow_id, final_chunk=final_chunk
+                "generate_add_multiple_visualization",
+                "gemini-3-pro-image-preview",
+                workflow_id=workflow_id,
+                final_chunk=final_chunk,
+                user_id=user_id,
+                session_id=session_id,
             )
 
             return generated_image
@@ -3956,9 +4040,7 @@ Generate a photorealistic image of the room with the {product_name} replacing th
             for attempt in range(max_retries):
                 try:
                     loop = asyncio.get_event_loop()
-                    result = await asyncio.wait_for(
-                        loop.run_in_executor(None, _run_generate_replace), timeout=timeout_seconds
-                    )
+                    result = await asyncio.wait_for(loop.run_in_executor(None, _run_generate_replace), timeout=timeout_seconds)
                     if result:
                         generated_image, final_chunk = result
                     if generated_image:
@@ -4651,9 +4733,7 @@ Create a photorealistic interior design visualization that addresses the user's 
                                 transformation_description += part.text
 
                     # Log with token tracking from final chunk
-                    self._log_streaming_operation(
-                        "visualize_curated_look", model, final_chunk=final_chunk
-                    )
+                    self._log_streaming_operation("visualize_curated_look", model, final_chunk=final_chunk)
 
                     # If we got here without exception, break the retry loop
                     break
@@ -4862,9 +4942,7 @@ QUALITY REQUIREMENTS:
                         transformation_description += part.text
 
             # Log with token tracking from final chunk
-            self._log_streaming_operation(
-                "generate_text_based_visualization", model, final_chunk=final_chunk
-            )
+            self._log_streaming_operation("generate_text_based_visualization", model, final_chunk=final_chunk)
 
             processing_time = time.time() - start_time
 
@@ -5021,9 +5099,7 @@ QUALITY REQUIREMENTS:
                             transformation_description += part.text
 
                 # Log with token tracking from final chunk
-                self._log_streaming_operation(
-                    "generate_iterative_visualization", model, final_chunk=final_chunk
-                )
+                self._log_streaming_operation("generate_iterative_visualization", model, final_chunk=final_chunk)
 
             except asyncio.TimeoutError as te:
                 logger.error(f"TIMEOUT: {str(te)}")

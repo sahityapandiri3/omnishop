@@ -381,7 +381,9 @@ async def upload_room_image(
         # Remove furniture from the image using Google AI
         logger.info(f"Starting furniture removal for session: {session_id}")
         try:
-            result = await google_ai_service.remove_furniture(image_data, max_retries=3, workflow_id=workflow_id)
+            result = await google_ai_service.remove_furniture(
+                image_data, max_retries=3, workflow_id=workflow_id, session_id=session_id
+            )
             if result and result.get("image"):
                 session.clean_room_image = result["image"]
                 logger.info(f"Furniture removal successful for session: {session_id}")
@@ -712,9 +714,7 @@ async def _generate_views_impl(session_id: str, db: AsyncSession):
     """
     # Get session with views
     query = (
-        select(HomeStylingSession)
-        .where(HomeStylingSession.id == session_id)
-        .options(selectinload(HomeStylingSession.views))
+        select(HomeStylingSession).where(HomeStylingSession.id == session_id).options(selectinload(HomeStylingSession.views))
     )
     result = await db.execute(query)
     session = result.scalars().first()
@@ -825,7 +825,7 @@ async def _generate_views_impl(session_id: str, db: AsyncSession):
         try:
             logger.info(f"  Calling AI visualizer with {len(products_for_viz)} products for look '{look.title}'")
             visualization_image = await google_ai_service.generate_add_multiple_visualization(
-                room_image=user_room_image, products=products_for_viz
+                room_image=user_room_image, products=products_for_viz, session_id=session_id
             )
             return visualization_image, None
         except Exception as viz_error:

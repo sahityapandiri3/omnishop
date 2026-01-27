@@ -1209,6 +1209,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                         product_name=product_name_with_color,
                         product_image=product_image_url,
                         product_color=product_color,
+                        session_id=session_id,
                     )
                 elif request.user_action == "replace":
                     logger.info(f"Generating REPLACE visualization for {product_name_with_color} (replacing {furniture_type})")
@@ -2902,7 +2903,10 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             try:
                 # Call the removal function with enriched products (including dimensions)
                 cleaned_image = await google_ai_service.remove_products_from_visualization(
-                    base_image, products_to_remove_enriched, remaining_products_enriched
+                    base_image,
+                    products_to_remove_enriched,
+                    remaining_products_enriched,
+                    session_id=session_id,
                 )
 
                 if cleaned_image:
@@ -3012,7 +3016,10 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
             try:
                 # Step 4: Remove products from current visualization
                 cleaned_image = await google_ai_service.remove_products_from_visualization(
-                    base_image, products_to_remove_enriched, remaining_products_enriched
+                    base_image,
+                    products_to_remove_enriched,
+                    remaining_products_enriched,
+                    session_id=session_id,
                 )
 
                 if not cleaned_image:
@@ -3068,6 +3075,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                         products=products_to_add_enriched,
                         existing_products=[],  # Don't tell AI about existing products - they're already in the image
                         workflow_id=workflow_id,
+                        session_id=session_id,
                     )
 
                     if visualization_result:
@@ -3555,6 +3563,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     products=products_for_viz,  # Use expanded products for quantity support
                     existing_products=visualized_products,  # Products already in base image to preserve
                     workflow_id=workflow_id,
+                    session_id=session_id,
                 )
             except ValueError as e:
                 logger.error(f"Batch visualization error: {e}")
@@ -3607,6 +3616,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                         room_image=current_image,
                         products=batch,
                         workflow_id=workflow_id,
+                        session_id=session_id,
                     )
                     batch_num += 1
 
@@ -6318,7 +6328,9 @@ async def remove_furniture_from_visualization(session_id: str, request: dict, db
             raise HTTPException(status_code=400, detail="No image provided")
 
         # Call Google AI service to remove furniture (with retries)
-        clean_image = await google_ai_service.remove_furniture(image, max_retries=3, workflow_id=workflow_id)
+        clean_image = await google_ai_service.remove_furniture(
+            image, max_retries=3, workflow_id=workflow_id, session_id=session_id
+        )
 
         if not clean_image:
             raise HTTPException(status_code=500, detail="Failed to remove furniture after retries")

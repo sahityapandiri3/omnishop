@@ -17,6 +17,8 @@ class FurnitureRemovalRequest(BaseModel):
     """Request model for furniture removal"""
 
     image: str  # base64 encoded image
+    user_id: Optional[str] = None  # User ID for tracking
+    session_id: Optional[str] = None  # Session ID for tracking
 
 
 class FurnitureRemovalResponse(BaseModel):
@@ -35,7 +37,9 @@ class FurnitureStatusResponse(BaseModel):
     room_analysis: Optional[dict] = None  # Room analysis JSON (style, type, dimensions, etc.)
 
 
-async def process_furniture_removal(job_id: str, image: str, workflow_id: str = None) -> None:
+async def process_furniture_removal(
+    job_id: str, image: str, workflow_id: str = None, user_id: str = None, session_id: str = None
+) -> None:
     """
     Background task for furniture removal and perspective transformation.
 
@@ -47,13 +51,17 @@ async def process_furniture_removal(job_id: str, image: str, workflow_id: str = 
         job_id: Job identifier for tracking
         image: Base64 encoded image
         workflow_id: Workflow ID for tracking all API calls from this user action
+        user_id: User ID for tracking
+        session_id: Session ID for tracking
     """
     try:
         logger.info(f"Starting furniture removal for job {job_id}, workflow {workflow_id}")
         furniture_removal_service.update_job(job_id, "processing")
 
         # Remove furniture - returns dict with 'image' and 'room_analysis'
-        result = await google_ai_service.remove_furniture(image, max_retries=5, workflow_id=workflow_id)
+        result = await google_ai_service.remove_furniture(
+            image, max_retries=5, workflow_id=workflow_id, user_id=user_id, session_id=session_id
+        )
 
         if result and result.get("image"):
             # Success - cache and update job with both image and room_analysis
@@ -99,7 +107,9 @@ async def start_furniture_removal(request: FurnitureRemovalRequest, background_t
             return FurnitureRemovalResponse(job_id=job_id, status="completed")
 
         # Start background processing with workflow_id
-        background_tasks.add_task(process_furniture_removal, job_id, request.image, workflow_id)
+        background_tasks.add_task(
+            process_furniture_removal, job_id, request.image, workflow_id, request.user_id, request.session_id
+        )
         logger.info(f"Started background furniture removal processing for job {job_id}, workflow {workflow_id}")
 
         return FurnitureRemovalResponse(job_id=job_id, status="pending")

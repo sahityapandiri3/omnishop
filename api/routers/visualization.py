@@ -144,7 +144,7 @@ async def analyze_room_image(image_data: str, session_id: Optional[str] = None, 
     """Analyze room image for spatial understanding and design assessment"""
     try:
         # Perform room analysis using Google AI Studio
-        room_analysis = await google_ai_service.analyze_room_image(image_data)
+        room_analysis = await google_ai_service.analyze_room_image(image_data, session_id=session_id)
 
         # Update room context in conversation if session provided
         if session_id:
