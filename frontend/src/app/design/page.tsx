@@ -92,6 +92,11 @@ function DesignPageContent() {
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const lastSaveDataRef = useRef<string>('');
+  // Refs for tracking what was last saved (used for optimized saves that only send changed fields)
+  const lastSavedCanvasRef = useRef<string>('[]');
+  const lastSavedRoomImageRef = useRef<string | null>(null);
+  const lastSavedVizImageRef = useRef<string | null>(null);
+  const lastSavedChatSessionRef = useRef<string | null>(null);
   const [projectLoaded, setProjectLoaded] = useState(false); // Track when project data is loaded
 
   // Visualization history state (for undo/redo persistence)
@@ -921,10 +926,8 @@ function DesignPageContent() {
   // Track unsaved changes - SIMPLE APPROACH
   // Use a ref to track when the project was last saved, and compare against current state
   const isInitialLoadRef = useRef<boolean>(true);
-  const lastSavedCanvasRef = useRef<string>('[]');
-  const lastSavedRoomImageRef = useRef<string | null>(null);
-  const lastSavedVizImageRef = useRef<string | null>(null);
-  const lastSavedChatSessionRef = useRef<string | null>(null);
+  // Note: lastSavedCanvasRef, lastSavedRoomImageRef, lastSavedVizImageRef, lastSavedChatSessionRef
+  // are declared at the top of the component (near other refs) to ensure they're available for useCallback
 
   // This effect tracks changes and marks as unsaved
   useEffect(() => {
