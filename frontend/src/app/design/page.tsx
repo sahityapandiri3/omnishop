@@ -844,11 +844,40 @@ function DesignPageContent() {
       chat_session_id: chatSessionId,
     };
 
-    console.log('[DesignPage] Saving project with data:', {
-      room_image: currentData.room_image ? `${currentData.room_image.length} chars` : null,
-      visualization_image: currentData.visualization_image ? `${currentData.visualization_image.length} chars` : null,
-      canvas_products: currentData.canvas_products ? `${currentData.canvas_products.length} chars` : null,
-      chat_session_id: currentData.chat_session_id,
+    // OPTIMIZATION: Only send fields that have changed to reduce payload size
+    // Large base64 images can be 1-5 MB each, so sending unchanged images is wasteful
+    const updatePayload: Record<string, any> = {};
+
+    if (projectName) {
+      updatePayload.name = projectName;
+    }
+    if (roomImage !== lastSavedRoomImageRef.current) {
+      updatePayload.room_image = currentData.room_image || undefined;
+      updatePayload.clean_room_image = currentData.clean_room_image || undefined;
+    }
+    if (initialVisualizationImage !== lastSavedVizImageRef.current) {
+      updatePayload.visualization_image = currentData.visualization_image || undefined;
+    }
+    if (JSON.stringify(canvasProducts) !== lastSavedCanvasRef.current) {
+      updatePayload.canvas_products = currentData.canvas_products || undefined;
+    }
+    if (visualizationHistory.length > 0) {
+      updatePayload.visualization_history = currentData.visualization_history || undefined;
+    }
+    if (chatSessionId !== lastSavedChatSessionRef.current) {
+      updatePayload.chat_session_id = currentData.chat_session_id || undefined;
+    }
+
+    // Calculate payload size for logging
+    const payloadSize = JSON.stringify(updatePayload).length;
+    const payloadSizeKB = (payloadSize / 1024).toFixed(1);
+
+    console.log('[DesignPage] Saving project with OPTIMIZED payload:', {
+      fields: Object.keys(updatePayload),
+      payloadSize: `${payloadSizeKB} KB`,
+      room_image_changed: roomImage !== lastSavedRoomImageRef.current,
+      viz_image_changed: initialVisualizationImage !== lastSavedVizImageRef.current,
+      canvas_changed: JSON.stringify(canvasProducts) !== lastSavedCanvasRef.current,
     });
 
     setSaveStatus('saving');
@@ -856,15 +885,7 @@ function DesignPageContent() {
     const MIN_SAVE_DISPLAY_MS = 400; // Minimum time to show "Saving..." for better UX
 
     try {
-      await projectsAPI.update(projectId, {
-        name: projectName || undefined,
-        room_image: currentData.room_image || undefined,
-        clean_room_image: currentData.clean_room_image || undefined,
-        visualization_image: currentData.visualization_image || undefined,
-        canvas_products: currentData.canvas_products || undefined,
-        visualization_history: currentData.visualization_history || undefined,
-        chat_session_id: currentData.chat_session_id || undefined,
-      });
+      await projectsAPI.update(projectId, updatePayload);
 
       lastSaveDataRef.current = JSON.stringify(currentData);
 
