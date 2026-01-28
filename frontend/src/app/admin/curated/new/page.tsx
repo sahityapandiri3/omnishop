@@ -5,8 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
-import { Panel, Group, GroupImperativeHandle } from 'react-resizable-panels';
-import { PanelResizeHandle } from '@/components/ui/PanelResizeHandle';
+// Using ResizablePanelLayout for 3-panel layout
 import { adminCuratedAPI, getCategorizedStores, visualizeRoom, startChatSession, startFurnitureRemoval, checkFurnitureRemovalStatus, furniturePositionAPI, generateAngleView, StoreCategory, getRecoveredCurationState, clearRecoveredCurationState, imageAPI } from '@/utils/api';
 import { FurniturePosition, MagicGrabLayer, PendingMoveData } from '@/components/DraggableFurnitureCanvas';
 import { AngleSelector, ViewingAngle } from '@/components/AngleSelector';
@@ -27,7 +26,9 @@ import {
   ExtendedProduct,
 } from '@/utils/product-transforms';
 // Shared product search components
-import { KeywordOnlySearchPanel } from '@/components/products';
+import { KeywordSearchPanel, KeywordSearchPanelRef } from '@/components/products';
+import ProductDiscoveryPanel from '@/components/panels/ProductDiscoveryPanel';
+import { ResizablePanelLayout } from '@/components/panels/ResizablePanelLayout';
 
 const DraggableFurnitureCanvas = dynamic(
   () => import('@/components/DraggableFurnitureCanvas').then(mod => ({ default: mod.DraggableFurnitureCanvas })),
@@ -85,7 +86,18 @@ export default function CreateCuratedLookPage() {
   const [totalRelated, setTotalRelated] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const productsContainerRef = useRef<HTMLDivElement>(null);
-  const panelGroupRef = useRef<GroupImperativeHandle>(null);
+
+  // Keyword search panel ref and results state (for ProductDiscoveryPanel)
+  const keywordSearchRef = useRef<KeywordSearchPanelRef>(null);
+  const [keywordSearchResults, setKeywordSearchResults] = useState<{
+    products: ExtendedProduct[];
+    totalProducts: number;
+    totalPrimary: number;
+    totalRelated: number;
+    hasMore: boolean;
+    isSearching: boolean;
+    isLoadingMore: boolean;
+  } | null>(null);
 
   // Canvas state
   const [selectedProducts, setSelectedProducts] = useState<any[]>([]);
@@ -1501,16 +1513,16 @@ export default function CreateCuratedLookPage() {
     (selectedColors.length > 0 ? 1 : 0);
 
   return (
-    <div className="h-screen flex flex-col bg-gray-100">
+    <div className="h-screen flex flex-col bg-neutral-50 dark:bg-neutral-900">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between flex-shrink-0">
+      <header className="bg-white dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700 px-4 py-3 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-3">
-          <Link href="/admin/curated" className="text-gray-500 hover:text-gray-700">
+          <Link href="/admin/curated" className="text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </Link>
-          <h1 className="text-lg font-bold text-gray-900">
+          <h1 className="text-lg font-bold text-neutral-900 dark:text-white">
             {existingLookId ? 'Edit Curated Look' : 'Create Curated Look'}
           </h1>
           {existingLookId && !loadingStyleFrom && (
@@ -1532,7 +1544,7 @@ export default function CreateCuratedLookPage() {
         {/* Status indicators */}
         <div className="flex items-center gap-3 text-sm">
           {selectedProducts.length > 0 && (
-            <span className="text-gray-600">
+            <span className="text-neutral-600 dark:text-neutral-400">
               {selectedProducts.length} product{selectedProducts.length !== 1 ? 's' : ''} selected
             </span>
           )}
@@ -1556,35 +1568,35 @@ export default function CreateCuratedLookPage() {
 
       {/* Three Panel Layout - Resizable */}
       <div className="flex-1 overflow-hidden h-full">
-        <Group
-          groupRef={panelGroupRef}
-          orientation="horizontal"
-          id="omnishop-curated-panels"
-          className="h-full"
-        >
-          {/* Panel 1: Product Discovery (Search + Filters + Results) */}
-          <Panel
-            id="products-panel"
-            defaultSize={55}
-            minSize={35}
-            className="bg-white overflow-hidden border-r border-gray-200"
-          >
-            <KeywordOnlySearchPanel
-              onAddProduct={addProduct}
-              canvasProducts={selectedProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
-              title="Product Discovery"
+        <ResizablePanelLayout
+          chatPanel={
+            <div className="flex flex-col h-full">
+              {/* KeywordSearchPanel - search + filters, results go to Panel 2 */}
+              <div className="flex-1 min-h-0">
+                <KeywordSearchPanel
+                  ref={keywordSearchRef}
+                  onAddProduct={addProduct}
+                  canvasProducts={selectedProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
+                  showSearchInput={true}
+                  showResultsInline={false}
+                  onSearchResults={setKeywordSearchResults}
+                  compact={false}
+                />
+              </div>
+            </div>
+          }
+          productsPanel={
+            <ProductDiscoveryPanel
+              products={[]}
+              onAddToCanvas={addProduct}
+              canvasProducts={selectedProducts}
+              enableModeToggle={false}
+              isKeywordSearchMode={true}
+              keywordSearchResults={keywordSearchResults}
+              onLoadMoreKeywordResults={() => keywordSearchRef.current?.loadMore()}
             />
-          </Panel>
-
-          <PanelResizeHandle id="products-canvas-handle" />
-
-          {/* Panel 2: Canvas & Visualization */}
-          <Panel
-            id="canvas-panel"
-            defaultSize={45}
-            minSize={30}
-            className="bg-white overflow-hidden"
-          >
+          }
+          canvasPanel={
             <div className="h-full flex flex-col overflow-hidden">
           {/* Hidden file input - always in DOM */}
           <input
@@ -1596,9 +1608,9 @@ export default function CreateCuratedLookPage() {
           />
 
           {/* Header */}
-          <div className="p-4 border-b border-gray-200 flex-shrink-0">
+          <div className="p-4 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0">
             <div className="flex items-center justify-between mb-2">
-              <h2 className="font-semibold text-gray-900">Your Canvas</h2>
+              <h2 className="font-semibold text-neutral-900 dark:text-white">Your Canvas</h2>
               {selectedProducts.length > 0 && (
                 <button
                   onClick={() => setSelectedProducts([])}
@@ -1609,11 +1621,11 @@ export default function CreateCuratedLookPage() {
               )}
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600">
+              <span className="text-neutral-600 dark:text-neutral-400">
                 {selectedProducts.length} {selectedProducts.length === 1 ? 'item' : 'items'}
               </span>
               {selectedProducts.length > 0 && (
-                <span className="font-semibold text-gray-900">{formatPrice(totalPrice)}</span>
+                <span className="font-semibold text-neutral-900 dark:text-white">{formatPrice(totalPrice)}</span>
               )}
             </div>
           </div>
@@ -1621,14 +1633,14 @@ export default function CreateCuratedLookPage() {
           {/* Scrollable Content Area */}
           <div className="flex-1 overflow-y-auto">
             {/* Collapsible Room Image Section */}
-            <div className="border-b border-gray-200">
+            <div className="border-b border-neutral-200 dark:border-neutral-700">
               <button
                 onClick={() => setIsRoomImageCollapsed(!isRoomImageCollapsed)}
-                className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                className="w-full p-4 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
               >
-                <h3 className="text-sm font-medium text-gray-900">Room Image</h3>
+                <h3 className="text-sm font-medium text-neutral-900 dark:text-white">Room Image</h3>
                 <svg
-                  className={`w-5 h-5 text-gray-600 transition-transform ${isRoomImageCollapsed ? '' : 'rotate-180'}`}
+                  className={`w-5 h-5 text-neutral-600 dark:text-neutral-400 transition-transform ${isRoomImageCollapsed ? '' : 'rotate-180'}`}
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -1640,7 +1652,7 @@ export default function CreateCuratedLookPage() {
               {!isRoomImageCollapsed && (
                 <div className="px-4 pb-4">
                   {roomImage ? (
-                    <div className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden">
+                    <div className="relative aspect-video bg-neutral-100 dark:bg-neutral-800 rounded-lg overflow-hidden">
                       <img
                         src={roomImage.startsWith('data:') ? roomImage : `data:image/jpeg;base64,${roomImage}`}
                         alt="Room"
@@ -1656,7 +1668,7 @@ export default function CreateCuratedLookPage() {
                       )}
                       <button
                         onClick={() => fileInputRef.current?.click()}
-                        className="absolute bottom-2 right-2 px-3 py-1.5 bg-white/90 backdrop-blur text-xs font-medium text-gray-900 rounded-lg hover:bg-white transition-colors"
+                        className="absolute bottom-2 right-2 px-3 py-1.5 bg-white/90 dark:bg-neutral-800/90 backdrop-blur text-xs font-medium text-neutral-900 dark:text-white rounded-lg hover:bg-white dark:hover:bg-neutral-700 transition-colors"
                       >
                         Change
                       </button>
@@ -1668,16 +1680,21 @@ export default function CreateCuratedLookPage() {
                     </div>
                   ) : (
                     <div
-                      className="aspect-video bg-gray-100 rounded-lg flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-300 cursor-pointer hover:border-purple-400 transition-colors"
+                      className="aspect-video bg-neutral-100 dark:bg-neutral-700 rounded-lg flex flex-col items-center justify-center p-4 border-2 border-dashed border-neutral-300 dark:border-neutral-600 cursor-pointer hover:border-primary-400 transition-colors"
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      <svg className="w-12 h-12 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-12 h-12 text-neutral-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                       </svg>
-                      <button className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors">
-                        Upload Room Image
+                      <button className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors">
+                        Upload Your Room Image
                       </button>
-                      <p className="text-xs text-gray-500 mt-2">Furniture will be auto-removed</p>
+                      <p className="text-xs text-neutral-600 dark:text-neutral-300 mt-2 text-center">
+                        Add your room image to style with these products
+                      </p>
+                      <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
+                        JPG, PNG, WEBP • Max 10MB
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1685,14 +1702,14 @@ export default function CreateCuratedLookPage() {
             </div>
 
             {/* Products in Canvas */}
-            <div ref={canvasProductsRef} className="p-4 border-b border-gray-200">
+            <div ref={canvasProductsRef} className="p-4 border-b border-neutral-200 dark:border-neutral-700">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-medium text-gray-900">Products in Canvas</h3>
+                <h3 className="text-sm font-medium text-neutral-900 dark:text-white">Products in Canvas</h3>
                 {selectedProducts.length > 0 && (
-                  <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+                  <div className="flex gap-1 bg-neutral-100 dark:bg-neutral-700 rounded-lg p-1">
                     <button
                       onClick={() => setViewMode('grid')}
-                      className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600'}`}
+                      className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-white dark:bg-neutral-600 text-neutral-900 dark:text-white shadow-sm' : 'text-neutral-600 dark:text-neutral-400'}`}
                     >
                       <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                         <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
@@ -1700,7 +1717,7 @@ export default function CreateCuratedLookPage() {
                     </button>
                     <button
                       onClick={() => setViewMode('list')}
-                      className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600'}`}
+                      className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-white dark:bg-neutral-600 text-neutral-900 dark:text-white shadow-sm' : 'text-neutral-600 dark:text-neutral-400'}`}
                     >
                       <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
@@ -1712,24 +1729,24 @@ export default function CreateCuratedLookPage() {
 
               {selectedProducts.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3">
-                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="w-16 h-16 bg-neutral-100 dark:bg-neutral-700 rounded-full flex items-center justify-center mb-3">
+                    <svg className="w-8 h-8 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                     </svg>
                   </div>
-                  <p className="text-sm text-gray-600">No products added yet</p>
-                  <p className="text-xs text-gray-500 mt-1">Select products from the discovery panel</p>
+                  <p className="text-sm text-neutral-600 dark:text-neutral-300">No products added yet</p>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Select products from the discovery panel</p>
                 </div>
               ) : viewMode === 'grid' ? (
                 <div className="grid grid-cols-3 gap-2">
                   {selectedProducts.map((product) => (
-                    <div key={product.id} className="relative bg-white border border-gray-200 rounded-lg overflow-hidden group">
-                      <div className="aspect-square bg-gray-100 relative">
+                    <div key={product.id} className="relative bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg overflow-hidden group">
+                      <div className="aspect-square bg-neutral-100 dark:bg-neutral-700 relative">
                         {getProductImage(product) ? (
                           <Image src={getProductImage(product)} alt={product.name} fill className="object-cover" sizes="100px" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
-                            <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-8 h-8 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                             </svg>
                           </div>
@@ -1749,7 +1766,7 @@ export default function CreateCuratedLookPage() {
                                 e.stopPropagation();
                                 decrementQuantity(product.id);
                               }}
-                              className="w-6 h-6 bg-gray-200 hover:bg-gray-300 rounded text-sm font-bold flex items-center justify-center"
+                              className="w-6 h-6 bg-neutral-200 hover:bg-neutral-300 rounded text-sm font-bold flex items-center justify-center"
                             >
                               -
                             </button>
@@ -1783,7 +1800,7 @@ export default function CreateCuratedLookPage() {
                               e.stopPropagation();
                               setDetailProduct(product);
                             }}
-                            className="px-3 py-1.5 bg-white/90 hover:bg-white text-gray-800 text-xs font-medium rounded-lg flex items-center gap-1"
+                            className="px-3 py-1.5 bg-white/90 hover:bg-white text-neutral-800 text-xs font-medium rounded-lg flex items-center gap-1"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1793,9 +1810,9 @@ export default function CreateCuratedLookPage() {
                         </div>
                       </div>
                       <div className="p-1">
-                        <p className="text-[10px] font-medium text-gray-900 line-clamp-1 cursor-pointer hover:text-purple-600" onClick={() => setDetailProduct(product)}>{product.name}</p>
+                        <p className="text-[10px] font-medium text-neutral-900 dark:text-white line-clamp-1 cursor-pointer hover:text-purple-600" onClick={() => setDetailProduct(product)}>{product.name}</p>
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] text-gray-500 capitalize">{product.source_website || product.source}</span>
+                          <span className="text-[10px] text-neutral-500 dark:text-neutral-400 capitalize">{product.source_website || product.source}</span>
                           <p className="text-[10px] text-purple-600 font-semibold">{formatPrice((product.price || 0) * (product.quantity || 1))}</p>
                         </div>
                       </div>
@@ -1805,13 +1822,13 @@ export default function CreateCuratedLookPage() {
               ) : (
                 <div className="space-y-1.5">
                   {selectedProducts.map((product) => (
-                    <div key={product.id} className="flex items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded-lg">
-                      <div className="w-12 h-12 bg-gray-100 rounded relative flex-shrink-0">
+                    <div key={product.id} className="flex items-center gap-2 p-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg">
+                      <div className="w-12 h-12 bg-neutral-100 dark:bg-neutral-700 rounded relative flex-shrink-0">
                         {getProductImage(product) ? (
                           <Image src={getProductImage(product)} alt={product.name} fill className="object-cover rounded" sizes="48px" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
-                            <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-6 h-6 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                             </svg>
                           </div>
@@ -1824,19 +1841,19 @@ export default function CreateCuratedLookPage() {
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-gray-900 truncate cursor-pointer hover:text-purple-600" onClick={() => setDetailProduct(product)}>{product.name}</p>
-                        <p className="text-[10px] text-gray-500 capitalize">{product.source_website || product.source}</p>
+                        <p className="text-xs font-medium text-neutral-900 dark:text-white truncate cursor-pointer hover:text-purple-600" onClick={() => setDetailProduct(product)}>{product.name}</p>
+                        <p className="text-[10px] text-neutral-500 dark:text-neutral-400 capitalize">{product.source_website || product.source}</p>
                         <p className="text-xs font-semibold text-purple-600">{formatPrice((product.price || 0) * (product.quantity || 1))}</p>
                       </div>
                       {/* Quantity controls */}
                       <div className="flex items-center gap-1 mr-2">
                         <button
                           onClick={() => decrementQuantity(product.id)}
-                          className="w-6 h-6 bg-gray-200 hover:bg-gray-300 rounded text-sm font-bold flex items-center justify-center"
+                          className="w-6 h-6 bg-neutral-200 dark:bg-neutral-600 hover:bg-neutral-300 dark:hover:bg-neutral-500 rounded text-sm font-bold flex items-center justify-center"
                         >
                           -
                         </button>
-                        <span className="w-6 text-sm text-center font-medium">{product.quantity || 1}</span>
+                        <span className="w-6 text-sm text-center font-medium dark:text-white">{product.quantity || 1}</span>
                         <button
                           onClick={() => incrementQuantity(product.id)}
                           className="w-6 h-6 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded text-sm font-bold flex items-center justify-center"
@@ -1870,11 +1887,11 @@ export default function CreateCuratedLookPage() {
 
             {/* Visualization In Progress - Shimmer Preview (first-time visualization) */}
             {isVisualizing && !visualizationImage && roomImage && (
-              <div className="p-4 border-b border-gray-200">
+              <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium text-gray-900">Generating Visualization...</h3>
+                  <h3 className="text-sm font-medium text-neutral-900 dark:text-white">Generating Visualization...</h3>
                 </div>
-                <div className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden ring-2 ring-blue-400">
+                <div className="relative aspect-video bg-neutral-100 dark:bg-neutral-800 rounded-lg overflow-hidden ring-2 ring-blue-400">
                   {/* Room image as preview background */}
                   <img
                     src={roomImage?.startsWith('data:') ? roomImage : `data:image/jpeg;base64,${roomImage}`}
@@ -1903,9 +1920,9 @@ export default function CreateCuratedLookPage() {
 
             {/* Visualization Result with Edit Positions, Undo/Redo (Exact copy from CanvasPanel) */}
             {visualizationImage && (
-              <div ref={visualizationRef} className="p-4 border-b border-gray-200">
+              <div ref={visualizationRef} className="p-4 border-b border-neutral-200 dark:border-neutral-700">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium text-gray-900">Visualization Result</h3>
+                  <h3 className="text-sm font-medium text-neutral-900 dark:text-white">Visualization Result</h3>
                   <div className="flex items-center gap-2">
                     {/* Edit Positions button */}
                     {!isEditingPositions && (
@@ -1938,7 +1955,7 @@ export default function CreateCuratedLookPage() {
                     <button
                       onClick={handleUndo}
                       disabled={!canUndo || isEditingPositions}
-                      className="p-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      className="p-1.5 rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                       title="Undo"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1948,7 +1965,7 @@ export default function CreateCuratedLookPage() {
                     <button
                       onClick={handleRedo}
                       disabled={!canRedo || isEditingPositions}
-                      className="p-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      className="p-1.5 rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                       title="Redo"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1998,7 +2015,7 @@ export default function CreateCuratedLookPage() {
                 )}
 
                 {/* Image/Canvas Container */}
-                <div className={`relative aspect-video bg-gray-100 rounded-lg overflow-hidden ${needsRevisualization ? 'ring-2 ring-amber-400' : ''} ${isEditingPositions ? 'ring-2 ring-purple-400' : ''}`}>
+                <div className={`relative aspect-video bg-neutral-100 dark:bg-neutral-800 rounded-lg overflow-hidden ${needsRevisualization ? 'ring-2 ring-amber-400' : ''} ${isEditingPositions ? 'ring-2 ring-purple-400' : ''}`}>
                   <img
                     src={isEditingPositions ? visualizationImage : (angleImages[currentAngle] || visualizationImage)}
                     alt={`Visualization result${isEditingPositions ? ' - Edit Mode' : ` - ${currentAngle} view`}`}
@@ -2029,7 +2046,7 @@ export default function CreateCuratedLookPage() {
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                         </svg>
-                        <span className="text-sm font-medium text-gray-700">Generating {loadingAngle} view...</span>
+                        <span className="text-sm font-medium text-neutral-700">Generating {loadingAngle} view...</span>
                       </div>
                     </div>
                   )}
@@ -2063,7 +2080,7 @@ export default function CreateCuratedLookPage() {
                   <div className="mt-3 space-y-3">
                     {/* Special Instructions Input */}
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">
                         Special Instructions
                       </label>
                       <textarea
@@ -2071,9 +2088,9 @@ export default function CreateCuratedLookPage() {
                         onChange={(e) => setEditSpecialInstructions(e.target.value)}
                         placeholder="e.g., 'Place the flower vase on the bench' or 'Move the lamp to the left corner'"
                         rows={2}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                        className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
                       />
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
                         Describe how you want to reposition items
                       </p>
                     </div>
@@ -2082,7 +2099,7 @@ export default function CreateCuratedLookPage() {
                     <div className="flex items-center justify-center">
                       <button
                         onClick={handleExitEditMode}
-                        className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 text-sm font-medium transition-colors"
+                        className="px-4 py-2 rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-sm font-medium transition-colors"
                       >
                         Exit Edit Mode
                       </button>
@@ -2097,35 +2114,35 @@ export default function CreateCuratedLookPage() {
             )}
 
             {/* Look Details */}
-            <div className="p-4 border-b border-gray-200">
-              <h3 className="text-sm font-medium text-gray-900 mb-3">Look Details</h3>
+            <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
+              <h3 className="text-sm font-medium text-neutral-900 dark:text-white mb-3">Look Details</h3>
               <div className="space-y-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Title *</label>
+                  <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">Title *</label>
                   <input
                     type="text"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="Give your look a name..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                  <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">Description</label>
                   <textarea
                     value={styleDescription}
                     onChange={(e) => setStyleDescription(e.target.value)}
                     placeholder="Describe this curated look..."
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Room Type</label>
+                  <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">Room Type</label>
                   <select
                     value={roomType}
                     onChange={(e) => setRoomType(e.target.value as 'living_room' | 'bedroom')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
                   >
                     <option value="living_room">Living Room</option>
                     <option value="bedroom">Bedroom</option>
@@ -2134,22 +2151,22 @@ export default function CreateCuratedLookPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Budget Tier (auto-calculated)</label>
-                  <div className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50">
+                  <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">Budget Tier (auto-calculated)</label>
+                  <div className="w-full px-3 py-2 border border-neutral-200 dark:border-neutral-600 rounded-lg text-sm bg-neutral-50 dark:bg-neutral-800">
                     {(() => {
                       const tier = calculateBudgetTier(totalPrice);
                       return (
                         <span className="flex items-center justify-between">
-                          <span className="font-medium text-gray-800">{tier.label}</span>
-                          <span className="text-xs text-gray-500">{tier.range}</span>
+                          <span className="font-medium text-neutral-800 dark:text-white">{tier.label}</span>
+                          <span className="text-xs text-neutral-500 dark:text-neutral-400">{tier.range}</span>
                         </span>
                       );
                     })()}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Style Labels (for filtering)</label>
-                  <div className="flex flex-wrap gap-2 p-2 border border-gray-300 rounded-lg bg-gray-50 min-h-[80px]">
+                  <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">Style Labels (for filtering)</label>
+                  <div className="flex flex-wrap gap-2 p-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-neutral-50 dark:bg-neutral-800 min-h-[80px]">
                     {STYLE_LABEL_OPTIONS.map((option) => {
                       const isSelected = styleLabels.includes(option.value);
                       return (
@@ -2166,7 +2183,7 @@ export default function CreateCuratedLookPage() {
                           className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
                             isSelected
                               ? 'bg-purple-600 text-white'
-                              : 'bg-white text-gray-700 border border-gray-300 hover:border-purple-400'
+                              : 'bg-white dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-neutral-300 dark:border-neutral-600 hover:border-purple-400'
                           }`}
                         >
                           {option.label}
@@ -2175,7 +2192,7 @@ export default function CreateCuratedLookPage() {
                     })}
                   </div>
                   {styleLabels.length > 0 && (
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
                       Selected: {styleLabels.map(l => STYLE_LABEL_OPTIONS.find(o => o.value === l)?.label).join(', ')}
                     </p>
                   )}
@@ -2185,7 +2202,7 @@ export default function CreateCuratedLookPage() {
           </div>
 
           {/* Visualize & Publish Buttons - Fixed at bottom (Smart states from CanvasPanel) */}
-          <div className="p-4 border-t border-gray-200 flex-shrink-0 space-y-2">
+          <div className="p-4 border-t border-neutral-200 dark:border-neutral-700 flex-shrink-0 space-y-2">
             {/* Visualize Button with Smart States */}
             {isEditingPositions ? (
               /* Edit Mode: Show Apply button if instructions exist, otherwise show prompt */
@@ -2194,7 +2211,7 @@ export default function CreateCuratedLookPage() {
                 <button
                   onClick={handleRevisualizeWithInstructions}
                   disabled={isVisualizing}
-                  className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
+                  className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 disabled:bg-neutral-400 text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
                 >
                   {isVisualizing ? (
                     <>
@@ -2241,7 +2258,7 @@ export default function CreateCuratedLookPage() {
               <button
                 onClick={handleVisualize}
                 disabled={isVisualizing || isRemovingFurniture}
-                className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
+                className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:from-neutral-400 disabled:to-neutral-400 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
               >
                 {isVisualizing ? (
                   <>
@@ -2265,7 +2282,7 @@ export default function CreateCuratedLookPage() {
               /* State 3: Not Ready (Gray, Disabled) */
               <button
                 disabled
-                className="w-full py-3 px-4 bg-gray-300 text-gray-500 font-semibold rounded-lg cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full py-3 px-4 bg-neutral-300 dark:bg-neutral-600 text-neutral-500 dark:text-neutral-400 font-semibold rounded-lg cursor-not-allowed flex items-center justify-center gap-2"
               >
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
@@ -2281,7 +2298,7 @@ export default function CreateCuratedLookPage() {
               <button
                 onClick={handleSaveAsDraft}
                 disabled={savingDraft || saving || !title.trim()}
-                className="flex-1 py-3 px-4 bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 disabled:cursor-not-allowed text-gray-700 disabled:text-gray-400 font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 border border-gray-300"
+                className="flex-1 py-3 px-4 bg-neutral-100 dark:bg-neutral-700 hover:bg-neutral-200 dark:hover:bg-neutral-600 disabled:bg-neutral-50 dark:disabled:bg-neutral-800 disabled:cursor-not-allowed text-neutral-700 dark:text-neutral-200 disabled:text-neutral-400 dark:disabled:text-neutral-500 font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 border border-neutral-300 dark:border-neutral-600"
               >
                 {savingDraft ? (
                   <>
@@ -2305,7 +2322,7 @@ export default function CreateCuratedLookPage() {
               <button
                 onClick={handlePublish}
                 disabled={saving || savingDraft || !visualizationImage || selectedProducts.length === 0 || !title.trim()}
-                className="flex-1 py-3 px-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                className="flex-1 py-3 px-4 bg-green-600 hover:bg-green-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
               >
                 {saving ? (
                   <>
@@ -2339,11 +2356,11 @@ export default function CreateCuratedLookPage() {
 
             {/* Improve Quality - Advanced action at bottom */}
             {visualizationImage && selectedProducts.length > 0 && (
-              <div className="mt-4 pt-3 border-t border-gray-200">
+              <div className="mt-4 pt-3 border-t border-neutral-200 dark:border-neutral-700">
                 <button
                   onClick={handleImproveQuality}
                   disabled={isImprovingQuality || isVisualizing}
-                  className="w-full py-2 px-3 bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 disabled:cursor-not-allowed text-gray-600 disabled:text-gray-400 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className="w-full py-2 px-3 bg-neutral-100 dark:bg-neutral-700 hover:bg-neutral-200 dark:hover:bg-neutral-600 disabled:bg-neutral-50 dark:disabled:bg-neutral-800 disabled:cursor-not-allowed text-neutral-600 dark:text-neutral-300 disabled:text-neutral-400 dark:disabled:text-neutral-500 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                   title="Re-visualize all products on the original room image to improve quality. Resets undo/redo history."
                 >
                   {isImprovingQuality ? (
@@ -2363,27 +2380,27 @@ export default function CreateCuratedLookPage() {
                     </>
                   )}
                 </button>
-                <p className="text-xs text-gray-400 text-center mt-1">Re-renders from original room image. Resets undo/redo.</p>
+                <p className="text-xs text-neutral-400 dark:text-neutral-500 text-center mt-1">Re-renders from original room image. Resets undo/redo.</p>
               </div>
             )}
           </div>
             </div>
-          </Panel>
-        </Group>
+          }
+        />
       </div>
 
       {/* Product Detail Modal */}
       {detailProduct && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+          <div className="bg-white dark:bg-neutral-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
             {/* Modal Header */}
-            <div className="flex justify-between items-center p-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Product Details</h3>
+            <div className="flex justify-between items-center p-4 border-b border-neutral-200 dark:border-neutral-700">
+              <h3 className="text-lg font-semibold text-neutral-900 dark:text-white">Product Details</h3>
               <button
                 onClick={() => setDetailProduct(null)}
-                className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+                className="p-1 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-full transition-colors"
               >
-                <svg className="w-6 h-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-6 h-6 text-neutral-500 dark:text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
@@ -2394,7 +2411,7 @@ export default function CreateCuratedLookPage() {
               <div className="flex gap-4">
                 {/* Product Image */}
                 <div className="w-1/3 flex-shrink-0">
-                  <div className="aspect-square relative bg-gray-100 rounded-lg overflow-hidden">
+                  <div className="aspect-square relative bg-neutral-100 dark:bg-neutral-700 rounded-lg overflow-hidden">
                     {getProductImage(detailProduct) ? (
                       <Image
                         src={getProductImage(detailProduct)}
@@ -2405,7 +2422,7 @@ export default function CreateCuratedLookPage() {
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
-                        <svg className="w-12 h-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-12 h-12 text-neutral-300 dark:text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                       </div>
@@ -2415,27 +2432,27 @@ export default function CreateCuratedLookPage() {
 
                 {/* Product Info */}
                 <div className="flex-1">
-                  <h4 className="text-xl font-bold text-gray-900 mb-2">{detailProduct.name}</h4>
+                  <h4 className="text-xl font-bold text-neutral-900 dark:text-white mb-2">{detailProduct.name}</h4>
 
                   <div className="flex items-center gap-2 mb-3">
-                    <span className="text-2xl font-bold text-purple-600">
+                    <span className="text-2xl font-bold text-purple-600 dark:text-purple-400">
                       {formatPrice(detailProduct.price || 0)}
                     </span>
-                    <span className="text-sm text-gray-500 capitalize px-2 py-0.5 bg-gray-100 rounded">
+                    <span className="text-sm text-neutral-500 dark:text-neutral-400 capitalize px-2 py-0.5 bg-neutral-100 dark:bg-neutral-700 rounded">
                       {detailProduct.source_website || detailProduct.source}
                     </span>
                   </div>
 
                   {detailProduct.brand && (
-                    <p className="text-sm text-gray-600 mb-2">
+                    <p className="text-sm text-neutral-600 dark:text-neutral-300 mb-2">
                       <span className="font-medium">Brand:</span> {detailProduct.brand}
                     </p>
                   )}
 
                   {detailProduct.description && (
                     <div className="mt-4">
-                      <h5 className="text-sm font-medium text-gray-700 mb-1">Description</h5>
-                      <p className="text-sm text-gray-600 leading-relaxed">
+                      <h5 className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">Description</h5>
+                      <p className="text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed">
                         {detailProduct.description}
                       </p>
                     </div>
@@ -2446,7 +2463,7 @@ export default function CreateCuratedLookPage() {
                       href={detailProduct.source_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 mt-4"
+                      className="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 mt-4"
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -2459,10 +2476,10 @@ export default function CreateCuratedLookPage() {
             </div>
 
             {/* Modal Footer */}
-            <div className="flex justify-end gap-2 p-4 border-t border-gray-200 bg-gray-50">
+            <div className="flex justify-end gap-2 p-4 border-t border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900">
               <button
                 onClick={() => setDetailProduct(null)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                className="px-4 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg transition-colors"
               >
                 Close
               </button>

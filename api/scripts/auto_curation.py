@@ -72,11 +72,50 @@ STYLE_CONFIGS = {
     "indian_contemporary": {
         "style_theme": "Indian Contemporary",
         "style_labels": ["indian_contemporary"],
-        "search_keywords": ["indian", "ethnic", "traditional", "handcrafted"],
-        "primary_styles": ["traditional", "ethnic", "indian", "artisan"],
-        "colors": ["brown", "gold", "red", "orange", "green", "terracotta"],
-        "materials": ["wood", "brass", "fabric", "jute", "cotton", "cane"],
+        "search_keywords": [
+            "cane",
+            "sheesham",
+            "teak",
+            "wood",
+            "brass",
+            "jute",
+            "ethnic",
+            "traditional",
+            "handcraft",
+            "indian",
+            "rattan",
+            "wicker",
+            "mango wood",
+            "rosewood",
+            "carved",
+            "inlay",
+            "bone inlay",
+            "mother of pearl",
+        ],
+        "primary_styles": ["indian_contemporary", "traditional", "ethnic", "indian", "artisan", "rustic"],
+        "avoid_styles": ["modern", "contemporary", "minimalist", "scandinavian", "industrial", "modern_luxury"],
+        "colors": ["brown", "gold", "red", "orange", "green", "terracotta", "cream", "beige"],
+        "materials": ["wood", "brass", "fabric", "jute", "cotton", "cane", "rattan", "teak", "sheesham"],
     },
+}
+
+# Indian Contemporary specific product keywords (used for stricter filtering)
+INDIAN_CONTEMPORARY_PRODUCT_KEYWORDS = {
+    "sofa": ["wood", "cane", "teak", "sheesham", "fabric"],
+    "accent_chair": ["cane", "jute", "wood", "rattan", "wicker"],
+    "coffee_table": ["wood", "brass", "teak", "sheesham", "carved"],
+    "side_table": ["wood", "brass", "bone inlay", "carved"],
+    "cabinet": ["wood", "carved", "brass", "sheesham"],
+    "bookshelf": ["wood", "teak", "sheesham"],
+    "rugs": ["hand knotted", "wool", "silk", "jute", "dhurrie"],
+    "wall_art": ["pichwai", "tanjore", "madhubani", "brass", "ethnic", "indian"],
+    "sculpture": ["brass", "bronze", "wooden", "indian", "ganesh", "buddha"],
+    "floor_lamp": ["brass", "wood", "fabric", "cotton"],
+    "ceiling_lamp": ["brass", "crystal", "traditional"],
+    "mirror": ["wood", "carved", "brass", "bone inlay"],
+    "planter": ["brass", "ceramic", "terracotta"],
+    "cushion": ["embroidered", "jute", "silk", "cotton", "ethnic"],
+    "throw": ["handwoven", "cotton", "wool", "ethnic"],
 }
 
 BUDGET_TIERS = {
@@ -100,6 +139,10 @@ BUDGET_ALLOCATION = {
     "planter": 0.04,
     "bookshelf": 0.10,
     "cushion": 0.03,
+    # Extra products for Indian Contemporary
+    "cabinet": 0.12,
+    "mirror": 0.06,
+    "sculpture": 0.08,
 }
 
 # Required products per look (12 types max)
@@ -167,6 +210,25 @@ REQUIRED_PRODUCTS = [
     },
 ]
 
+# Additional products for Indian Contemporary looks
+INDIAN_CONTEMPORARY_EXTRA_PRODUCTS = [
+    {
+        "type": "cabinet",
+        "categories": ["Cabinet", "Sideboard", "Bar Unit", "cabinet", "sideboard"],
+        "search_terms": ["cabinet", "sideboard", "bar unit"],
+    },
+    {
+        "type": "mirror",
+        "categories": ["Mirror", "mirrors"],
+        "search_terms": ["mirror"],
+    },
+    {
+        "type": "sculpture",
+        "categories": ["Sculptures", "Decor & Accessories", "sculptures"],
+        "search_terms": ["sculpture", "statue", "figurine"],
+    },
+]
+
 # Optional products (NOT used - decor_accents and table_lamp skipped)
 OPTIONAL_PRODUCTS = [
     {
@@ -216,8 +278,16 @@ class ProductSelector:
         selected = {}
         target_total = self.budget_config["target"]
 
+        # Determine which products to select based on style
+        is_indian_contemporary = "indian_contemporary" in self.style_config.get("style_labels", [])
+        products_to_select = list(REQUIRED_PRODUCTS)
+
+        # Add extra products for Indian Contemporary
+        if is_indian_contemporary:
+            products_to_select.extend(INDIAN_CONTEMPORARY_EXTRA_PRODUCTS)
+
         # Select required products
-        for product_spec in REQUIRED_PRODUCTS:
+        for product_spec in products_to_select:
             product_type = product_spec["type"]
             allocation = BUDGET_ALLOCATION.get(product_type, 0.05)
             max_price = target_total * allocation * 1.5  # Allow 50% buffer
@@ -314,31 +384,49 @@ class ProductSelector:
         if not candidates:
             return []
 
-        # Score and select products
-        scored = self._score_products(candidates)
+        # Score and select products (pass product_type for Indian Contemporary specific keywords)
+        product_type = product_spec.get("type")
+        scored = self._score_products(candidates, product_type=product_type)
         scored.sort(key=lambda x: x[1], reverse=True)
 
-        # Select top candidates
+        # Select top candidates (only those with positive score for Indian Contemporary)
+        is_indian_contemporary = "indian_contemporary" in self.style_config.get("style_labels", [])
         selected = []
-        for product, score in scored[:quantity]:
+        for product, score in scored[: quantity * 3]:  # Consider more candidates
+            # For Indian Contemporary, prefer products with positive scores
+            if is_indian_contemporary and score < 0:
+                continue
             selected.append(self._product_to_dict(product))
+            if len(selected) >= quantity:
+                break
 
         return selected
 
-    def _score_products(self, products: List[Product]) -> List[Tuple[Product, float]]:
+    def _score_products(self, products: List[Product], product_type: str = None) -> List[Tuple[Product, float]]:
         """Score products based on style matching."""
         scored = []
         style_keywords = self.style_config.get("search_keywords", [])
         materials = self.style_config.get("materials", [])
         colors = self.style_config.get("colors", [])
+        avoid_styles = self.style_config.get("avoid_styles", [])
+
+        # Get Indian Contemporary specific keywords for this product type
+        is_indian_contemporary = "indian_contemporary" in self.style_config.get("style_labels", [])
+        indian_product_keywords = []
+        if is_indian_contemporary and product_type:
+            indian_product_keywords = INDIAN_CONTEMPORARY_PRODUCT_KEYWORDS.get(product_type, [])
 
         for product in products:
             score = 0.0
 
             # Style match (40%)
             if product.primary_style:
-                if product.primary_style.lower() in [s.lower() for s in self.style_config.get("primary_styles", [])]:
+                style_lower = product.primary_style.lower()
+                if style_lower in [s.lower() for s in self.style_config.get("primary_styles", [])]:
                     score += 40
+                # Penalize avoid-styles (for Indian Contemporary)
+                if avoid_styles and style_lower in [s.lower() for s in avoid_styles]:
+                    score -= 50
 
             # Name/description keyword match (30%)
             name_lower = product.name.lower()
@@ -346,6 +434,12 @@ class ProductSelector:
             for keyword in style_keywords:
                 if keyword.lower() in name_lower or keyword.lower() in desc_lower:
                     score += 10
+
+            # Indian Contemporary specific product keywords (bonus 20%)
+            if indian_product_keywords:
+                for keyword in indian_product_keywords:
+                    if keyword.lower() in name_lower:
+                        score += 15
 
             # Material match (15%)
             for material in materials:
@@ -356,6 +450,12 @@ class ProductSelector:
             for color in colors:
                 if color.lower() in name_lower:
                     score += 3
+
+            # Penalize products with avoid-style keywords in name (for Indian Contemporary)
+            if is_indian_contemporary:
+                for avoid_kw in ["modern", "minimalist", "scandinavian", "contemporary"]:
+                    if avoid_kw in name_lower:
+                        score -= 30
 
             # Add randomness to avoid always picking the same products (5%)
             score += random.uniform(0, 5)
@@ -700,15 +800,25 @@ class LookGenerator:
                 "Velvet & Gold Haven",
             ],
             "indian_contemporary": [
+                # Elegant titles for premium/luxury
+                "Royal Heritage Living",
+                "Artisan Craft Suite",
+                "Ethnic Elegance Retreat",
+                "Handwoven Heritage Home",
+                "Traditional Luxe Living",
+                "Brass & Wood Sanctuary",
+                "Cane & Comfort Suite",
+                "Heritage Fusion Lounge",
+                "Vintage Indian Elegance",
+                "Craftsman's Pride Living",
+                # More budget-friendly titles
                 "Desi Charm Studio",
                 "Heritage Budget Living",
                 "Ethnic Starter Home",
                 "Artisan Heritage Home",
                 "Cultural Fusion Living",
-                "Modern Ethnic Retreat",
                 "Handcrafted Luxury",
                 "Premium Heritage Suite",
-                "Ethnic Elegance Premium",
                 "Royal Indian Residence",
                 "Heritage Grand Suite",
                 "Maharaja Living",
@@ -717,12 +827,8 @@ class LookGenerator:
                 "Ethnic Fusion Retreat",
                 "Heritage Comfort Zone",
                 "Cultural Elegance Home",
-                "Desi Modern Oasis",
                 "Handwoven Heritage Suite",
-                "Contemporary Ethnic Living",
-                "Heritage Meets Modern",
                 "Artisan Crafted Living",
-                "Ethnic Elegance Retreat",
                 "Traditional Charm Suite",
                 "Handcrafted Comfort Zone",
             ],

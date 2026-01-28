@@ -158,7 +158,7 @@ export function KeywordOnlySearchPanel({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className={`${compact ? 'px-3 py-2' : 'px-4 py-3'} border-b border-neutral-200 dark:border-neutral-700`}>
+      <div className={`flex-shrink-0 ${compact ? 'px-3 py-2' : 'px-4 py-3'} border-b border-neutral-200 dark:border-neutral-700`}>
         <h2 className="font-semibold text-neutral-900 dark:text-white">
           {title}
         </h2>
@@ -167,13 +167,14 @@ export function KeywordOnlySearchPanel({
         </p>
       </div>
 
-      {/* Search Panel */}
-      <div className="flex-1 overflow-hidden">
+      {/* Search Panel - flex-1 with min-h-0 to allow proper flex shrinking */}
+      <div className="flex-1 min-h-0">
         <KeywordSearchPanel
           onAddProduct={onAddProduct}
           canvasProducts={canvasProducts}
           compact={compact}
           showSearchInput={true}
+          showResultsInline={true}
         />
       </div>
     </div>
