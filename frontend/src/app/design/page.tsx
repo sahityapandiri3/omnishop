@@ -1288,6 +1288,10 @@ function DesignPageContent() {
         sessionStorage.removeItem('furnitureRemovalJobId');
       }
 
+      // CRITICAL: Set room image IMMEDIATELY so the processing overlay shows right away
+      // Previously this was set after API calls, causing the "Upload Your Room" screen to linger for 10+ seconds
+      setRoomImage(imageData);
+      setCleanRoomImage(imageData);
       setIsProcessingFurniture(true);
       setProcessingStatus('Analyzing room...');
 
@@ -1346,9 +1350,7 @@ function DesignPageContent() {
 
       console.log('[DesignPage] Furniture removal started:', response);
 
-      // Set the uploaded image immediately so user sees it while furniture removal processes
-      setRoomImage(imageData);
-      setCleanRoomImage(imageData); // Use uploaded image as clean room initially
+      // Room image already set at the start of this function for immediate UI feedback
 
       // Start polling for furniture removal completion without page reload
       const pollForCompletion = async () => {
