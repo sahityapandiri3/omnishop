@@ -3142,9 +3142,29 @@ FAILURE CONDITIONS (you WILL fail if you do these):
 
             return result_image
 
-        # Run with timeout
+        # Run with timeout and retry logic
         loop = asyncio.get_event_loop()
-        result = await asyncio.wait_for(loop.run_in_executor(None, _run_edit), timeout=90)
+        max_retries = 3
+        result = None
+
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"[{session_id}] Edit attempt {attempt + 1}/{max_retries}")
+                result = await asyncio.wait_for(loop.run_in_executor(None, _run_edit), timeout=90)
+                if result:
+                    break
+                else:
+                    logger.warning(f"[{session_id}] Attempt {attempt + 1} returned no image, retrying...")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2)  # Brief delay before retry
+            except asyncio.TimeoutError:
+                logger.warning(f"[{session_id}] Attempt {attempt + 1} timed out after 90s")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2)
+            except Exception as retry_error:
+                logger.warning(f"[{session_id}] Attempt {attempt + 1} failed: {retry_error}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2)
 
         if result:
             # Handle dimension issues - Gemini sometimes returns different dimensions
