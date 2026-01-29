@@ -13,11 +13,16 @@ type RoomType = 'all' | 'living_room' | 'bedroom' | 'foyer';
 type StyleOption = 'modern' | 'modern_luxury' | 'indian_contemporary';
 type BudgetOption = 'all' | 'pocket_friendly' | 'mid_tier' | 'premium' | 'luxury';
 
+const LOOKS_PER_PAGE = 12;
+
 function CuratedPageContent() {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
   const [looksData, setLooksData] = useState<CuratedLooksResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [offset, setOffset] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [selectedLook, setSelectedLook] = useState<CuratedLook | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -27,18 +32,19 @@ function CuratedPageContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
 
-  // Fetch curated looks when filter changes
+  // Fetch curated looks when filter changes (reset pagination)
   useEffect(() => {
     const fetchLooks = async () => {
       try {
         setLoading(true);
         setError(null);
+        setOffset(0);
         const roomType = roomTypeFilter === 'all' ? undefined : roomTypeFilter;
-        // Pass comma-separated styles if multiple selected, or undefined if none
         const style = selectedStyles.length > 0 ? selectedStyles.join(',') : undefined;
         const budget = budgetFilter === 'all' ? undefined : budgetFilter;
-        const result = await getCuratedLooks(roomType, 'thumbnail', style, budget);
+        const result = await getCuratedLooks(roomType, 'thumbnail', style, budget, LOOKS_PER_PAGE, 0);
         setLooksData(result);
+        setHasMore(result.looks.length >= LOOKS_PER_PAGE);
       } catch (err: any) {
         console.error('Error fetching looks:', err);
         setError('Failed to load curated looks. Please try again.');
@@ -49,6 +55,35 @@ function CuratedPageContent() {
 
     fetchLooks();
   }, [roomTypeFilter, selectedStyles, budgetFilter]);
+
+  // Load more looks
+  const handleLoadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+
+    try {
+      setLoadingMore(true);
+      const newOffset = offset + LOOKS_PER_PAGE;
+      const roomType = roomTypeFilter === 'all' ? undefined : roomTypeFilter;
+      const style = selectedStyles.length > 0 ? selectedStyles.join(',') : undefined;
+      const budget = budgetFilter === 'all' ? undefined : budgetFilter;
+      const result = await getCuratedLooks(roomType, 'thumbnail', style, budget, LOOKS_PER_PAGE, newOffset);
+
+      if (result.looks.length > 0) {
+        setLooksData(prev => prev ? {
+          ...prev,
+          looks: [...prev.looks, ...result.looks]
+        } : result);
+        setOffset(newOffset);
+        setHasMore(result.looks.length >= LOOKS_PER_PAGE);
+      } else {
+        setHasMore(false);
+      }
+    } catch (err: any) {
+      console.error('Error loading more looks:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, hasMore, offset, roomTypeFilter, selectedStyles, budgetFilter]);
 
   const handleViewDetails = useCallback((look: CuratedLook) => {
     setSelectedLook(look);
@@ -370,13 +405,41 @@ function CuratedPageContent() {
                 </div>
 
                 {/* Results count */}
-                <div className="text-center text-neutral-400 text-xs mb-6">
+                <div className="text-center text-neutral-400 text-xs mb-4">
                   {filteredLooks.length} {filteredLooks.length === 1 ? 'look' : 'looks'}
                   {searchQuery && ` • "${searchQuery}"`}
                   {roomTypeFilter !== 'all' && ` • ${roomTypeFilter.replace('_', ' ')}`}
                   {selectedStyles.length > 0 && ` • ${selectedStyles.map(s => s.replace('_', ' ')).join(', ')}`}
                   {budgetFilter !== 'all' && ` • ${budgetOptions.find(b => b.value === budgetFilter)?.label}`}
                 </div>
+
+                {/* Load More button */}
+                {hasMore && !searchQuery && (
+                  <div className="text-center mb-6">
+                    <button
+                      onClick={handleLoadMore}
+                      disabled={loadingMore}
+                      className="px-6 py-2.5 bg-neutral-100 hover:bg-neutral-200 disabled:bg-neutral-50 text-neutral-700 disabled:text-neutral-400 rounded-lg font-medium text-sm transition-colors inline-flex items-center gap-2"
+                    >
+                      {loadingMore ? (
+                        <>
+                          <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          Loading...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                          Load More Looks
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
               </>
             );
           })()}

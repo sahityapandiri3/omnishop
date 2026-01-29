@@ -1705,14 +1705,22 @@ export const adminCuratedAPI = {
 // imageQuality: 'thumbnail' (400px), 'medium' (1200px - for landing page), 'full' (original)
 // style: Filter by style label (modern, modern_luxury, indian_contemporary, etc.)
 // budgetTier: Filter by budget tier (essential, value, mid, premium, ultra_luxury)
+// limit: Maximum number of looks to return (default 12)
+// offset: Number of looks to skip for pagination (default 0)
 export const getCuratedLooks = async (
   roomType?: string,
   imageQuality: 'thumbnail' | 'medium' | 'full' = 'thumbnail',
   style?: string,
-  budgetTier?: string
+  budgetTier?: string,
+  limit: number = 12,
+  offset: number = 0
 ): Promise<CuratedLooksResponse> => {
   try {
-    const params: Record<string, any> = { image_quality: imageQuality };
+    const params: Record<string, any> = {
+      image_quality: imageQuality,
+      limit,
+      offset
+    };
     if (roomType) {
       params.room_type = roomType;
     }

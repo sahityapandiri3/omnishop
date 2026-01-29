@@ -324,6 +324,8 @@ async def get_curated_looks(
     budget_tier: Optional[str] = Query(None, description="Filter by budget tier (pocket_friendly, mid_tier, premium, luxury)"),
     include_images: bool = Query(False, description="Include large base64 images (room_image, visualization_image)"),
     image_quality: str = Query("thumbnail", description="Image quality: thumbnail (400px), medium (1200px), full"),
+    limit: int = Query(12, ge=1, le=50, description="Maximum number of looks to return (default 12)"),
+    offset: int = Query(0, ge=0, description="Number of looks to skip for pagination"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -341,7 +343,7 @@ async def get_curated_looks(
     """
     try:
         # Build cache key based on query parameters
-        cache_key = f"looks:{room_type or 'all'}:{style or 'all'}:{budget_tier or 'all'}:{image_quality}"
+        cache_key = f"looks:{room_type or 'all'}:{style or 'all'}:{budget_tier or 'all'}:{image_quality}:{limit}:{offset}"
 
         # Check cache first
         cached_response = _curated_looks_cache.get(cache_key)
@@ -401,6 +403,9 @@ async def get_curated_looks(
                 query = query.where(CuratedLookModel.total_price < 1500000)
             elif budget_tier == "luxury":
                 query = query.where(CuratedLookModel.total_price >= 1500000)
+
+        # Apply pagination
+        query = query.offset(offset).limit(limit)
 
         result = await db.execute(query)
         looks_from_db = result.scalars().unique().all()
