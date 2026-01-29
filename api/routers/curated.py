@@ -84,7 +84,7 @@ async def warm_curated_looks_cache(db_session_factory) -> None:
                     .selectinload(CuratedLookProduct.product)
                     .selectinload(Product.images)
                 )
-                .order_by(CuratedLookModel.created_at.desc())
+                .order_by(CuratedLookModel.display_order.asc(), CuratedLookModel.id.asc())
             )
 
             result = await db.execute(query)
@@ -357,13 +357,15 @@ async def get_curated_looks(
         start_time = time.time()
 
         # Build query for published looks
+        # Order by display_order first (for homepage featured looks), then by ID
+        # This ensures manually curated homepage looks appear first
         query = (
             select(CuratedLookModel)
             .where(CuratedLookModel.is_published.is_(True))
             .options(
                 selectinload(CuratedLookModel.products).selectinload(CuratedLookProduct.product).selectinload(Product.images)
             )
-            .order_by(CuratedLookModel.created_at.desc())
+            .order_by(CuratedLookModel.display_order.asc(), CuratedLookModel.id.asc())
         )
 
         # Apply room type filter if provided
