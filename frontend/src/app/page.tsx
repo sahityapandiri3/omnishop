@@ -40,8 +40,8 @@ export default function HomePage() {
     const fetchLooks = async () => {
       try {
         // Request medium-quality images for landing page (1200px, 80% quality - faster loading)
-        // Fetch ALL looks so findLookByTheme can always find the hardcoded home page looks
-        const response = await getCuratedLooks(undefined, 'medium');
+        // Fetch 50 looks (API max) to ensure we find the hardcoded home page looks (IDs 4, 5, 7, 8, 10)
+        const response = await getCuratedLooks(undefined, 'medium', undefined, undefined, 50, 0);
         setLooks(response.looks);
       } catch (error) {
         console.error('Failed to fetch curated looks:', error);
