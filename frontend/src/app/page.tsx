@@ -40,9 +40,8 @@ export default function HomePage() {
     const fetchLooks = async () => {
       try {
         // Request medium-quality images for landing page (1200px, 80% quality - faster loading)
-        // Fetch first 30 looks - should include the featured ones we need
-        // Using limit to reduce payload size from ~50MB to ~3MB
-        const response = await getCuratedLooks(undefined, 'medium', undefined, undefined, 30, 0);
+        // Fetch ALL looks so findLookByTheme can always find the hardcoded home page looks
+        const response = await getCuratedLooks(undefined, 'medium');
         setLooks(response.looks);
       } catch (error) {
         console.error('Failed to fetch curated looks:', error);
@@ -63,12 +62,11 @@ export default function HomePage() {
   }
 
   // Find specific looks by name for consistent display (fixed looks for landing page)
-  // Use fallbacks if specific looks aren't found in the limited results
-  const heroLook = findLookByTheme(looks, 'Coastal Chic') || looks[0];
-  const featuredLook = findLookByTheme(looks, 'Modern Luxe') || looks[1];
-  const bottomLook = findLookByTheme(looks, 'Organic Modern Foyer') || looks[2];
-  const smallLook1 = findLookByTheme(looks, 'Palace-Inspired') || looks[3];
-  const smallLook2 = findLookByTheme(looks, 'Scandinavian') || looks[4];
+  const heroLook = findLookByTheme(looks, 'Coastal Chic');
+  const featuredLook = findLookByTheme(looks, 'Modern Luxe');
+  const bottomLook = findLookByTheme(looks, 'Organic Modern Foyer');
+  const smallLook1 = findLookByTheme(looks, 'Palace-Inspired');
+  const smallLook2 = findLookByTheme(looks, 'Scandinavian');
 
   // Get hero image - use Coastal Chic Living & Kitchen Space
   const heroImage = formatImageSrc(heroLook?.visualization_image || heroLook?.room_image);
