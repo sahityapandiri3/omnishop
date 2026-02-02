@@ -3459,10 +3459,16 @@ The room structure, walls, and camera angle MUST be identical to the input image
             logger.info(f"🛒 ADD MULTIPLE: {len(products)} products, {total_items} total items to place")
 
         try:
+            import time
+
+            timing_start = time.time()
+
             # Use editing preprocessor to preserve quality for visualization output
             processed_room = self._preprocess_image_for_editing(room_image)
+            logger.info(f"⏱️ [TIMING] Image preprocessing took {time.time() - timing_start:.2f}s")
 
             # Download all product images
+            download_start = time.time()
             product_images_data = []
             product_entries = []  # List of (name, quantity) tuples
             total_items_to_add = 0
@@ -3501,6 +3507,10 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 else:
                     logger.warning(f"⚠️ No image_url provided for product '{name}' - AI won't have visual reference!")
                 product_images_data.append(image_data)
+
+            logger.info(
+                f"⏱️ [TIMING] Product image downloads took {time.time() - download_start:.2f}s for {len(products)} products"
+            )
 
             # Build product list for prompt with quantities and dimensions - VERY EXPLICIT about counts
             product_list_items = []
@@ -3980,7 +3990,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
             )
 
             # Retry configuration with timeout protection
-            max_retries = 5  # Increased from 3 to handle Google API 500 errors
+            max_retries = 3  # Keep at 3 for design studio (5 retries = too long wait time)
             timeout_seconds = 90
             num_products = len(products)
 
@@ -4026,6 +4036,8 @@ The room structure, walls, and camera angle MUST be identical to the input image
 
             generated_image = None
             final_chunk = None
+            gemini_start = time.time()
+            logger.info(f"⏱️ [TIMING] Starting Gemini API call...")
             for attempt in range(max_retries):
                 try:
                     loop = asyncio.get_event_loop()
@@ -4063,6 +4075,9 @@ The room structure, walls, and camera angle MUST be identical to the input image
             if not generated_image:
                 logger.error(f"AI failed to generate ADD MULTIPLE visualization after {max_retries} attempts")
                 raise ValueError("AI failed to generate visualization image")
+
+            logger.info(f"⏱️ [TIMING] Gemini API call completed in {time.time() - gemini_start:.2f}s")
+            logger.info(f"⏱️ [TIMING] TOTAL visualization time: {time.time() - timing_start:.2f}s")
 
             # Log visualization operation with token tracking from final chunk
             self._log_streaming_operation(
