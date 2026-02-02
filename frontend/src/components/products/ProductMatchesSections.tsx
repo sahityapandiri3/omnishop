@@ -41,9 +41,9 @@ function ProductCard({
     <div
       className={`group border rounded-lg overflow-hidden transition-all duration-200 cursor-pointer ${
         inCanvas
-          ? 'bg-green-50 dark:bg-green-900/10 border-green-300 dark:border-green-700'
+          ? 'bg-neutral-100 dark:bg-neutral-800/30 border-neutral-400 dark:border-neutral-600'
           : isBestMatch
-            ? 'bg-primary-50 dark:bg-primary-900/10 border-primary-200 dark:border-primary-800 hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-md'
+            ? 'bg-neutral-100 dark:bg-neutral-800/10 border-neutral-300 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-600 hover:shadow-md'
             : 'bg-white dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 hover:shadow-md'
       }`}
       onClick={() => onClick?.(product)}
@@ -68,7 +68,7 @@ function ProductCard({
 
         {/* Best Match Badge */}
         {isBestMatch && !inCanvas && (
-          <span className="absolute top-1 left-1 bg-primary-600 text-white text-[8px] font-semibold px-1.5 py-0.5 rounded-full">
+          <span className="absolute top-1 left-1 bg-neutral-800 text-white text-[8px] font-semibold px-1.5 py-0.5 rounded-full">
             Best Match
           </span>
         )}
@@ -82,7 +82,7 @@ function ProductCard({
 
         {/* In Canvas Badge */}
         {inCanvas && (
-          <span className="absolute top-1 right-1 bg-green-500 text-white text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+          <span className="absolute top-1 right-1 bg-neutral-700 text-white text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
             <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
             </svg>
@@ -122,8 +122,8 @@ function ProductCard({
           }}
           className={`w-full mt-1.5 py-1 text-[10px] font-medium rounded transition-colors ${
             inCanvas
-              ? 'bg-green-600 hover:bg-green-700 text-white'
-              : 'bg-primary-600 hover:bg-primary-700 text-white'
+              ? 'bg-neutral-700 hover:bg-neutral-800 text-white'
+              : 'bg-neutral-800 hover:bg-neutral-900 text-white'
           }`}
         >
           {inCanvas ? `Add +1 (${canvasQuantity})` : compact ? 'Add' : 'Add to Canvas'}
@@ -210,7 +210,7 @@ export function ProductMatchesSections({
       {bestMatches.length > 0 && (
         <>
           <div className="mb-2">
-            <span className="text-xs font-semibold text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">
+            <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 bg-neutral-200 dark:bg-neutral-700/50 px-2 py-1 rounded">
               {bestMatchesTitle} ({bestMatches.length})
             </span>
           </div>

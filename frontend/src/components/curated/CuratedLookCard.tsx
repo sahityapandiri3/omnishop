@@ -33,8 +33,8 @@ export function CuratedLookCard({
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center">
               <div className="relative mb-3">
-                <div className="animate-spin rounded-full h-10 w-10 border-3 border-primary-200 mx-auto"></div>
-                <div className="animate-spin rounded-full h-10 w-10 border-t-3 border-primary-600 mx-auto absolute top-0 left-1/2 -translate-x-1/2"></div>
+                <div className="animate-spin rounded-full h-10 w-10 border-3 border-neutral-200 mx-auto"></div>
+                <div className="animate-spin rounded-full h-10 w-10 border-t-3 border-neutral-800 mx-auto absolute top-0 left-1/2 -translate-x-1/2"></div>
               </div>
               <p className="text-neutral-600 font-medium text-sm">Creating your look...</p>
               <p className="text-neutral-400 text-xs mt-1">Designing your space</p>
@@ -81,7 +81,7 @@ export function CuratedLookCard({
 
   // Completed look
   return (
-    <div className="group bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden hover:shadow-md hover:scale-[1.01] transition-all duration-300">
+    <div className="group bg-white rounded-xl shadow-soft border border-neutral-200/80 overflow-hidden hover:shadow-medium hover:-translate-y-0.5 transition-all duration-300">
       {/* Visualization Image */}
       <div className="aspect-[4/3] relative overflow-hidden bg-gradient-to-br from-neutral-100 to-neutral-200">
         {look.visualization_image ? (
@@ -89,7 +89,7 @@ export function CuratedLookCard({
             src={look.visualization_image.startsWith('data:') ? look.visualization_image : `data:image/png;base64,${look.visualization_image}`}
             alt={look.style_theme}
             fill
-            className="object-cover group-hover:scale-105 transition-transform duration-500"
+            className="object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
             unoptimized
           />
@@ -106,14 +106,14 @@ export function CuratedLookCard({
 
         {/* Price badge */}
         <div className="absolute top-3 right-3">
-          <div className="bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full shadow-sm">
-            <span className="text-sm font-bold text-primary-600">{formatPrice(look.total_price)}</span>
+          <div className="bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-sm">
+            <span className="text-sm font-semibold text-neutral-700">{formatPrice(look.total_price)}</span>
           </div>
         </div>
 
         {/* Product count badge */}
         <div className="absolute bottom-3 left-3">
-          <div className="bg-neutral-800/70 backdrop-blur-sm text-white px-2 py-0.5 rounded-full text-xs flex items-center gap-1">
+          <div className="bg-neutral-900/70 backdrop-blur-sm text-white px-2.5 py-1 rounded-full text-xs flex items-center gap-1.5">
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             </svg>
@@ -125,7 +125,7 @@ export function CuratedLookCard({
         <div className="absolute inset-0 bg-gradient-to-t from-neutral-900/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-6">
           <button
             onClick={() => onViewDetails(look)}
-            className="bg-white text-neutral-800 px-4 py-1.5 rounded-full font-medium text-xs shadow-lg hover:bg-neutral-50 transition-colors transform translate-y-4 group-hover:translate-y-0 transition-transform duration-300"
+            className="bg-white text-neutral-800 px-5 py-2 rounded-full font-medium text-xs shadow-lg hover:bg-neutral-50 transition-all duration-300 transform translate-y-4 group-hover:translate-y-0"
           >
             View Products
           </button>
@@ -134,17 +134,17 @@ export function CuratedLookCard({
 
       {/* Card content */}
       <div className="p-4">
-        <h3 className="text-sm font-semibold text-neutral-800 mb-0.5">{look.title || look.style_theme}</h3>
+        <h3 className="font-display text-base font-normal text-neutral-800 mb-0.5">{look.title || look.style_theme}</h3>
         {look.style_theme && look.style_theme !== look.title && (
           <p className="text-neutral-400 text-xs mb-1">{look.style_theme}</p>
         )}
-        <p className="text-neutral-500 text-xs mb-3 line-clamp-2">{look.style_description}</p>
+        <p className="text-neutral-500 text-xs mb-4 line-clamp-2">{look.style_description}</p>
 
         {/* Action buttons */}
         <div className="flex gap-2">
           <button
             onClick={() => onViewDetails(look)}
-            className="flex-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 py-2 px-3 rounded-lg font-medium transition-colors text-xs flex items-center justify-center gap-1.5"
+            className="flex-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 py-2.5 px-3 rounded-lg font-medium transition-all duration-200 text-xs flex items-center justify-center gap-1.5"
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -154,7 +154,7 @@ export function CuratedLookCard({
           </button>
           <button
             onClick={() => onStyleThisLook(look)}
-            className="flex-1 bg-primary-600 hover:bg-primary-700 text-white py-2 px-3 rounded-lg font-medium transition-all text-xs flex items-center justify-center gap-1.5"
+            className="flex-1 bg-neutral-800 hover:bg-neutral-900 text-white py-2.5 px-3 rounded-lg font-medium transition-all duration-200 text-xs flex items-center justify-center gap-1.5 shadow-sm hover:shadow-md"
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />

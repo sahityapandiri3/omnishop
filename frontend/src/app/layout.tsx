@@ -1,10 +1,20 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Inter, Playfair_Display } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 import Navigation from '@/components/Navigation';
 
-const inter = Inter({ subsets: ['latin'] });
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+  display: 'swap',
+});
+
+const playfair = Playfair_Display({
+  subsets: ['latin'],
+  variable: '--font-playfair',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'Omnishop - AI Interior Design Visualization',
@@ -70,7 +80,7 @@ export default function RootLayout({
         <link rel="manifest" href="/manifest.json" />
 
         {/* Theme color for mobile browsers */}
-        <meta name="theme-color" content="#0ea5e9" />
+        <meta name="theme-color" content="#4a8580" />
         <meta name="color-scheme" content="light dark" />
 
         {/* Viewport for responsive design */}
@@ -80,7 +90,7 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="//app.omni-shop.in" />
         <link rel="preconnect" href="https://app.omni-shop.in" />
       </head>
-      <body className={`${inter.className} bg-neutral-50 text-neutral-900 antialiased`}>
+      <body className={`${inter.variable} ${playfair.variable} font-sans bg-neutral-50 text-neutral-700 antialiased`}>
         <Providers>
           <Navigation />
           {children}

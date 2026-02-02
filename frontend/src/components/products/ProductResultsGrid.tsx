@@ -54,9 +54,9 @@ function ProductCard({
     <div
       className={`group border rounded-lg overflow-hidden transition-all duration-200 cursor-pointer ${sizeClasses[size]} ${
         inCanvas
-          ? 'bg-green-50 dark:bg-green-900/10 border-green-300 dark:border-green-700'
+          ? 'bg-neutral-100 dark:bg-neutral-800/30 border-neutral-400 dark:border-neutral-600'
           : isBestMatch
-            ? 'bg-primary-50 dark:bg-primary-900/10 border-primary-200 dark:border-primary-800 hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-md'
+            ? 'bg-neutral-100 dark:bg-neutral-800/10 border-neutral-300 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-600 hover:shadow-md'
             : 'bg-white dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 hover:shadow-md'
       }`}
       onClick={() => onViewDetails?.(product)}
@@ -81,7 +81,7 @@ function ProductCard({
 
         {/* Best Match Badge */}
         {isBestMatch && !inCanvas && (
-          <span className="absolute top-1 left-1 bg-primary-600 text-white text-[8px] font-semibold px-1.5 py-0.5 rounded-full">
+          <span className="absolute top-1 left-1 bg-neutral-800 text-white text-[8px] font-semibold px-1.5 py-0.5 rounded-full">
             Best Match
           </span>
         )}
@@ -95,7 +95,7 @@ function ProductCard({
 
         {/* In Canvas Badge */}
         {inCanvas && (
-          <span className="absolute top-1 right-1 bg-green-500 text-white text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+          <span className="absolute top-1 right-1 bg-neutral-700 text-white text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
             <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
             </svg>
@@ -135,8 +135,8 @@ function ProductCard({
           }}
           className={`w-full font-medium rounded transition-colors ${textSizes[size].button} ${
             inCanvas
-              ? 'bg-green-600 hover:bg-green-700 text-white'
-              : 'bg-primary-600 hover:bg-primary-700 text-white'
+              ? 'bg-neutral-700 hover:bg-neutral-800 text-white'
+              : 'bg-neutral-800 hover:bg-neutral-900 text-white'
           }`}
         >
           {inCanvas ? `Add +1 (${canvasQuantity})` : size === 'small' ? 'Add' : 'Add to Canvas'}
@@ -258,7 +258,7 @@ export function ProductResultsGrid({
     return (
       <div className="flex items-center justify-center py-12">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-neutral-800 border-t-transparent rounded-full animate-spin" />
           <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading products...</p>
         </div>
       </div>
@@ -304,7 +304,7 @@ export function ProductResultsGrid({
                   <span className="font-medium text-neutral-900 dark:text-white">{category.display_name}</span>
                   <span className="text-xs text-neutral-500">({categoryProducts.length})</span>
                   {catBest.length > 0 && (
-                    <span className="text-xs text-primary-600 dark:text-primary-400">
+                    <span className="text-xs text-neutral-700 dark:text-neutral-400">
                       {catBest.length} best matches
                     </span>
                   )}
@@ -318,7 +318,7 @@ export function ProductResultsGrid({
                   {catBest.length > 0 && (
                     <>
                       <div className="mb-2">
-                        <span className="text-xs font-semibold text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">
+                        <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 bg-neutral-200 dark:bg-neutral-700/50 px-2 py-1 rounded">
                           Best Matches ({catBest.length})
                         </span>
                       </div>
@@ -393,7 +393,7 @@ export function ProductResultsGrid({
       {(bestMatches.length > 0 || displayPrimaryCount > 0) && (
         <>
           <div className="mb-2">
-            <span className="text-xs font-semibold text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">
+            <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 bg-neutral-200 dark:bg-neutral-700/50 px-2 py-1 rounded">
               Best Matches ({displayPrimaryCount || bestMatches.length})
             </span>
           </div>

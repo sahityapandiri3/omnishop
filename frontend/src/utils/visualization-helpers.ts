@@ -375,13 +375,13 @@ export function getProgressMessage(elapsedSeconds: number): string {
   if (elapsedSeconds < 10) {
     return 'Preparing visualization...';
   } else if (elapsedSeconds < 30) {
-    return `Generating visualization (${elapsedSeconds}s)...`;
+    return 'Generating visualization...';
   } else if (elapsedSeconds < 60) {
-    return `Placing furniture in your space (${elapsedSeconds}s)...`;
+    return 'Placing furniture in your space...';
   } else if (elapsedSeconds < 90) {
-    return `Still working - this is taking longer than usual (${elapsedSeconds}s)...`;
+    return 'Still working - adding finishing touches...';
   } else {
-    return `Almost there - finalizing details (${elapsedSeconds}s)...`;
+    return 'Almost there - finalizing details...';
   }
 }
 

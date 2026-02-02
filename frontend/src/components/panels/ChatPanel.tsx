@@ -494,7 +494,7 @@ export default function ChatPanel({
       {/* Header */}
       <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-secondary-500 rounded-full flex items-center justify-center">
+          <div className="w-10 h-10 bg-gradient-to-br from-neutral-600 to-neutral-700 rounded-full flex items-center justify-center">
             <svg
               className="w-6 h-6 text-white"
               fill="none"
@@ -532,7 +532,7 @@ export default function ChatPanel({
             <div
               className={`max-w-[85%] rounded-lg p-3 ${
                 message.role === 'user'
-                  ? 'bg-primary-600 text-white'
+                  ? 'bg-neutral-800 text-white'
                   : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-900 dark:text-white'
               }`}
             >
@@ -540,7 +540,7 @@ export default function ChatPanel({
               <p
                 className={`text-xs mt-1 ${
                   message.role === 'user'
-                    ? 'text-primary-100'
+                    ? 'text-neutral-200'
                     : 'text-neutral-500 dark:text-neutral-400'
                 }`}
               >
@@ -582,13 +582,13 @@ export default function ChatPanel({
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="Describe your space or ask for recommendations..."
-            className="flex-1 resize-none rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 px-4 py-2 text-sm text-neutral-900 dark:text-white placeholder-neutral-500 dark:placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="flex-1 resize-none rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 px-4 py-2 text-sm text-neutral-900 dark:text-white placeholder-neutral-500 dark:placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-500"
             rows={2}
           />
           <button
             onClick={handleSend}
             disabled={!input.trim() || isLoading}
-            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 text-white rounded-lg transition-colors duration-200 flex items-center justify-center"
+            className="px-4 py-2 bg-neutral-800 hover:bg-neutral-900 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 text-white rounded-lg transition-colors duration-200 flex items-center justify-center"
           >
             {isLoading ? (
               <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

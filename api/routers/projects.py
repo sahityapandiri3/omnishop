@@ -1,17 +1,41 @@
 """
 Projects API routes for saving and managing user design work
 """
+import base64
+import io
 import logging
 from datetime import datetime
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from PIL import Image
+from pydantic import BaseModel
 from schemas.projects import ProjectCreate, ProjectListItem, ProjectResponse, ProjectsListResponse, ProjectUpdate
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import get_current_user
+from core.auth import get_current_user, get_optional_user
 from core.database import get_db
-from database.models import Project, ProjectStatus, User
+from database.models import HomeStylingSession, Project, ProjectStatus, User
+
+
+# Schema for previous room images
+class PreviousRoomImage(BaseModel):
+    """A previously uploaded room image that can be reused."""
+
+    id: str  # Project ID or session ID
+    source: str  # "project" or "homestyling"
+    name: Optional[str] = None  # Project name if from project
+    thumbnail: str  # Base64 encoded thumbnail
+    created_at: datetime
+
+
+class PreviousRoomImagesResponse(BaseModel):
+    """Response containing list of previous room images."""
+
+    rooms: List[PreviousRoomImage]
+    total: int
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -91,6 +115,95 @@ async def create_project(
     logger.info(f"Created project {project.id} for user {current_user.id}")
 
     return _project_to_response(project)
+
+
+@router.get("/previous-rooms", response_model=PreviousRoomImagesResponse)
+async def get_previous_room_images(
+    exclude_project_id: Optional[str] = Query(None, description="Project ID to exclude from results"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum number of rooms to return"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get previously uploaded room images that can be reused in new projects.
+
+    Returns clean room images (furniture removed) from:
+    - Design projects
+    - Home styling sessions
+
+    Images are returned as thumbnails for efficient loading.
+    """
+    rooms: List[PreviousRoomImage] = []
+
+    try:
+        # Fetch from design projects with clean_room_image
+        project_query = (
+            select(Project)
+            .where(
+                Project.user_id == current_user.id,
+                Project.clean_room_image.isnot(None),
+            )
+            .order_by(Project.updated_at.desc())
+            .limit(limit)
+        )
+
+        # Exclude current project if specified
+        if exclude_project_id:
+            project_query = project_query.where(Project.id != exclude_project_id)
+
+        result = await db.execute(project_query)
+        projects = result.scalars().all()
+
+        for project in projects:
+            if project.clean_room_image:
+                thumbnail = _create_thumbnail(project.clean_room_image)
+                rooms.append(
+                    PreviousRoomImage(
+                        id=project.id,
+                        source="project",
+                        name=project.name,
+                        thumbnail=thumbnail,
+                        created_at=project.updated_at or project.created_at,
+                    )
+                )
+
+        # Also fetch from home styling sessions
+        homestyling_query = (
+            select(HomeStylingSession)
+            .where(
+                HomeStylingSession.user_id == current_user.id,
+                HomeStylingSession.clean_room_image.isnot(None),
+                HomeStylingSession.source_session_id.is_(None),  # Only originals, not copies
+            )
+            .order_by(HomeStylingSession.created_at.desc())
+            .limit(limit)
+        )
+
+        result = await db.execute(homestyling_query)
+        sessions = result.scalars().all()
+
+        for session in sessions:
+            if session.clean_room_image:
+                thumbnail = _create_thumbnail(session.clean_room_image)
+                rooms.append(
+                    PreviousRoomImage(
+                        id=session.id,
+                        source="homestyling",
+                        name=f"{session.room_type or 'Room'} - {session.style or 'Custom'}",
+                        thumbnail=thumbnail,
+                        created_at=session.created_at,
+                    )
+                )
+
+        # Sort by date and limit total
+        rooms.sort(key=lambda r: r.created_at, reverse=True)
+        rooms = rooms[:limit]
+
+        return PreviousRoomImagesResponse(rooms=rooms, total=len(rooms))
+
+    except Exception as e:
+        logger.error(f"Error getting previous room images: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get previous room images: {str(e)}")
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
@@ -216,3 +329,104 @@ async def get_project_thumbnail(
         )
 
     return {"visualization_image": visualization_image}
+
+
+def _create_thumbnail(image_base64: str, max_width: int = 300) -> str:
+    """Create a thumbnail from a base64 image for efficient loading."""
+    try:
+        # Skip if already a data URI
+        if image_base64.startswith("data:"):
+            # Extract base64 part
+            image_base64 = image_base64.split(",", 1)[1] if "," in image_base64 else image_base64
+
+        img_data = base64.b64decode(image_base64)
+        img = Image.open(io.BytesIO(img_data))
+
+        # Resize if larger than max_width
+        if img.width > max_width:
+            ratio = max_width / img.width
+            new_size = (max_width, int(img.height * ratio))
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+        # Convert to JPEG for smaller size
+        buffer = io.BytesIO()
+        img.convert("RGB").save(buffer, format="JPEG", quality=70)
+        return base64.b64encode(buffer.getvalue()).decode("utf-8")
+    except Exception as e:
+        logger.warning(f"Failed to create thumbnail: {e}")
+        # Return original if thumbnail creation fails
+        return image_base64
+
+
+@router.post("/{project_id}/use-previous-room")
+async def use_previous_room(
+    project_id: str,
+    previous_room_id: str = Query(..., description="ID of the previous room to use"),
+    source: str = Query(..., description="Source of the room: 'project' or 'homestyling'"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Copy a previously uploaded room image to the current project.
+    """
+    # Get current project
+    project_query = select(Project).where(
+        Project.id == project_id,
+        Project.user_id == current_user.id,
+    )
+    result = await db.execute(project_query)
+    project = result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Get the source room image
+    clean_room_image = None
+    room_image = None
+
+    if source == "project":
+        source_query = select(Project).where(
+            Project.id == previous_room_id,
+            Project.user_id == current_user.id,
+        )
+        result = await db.execute(source_query)
+        source_project = result.scalar_one_or_none()
+
+        if not source_project or not source_project.clean_room_image:
+            raise HTTPException(status_code=404, detail="Previous room not found")
+
+        clean_room_image = source_project.clean_room_image
+        room_image = source_project.room_image
+
+    elif source == "homestyling":
+        source_query = select(HomeStylingSession).where(
+            HomeStylingSession.id == previous_room_id,
+            HomeStylingSession.user_id == current_user.id,
+        )
+        result = await db.execute(source_query)
+        source_session = result.scalar_one_or_none()
+
+        if not source_session or not source_session.clean_room_image:
+            raise HTTPException(status_code=404, detail="Previous room not found")
+
+        clean_room_image = source_session.clean_room_image
+        room_image = source_session.original_room_image
+
+    else:
+        raise HTTPException(status_code=400, detail="Invalid source type")
+
+    # Update the current project with the room images
+    project.room_image = room_image
+    project.clean_room_image = clean_room_image
+    project.updated_at = datetime.utcnow()
+
+    await db.commit()
+    await db.refresh(project)
+
+    logger.info(f"Copied room image from {source}/{previous_room_id} to project {project_id}")
+
+    return {
+        "success": True,
+        "room_image": room_image,
+        "clean_room_image": clean_room_image,
+    }

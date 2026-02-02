@@ -31,12 +31,20 @@ interface SessionData {
   id: string;
   room_type: string | null;
   style: string | null;
+  budget_tier: string | null;
   status: string;
   views_count: number;
   views: HomeStylingView[];
   original_room_image: string | null;
   clean_room_image: string | null;
 }
+
+const BUDGET_TIER_LABELS: Record<string, string> = {
+  pocket_friendly: 'Under ₹2L',
+  mid_tier: '₹2L – ₹8L',
+  premium: '₹8L – ₹15L',
+  luxury: '₹15L+',
+};
 
 type GenerationStage = 'starting' | 'finding_looks' | 'generating' | 'completed' | 'failed';
 
@@ -318,10 +326,10 @@ export default function ResultsPage() {
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-emerald-200 border-t-emerald-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-neutral-200 border-t-neutral-800 mx-auto mb-4" />
+          <p className="text-neutral-600">Loading...</p>
         </div>
       </div>
     );
@@ -330,32 +338,32 @@ export default function ResultsPage() {
   // Generating state - show progress with stage indicators
   if (isGenerating) {
     return (
-      <div className="min-h-screen bg-gray-50 py-8">
+      <div className="min-h-screen bg-neutral-50 py-8">
         <div className="max-w-2xl mx-auto px-4">
           {/* Progress Header */}
           <div className="text-center mb-12">
-            <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg className="w-10 h-10 text-emerald-600 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="w-20 h-20 bg-neutral-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg className="w-10 h-10 text-neutral-700 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
               </svg>
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+            <h1 className="font-display text-2xl font-light text-neutral-800 mb-2">
               {currentRetry > 0 ? 'Retrying Generation...' : 'Creating Your Designs'}
             </h1>
-            <p className="text-gray-600">{STAGE_MESSAGES[generationStage]}</p>
+            <p className="text-neutral-600">{STAGE_MESSAGES[generationStage]}</p>
           </div>
 
           {/* Progress Card */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+          <div className="bg-white rounded-xl shadow-soft border border-neutral-200 p-8">
             {/* Progress Bar */}
             <div className="mb-6">
-              <div className="flex justify-between text-sm text-gray-600 mb-2">
+              <div className="flex justify-between text-sm text-neutral-600 mb-2">
                 <span>Progress</span>
                 <span>{currentViewNumber} of {totalViews} views</span>
               </div>
-              <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+              <div className="h-3 bg-neutral-200 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                  className="h-full bg-neutral-800 rounded-full transition-all duration-500"
                   style={{ width: `${totalViews > 0 ? (currentViewNumber / totalViews) * 100 : 0}%` }}
                 />
               </div>
@@ -384,20 +392,23 @@ export default function ResultsPage() {
 
             {/* Retry indicator */}
             {currentRetry > 0 && (
-              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                <p className="text-sm text-amber-700">
+              <div className="mt-4 p-3 bg-secondary-50 border border-secondary-200 rounded-lg">
+                <p className="text-sm text-secondary-700">
                   Retry attempt {currentRetry + 1} of {MAX_RETRIES + 1}
                 </p>
               </div>
             )}
 
             {/* Estimated Time */}
-            <div className="mt-8 pt-6 border-t border-gray-100 text-center">
-              <p className="text-sm text-gray-500">
-                Estimated time: {totalViews * 30}-{totalViews * 45} seconds
+            <div className="mt-8 pt-6 border-t border-neutral-100 text-center">
+              <p className="text-sm text-neutral-500">
+                Estimated time: 5-10 minutes
               </p>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-xs text-neutral-400 mt-1">
                 Each visualization is uniquely generated with AI
+              </p>
+              <p className="text-xs text-neutral-500 mt-4 bg-neutral-50 rounded-lg px-4 py-3">
+                Feel free to leave this page. Your designs will be waiting for you under <span className="font-medium">Purchases</span> when ready.
               </p>
             </div>
           </div>
@@ -409,17 +420,17 @@ export default function ResultsPage() {
   // Error state
   if (error || !session) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="w-16 h-16 bg-accent-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-accent-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <p className="text-gray-600 mb-4">{error || 'Results not found'}</p>
+          <p className="text-neutral-600 mb-4">{error || 'Results not found'}</p>
           <button
             onClick={() => router.push('/homestyling/preferences')}
-            className="text-emerald-600 hover:text-emerald-700 font-medium"
+            className="text-neutral-700 hover:text-neutral-800 font-medium"
           >
             Start Over
           </button>
@@ -432,11 +443,11 @@ export default function ResultsPage() {
 
   // Results view
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-neutral-50 py-8">
       <div className="max-w-7xl mx-auto px-4">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-sm font-medium mb-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-neutral-100 text-neutral-800 rounded-full text-sm font-medium mb-4">
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
               <path
                 fillRule="evenodd"
@@ -446,16 +457,19 @@ export default function ResultsPage() {
             </svg>
             Complete
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Your Design Views</h1>
-          <p className="text-gray-600">
+          <h1 className="font-display text-2xl font-light text-neutral-800 mb-2">Your Design Views</h1>
+          <p className="text-neutral-600">
             {session.views.length} {session.views.length === 1 ? 'design' : 'designs'} for your{' '}
             {formatStyle(session.style)} {session.room_type?.replace('_', ' ')}
+            {session.budget_tier && (
+              <> with budget <span className="font-medium">{BUDGET_TIER_LABELS[session.budget_tier] || session.budget_tier}</span></>
+            )}
           </p>
         </div>
 
         {session.views.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
-            <p className="text-gray-600">No designs available yet.</p>
+          <div className="bg-white rounded-xl shadow-soft border border-neutral-200 p-12 text-center">
+            <p className="text-neutral-600">No designs available yet.</p>
           </div>
         ) : (
           <>
@@ -468,8 +482,8 @@ export default function ResultsPage() {
                     onClick={() => setSelectedViewIndex(index)}
                     className={`px-4 py-2 rounded-lg font-medium transition-all ${
                       selectedViewIndex === index
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                        ? 'bg-neutral-800 text-white'
+                        : 'bg-white text-neutral-600 hover:bg-neutral-100 border border-neutral-200'
                     }`}
                   >
                     View {view.view_number}
@@ -485,8 +499,8 @@ export default function ResultsPage() {
             <div className="grid lg:grid-cols-3 gap-6">
               {/* Visualization */}
               <div className="lg:col-span-2">
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  <div className="aspect-[4/3] relative bg-gray-100">
+                <div className="bg-white rounded-xl shadow-soft border border-neutral-200 overflow-hidden">
+                  <div className="aspect-[4/3] relative bg-neutral-100">
                     {currentView?.visualization_image ? (
                       <img
                         src={
@@ -498,7 +512,7 @@ export default function ResultsPage() {
                         className="w-full h-full object-contain"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-400">
+                      <div className="w-full h-full flex items-center justify-center text-neutral-400">
                         <svg className="w-16 h-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path
                             strokeLinecap="round"
@@ -512,17 +526,17 @@ export default function ResultsPage() {
                   </div>
                   {/* Fallback Warning Banner */}
                   {currentView?.is_fallback && (
-                    <div className="bg-amber-50 border-t border-amber-200 px-4 py-3">
+                    <div className="bg-secondary-50 border-t border-secondary-200 px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <svg className="w-5 h-5 text-amber-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-secondary-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                         </svg>
                         <div className="flex-1">
-                          <p className="text-sm text-amber-800">
+                          <p className="text-sm text-secondary-800">
                             Showing with a different background.{' '}
                             <button
                               onClick={() => router.push(`/homestyling/upload?session_id=${sessionId}&retry_view=${currentView.view_number}`)}
-                              className="font-medium text-amber-700 hover:text-amber-900 underline"
+                              className="font-medium text-secondary-700 hover:text-secondary-900 underline"
                             >
                               Click here to visualize in your space
                             </button>
@@ -532,27 +546,27 @@ export default function ResultsPage() {
                     </div>
                   )}
                   {/* AI Visualization Disclaimer */}
-                  <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
-                    <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                  <div className="px-4 py-2 bg-neutral-50 border-t border-neutral-100">
+                    <p className="text-xs text-neutral-500 flex items-center gap-1.5">
                       <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                       AI-generated visualization. Actual products may vary slightly in appearance.
                     </p>
                   </div>
-                  <div className="p-4 border-t border-gray-100">
+                  <div className="p-4 border-t border-neutral-100">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h2 className="font-semibold text-gray-900">
+                        <h2 className="font-display font-medium text-neutral-800">
                           {currentView?.style_theme || 'Design'} Look
                         </h2>
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-neutral-500">
                           {currentView?.products.length || 0} products
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm text-gray-500">Total Value</p>
-                        <p className="text-lg font-bold text-emerald-600">
+                        <p className="text-sm text-neutral-500">Total Value</p>
+                        <p className="text-lg font-semibold text-neutral-700">
                           {formatPrice(currentView?.total_price || 0)}
                         </p>
                       </div>
@@ -563,14 +577,14 @@ export default function ResultsPage() {
 
               {/* Products List */}
               <div className="space-y-4">
-                <h3 className="font-semibold text-gray-900">Products in This Look</h3>
+                <h3 className="font-display font-medium text-neutral-800">Products in This Look</h3>
                 <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
                   {currentView?.products.map((product) => (
                     <div
                       key={product.id}
-                      className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 flex gap-3"
+                      className="bg-white rounded-lg shadow-soft border border-neutral-200 p-3 flex gap-3"
                     >
-                      <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
+                      <div className="w-16 h-16 bg-neutral-100 rounded-lg overflow-hidden flex-shrink-0">
                         {product.image_url ? (
                           <img
                             src={product.image_url}
@@ -578,7 +592,7 @@ export default function ResultsPage() {
                             className="w-full h-full object-cover"
                           />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-gray-300">
+                          <div className="w-full h-full flex items-center justify-center text-neutral-300">
                             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path
                                 strokeLinecap="round"
@@ -591,12 +605,12 @@ export default function ResultsPage() {
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-medium text-gray-900 text-sm line-clamp-2">
+                        <h4 className="font-medium text-neutral-800 text-sm line-clamp-2">
                           {product.name}
                         </h4>
-                        <p className="text-xs text-gray-500 capitalize">{product.source_website}</p>
+                        <p className="text-xs text-neutral-500 capitalize">{product.source_website}</p>
                         <div className="flex items-center justify-between mt-1">
-                          <span className="font-semibold text-gray-900 text-sm">
+                          <span className="font-semibold text-neutral-800 text-sm">
                             {formatPrice(product.price)}
                           </span>
                           {product.source_url && (
@@ -604,7 +618,7 @@ export default function ResultsPage() {
                               href={product.source_url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-emerald-600 hover:text-emerald-700 text-xs font-medium"
+                              className="text-neutral-700 hover:text-neutral-800 text-xs font-medium"
                             >
                               View Product
                             </a>
@@ -647,7 +661,7 @@ export default function ResultsPage() {
 
                   router.push('/upgrade?from=purchase');
                 }}
-                className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition-all flex items-center gap-2"
+                className="px-6 py-3 bg-neutral-800 hover:bg-neutral-900 text-white font-medium rounded-lg transition-all shadow-sm hover:shadow-md flex items-center gap-2"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -656,7 +670,7 @@ export default function ResultsPage() {
               </button>
               <button
                 onClick={() => router.push('/homestyling/preferences')}
-                className="px-6 py-3 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold rounded-lg transition-all flex items-center gap-2"
+                className="px-6 py-3 bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-medium rounded-lg transition-all flex items-center gap-2"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
@@ -665,7 +679,7 @@ export default function ResultsPage() {
               </button>
               <button
                 onClick={() => router.push('/upgrade?redirect=design')}
-                className="px-6 py-3 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold rounded-lg transition-all flex items-center gap-2"
+                className="px-6 py-3 bg-white border border-neutral-200 hover:bg-neutral-50 text-neutral-700 font-medium rounded-lg transition-all flex items-center gap-2"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
@@ -694,27 +708,27 @@ function StageIndicator({
     <div className="flex items-center gap-3">
       <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
         status === 'completed'
-          ? 'bg-emerald-500'
+          ? 'bg-neutral-800'
           : status === 'active'
-            ? 'bg-emerald-100 border-2 border-emerald-500'
-            : 'bg-gray-100'
+            ? 'bg-neutral-100 border-2 border-neutral-800'
+            : 'bg-neutral-100'
       }`}>
         {status === 'completed' ? (
           <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
           </svg>
         ) : status === 'active' ? (
-          <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse" />
+          <div className="w-3 h-3 bg-neutral-800 rounded-full animate-pulse" />
         ) : (
-          <div className="w-3 h-3 bg-gray-300 rounded-full" />
+          <div className="w-3 h-3 bg-neutral-300 rounded-full" />
         )}
       </div>
       <div>
-        <p className={`font-medium ${status === 'active' ? 'text-emerald-600' : status === 'completed' ? 'text-gray-900' : 'text-gray-400'}`}>
+        <p className={`font-medium ${status === 'active' ? 'text-neutral-700' : status === 'completed' ? 'text-neutral-800' : 'text-neutral-400'}`}>
           {label}
         </p>
         {subtitle && (
-          <p className="text-sm text-gray-500">{subtitle}</p>
+          <p className="text-sm text-neutral-500">{subtitle}</p>
         )}
       </div>
     </div>

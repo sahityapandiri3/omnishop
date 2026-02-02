@@ -28,9 +28,14 @@ class UserRole(enum.Enum):
 class SubscriptionTier(enum.Enum):
     """Subscription tiers for user access"""
 
-    FREE = "free"  # Default - only Home Styling access
-    BUILD_YOUR_OWN = "build_your_own"  # Legacy tier (kept for backwards compatibility)
-    UPGRADED = "upgraded"  # ₹999/month - access to Curated, Design, Projects
+    FREE = "free"  # Default - 1 curated look with sample room
+    BASIC = "basic"  # ₹399 one-time - 3 curated looks
+    BASIC_PLUS = "basic_plus"  # ₹699 one-time - 6 curated looks
+    ADVANCED = "advanced"  # ₹11,999/month - Omni Studio + AI Stylist + 100+ curated looks
+    CURATOR = "curator"  # ₹14,999/month - Full access + publish to gallery
+    # Legacy tiers (kept for backwards compatibility)
+    BUILD_YOUR_OWN = "build_your_own"
+    UPGRADED = "upgraded"
 
 
 class BudgetTier(enum.Enum):
@@ -745,6 +750,18 @@ class PrecomputedMaskStatus(enum.Enum):
     FAILED = "failed"
 
 
+class WallColorFamily(enum.Enum):
+    """Color families for wall paint categorization (Asian Paints)"""
+
+    WHITES_OFFWHITES = "whites_offwhites"
+    GREYS = "greys"
+    BLUES = "blues"
+    BROWNS = "browns"
+    YELLOWS_GREENS = "yellows_greens"
+    REDS_ORANGES = "reds_oranges"
+    PURPLES_PINKS = "purples_pinks"
+
+
 class PrecomputedMask(Base):
     """
     Pre-computed segmentation masks for Edit Position feature optimization.
@@ -807,3 +824,38 @@ class PrecomputedMask(Base):
         if self.session_id:
             return f"<PrecomputedMask(id={self.id}, session_id={self.session_id[:8]}..., status='{self.status.value}')>"
         return f"<PrecomputedMask(id={self.id}, curated_look_id={self.curated_look_id}, status='{self.status.value}')>"
+
+
+class WallColor(Base):
+    """
+    Wall color catalog for visualization.
+
+    Stores paint colors from Asian Paints (and potentially other brands)
+    with hex values for accurate color selection and AI-powered wall
+    color visualization.
+    """
+
+    __tablename__ = "wall_colors"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(50), unique=True, nullable=False, index=True)  # Asian Paints code (e.g., "L134")
+    name = Column(String(255), nullable=False, index=True)  # Color name (e.g., "Air Breeze")
+    hex_value = Column(String(7), nullable=False)  # Hex color (e.g., "#F5F5F0")
+    family = Column(
+        Enum(WallColorFamily, values_callable=lambda x: [e.value for e in x], name="wallcolorfamily"),
+        nullable=False,
+        index=True,
+    )
+    brand = Column(String(100), default="Asian Paints", nullable=False)
+    is_active = Column(Boolean, default=True, index=True)
+    display_order = Column(Integer, default=0)  # For ordering within family
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Indexes for efficient lookup
+    __table_args__ = (
+        Index("idx_wall_color_family_order", "family", "display_order"),
+        Index("idx_wall_color_brand_family", "brand", "family"),
+    )
+
+    def __repr__(self):
+        return f"<WallColor(id={self.id}, code='{self.code}', name='{self.name}', hex='{self.hex_value}')>"

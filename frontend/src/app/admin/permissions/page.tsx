@@ -154,11 +154,11 @@ function PermissionsPageContent() {
         )}
 
         {successMessage && (
-          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3">
-            <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="mb-6 p-4 bg-neutral-100 border border-neutral-300 rounded-lg flex items-center gap-3">
+            <svg className="w-5 h-5 text-neutral-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
-            <span className="text-green-700">{successMessage}</span>
+            <span className="text-neutral-700">{successMessage}</span>
           </div>
         )}
 
@@ -273,7 +273,7 @@ function PermissionsPageContent() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${user.is_active ? 'bg-neutral-200 text-neutral-700' : 'bg-red-100 text-red-800'}`}>
                           {user.is_active ? 'Active' : 'Inactive'}
                         </span>
                       </td>

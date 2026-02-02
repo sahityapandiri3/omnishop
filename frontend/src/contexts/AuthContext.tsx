@@ -5,7 +5,7 @@ import { api } from '@/utils/api';
 
 // Types
 export type UserRole = 'user' | 'admin' | 'super_admin';
-export type SubscriptionTier = 'free' | 'build_your_own' | 'upgraded';
+export type SubscriptionTier = 'free' | 'basic' | 'basic_plus' | 'advanced' | 'curator';
 
 export interface User {
   id: string;
@@ -29,15 +29,54 @@ export function isSuperAdmin(user: User | null): boolean {
 }
 
 // Subscription helper functions
+
+// Legacy function - maps to new tier system (advanced and curator users have full access)
 export function hasBuildYourOwn(user: User | null): boolean {
   // Admins always have full access
   if (isAdmin(user)) return true;
-  // Check for "upgraded" tier (covers both Build Your Own and Style This Further upgrades)
-  return user?.subscription_tier === 'upgraded';
+  // Advanced and curator tiers have full studio access
+  return ['advanced', 'curator'].includes(user?.subscription_tier || '');
 }
 
+// Check if user can access the curated looks library
+export function canAccessCurated(user: User | null): boolean {
+  if (isAdmin(user)) return true;
+  return ['advanced', 'curator'].includes(user?.subscription_tier || '');
+}
+
+// Check if user can access the design studio (Omni Studio)
+export function canAccessDesignStudio(user: User | null): boolean {
+  if (isAdmin(user)) return true;
+  return ['advanced', 'curator'].includes(user?.subscription_tier || '');
+}
+
+// Check if user can publish looks to the curated gallery
+export function canPublishLooks(user: User | null): boolean {
+  if (isAdmin(user)) return true;
+  return user?.subscription_tier === 'curator';
+}
+
+// Get max number of design views based on subscription tier
+export function getMaxDesignViews(tier: SubscriptionTier): number {
+  const viewsMap: Record<SubscriptionTier, number> = {
+    free: 1,
+    basic: 3,
+    basic_plus: 6,
+    advanced: Infinity,
+    curator: Infinity
+  };
+  return viewsMap[tier] || 1;
+}
+
+// Check if user has a paid tier (any tier above free)
+export function isPaidTier(user: User | null): boolean {
+  if (!user) return false;
+  return ['basic', 'basic_plus', 'advanced', 'curator'].includes(user.subscription_tier);
+}
+
+// Legacy alias for backward compatibility
 export function canAccessDesignTools(user: User | null): boolean {
-  return hasBuildYourOwn(user);
+  return canAccessDesignStudio(user);
 }
 
 interface AuthState {

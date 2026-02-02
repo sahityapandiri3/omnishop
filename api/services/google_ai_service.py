@@ -583,6 +583,156 @@ YOUR TASK:
 4. Maintain photorealism and lighting consistency
 """
 
+    @staticmethod
+    def get_wall_color_change_prompt(
+        color_name: str,
+        color_hex: str,
+        color_description: str,
+    ) -> str:
+        """
+        Prompt for changing wall color using Gemini's native inpainting.
+
+        Args:
+            color_name: Asian Paints color name (e.g., "Air Breeze")
+            color_hex: Hex color value for reference (e.g., "#F5F5F0")
+            color_description: Rich description of the color for AI matching
+
+        Returns:
+            Formatted prompt for wall color visualization
+        """
+        return f"""{VisualizationPrompts.get_system_intro()}
+
+═══════════════════════════════════════════════════════════════
+🎨 TASK: CHANGE WALL COLOR
+═══════════════════════════════════════════════════════════════
+
+Using the provided room image, change ONLY the wall color.
+
+🎨 NEW WALL COLOR:
+- Name: {color_name} (Asian Paints)
+- Hex Reference: {color_hex}
+- Description: {color_description}
+
+🚨🚨🚨 CRITICAL INSTRUCTIONS 🚨🚨🚨
+═══════════════════════════════════════════════════════════════
+
+1. PAINT ALL VISIBLE WALLS with this color:
+   - Apply the color uniformly across all wall surfaces
+   - Maintain realistic matte/satin paint finish
+   - Preserve natural shadows and lighting on walls
+   - Keep natural wall texture (not perfectly flat)
+
+2. MUST KEEP UNCHANGED (MANDATORY):
+   - ⛔ ALL FURNITURE: Exact position, size, color, style - DO NOT MODIFY
+   - ⛔ FLOOR: Same material, color, texture - DO NOT MODIFY
+   - ⛔ CEILING: Do NOT paint the ceiling - KEEP ORIGINAL
+   - ⛔ Windows, doors, and frames - KEEP ORIGINAL
+   - ⛔ All decorations, art, and accessories - KEEP ORIGINAL
+   - ⛔ Lighting fixtures - KEEP ORIGINAL
+   - ⛔ Architectural features (moldings, columns, etc.) - KEEP ORIGINAL
+
+3. TECHNICAL REQUIREMENTS:
+   - OUTPUT DIMENSIONS: Match input exactly (pixel-for-pixel)
+   - ASPECT RATIO: No cropping or letterboxing
+   - CAMERA ANGLE: Same viewing angle and perspective
+   - NO ZOOM: Show full room view identical to input
+   - PHOTOREALISM: Output must look like a real photograph
+
+🎨 COLOR MATCHING GUIDELINES:
+- Match the hex color {color_hex} as closely as possible
+- For light colors: maintain brightness, add subtle warmth/coolness as described
+- For dark colors: ensure richness without appearing muddy
+- The color description "{color_description}" provides tone guidance
+- Natural room lighting should affect how the paint appears realistically
+  (e.g., walls in shadow may appear slightly darker/cooler)
+
+⚠️ VERIFICATION CHECKLIST:
+Before outputting, verify:
+☐ ALL walls are painted in the new color
+☐ ALL furniture remains exactly as in the input
+☐ Floor and ceiling are unchanged
+☐ Image dimensions match input exactly
+☐ Camera angle and perspective unchanged
+☐ Lighting is realistic for painted walls
+
+OUTPUT: One photorealistic image showing THE ENTIRE ROOM with walls painted in {color_name} ({color_hex}).
+The room structure, furniture, and camera angle MUST be identical to the input image.
+"""
+
+
+def generate_color_description(name: str, hex_value: str) -> str:
+    """
+    Generate a descriptive color language from hex for better AI color matching.
+
+    This converts hex values to rich descriptions that help Gemini
+    understand the exact color characteristics.
+
+    Args:
+        name: Color name (e.g., "Air Breeze")
+        hex_value: Hex color (e.g., "#F5F5F0")
+
+    Returns:
+        Rich description of the color
+    """
+    # Parse hex color
+    hex_clean = hex_value.lstrip("#")
+    r = int(hex_clean[0:2], 16)
+    g = int(hex_clean[2:4], 16)
+    b = int(hex_clean[4:6], 16)
+
+    # Determine brightness
+    brightness = (r + g + b) / 3
+    if brightness > 230:
+        tone = "very light, almost white"
+    elif brightness > 200:
+        tone = "light"
+    elif brightness > 150:
+        tone = "medium-light"
+    elif brightness > 100:
+        tone = "medium"
+    elif brightness > 60:
+        tone = "medium-dark"
+    else:
+        tone = "deep, dark"
+
+    # Determine warmth
+    if r > b + 30:
+        warmth = "warm"
+    elif b > r + 30:
+        warmth = "cool"
+    else:
+        warmth = "neutral"
+
+    # Determine undertones
+    undertone = ""
+    if r > g and r > b:
+        if r - g > 30:
+            undertone = "with red/pink undertones"
+        else:
+            undertone = "with peachy undertones"
+    elif g > r and g > b:
+        if g - r > 30:
+            undertone = "with green undertones"
+        else:
+            undertone = "with yellow-green undertones"
+    elif b > r and b > g:
+        if b - r > 30:
+            undertone = "with blue undertones"
+        else:
+            undertone = "with purple undertones"
+    elif abs(r - g) < 15 and abs(g - b) < 15:
+        if brightness > 180:
+            undertone = "with clean neutral undertones"
+        else:
+            undertone = "with balanced gray undertones"
+
+    # Build description
+    parts = [tone, warmth, name.lower()]
+    if undertone:
+        parts.append(undertone)
+
+    return " ".join(parts).strip()
+
 
 # Dimension loading helper functions (module-level)
 async def load_product_dimensions(db, product_ids: List[int]) -> Dict[int, Dict[str, float]]:
@@ -3261,6 +3411,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
         workflow_id: str = None,
         user_id: str = None,
         session_id: str = None,
+        wall_color: Optional[dict] = None,
     ) -> str:
         """
         Generate visualization with MULTIPLE products added to room in a SINGLE API call.
@@ -3273,28 +3424,39 @@ The room structure, walls, and camera angle MUST be identical to the input image
             workflow_id: Optional workflow ID for tracking all API calls from a single user action
             user_id: Optional user ID for tracking
             session_id: Optional session ID for tracking
+            wall_color: Optional dict with 'name', 'code', 'hex_value' for wall color to apply
 
         Returns: base64 image data
         """
-        if not products:
+        # Allow wall-color-only visualization (no products)
+        if not products and not wall_color:
             return room_image
 
         existing_products = existing_products or []
+        products = products or []  # Ensure products is a list even if None
 
         # Calculate total items considering quantity
         total_items = sum(p.get("quantity", 1) for p in products)
 
         # If only one item total (single product with quantity=1) AND no existing products to preserve,
-        # use the simpler single product method. If there are existing products, we need the full
-        # multi-product method to properly preserve them.
-        if len(products) == 1 and total_items == 1 and not existing_products:
+        # AND no wall color to apply, use the simpler single product method.
+        # If there are existing products or wall color, we need the full multi-product method.
+        if len(products) == 1 and total_items == 1 and not existing_products and not wall_color:
             return await self.generate_add_visualization(
                 room_image=room_image,
                 product_name=products[0].get("full_name") or products[0].get("name"),
                 product_image=products[0].get("image_url"),
             )
 
-        logger.info(f"🛒 ADD MULTIPLE: {len(products)} products, {total_items} total items to place")
+        # Log what we're doing
+        if wall_color and not products:
+            logger.info(f"🎨 WALL COLOR ONLY: Applying {wall_color.get('name')} ({wall_color.get('hex_value')})")
+        elif wall_color:
+            logger.info(
+                f"🛒 ADD MULTIPLE + WALL COLOR: {len(products)} products, {total_items} total items + wall color {wall_color.get('name')}"
+            )
+        else:
+            logger.info(f"🛒 ADD MULTIPLE: {len(products)} products, {total_items} total items to place")
 
         try:
             # Use editing preprocessor to preserve quality for visualization output
@@ -3545,9 +3707,80 @@ DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
 
 """
 
-            # Build prompt for ADD MULTIPLE action
-            # Use total_items_to_add which accounts for quantities (e.g., 2 products with qty=3 each = 6 items)
-            prompt = f"""{VisualizationPrompts.get_system_intro()}
+            # Build wall color instruction based on whether wall_color is provided
+            if wall_color:
+                color_name = wall_color.get("name", "Unknown")
+                color_code = wall_color.get("code", "")
+                color_hex = wall_color.get("hex_value", "")
+                logger.info(f"🎨 WALL COLOR REQUESTED: {color_name} ({color_code}) - {color_hex}")
+                wall_color_instruction = f"""🎨🎨🎨 WALL COLOR CHANGE - APPLY NEW WALL COLOR 🎨🎨🎨
+Paint ALL visible walls with the following color:
+
+🎯 WALL COLOR TO APPLY:
+- Name: {color_name} (Asian Paints)
+- Code: {color_code}
+- Hex Reference: {color_hex}
+
+✅ WALL COLOR APPLICATION RULES:
+1. Paint ALL visible wall surfaces with this color
+2. Apply the color uniformly across all walls
+3. Maintain realistic matte/satin paint finish
+4. Preserve natural shadows and lighting on walls
+5. The color should be a close match to the hex value provided
+
+⛔ DO NOT change the ceiling color - ceiling remains as-is
+⛔ DO NOT change window frames, door frames, or trim
+⛔ DO NOT add textures, patterns, or wallpaper - just solid paint color"""
+            else:
+                wall_color_instruction = """🚫🚫🚫 WALL COLOR PRESERVATION - ABSOLUTE REQUIREMENT 🚫🚫🚫
+⛔ DO NOT CHANGE THE WALL COLOR - walls must remain EXACTLY the same color as input
+⛔ DO NOT add paint, wallpaper, or any wall treatment that wasn't there
+- If walls are white → output walls MUST be white
+- If walls are grey → output walls MUST be grey
+- The wall color scheme is FIXED - you are ONLY adding furniture"""
+
+            # Build prompt based on what we're doing
+            # Wall-color-only case: different prompt focused just on wall color change
+            if wall_color and not products:
+                color_name = wall_color.get("name", "Unknown")
+                color_code = wall_color.get("code", "")
+                color_hex = wall_color.get("hex_value", "")
+                prompt = f"""{VisualizationPrompts.get_system_intro()}
+
+🎨🎨🎨 WALL COLOR CHANGE REQUEST 🎨🎨🎨
+Paint ALL visible walls with the following color:
+
+🎯 WALL COLOR TO APPLY:
+- Name: {color_name} (Asian Paints)
+- Code: {color_code}
+- Hex Reference: {color_hex}
+
+✅ WALL COLOR APPLICATION RULES:
+1. Paint ALL visible wall surfaces with this color
+2. Apply the color uniformly across all walls
+3. Maintain realistic matte/satin paint finish
+4. Preserve natural shadows and lighting on walls
+5. The color should be a close match to the hex value provided
+
+🚨🚨🚨 ABSOLUTE REQUIREMENT - ROOM DIMENSIONS 🚨🚨🚨
+═══════════════════════════════════════════════════════════════
+THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
+- NEVER change the aspect ratio
+- NEVER crop, resize, or alter the image dimensions in ANY way
+- The camera angle, perspective, and field of view MUST remain UNCHANGED
+
+🔒 CRITICAL PRESERVATION RULES:
+1. KEEP ALL EXISTING FURNITURE: Do NOT remove, move, or replace any furniture
+2. PRESERVE EXISTING COLORS: Do NOT change the color of ANY furniture or decor
+3. PRESERVE THE FLOOR: Keep the same flooring material and color
+4. PRESERVE THE CEILING: Do NOT paint the ceiling - only walls
+5. PRESERVE WINDOWS/DOORS: Keep window frames, door frames, and trim unchanged
+
+OUTPUT: Same room with ONLY the wall color changed to {color_name}."""
+            else:
+                # Build prompt for ADD MULTIPLE action (with or without wall color)
+                # Use total_items_to_add which accounts for quantities (e.g., 2 products with qty=3 each = 6 items)
+                prompt = f"""{VisualizationPrompts.get_system_intro()}
 
 {existing_products_warning}{multiple_instance_instruction}{planter_instruction}ADD the following items to this room in appropriate locations WITHOUT removing any existing furniture.
 
@@ -3579,15 +3812,13 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 5. ROOM SIZE UNCHANGED: The room must look the EXACT same size
 6. ⛔ DO NOT ADD EXTRA ITEMS: Only add the items listed above. Do NOT add extra copies of items already in the room unless specifically requested
 
-🚫🚫🚫 WALL & FLOOR COLOR PRESERVATION - ABSOLUTE REQUIREMENT 🚫🚫🚫
-⛔ DO NOT CHANGE THE WALL COLOR - walls must remain EXACTLY the same color as input
+{wall_color_instruction}
+
+🚫🚫🚫 FLOOR COLOR PRESERVATION - ABSOLUTE REQUIREMENT 🚫🚫🚫
 ⛔ DO NOT CHANGE THE FLOOR COLOR - flooring must remain EXACTLY the same color/material as input
-⛔ DO NOT add paint, wallpaper, or any wall treatment that wasn't there
 ⛔ DO NOT change flooring material, color, or texture
-- If walls are white → output walls MUST be white
-- If walls are grey → output walls MUST be grey
 - If floor is wooden → output floor MUST be the SAME wooden color
-- The room's color scheme is FIXED - you are ONLY adding furniture
+- The floor color scheme is FIXED
 
 🔒🔒🔒 PIXEL-LEVEL POSITION PRESERVATION - CRITICAL 🔒🔒🔒
 - Every piece of existing furniture must be at the EXACT SAME PIXEL COORDINATES as in the input
@@ -6262,6 +6493,163 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
         # Placeholder: Just return the base image
         # TODO: Implement actual image isolation using background removal or segmentation
         return base_image
+
+    async def change_wall_color(
+        self,
+        room_image: str,
+        color_name: str,
+        color_hex: str,
+        user_id: str = None,
+        session_id: str = None,
+    ) -> Optional[str]:
+        """
+        Change wall color in a room visualization using Gemini inpainting.
+
+        Uses Gemini's native image editing capabilities to repaint walls
+        while preserving all furniture and other room elements.
+
+        Args:
+            room_image: Base64 encoded room visualization image
+            color_name: Asian Paints color name (e.g., "Air Breeze")
+            color_hex: Hex color value (e.g., "#F5F5F0")
+            user_id: Optional user ID for tracking
+            session_id: Optional session ID for tracking
+
+        Returns:
+            Base64 encoded result image with new wall color, or None on failure
+        """
+        try:
+            logger.info(f"[WallColor] Changing wall color to {color_name} ({color_hex})")
+
+            # Use editing preprocessor to preserve quality
+            processed_room = self._preprocess_image_for_editing(room_image)
+
+            # Generate color description for better AI matching
+            color_description = generate_color_description(color_name, color_hex)
+            logger.info(f"[WallColor] Color description: {color_description}")
+
+            # Build prompt
+            prompt = VisualizationPrompts.get_wall_color_change_prompt(
+                color_name=color_name,
+                color_hex=color_hex,
+                color_description=color_description,
+            )
+
+            # Build contents list with PIL Image
+            contents = [prompt]
+
+            # Add room image as PIL Image
+            room_image_bytes = base64.b64decode(processed_room)
+            room_pil_image = Image.open(io.BytesIO(room_image_bytes))
+            # Apply EXIF orientation correction
+            room_pil_image = ImageOps.exif_transpose(room_pil_image)
+            if room_pil_image.mode != "RGB":
+                room_pil_image = room_pil_image.convert("RGB")
+
+            input_width, input_height = room_pil_image.size
+            logger.info(f"[WallColor] Input image dimensions: {input_width}x{input_height}")
+
+            contents.append(room_pil_image)
+
+            # Generate visualization with Gemini 3 Pro Image
+            generate_content_config = types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                temperature=0.3,
+            )
+
+            # Retry configuration
+            max_retries = 3
+            timeout_seconds = 90
+
+            def _run_wall_color_change():
+                """Run the streaming generation in a thread for timeout support."""
+                result_image = None
+                final_chunk = None
+                for chunk in self.genai_client.models.generate_content_stream(
+                    model="gemini-3-pro-image-preview",
+                    contents=contents,
+                    config=generate_content_config,
+                ):
+                    final_chunk = chunk
+                    if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+                        for part in chunk.candidates[0].content.parts:
+                            if part.inline_data and part.inline_data.data:
+                                image_data = part.inline_data.data
+                                mime_type = part.inline_data.mime_type or "image/png"
+
+                                # Handle both raw bytes and base64 string bytes
+                                if isinstance(image_data, bytes):
+                                    first_hex = image_data[:4].hex()
+                                    logger.info(f"[WallColor] First 4 bytes hex: {first_hex}")
+
+                                    # Check if raw image bytes
+                                    if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                        image_base64 = base64.b64encode(image_data).decode("utf-8")
+                                        logger.info("[WallColor] Raw image bytes detected, encoded to base64")
+                                    else:
+                                        image_base64 = image_data.decode("utf-8")
+                                        logger.info("[WallColor] Base64 string bytes detected")
+                                else:
+                                    image_base64 = image_data
+                                    logger.info("[WallColor] String data received directly")
+
+                                result_image = f"data:{mime_type};base64,{image_base64}"
+                                logger.info("[WallColor] Generated wall color visualization")
+                return (result_image, final_chunk)
+
+            generated_image = None
+            final_chunk = None
+
+            for attempt in range(max_retries):
+                try:
+                    loop = asyncio.get_event_loop()
+                    result = await asyncio.wait_for(
+                        loop.run_in_executor(None, _run_wall_color_change), timeout=timeout_seconds
+                    )
+                    if result:
+                        generated_image, final_chunk = result
+                    if generated_image:
+                        break
+                except asyncio.TimeoutError:
+                    logger.warning(f"[WallColor] Attempt {attempt + 1} timed out after {timeout_seconds}s")
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** (attempt + 1)
+                        logger.info(f"[WallColor] Retrying in {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                    continue
+                except Exception as e:
+                    error_str = str(e)
+                    if "503" in error_str or "overloaded" in error_str.lower() or "UNAVAILABLE" in error_str:
+                        if attempt < max_retries - 1:
+                            wait_time = 4 * (2**attempt)
+                            logger.warning(f"[WallColor] Model overloaded, retrying in {wait_time}s...")
+                            await asyncio.sleep(wait_time)
+                            continue
+                    logger.error(f"[WallColor] Attempt {attempt + 1} failed: {e}")
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** (attempt + 1)
+                        await asyncio.sleep(wait_time)
+                    continue
+
+            if not generated_image:
+                logger.error(f"[WallColor] Failed to generate after {max_retries} attempts")
+                return None
+
+            # Log operation
+            self._log_streaming_operation(
+                "change_wall_color",
+                "gemini-3-pro-image-preview",
+                final_chunk=final_chunk,
+                user_id=user_id,
+                session_id=session_id,
+            )
+
+            logger.info(f"[WallColor] Successfully changed wall color to {color_name}")
+            return generated_image
+
+        except Exception as e:
+            logger.error(f"[WallColor] Error: {e}", exc_info=True)
+            return None
 
     async def classify_product_style(self, image_url: str, product_name: str, product_description: str = "") -> Dict[str, Any]:
         """

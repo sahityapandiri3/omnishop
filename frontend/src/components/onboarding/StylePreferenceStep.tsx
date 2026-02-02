@@ -53,7 +53,7 @@ export function StylePreferenceStep({
       {/* Selection Summary */}
       <div className="flex items-center gap-4 mb-8 text-sm">
         <div className="flex items-center gap-2">
-          <span className="w-6 h-6 rounded-full bg-primary-600 text-white flex items-center justify-center text-xs font-medium">
+          <span className="w-6 h-6 rounded-full bg-neutral-800 text-white flex items-center justify-center text-xs font-medium">
             1
           </span>
           <span className={primaryStyle ? 'text-neutral-900' : 'text-neutral-400'}>
@@ -90,7 +90,7 @@ export function StylePreferenceStep({
                   : 'hover:shadow-md hover:scale-[1.01]'
               } ${
                 selectionState === 'primary'
-                  ? 'ring-primary-600'
+                  ? 'ring-neutral-800'
                   : selectionState === 'secondary'
                   ? 'ring-neutral-400'
                   : ''
@@ -107,7 +107,7 @@ export function StylePreferenceStep({
                 <div
                   className={`absolute inset-0 transition-opacity duration-300 ${
                     selectionState === 'primary'
-                      ? 'bg-primary-600/20'
+                      ? 'bg-neutral-800/20'
                       : selectionState === 'secondary'
                       ? 'bg-neutral-600/20'
                       : 'bg-black/0 group-hover:bg-black/20'
@@ -118,7 +118,7 @@ export function StylePreferenceStep({
                 {selectionState && (
                   <div
                     className={`absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-lg ${
-                      selectionState === 'primary' ? 'bg-primary-600' : 'bg-neutral-500'
+                      selectionState === 'primary' ? 'bg-neutral-800' : 'bg-neutral-500'
                     }`}
                   >
                     {selectionState === 'primary' ? '1' : '2'}

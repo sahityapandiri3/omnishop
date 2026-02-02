@@ -1701,6 +1701,58 @@ export const adminCuratedAPI = {
   }
 };
 
+/**
+ * Public product search API (for design page - no admin auth required)
+ * Uses the same endpoint format as adminCuratedAPI.searchProducts but without admin prefix
+ */
+export const searchProducts = async (params: {
+  query?: string;
+  categoryId?: number;
+  sourceWebsite?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  colors?: string;
+  styles?: string;
+  materials?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<{
+  products: any[];
+  total: number;
+  total_primary: number;
+  total_related: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}> => {
+  try {
+    // Try the public endpoint first
+    const response = await api.get('/api/products/search', {
+      params: {
+        query: params.query,
+        category_id: params.categoryId,
+        source_website: params.sourceWebsite,
+        min_price: params.minPrice,
+        max_price: params.maxPrice,
+        colors: params.colors,
+        styles: params.styles,
+        materials: params.materials,
+        page: params.page || 1,
+        page_size: params.pageSize || 50,
+      }
+    });
+    return response.data;
+  } catch (error: any) {
+    // If public endpoint doesn't exist, fall back to admin endpoint
+    if (error.response?.status === 404) {
+      console.log('[searchProducts] Public endpoint not found, using admin endpoint');
+      return adminCuratedAPI.searchProducts(params);
+    }
+    console.error('Error searching products:', error);
+    throw error;
+  }
+};
+
 // Get pre-curated looks from database (public endpoint)
 // imageQuality: 'thumbnail' (400px), 'medium' (1200px - for landing page), 'full' (original)
 // style: Filter by style label (modern, modern_luxury, indian_contemporary, etc.)
@@ -1844,7 +1896,55 @@ export const projectsAPI = {
     const response = await api.get(`/api/projects/${projectId}/thumbnail`);
     return response.data;
   },
+
+  /**
+   * Get previously uploaded room images that can be reused
+   */
+  getPreviousRooms: async (excludeProjectId?: string, limit: number = 10): Promise<PreviousRoomImagesResponse> => {
+    const params: Record<string, string | number> = { limit };
+    if (excludeProjectId) {
+      params.exclude_project_id = excludeProjectId;
+    }
+    const response = await api.get('/api/projects/previous-rooms', { params });
+    return response.data;
+  },
+
+  /**
+   * Use a previously uploaded room image in the current project
+   */
+  usePreviousRoom: async (
+    projectId: string,
+    previousRoomId: string,
+    source: 'project' | 'homestyling'
+  ): Promise<UsePreviousRoomResponse> => {
+    const response = await api.post(
+      `/api/projects/${projectId}/use-previous-room`,
+      null,
+      { params: { previous_room_id: previousRoomId, source } }
+    );
+    return response.data;
+  },
 };
+
+// Types for previous room images
+export interface PreviousRoomImage {
+  id: string;
+  source: 'project' | 'homestyling';
+  name: string | null;
+  thumbnail: string;
+  created_at: string;
+}
+
+export interface PreviousRoomImagesResponse {
+  rooms: PreviousRoomImage[];
+  total: number;
+}
+
+export interface UsePreviousRoomResponse {
+  success: boolean;
+  room_image: string | null;
+  clean_room_image: string;
+}
 
 // =============================================================================
 // PURCHASES (Homestyling)
@@ -1914,6 +2014,83 @@ export const purchasesAPI = {
    */
   get: async (purchaseId: string): Promise<PurchaseDetail> => {
     const response = await api.get(`/api/homestyling/purchases/${purchaseId}`);
+    return response.data;
+  },
+};
+
+// =============================================================================
+// Wall Colors API
+// =============================================================================
+
+import type {
+  WallColor,
+  WallColorFamily,
+  WallColorsGroupedResponse,
+  ChangeWallColorRequest,
+  ChangeWallColorResponse,
+} from '@/types/wall-colors';
+
+/**
+ * Wall Colors API
+ *
+ * API for fetching wall color catalog and changing wall colors in visualizations.
+ */
+export const wallColorsAPI = {
+  /**
+   * Get all wall colors, optionally filtered by family
+   */
+  getAll: async (family?: WallColorFamily): Promise<WallColor[]> => {
+    const params = family ? { family } : {};
+    const response = await api.get('/api/wall-colors/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get wall colors grouped by family
+   * Returns colors organized for the panel UI
+   */
+  getGrouped: async (): Promise<WallColorsGroupedResponse> => {
+    const response = await api.get('/api/wall-colors/grouped');
+    return response.data;
+  },
+
+  /**
+   * Get color families with counts
+   */
+  getFamilies: async (): Promise<Array<{ value: WallColorFamily; label: string; color_count: number }>> => {
+    const response = await api.get('/api/wall-colors/families');
+    return response.data;
+  },
+
+  /**
+   * Get a specific wall color by ID
+   */
+  getById: async (colorId: number): Promise<WallColor> => {
+    const response = await api.get(`/api/wall-colors/${colorId}`);
+    return response.data;
+  },
+
+  /**
+   * Get a wall color by its code (e.g., "L134")
+   */
+  getByCode: async (colorCode: string): Promise<WallColor> => {
+    const response = await api.get(`/api/wall-colors/code/${colorCode}`);
+    return response.data;
+  },
+};
+
+/**
+ * Visualization API extension for wall color changes
+ */
+export const visualizationAPI = {
+  /**
+   * Change wall color in a room visualization
+   *
+   * @param request - The wall color change request
+   * @returns Response with rendered image or error
+   */
+  changeWallColor: async (request: ChangeWallColorRequest): Promise<ChangeWallColorResponse> => {
+    const response = await api.post('/api/visualization/change-wall-color', request);
     return response.data;
   },
 };

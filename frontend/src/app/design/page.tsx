@@ -7,9 +7,49 @@ import ProductDiscoveryPanel from '@/components/panels/ProductDiscoveryPanel';
 import CanvasPanel from '@/components/panels/CanvasPanel';
 import { ProductDetailModal } from '@/components/ProductDetailModal';
 import { ResizablePanelLayout } from '@/components/panels/ResizablePanelLayout';
-import { ModeToggle, KeywordSearchPanel, SearchFilters, KeywordSearchPanelRef } from '@/components/products';
+import { KeywordSearchPanel, SearchFilters, KeywordSearchPanelRef } from '@/components/products';
+import { WallColorPanel } from '@/components/wall-colors';
+import { useWallColor } from '@/hooks/useWallColor';
+import { WallColor } from '@/types/wall-colors';
+import { SubModeToggle, SearchSubMode } from '@/components/search';
 
-type SearchMode = 'ai' | 'keyword';
+type SearchMode = 'ai' | 'search';
+
+/**
+ * Top ModeToggle Component - Search vs AI Stylist
+ */
+function ModeToggle({
+  mode,
+  onModeChange,
+}: {
+  mode: SearchMode;
+  onModeChange: (mode: SearchMode) => void;
+}) {
+  return (
+    <div className="inline-flex items-center p-0.5 bg-neutral-100 dark:bg-neutral-800 rounded-lg">
+      <button
+        onClick={() => onModeChange('search')}
+        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all text-center ${
+          mode === 'search'
+            ? 'bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 shadow-sm'
+            : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+        }`}
+      >
+        Search
+      </button>
+      <button
+        onClick={() => onModeChange('ai')}
+        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all text-center ${
+          mode === 'ai'
+            ? 'bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 shadow-sm'
+            : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+        }`}
+      >
+        AI Stylist
+      </button>
+    </div>
+  );
+}
 
 // Default filter values
 const DEFAULT_FILTERS: SearchFilters = {
@@ -20,8 +60,10 @@ const DEFAULT_FILTERS: SearchFilters = {
   priceMin: 0,
   priceMax: Infinity,
 };
-import { checkFurnitureRemovalStatus, startFurnitureRemoval, getCategorizedStores, projectsAPI, restoreDesignStateFromRecovery, CategorizedStoresResponse, StoreCategory, imageAPI } from '@/utils/api';
-import { useAuth } from '@/contexts/AuthContext';
+import { checkFurnitureRemovalStatus, startFurnitureRemoval, getCategorizedStores, projectsAPI, restoreDesignStateFromRecovery, CategorizedStoresResponse, StoreCategory, imageAPI, adminCuratedAPI } from '@/utils/api';
+import { STYLE_LABEL_OPTIONS, BUDGET_TIER_OPTIONS } from '@/constants/products';
+import { calculateBudgetTier } from '@/utils/product-transforms';
+import { useAuth, canPublishLooks } from '@/contexts/AuthContext';
 import { useNavigationGuard } from '@/hooks/useNavigationGuard';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 
@@ -37,8 +79,10 @@ function DesignPageContent() {
   // Mobile tab state
   const [activeTab, setActiveTab] = useState<'chat' | 'products' | 'canvas'>('chat');
 
-  // Search mode state - AI Stylist (chat) or Keyword Search
-  const [searchMode, setSearchMode] = useState<SearchMode>('keyword');
+  // Search mode state - AI Stylist (chat) or Search
+  const [searchMode, setSearchMode] = useState<SearchMode>('search');
+  // Sub-mode for Search - Furniture & Decor or Walls (only shown when searchMode is 'search')
+  const [searchSubMode, setSearchSubMode] = useState<SearchSubMode>('furniture');
 
   // Shared state for cross-panel communication
   const [roomImage, setRoomImage] = useState<string | null>(null);
@@ -82,6 +126,16 @@ function DesignPageContent() {
   // Product detail modal state
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
 
+  // Publish modal state (for Curator tier users)
+  const [showPublishModal, setShowPublishModal] = useState(false);
+  const [publishTitle, setPublishTitle] = useState('');
+  const [publishDescription, setPublishDescription] = useState('');
+  const [publishTags, setPublishTags] = useState('');
+  const [publishRoomType, setPublishRoomType] = useState<'living_room' | 'bedroom'>('living_room');
+  const [publishStyleLabels, setPublishStyleLabels] = useState<string[]>([]);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishSuccess, setPublishSuccess] = useState(false);
+
   // Project state (for logged-in users)
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -122,6 +176,15 @@ function DesignPageContent() {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Wall color state - color is added to canvas, then applied during visualization
+  const {
+    canvasWallColor,
+    selectedColor: selectedWallColor,
+    handleSelectColor: handleSelectWallColor,
+    handleAddToCanvas: handleAddWallColorToCanvas,
+    removeFromCanvas: removeWallColorFromCanvas,
+  } = useWallColor();
 
   // Track if we have unsaved changes
   const hasUnsavedChanges = saveStatus === 'unsaved' || saveStatus === 'saving';
@@ -474,6 +537,9 @@ function DesignPageContent() {
           });
           console.log('[DesignPage] Auto-created new project:', newProject.id, newProject.name);
 
+          // Mark this project ID as newly created so we know to use sessionStorage data for it
+          sessionStorage.setItem('newlyCreatedProjectId', newProject.id);
+
           // Redirect to the same page with the new projectId
           // Use fresh=1 ONLY if no curated data - otherwise let project loading read from sessionStorage
           const freshParam = hasCuratedData ? '' : '&fresh=1';
@@ -508,12 +574,21 @@ function DesignPageContent() {
         setProjectId(project.id);
         setProjectName(project.name);
 
-        // Check if this is a new project (no saved data yet)
-        const isNewProject = !project.room_image && !project.visualization_image && !project.canvas_products;
+        // Check if this is a newly created project that should use sessionStorage data
+        // IMPORTANT: Only use sessionStorage if this is the project we JUST created in this session
+        // This prevents old sessionStorage data from bleeding into existing empty projects
+        const newlyCreatedProjectId = sessionStorage.getItem('newlyCreatedProjectId');
+        const isNewlyCreatedProject = newlyCreatedProjectId === project.id;
+        const hasNoSavedData = !project.room_image && !project.visualization_image && !project.canvas_products;
 
-        if (isNewProject) {
-          // For new projects, load sessionStorage data (from curated looks or user upload)
-          console.log('[DesignPage] New project detected, loading sessionStorage data');
+        // Clear the marker after checking (one-time use)
+        if (newlyCreatedProjectId) {
+          sessionStorage.removeItem('newlyCreatedProjectId');
+        }
+
+        if (isNewlyCreatedProject && hasNoSavedData) {
+          // For newly created projects, load sessionStorage data (from curated looks or user upload)
+          console.log('[DesignPage] Newly created project detected, loading sessionStorage data');
 
           // Check for curated look data
           const curatedRoomImage = sessionStorage.getItem('curatedRoomImage');
@@ -675,8 +750,29 @@ function DesignPageContent() {
             visualization_history: null,
             chat_session_id: null,
           });
+        } else if (hasNoSavedData) {
+          // Existing empty project (not newly created) - show empty state
+          // IMPORTANT: Clear stale sessionStorage to prevent old data from bleeding in
+          console.log('[DesignPage] Existing empty project - clearing sessionStorage and showing empty state');
+          try {
+            sessionStorage.removeItem('roomImage');
+            sessionStorage.removeItem('cleanRoomImage');
+            sessionStorage.removeItem('curatedRoomImage');
+            sessionStorage.removeItem('curatedVisualizationImage');
+            sessionStorage.removeItem('preselectedProducts');
+            sessionStorage.removeItem('persistedCanvasProducts');
+          } catch (e) {
+            // Ignore errors when clearing
+          }
+          setRoomImage(null);
+          setCleanRoomImage(null);
+          setInitialVisualizationImage(null);
+          setCanvasProducts([]);
+          setVisualizationHistory([]);
+          setChatSessionId(null);
+          setProjectLoaded(true);
         } else {
-          // Load existing project data
+          // Load existing project data (project has saved data)
           // ONLY use sessionStorage data if we ACTUALLY recovered from a 401 session expiry
           // This prevents stale sessionStorage data from overriding the saved project
           const wasActuallyRecovered = wasRecoveredFromSessionExpiryRef.current;
@@ -922,6 +1018,90 @@ function DesignPageContent() {
       setSaveStatus('unsaved');
     }
   }, [isAuthenticated, projectId, projectName, roomImage, cleanRoomImage, initialVisualizationImage, canvasProducts, visualizationHistory, chatSessionId, saveStatus]);
+
+  // Publish look function (for Curator tier users)
+  const handlePublishLook = useCallback(async () => {
+    if (!canPublishLooks(user)) {
+      console.warn('[DesignPage] User does not have publish permission');
+      return;
+    }
+
+    if (!publishTitle.trim()) {
+      alert('Please enter a title for your look');
+      return;
+    }
+
+    if (!initialVisualizationImage) {
+      alert('Please create a visualization before publishing');
+      return;
+    }
+
+    setIsPublishing(true);
+
+    try {
+      // Calculate budget tier based on total product prices
+      const totalPrice = canvasProducts.reduce((sum, p) => sum + (p.price || 0), 0);
+      const budgetTier = calculateBudgetTier(totalPrice);
+
+      // Derive style theme from style labels
+      const styleTheme = publishStyleLabels.length > 0
+        ? publishStyleLabels[0].replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+        : 'Modern';
+
+      // Prepare the look data for API
+      const lookData = {
+        title: publishTitle,
+        style_theme: styleTheme,
+        style_description: publishDescription || undefined,
+        style_labels: publishStyleLabels,
+        room_type: publishRoomType,
+        visualization_image: initialVisualizationImage.startsWith('data:')
+          ? initialVisualizationImage.split(',')[1]
+          : initialVisualizationImage,
+        room_image: (cleanRoomImage || roomImage)?.startsWith('data:')
+          ? (cleanRoomImage || roomImage)?.split(',')[1]
+          : (cleanRoomImage || roomImage) || undefined,
+        is_published: true, // Curators can publish directly
+        product_ids: canvasProducts.map(p => parseInt(p.id)).filter(id => !isNaN(id)),
+        product_types: canvasProducts.map(p => p.productType || 'other'),
+        product_quantities: canvasProducts.map(() => 1),
+        budget_tier: budgetTier,
+      };
+
+      console.log('[DesignPage] Publishing look with data:', {
+        title: lookData.title,
+        styleTheme: lookData.style_theme,
+        roomType: lookData.room_type,
+        styleLabels: lookData.style_labels,
+        productCount: lookData.product_ids.length,
+        budgetTier: lookData.budget_tier,
+      });
+
+      // Call the real API
+      const result = await adminCuratedAPI.create(lookData);
+      console.log('[DesignPage] Look published successfully:', result);
+
+      setPublishSuccess(true);
+
+      // Reset form after success
+      setTimeout(() => {
+        setShowPublishModal(false);
+        setPublishSuccess(false);
+        setPublishTitle('');
+        setPublishDescription('');
+        setPublishTags('');
+        setPublishRoomType('living_room');
+        setPublishStyleLabels([]);
+      }, 2000);
+
+    } catch (error: any) {
+      console.error('[DesignPage] Publish failed:', error);
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Failed to publish look. Please try again.';
+      alert(errorMessage);
+    } finally {
+      setIsPublishing(false);
+    }
+  }, [user, publishTitle, publishDescription, publishTags, publishRoomType, publishStyleLabels, initialVisualizationImage, roomImage, cleanRoomImage, canvasProducts]);
 
   // Track unsaved changes - SIMPLE APPROACH
   // Use a ref to track when the project was last saved, and compare against current state
@@ -1280,9 +1460,25 @@ function DesignPageContent() {
   };
 
   // Handle room image upload with furniture removal
-  const handleRoomImageUpload = async (imageData: string) => {
+  // If isAlreadyProcessed is true, skip furniture removal (used for previously uploaded rooms)
+  const handleRoomImageUpload = async (imageData: string, isAlreadyProcessed: boolean = false) => {
     try {
-      console.log('[DesignPage] Starting room image upload and analysis...');
+      console.log('[DesignPage] Starting room image upload...', { isAlreadyProcessed });
+
+      // If the room is already processed (from previous rooms), skip furniture removal
+      if (isAlreadyProcessed) {
+        console.log('[DesignPage] Room already processed, skipping furniture removal');
+        setRoomImage(imageData);
+        setCleanRoomImage(imageData);
+        // Store in session storage for persistence
+        try {
+          sessionStorage.setItem('roomImage', imageData);
+          sessionStorage.setItem('cleanRoomImage', imageData);
+        } catch (e) {
+          console.warn('[DesignPage] Could not store room image in sessionStorage');
+        }
+        return;
+      }
 
       // IMPORTANT: Clear any existing furniture removal job to prevent infinite loop
       const existingJobId = sessionStorage.getItem('furnitureRemovalJobId');
@@ -1490,7 +1686,7 @@ function DesignPageContent() {
       {/* Header */}
       <header className="bg-white dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-secondary-500 rounded-lg"></div>
+          <div className="w-8 h-8 bg-gradient-to-br from-neutral-600 to-neutral-700 rounded-lg"></div>
           <div>
             {/* Editable Project Name */}
             {isAuthenticated && projectId ? (
@@ -1508,12 +1704,12 @@ function DesignPageContent() {
                     if (e.key === 'Escape') setIsEditingName(false);
                   }}
                   autoFocus
-                  className="text-xl font-bold text-neutral-900 dark:text-white bg-transparent border-b-2 border-primary-500 outline-none px-1"
+                  className="text-xl font-bold text-neutral-900 dark:text-white bg-transparent border-b-2 border-neutral-500 outline-none px-1"
                 />
               ) : (
                 <h1
                   onClick={() => setIsEditingName(true)}
-                  className="text-xl font-bold text-neutral-900 dark:text-white cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 flex items-center gap-2"
+                  className="text-xl font-bold text-neutral-900 dark:text-white cursor-pointer hover:text-neutral-700 dark:hover:text-neutral-300 flex items-center gap-2"
                   title="Click to edit project name"
                 >
                   {projectName || 'Untitled Project'}
@@ -1532,8 +1728,8 @@ function DesignPageContent() {
               <div className="flex items-center gap-1.5 text-xs">
                 {saveStatus === 'saved' && (
                   <>
-                    <div className="w-2 h-2 rounded-full bg-green-500" />
-                    <span className="text-green-600 dark:text-green-400">
+                    <div className="w-2 h-2 rounded-full bg-neutral-600" />
+                    <span className="text-neutral-600 dark:text-neutral-400">
                       Saved {lastSavedAt && `at ${lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
                     </span>
                   </>
@@ -1562,7 +1758,7 @@ function DesignPageContent() {
               disabled={saveStatus === 'saving' || saveStatus === 'saved'}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
                 saveStatus === 'unsaved'
-                  ? 'bg-primary-600 hover:bg-primary-700 text-white shadow-md'
+                  ? 'bg-neutral-800 hover:bg-neutral-900 text-white shadow-md'
                   : saveStatus === 'saving'
                   ? 'bg-neutral-200 dark:bg-neutral-700 text-neutral-500 dark:text-neutral-400 cursor-not-allowed'
                   : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-500 dark:text-neutral-400'
@@ -1591,6 +1787,18 @@ function DesignPageContent() {
                   Save
                 </>
               )}
+            </button>
+          )}
+          {/* Publish Button (Curator tier only) */}
+          {isAuthenticated && canPublishLooks(user) && initialVisualizationImage && (
+            <button
+              onClick={() => setShowPublishModal(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all bg-green-600 hover:bg-green-700 text-white shadow-md"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              Publish Look
             </button>
           )}
           {/* Store Selection Button */}
@@ -1636,49 +1844,49 @@ function DesignPageContent() {
             onClick={() => setActiveTab('chat')}
             className={`flex-1 py-3 text-sm font-medium transition-colors relative ${
               activeTab === 'chat'
-                ? 'text-primary-600 dark:text-primary-400'
+                ? 'text-neutral-800 dark:text-neutral-200'
                 : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200'
             }`}
           >
             Chat
             {activeTab === 'chat' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-600 dark:bg-primary-400"></div>
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-neutral-800 dark:bg-neutral-600"></div>
             )}
           </button>
           <button
             onClick={() => setActiveTab('products')}
             className={`flex-1 py-3 text-sm font-medium transition-colors relative ${
               activeTab === 'products'
-                ? 'text-primary-600 dark:text-primary-400'
+                ? 'text-neutral-800 dark:text-neutral-200'
                 : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200'
             }`}
           >
             Products
             {productRecommendations.length > 0 && (
-              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-primary-600 rounded-full">
+              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-neutral-800 rounded-full">
                 {productRecommendations.length}
               </span>
             )}
             {activeTab === 'products' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-600 dark:bg-primary-400"></div>
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-neutral-800 dark:bg-neutral-600"></div>
             )}
           </button>
           <button
             onClick={() => setActiveTab('canvas')}
             className={`flex-1 py-3 text-sm font-medium transition-colors relative ${
               activeTab === 'canvas'
-                ? 'text-primary-600 dark:text-primary-400'
+                ? 'text-neutral-800 dark:text-neutral-200'
                 : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200'
             }`}
           >
             Canvas
             {canvasProducts.length > 0 && (
-              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-primary-600 rounded-full">
+              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-neutral-800 rounded-full">
                 {canvasProducts.length}
               </span>
             )}
             {activeTab === 'canvas' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-600 dark:bg-primary-400"></div>
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-neutral-800 dark:bg-neutral-600"></div>
             )}
           </button>
         </div>
@@ -1691,20 +1899,26 @@ function DesignPageContent() {
           <ResizablePanelLayout
             chatPanel={
               <div className="flex flex-col h-full">
-                {/* Centered Mode Toggle */}
+                {/* Top Mode Toggle: Search vs AI Stylist */}
                 <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0 flex justify-center">
                   <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
                 </div>
 
-                {/* Filters - Always visible in both modes (only render on desktop) */}
-                {/* In keyword mode, expand to fill available space; in AI mode, shrink to fit */}
-                {!isMobile && (
-                  <div className={searchMode === 'keyword' ? 'flex-1 min-h-0' : 'flex-shrink-0'}>
+                {/* Sub Mode Toggle: Furniture & Decor vs Walls - only when Search is selected */}
+                {searchMode === 'search' && (
+                  <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0 flex justify-center">
+                    <SubModeToggle subMode={searchSubMode} onSubModeChange={setSearchSubMode} />
+                  </div>
+                )}
+
+                {/* Furniture & Decor Search Panel - visible when Search + Furniture sub-mode */}
+                {!isMobile && searchMode === 'search' && searchSubMode === 'furniture' && (
+                  <div className="flex-1 min-h-0">
                     <KeywordSearchPanel
                       ref={keywordSearchRef}
                       onAddProduct={handleAddToCanvas}
                       canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
-                      showSearchInput={searchMode === 'keyword'}
+                      showSearchInput={true}
                       compact={false}
                       showResultsInline={false}
                       onSearchResults={setKeywordSearchResults}
@@ -1712,6 +1926,19 @@ function DesignPageContent() {
                       onFiltersChange={setSearchFilters}
                       showFilters={showSearchFilters}
                       onShowFiltersChange={setShowSearchFilters}
+                    />
+                  </div>
+                )}
+
+                {/* Wall Color Panel - visible when Search + Walls sub-mode */}
+                {searchMode === 'search' && searchSubMode === 'walls' && (
+                  <div className="flex-1 min-h-0 overflow-hidden">
+                    <WallColorPanel
+                      onAddToCanvas={handleAddWallColorToCanvas}
+                      canvasWallColor={canvasWallColor}
+                      selectedColor={selectedWallColor}
+                      onSelectColor={handleSelectWallColor}
+                      showHeader={false}
                     />
                   </div>
                 )}
@@ -1730,7 +1957,7 @@ function DesignPageContent() {
                     {/* Loading overlay - shows on top while project is loading */}
                     {!projectLoaded && (
                       <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-neutral-800"></div>
                       </div>
                     )}
                   </div>
@@ -1747,7 +1974,7 @@ function DesignPageContent() {
                 enableModeToggle={false}
                 totalBudget={totalBudget}
                 sessionId={chatSessionId}
-                isKeywordSearchMode={searchMode === 'keyword'}
+                isKeywordSearchMode={searchMode === 'search' && searchSubMode === 'furniture'}
                 keywordSearchResults={keywordSearchResults}
                 onLoadMoreKeywordResults={() => keywordSearchRef.current?.loadMore()}
               />
@@ -1769,6 +1996,8 @@ function DesignPageContent() {
                 onVisualizationImageChange={setInitialVisualizationImage}
                 isProcessingFurniture={isProcessingFurniture}
                 projectId={projectId}
+                canvasWallColor={canvasWallColor}
+                onRemoveWallColor={removeWallColorFromCanvas}
               />
             }
           />
@@ -1778,20 +2007,26 @@ function DesignPageContent() {
         <div className="md:hidden h-full">
           <div className={`h-full ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
             <div className="flex flex-col h-full">
-              {/* Centered Mode Toggle */}
+              {/* Top Mode Toggle: Search vs AI Stylist */}
               <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0 flex justify-center">
                 <ModeToggle mode={searchMode} onModeChange={setSearchMode} />
               </div>
 
-              {/* Filters - Always visible in both modes (only render on mobile) */}
-              {/* In keyword mode, expand to fill available space; in AI mode, shrink to fit */}
-              {isMobile && (
-                <div className={searchMode === 'keyword' ? 'flex-1 min-h-0' : 'flex-shrink-0'}>
+              {/* Sub Mode Toggle: Furniture & Decor vs Walls - only when Search is selected */}
+              {searchMode === 'search' && (
+                <div className="px-4 py-2 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0 flex justify-center">
+                  <SubModeToggle subMode={searchSubMode} onSubModeChange={setSearchSubMode} />
+                </div>
+              )}
+
+              {/* Furniture & Decor Search Panel - visible when Search + Furniture sub-mode on mobile */}
+              {isMobile && searchMode === 'search' && searchSubMode === 'furniture' && (
+                <div className="flex-1 min-h-0">
                   <KeywordSearchPanel
                     ref={keywordSearchRef}
                     onAddProduct={handleAddToCanvas}
                     canvasProducts={canvasProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
-                    showSearchInput={searchMode === 'keyword'}
+                    showSearchInput={true}
                     compact={true}
                     showResultsInline={false}
                     onSearchResults={setKeywordSearchResults}
@@ -1799,6 +2034,18 @@ function DesignPageContent() {
                     onFiltersChange={setSearchFilters}
                     showFilters={showSearchFilters}
                     onShowFiltersChange={setShowSearchFilters}
+                  />
+                </div>
+              )}
+
+              {/* Wall Color Panel - visible when Search + Walls sub-mode on mobile */}
+              {searchMode === 'search' && searchSubMode === 'walls' && (
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <WallColorPanel
+                    onAddToCanvas={handleAddWallColorToCanvas}
+                    canvasWallColor={canvasWallColor}
+                    selectedColor={selectedWallColor}
+                    onSelectColor={handleSelectWallColor}
                   />
                 </div>
               )}
@@ -1817,7 +2064,7 @@ function DesignPageContent() {
                   {/* Loading overlay - shows on top while project is loading */}
                   {!projectLoaded && (
                     <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-neutral-800"></div>
                     </div>
                   )}
                 </div>
@@ -1834,7 +2081,7 @@ function DesignPageContent() {
               totalBudget={totalBudget}
               sessionId={chatSessionId}
               enableModeToggle={false}
-              isKeywordSearchMode={searchMode === 'keyword'}
+              isKeywordSearchMode={searchMode === 'search' && searchSubMode === 'furniture'}
               keywordSearchResults={keywordSearchResults}
               onLoadMoreKeywordResults={() => keywordSearchRef.current?.loadMore()}
             />
@@ -1856,6 +2103,8 @@ function DesignPageContent() {
               onVisualizationImageChange={setInitialVisualizationImage}
               isProcessingFurniture={isProcessingFurniture}
               projectId={projectId}
+              canvasWallColor={canvasWallColor}
+              onRemoveWallColor={removeWallColorFromCanvas}
             />
           </div>
         </div>
@@ -1901,7 +2150,7 @@ function DesignPageContent() {
               <div className="flex gap-3 mb-6">
                 <button
                   onClick={() => handleStoreSelectionChange([...availableStores])}
-                  className="flex-1 bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 py-2 px-4 rounded-lg hover:bg-primary-200 dark:hover:bg-primary-800 transition font-medium"
+                  className="flex-1 bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 py-2 px-4 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-700 transition font-medium"
                 >
                   Select All
                 </button>
@@ -1917,12 +2166,12 @@ function DesignPageContent() {
               <div className="mb-6 text-center">
                 <p className="text-sm text-neutral-600 dark:text-neutral-400">
                   {selectedStores.length === 0 ? (
-                    <span className="text-primary-600 dark:text-primary-400 font-semibold">
+                    <span className="text-neutral-800 dark:text-neutral-200 font-semibold">
                       No stores selected - will search all {availableStores.length} stores
                     </span>
                   ) : (
                     <span>
-                      Selected <span className="font-semibold text-primary-600 dark:text-primary-400">{selectedStores.length}</span> of {availableStores.length} stores
+                      Selected <span className="font-semibold text-neutral-800 dark:text-neutral-200">{selectedStores.length}</span> of {availableStores.length} stores
                     </span>
                   )}
                 </p>
@@ -1958,8 +2207,8 @@ function DesignPageContent() {
                               p-4 rounded-lg border-2 transition-all duration-200
                               ${
                                 isSelected
-                                  ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 shadow-md'
-                                  : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:border-primary-300 dark:hover:border-primary-700 hover:bg-primary-50 dark:hover:bg-primary-900/10'
+                                  ? 'border-neutral-800 bg-neutral-100 dark:bg-neutral-800/20 text-neutral-700 dark:text-neutral-300 shadow-md'
+                                  : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 dark:hover:border-neutral-600 hover:bg-neutral-50 dark:hover:bg-neutral-800/10'
                               }
                             `}
                           >
@@ -1969,7 +2218,7 @@ function DesignPageContent() {
                               </span>
                               {isSelected && (
                                 <svg
-                                  className="w-5 h-5 text-primary-600 dark:text-primary-400 flex-shrink-0"
+                                  className="w-5 h-5 text-neutral-800 dark:text-neutral-200 flex-shrink-0"
                                   fill="currentColor"
                                   viewBox="0 0 20 20"
                                 >
@@ -2001,7 +2250,7 @@ function DesignPageContent() {
                 </button>
                 <button
                   onClick={() => setShowStoreModal(false)}
-                  className="flex-1 bg-gradient-to-r from-primary-600 to-secondary-600 text-white py-2.5 px-4 rounded-lg hover:from-primary-700 hover:to-secondary-700 transition font-medium shadow-lg"
+                  className="flex-1 bg-neutral-800 text-white py-2.5 px-4 rounded-lg hover:bg-neutral-900 transition font-medium shadow-lg"
                 >
                   Apply Selection
                 </button>
@@ -2013,6 +2262,195 @@ function DesignPageContent() {
           </div>
         </div>
       )}
+
+      {/* Publish Modal (Curator tier only) */}
+      {showPublishModal && canPublishLooks(user) && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-neutral-800 rounded-xl max-w-lg w-full shadow-2xl">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-neutral-200 dark:border-neutral-700 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-neutral-800 dark:text-neutral-200">
+                Publish to Curated Gallery
+              </h2>
+              <button
+                onClick={() => {
+                  setShowPublishModal(false);
+                  setPublishSuccess(false);
+                }}
+                className="p-1 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg transition-colors"
+              >
+                <svg className="w-5 h-5 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6">
+              {publishSuccess ? (
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-medium text-neutral-800 dark:text-neutral-200 mb-2">
+                    Look Published Successfully!
+                  </h3>
+                  <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                    Your look has been submitted for review and will appear in the curated gallery soon.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Preview */}
+                  {initialVisualizationImage && (
+                    <div className="aspect-video rounded-lg overflow-hidden bg-neutral-100 dark:bg-neutral-700">
+                      <img
+                        src={initialVisualizationImage.startsWith('data:') ? initialVisualizationImage : `data:image/png;base64,${initialVisualizationImage}`}
+                        alt="Preview"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  )}
+
+                  {/* Title */}
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                      Title *
+                    </label>
+                    <input
+                      type="text"
+                      value={publishTitle}
+                      onChange={(e) => setPublishTitle(e.target.value)}
+                      placeholder="e.g., Modern Minimalist Living Room"
+                      className="w-full px-4 py-2.5 border border-neutral-200 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 placeholder-neutral-400 dark:placeholder-neutral-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+
+                  {/* Description */}
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                      Description
+                    </label>
+                    <textarea
+                      value={publishDescription}
+                      onChange={(e) => setPublishDescription(e.target.value)}
+                      placeholder="Describe your design..."
+                      rows={2}
+                      className="w-full px-4 py-2.5 border border-neutral-200 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 placeholder-neutral-400 dark:placeholder-neutral-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all resize-none"
+                    />
+                  </div>
+
+                  {/* Room Type */}
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                      Room Type *
+                    </label>
+                    <select
+                      value={publishRoomType}
+                      onChange={(e) => setPublishRoomType(e.target.value as 'living_room' | 'bedroom')}
+                      className="w-full px-4 py-2.5 border border-neutral-200 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    >
+                      <option value="living_room">Living Room</option>
+                      <option value="bedroom">Bedroom</option>
+                    </select>
+                  </div>
+
+                  {/* Style Labels */}
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                      Style Labels (select multiple)
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {STYLE_LABEL_OPTIONS.map((style) => (
+                        <button
+                          key={style.value}
+                          type="button"
+                          onClick={() => {
+                            setPublishStyleLabels(prev =>
+                              prev.includes(style.value)
+                                ? prev.filter(s => s !== style.value)
+                                : [...prev, style.value]
+                            );
+                          }}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                            publishStyleLabels.includes(style.value)
+                              ? 'bg-green-600 text-white'
+                              : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-600'
+                          }`}
+                        >
+                          {style.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Budget Tier (auto-calculated) */}
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+                      Budget Tier (auto-calculated)
+                    </label>
+                    <div className="px-4 py-2.5 bg-neutral-100 dark:bg-neutral-700 rounded-lg text-neutral-600 dark:text-neutral-300 text-sm">
+                      {(() => {
+                        const totalPrice = canvasProducts.reduce((sum, p) => sum + (p.price || 0), 0);
+                        const tier = calculateBudgetTier(totalPrice);
+                        return `${tier.label} (${tier.range})`;
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Info note */}
+                  <div className="flex items-start gap-2 p-3 bg-neutral-50 dark:bg-neutral-700/50 rounded-lg">
+                    <svg className="w-5 h-5 text-neutral-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      Your look will be reviewed before appearing in the public gallery. This includes the visualization, room image, and product selections.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            {!publishSuccess && (
+              <div className="px-6 py-4 border-t border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 rounded-b-xl">
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowPublishModal(false)}
+                    className="flex-1 bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 py-2.5 px-4 rounded-lg hover:bg-neutral-300 dark:hover:bg-neutral-600 transition font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handlePublishLook}
+                    disabled={isPublishing || !publishTitle.trim()}
+                    className="flex-1 bg-green-600 text-white py-2.5 px-4 rounded-lg hover:bg-green-700 transition font-medium shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isPublishing ? (
+                      <>
+                        <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Publishing...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        Publish Look
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2020,7 +2458,9 @@ function DesignPageContent() {
 export default function DesignPage() {
   return (
     <ProtectedRoute
-      requiredTier="build_your_own"
+      requiredRole="user"
+      requiredTiers={['advanced', 'curator']}
+      allowAdmin={true}
       bypassTierWithSessionKeys={['curatedRoomImage', 'curatedVisualizationImage', 'preselectedProducts', 'designAccessGranted']}
     >
       <DesignPageContent />

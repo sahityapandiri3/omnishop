@@ -244,7 +244,7 @@ export function PhotoUploadStep({
             {!isProcessing && (
               <div className={`absolute top-3 right-3 px-3 py-1 rounded-full text-sm font-medium flex items-center gap-1.5 ${
                 showingProcessed
-                  ? 'bg-green-500 text-white'
+                  ? 'bg-neutral-700 text-white'
                   : 'bg-amber-500 text-white'
               }`}>
                 {showingProcessed ? (
@@ -274,13 +274,13 @@ export function PhotoUploadStep({
             onClick={() => fileInputRef.current?.click()}
             className={`relative border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all duration-200 ${
               isDragging
-                ? 'border-primary-500 bg-primary-50'
+                ? 'border-neutral-500 bg-neutral-100'
                 : 'border-neutral-300 bg-white hover:border-neutral-400 hover:bg-neutral-50'
             }`}
           >
             {isUploading ? (
               <div className="flex flex-col items-center">
-                <div className="w-12 h-12 border-3 border-primary-200 border-t-primary-600 rounded-full animate-spin mb-4" />
+                <div className="w-12 h-12 border-3 border-neutral-300 border-t-neutral-800 rounded-full animate-spin mb-4" />
                 <p className="text-neutral-600">Uploading image...</p>
               </div>
             ) : (
@@ -383,16 +383,16 @@ export function PhotoUploadStep({
       {/* Success message */}
       {processedImage && !isProcessing && (
         <div className="mt-6 w-full max-w-xl">
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <div className="bg-neutral-100 border border-neutral-300 rounded-lg p-4">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="w-8 h-8 rounded-full bg-neutral-200 flex items-center justify-center flex-shrink-0">
+                <svg className="w-4 h-4 text-neutral-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
               <div>
-                <p className="text-green-900 font-medium text-sm">Your room is ready!</p>
-                <p className="text-green-700 text-xs mt-0.5">
+                <p className="text-neutral-800 font-medium text-sm">Your room is ready!</p>
+                <p className="text-neutral-600 text-xs mt-0.5">
                   Click "Start Designing" to visualize furniture in your space.
                 </p>
               </div>

@@ -8,63 +8,63 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Teal palette (cool tones from left side of palette)
+        // Primary: Soft teal/sage (luxury interior feel)
         primary: {
-          50: '#f0f7f7',
-          100: '#d4e8e8',
-          200: '#a8d4d4',
-          300: '#7eb8b0',
-          400: '#5a9a94',
-          500: '#4a8a84',
-          600: '#3d7a74',
-          700: '#2d5f5a',
-          800: '#1f4a46',
-          900: '#1a3634',
+          50: '#f7fafa',
+          100: '#e8f4f3',
+          200: '#d1e9e7',
+          300: '#a8d5d1',
+          400: '#7ebdb7',
+          500: '#5a9f99',   // Main brand color
+          600: '#4a8580',
+          700: '#3d6b67',
+          800: '#345755',
+          900: '#2d4946',
         },
-        // Warm palette (orange/gold from right side)
+        // Secondary: Warm cream/gold (accent warmth)
         secondary: {
-          50: '#fdf8f0',
-          100: '#f8edd8',
-          200: '#f0d8b0',
-          300: '#e8c088',
-          400: '#d8a048',
-          500: '#c88a38',
-          600: '#b87830',
-          700: '#a06528',
-          800: '#885420',
-          900: '#704418',
+          50: '#fdfcfa',
+          100: '#f9f6f0',
+          200: '#f2ebe0',
+          300: '#e8dcc8',
+          400: '#d4c4a8',
+          500: '#c4b08a',
+          600: '#a89470',
+          700: '#8a785c',
+          800: '#6e604a',
+          900: '#584c3c',
         },
-        // Accent colors (rust/maroon)
-        accent: {
-          50: '#fdf4f2',
-          100: '#f8e4df',
-          200: '#f0c4b8',
-          300: '#d89888',
-          400: '#c87058',
-          500: '#b85838',
-          600: '#a04030',
-          700: '#8a3028',
-          800: '#7a2828',
-          900: '#5f1f1f',
-        },
-        // Neutral palette (navy to cream)
+        // Neutral: Warm grays (cream-tinted, not cold)
         neutral: {
-          50: '#f8f6f2',
-          100: '#f0ece4',
-          200: '#e8dcc4',
-          300: '#d4cbb0',
-          400: '#a09080',
-          500: '#706860',
-          600: '#525050',
-          700: '#3d3a38',
-          800: '#2d3038',
-          900: '#1a2634',
+          50: '#fafaf9',    // Page background
+          100: '#f5f4f2',   // Card backgrounds
+          200: '#e8e6e3',   // Borders, dividers
+          300: '#d4d1cc',   // Muted text
+          400: '#a8a49e',   // Placeholder text
+          500: '#78746d',   // Secondary text
+          600: '#5c5955',   // Body text
+          700: '#44423f',   // Headings
+          800: '#2d2b29',   // Dark text
+          900: '#1a1918',   // Near black
+        },
+        // Accent: Soft terracotta/rust (warm pop)
+        accent: {
+          50: '#fdf7f5',
+          100: '#f9ebe6',
+          200: '#f2d4cc',
+          300: '#e5b5a8',
+          400: '#d4917f',
+          500: '#c27560',
+          600: '#a85c48',
+          700: '#8a4a3a',
+          800: '#6e3c30',
+          900: '#5a3228',
         },
       },
       fontFamily: {
-        sans: ['Inter', 'ui-sans-serif', 'system-ui'],
-        serif: ['ui-serif', 'Georgia'],
-        mono: ['ui-monospace', 'SFMono-Regular'],
+        sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
+        display: ['var(--font-playfair)', 'Georgia', 'serif'],  // For headings
+        body: ['var(--font-inter)', 'system-ui', 'sans-serif'],
       },
       spacing: {
         '18': '4.5rem',

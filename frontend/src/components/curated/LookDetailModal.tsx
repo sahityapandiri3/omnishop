@@ -87,7 +87,7 @@ export function LookDetailModal({
                 {/* Loading indicator for full image */}
                 {loadingFullImage && (
                   <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-100/50">
-                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-600 border-t-transparent"></div>
+                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-neutral-800 border-t-transparent"></div>
                   </div>
                 )}
                 {displayImage ? (
@@ -114,7 +114,7 @@ export function LookDetailModal({
                 {/* Price badge on image */}
                 <div className="absolute top-3 right-3">
                   <div className="bg-white/95 backdrop-blur-sm px-3 py-1 rounded-full shadow-sm">
-                    <span className="text-sm font-bold text-primary-600">{formatPrice(look.total_price)}</span>
+                    <span className="text-sm font-bold text-neutral-700">{formatPrice(look.total_price)}</span>
                   </div>
                 </div>
 
@@ -133,7 +133,7 @@ export function LookDetailModal({
               <div className="hidden lg:flex mt-3 gap-2">
                 <button
                   onClick={() => onStyleThisLook(look)}
-                  className="flex-1 py-3 px-4 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 bg-primary-600 hover:bg-primary-700 text-white"
+                  className="flex-1 py-3 px-4 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 bg-neutral-800 hover:bg-neutral-900 text-white"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -198,7 +198,7 @@ export function LookDetailModal({
                       <div className="p-2">
                         <p className="text-[9px] text-neutral-400 uppercase tracking-wide mb-0.5">{product.product_type}</p>
                         <h4 className="font-medium text-neutral-800 text-[11px] mb-1 line-clamp-2">{product.name}</h4>
-                        <p className="text-primary-600 font-bold text-xs mb-1.5">{formatPrice(product.price)}</p>
+                        <p className="text-neutral-700 font-bold text-xs mb-1.5">{formatPrice(product.price)}</p>
 
                         {product.source_url && (
                           <a
@@ -226,7 +226,7 @@ export function LookDetailModal({
             <div className="flex gap-2">
               <button
                 onClick={() => onStyleThisLook(look)}
-                className="flex-1 bg-primary-600 hover:bg-primary-700 text-white py-2.5 px-3 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1.5"
+                className="flex-1 bg-neutral-800 hover:bg-neutral-900 text-white py-2.5 px-3 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1.5"
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />

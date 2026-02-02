@@ -1197,7 +1197,7 @@ export const DraggableFurnitureCanvas: React.FC<DraggableFurnitureCanvasProps> =
             </span>
           )}
           {clickStep === 'to' && (
-            <span className="text-green-600 font-medium">
+            <span className="text-neutral-700 font-medium">
               Now click where you want it moved to
             </span>
           )}

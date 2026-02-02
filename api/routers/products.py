@@ -27,6 +27,133 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/products", tags=["products"])
 
 
+@router.get("/search")
+async def search_products(
+    query: Optional[str] = Query(None),
+    category_id: Optional[int] = Query(None),
+    source_website: Optional[str] = Query(None),
+    min_price: Optional[float] = Query(None, ge=0),
+    max_price: Optional[float] = Query(None, ge=0),
+    colors: Optional[str] = Query(None),
+    styles: Optional[str] = Query(None),
+    materials: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """Search products with keyword and filters - public endpoint for design studio"""
+    try:
+        logger.info(f"Search products: query={query}, category={category_id}, page={page}")
+
+        # Build base query
+        base_query = select(Product).options(selectinload(Product.category), selectinload(Product.images))
+
+        # Apply search filter
+        if query:
+            escaped_query = re.escape(query)
+            base_query = base_query.where(
+                or_(
+                    Product.name.ilike(f"%{query}%"),
+                    Product.description.ilike(f"%{query}%"),
+                    Product.brand.ilike(f"%{query}%"),
+                )
+            )
+
+        # Apply category filter
+        if category_id:
+            base_query = base_query.where(Product.category_id == category_id)
+
+        # Apply source website filter
+        if source_website:
+            base_query = base_query.where(Product.source_website == source_website)
+
+        # Apply price filters
+        if min_price is not None:
+            base_query = base_query.where(Product.price >= min_price)
+        if max_price is not None:
+            base_query = base_query.where(Product.price <= max_price)
+
+        # Only show available products
+        base_query = base_query.where(Product.is_available == True)
+
+        # Get total count
+        count_query = select(func.count()).select_from(base_query.subquery())
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        # Apply pagination
+        offset = (page - 1) * page_size
+        paginated_query = base_query.offset(offset).limit(page_size)
+
+        # Execute query
+        result = await db.execute(paginated_query)
+        products = result.scalars().unique().all()
+
+        # Format products for response
+        formatted_products = []
+        for product in products:
+            primary_image_url = None
+            formatted_images = []
+            if product.images:
+                for img in product.images:
+                    img_data = {
+                        "id": img.id,
+                        "original_url": img.original_url,
+                        "thumbnail_url": img.thumbnail_url,
+                        "medium_url": img.medium_url,
+                        "large_url": img.large_url,
+                        "is_primary": img.is_primary,
+                    }
+                    formatted_images.append(img_data)
+                    if img.is_primary:
+                        primary_image_url = img.large_url or img.medium_url or img.original_url
+                if not primary_image_url and formatted_images:
+                    first_img = formatted_images[0]
+                    primary_image_url = (
+                        first_img.get("large_url") or first_img.get("medium_url") or first_img.get("original_url")
+                    )
+
+            formatted_products.append(
+                {
+                    "id": product.id,
+                    "name": product.name,
+                    "price": product.price,
+                    "original_price": product.original_price,
+                    "currency": product.currency or "INR",
+                    "brand": product.brand,
+                    "source_website": product.source_website,
+                    "source_url": product.source_url,
+                    "is_available": product.is_available,
+                    "is_on_sale": product.is_on_sale,
+                    "image_url": primary_image_url,  # Fallback for frontend
+                    "images": formatted_images,  # Full image objects for frontend
+                    "category": {
+                        "id": product.category.id,
+                        "name": product.category.name,
+                    }
+                    if product.category
+                    else None,
+                    "description": product.description,
+                }
+            )
+
+        has_more = (offset + len(products)) < total
+
+        return {
+            "products": formatted_products,
+            "total": total,
+            "total_primary": total,
+            "total_related": 0,
+            "page": page,
+            "page_size": page_size,
+            "has_more": has_more,
+        }
+
+    except Exception as e:
+        logger.error(f"Error searching products: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error searching products: {str(e)}")
+
+
 @router.get("/", response_model=ProductSearchResponse)
 async def get_products(
     page: int = Query(1, ge=1),

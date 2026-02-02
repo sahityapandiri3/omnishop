@@ -329,7 +329,7 @@ export default function ProductDiscoveryPanel({
         <div ref={productsContainerRef} className="flex-1 overflow-y-auto p-4">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600 mb-4"></div>
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-neutral-800 mb-4"></div>
               <p className="text-sm text-neutral-500 dark:text-neutral-400">Searching products...</p>
             </div>
           ) : hasKeywordResults ? (
@@ -441,7 +441,7 @@ export default function ProductDiscoveryPanel({
           <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
             <button
               onClick={handleBackToCarousel}
-              className="flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 mb-2"
+              className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-300 mb-2"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -456,7 +456,7 @@ export default function ProductDiscoveryPanel({
                 <p className="text-sm text-neutral-500 dark:text-neutral-400">
                   {productsByCategory![viewAllCategory]?.length || 0} items
                   {expandedCategoryData.budget_allocation && (
-                    <span className="ml-2 text-primary-600 dark:text-primary-400">
+                    <span className="ml-2 text-neutral-700 dark:text-neutral-400">
                       • Budget: ₹{Math.round(expandedCategoryData.budget_allocation.min / 1000)}K - ₹{Math.round(expandedCategoryData.budget_allocation.max / 1000)}K
                     </span>
                   )}
@@ -502,7 +502,7 @@ export default function ProductDiscoveryPanel({
                 onClick={() => setShowFilters(!showFilters)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                   hasActiveFilters
-                    ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 border border-primary-300 dark:border-primary-700'
+                    ? 'bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-400 dark:border-neutral-600'
                     : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-600'
                 }`}
               >
@@ -511,13 +511,13 @@ export default function ProductDiscoveryPanel({
                 </svg>
                 Filter
                 {hasActiveFilters && (
-                  <span className="w-1.5 h-1.5 bg-primary-500 rounded-full"></span>
+                  <span className="w-1.5 h-1.5 bg-neutral-800 rounded-full"></span>
                 )}
               </button>
               {totalBudget && (
                 <div className="text-right">
                   <p className="text-[10px] text-neutral-500 dark:text-neutral-400">Budget</p>
-                  <p className="text-sm font-semibold text-primary-600 dark:text-primary-400">
+                  <p className="text-sm font-semibold text-neutral-700 dark:text-neutral-400">
                     ₹{(totalBudget / 1000).toFixed(0)}K
                   </p>
                 </div>
@@ -541,7 +541,7 @@ export default function ProductDiscoveryPanel({
                         onClick={() => toggleStore(store)}
                         className={`text-[10px] px-2 py-1 rounded-full transition-colors ${
                           selectedStores.includes(store)
-                            ? 'bg-primary-600 text-white'
+                            ? 'bg-neutral-800 text-white'
                             : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-600'
                         }`}
                       >
@@ -563,7 +563,7 @@ export default function ProductDiscoveryPanel({
                     placeholder="Min"
                     value={priceRange.min === 0 ? '' : priceRange.min}
                     onChange={(e) => setPriceRange({ ...priceRange, min: Number(e.target.value) || 0 })}
-                    className="w-20 text-xs px-2 py-1.5 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-20 text-xs px-2 py-1.5 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-500"
                   />
                   <span className="text-neutral-400 text-xs">-</span>
                   <input
@@ -571,7 +571,7 @@ export default function ProductDiscoveryPanel({
                     placeholder="Max"
                     value={priceRange.max === Infinity ? '' : priceRange.max}
                     onChange={(e) => setPriceRange({ ...priceRange, max: Number(e.target.value) || Infinity })}
-                    className="w-20 text-xs px-2 py-1.5 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-20 text-xs px-2 py-1.5 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-500"
                   />
                 </div>
               </div>
@@ -580,7 +580,7 @@ export default function ProductDiscoveryPanel({
               {hasActiveFilters && (
                 <button
                   onClick={clearFilters}
-                  className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
+                  className="text-xs text-neutral-700 hover:text-neutral-800 dark:text-neutral-400 font-medium"
                 >
                   Clear all filters
                 </button>
@@ -594,12 +594,12 @@ export default function ProductDiscoveryPanel({
               {selectedStores.map(store => (
                 <span
                   key={store}
-                  className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full"
+                  className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-full"
                 >
                   {store}
                   <button
                     onClick={() => toggleStore(store)}
-                    className="hover:text-primary-900 dark:hover:text-primary-100"
+                    className="hover:text-neutral-900 dark:hover:text-neutral-100"
                   >
                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -608,11 +608,11 @@ export default function ProductDiscoveryPanel({
                 </span>
               ))}
               {(priceRange.min > 0 || priceRange.max < Infinity) && (
-                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full">
+                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-full">
                   ₹{priceRange.min > 0 ? priceRange.min : '0'} - ₹{priceRange.max < Infinity ? priceRange.max : '∞'}
                   <button
                     onClick={() => setPriceRange({ min: 0, max: Infinity })}
-                    className="hover:text-primary-900 dark:hover:text-primary-100"
+                    className="hover:text-neutral-900 dark:hover:text-neutral-100"
                   >
                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -676,7 +676,7 @@ export default function ProductDiscoveryPanel({
                 onChange={(e) =>
                   setSortBy(e.target.value as 'relevance' | 'price-low' | 'price-high')
                 }
-                className="flex-1 text-sm px-3 py-1.5 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="flex-1 text-sm px-3 py-1.5 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-500"
               >
                 <option value="relevance">Relevance</option>
                 <option value="price-low">Price: Low to High</option>
@@ -697,7 +697,7 @@ export default function ProductDiscoveryPanel({
                       onClick={() => toggleStore(store)}
                       className={`text-xs px-3 py-1.5 rounded-full transition-colors ${
                         selectedStores.includes(store)
-                          ? 'bg-primary-600 text-white'
+                          ? 'bg-neutral-800 text-white'
                           : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-600'
                       }`}
                     >
@@ -719,7 +719,7 @@ export default function ProductDiscoveryPanel({
                   placeholder="Min"
                   value={priceRange.min === 0 ? '' : priceRange.min}
                   onChange={(e) => setPriceRange({ ...priceRange, min: Number(e.target.value) || 0 })}
-                  className="flex-1 text-sm px-3 py-1.5 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="flex-1 text-sm px-3 py-1.5 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-500"
                 />
                 <span className="text-neutral-500">-</span>
                 <input
@@ -727,7 +727,7 @@ export default function ProductDiscoveryPanel({
                   placeholder="Max"
                   value={priceRange.max === Infinity ? '' : priceRange.max}
                   onChange={(e) => setPriceRange({ ...priceRange, max: Number(e.target.value) || Infinity })}
-                  className="flex-1 text-sm px-3 py-1.5 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="flex-1 text-sm px-3 py-1.5 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-500"
                 />
               </div>
             </div>
@@ -736,7 +736,7 @@ export default function ProductDiscoveryPanel({
             {(selectedStores.length > 0 || priceRange.min > 0 || priceRange.max < Infinity) && (
               <button
                 onClick={clearFilters}
-                className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
+                className="text-xs text-neutral-700 hover:text-neutral-800 dark:text-neutral-400 font-medium"
               >
                 Clear all filters
               </button>
@@ -773,7 +773,7 @@ export default function ProductDiscoveryPanel({
                   key={product.id}
                   className={`group border rounded-xl overflow-hidden transition-all duration-200 cursor-pointer ${
                     productInCanvas
-                      ? 'bg-green-50 dark:bg-green-900/10 border-green-300 dark:border-green-700'
+                      ? 'bg-neutral-100 dark:bg-neutral-800/30 border-neutral-400 dark:border-neutral-600'
                       : 'bg-white dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 hover:shadow-lg'
                   }`}
                   onClick={() => handleProductClick(product)}
@@ -830,7 +830,7 @@ export default function ProductDiscoveryPanel({
                     {/* In Canvas Badge with Quantity */}
                     {productInCanvas && (
                       <div className="absolute top-1.5 right-1.5">
-                        <span className="px-1.5 py-0.5 bg-green-500 text-white text-[10px] font-bold rounded-full flex items-center gap-0.5 shadow-lg">
+                        <span className="px-1.5 py-0.5 bg-neutral-700 text-white text-[10px] font-bold rounded-full flex items-center gap-0.5 shadow-lg">
                           <svg
                             className="w-2.5 h-2.5"
                             fill="currentColor"
@@ -867,7 +867,7 @@ export default function ProductDiscoveryPanel({
                     )}
 
                     {/* Name */}
-                    <h3 className="font-medium text-xs text-neutral-900 dark:text-white mb-1.5 line-clamp-2 group-hover:text-primary-600 transition-colors">
+                    <h3 className="font-medium text-xs text-neutral-900 dark:text-white mb-1.5 line-clamp-2 group-hover:text-neutral-700 transition-colors">
                       {product.name}
                     </h3>
 
@@ -892,8 +892,8 @@ export default function ProductDiscoveryPanel({
                       disabled={product.is_available === false}
                       className={`w-full py-1.5 px-2 rounded-lg text-xs font-medium transition-colors ${
                         productInCanvas
-                          ? 'bg-green-600 hover:bg-green-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 text-white'
-                          : 'bg-primary-600 hover:bg-primary-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 text-white'
+                          ? 'bg-neutral-700 hover:bg-neutral-800 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 text-white'
+                          : 'bg-neutral-800 hover:bg-neutral-900 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 text-white'
                       } disabled:cursor-not-allowed`}
                     >
                       {product.is_available === false

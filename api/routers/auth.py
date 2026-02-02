@@ -245,7 +245,7 @@ async def refresh_token(
 class UpgradeRequest(BaseModel):
     """Request to upgrade subscription tier"""
 
-    tier: str = "upgraded"  # Unified tier for all upgrade flows (Build Your Own, Style This Further)
+    tier: str = "basic"  # Default to basic tier
 
 
 class UpgradeResponse(BaseModel):
@@ -265,12 +265,18 @@ async def upgrade_subscription(
     """
     Upgrade user's subscription tier.
 
-    For now, this simulates a successful payment and upgrades to build_your_own.
+    Supports the new 5-tier pricing system:
+    - free: 1 curated look with sample room
+    - basic: 3 curated looks (₹399)
+    - basic_plus: 6 curated looks (₹699)
+    - advanced: Full Omni Studio access (₹11,999/mo)
+    - curator: Full access + publish to gallery (₹14,999/mo)
+
     TODO: Integrate with Razorpay/Stripe for actual payment processing.
     """
     try:
-        # Validate tier
-        valid_tiers = ["free", "upgraded"]
+        # Validate tier - supports both old and new tier names
+        valid_tiers = ["free", "basic", "basic_plus", "advanced", "curator", "upgraded", "build_your_own"]
         if request.tier not in valid_tiers:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid tier. Must be one of: {valid_tiers}")
 

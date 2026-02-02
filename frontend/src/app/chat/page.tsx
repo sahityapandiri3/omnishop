@@ -34,8 +34,8 @@ function ChatPageContent() {
           </div>
 
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4">
-              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-12 h-12 bg-neutral-100 rounded-lg flex items-center justify-center mb-4">
+              <svg className="w-6 h-6 text-neutral-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </div>
@@ -83,7 +83,7 @@ function ChatPageContent() {
 
 export default function ChatPage() {
   return (
-    <ProtectedRoute requiredTier="build_your_own">
+    <ProtectedRoute requiredTiers={['advanced', 'curator']} allowAdmin={true}>
       <ChatPageContent />
     </ProtectedRoute>
   );

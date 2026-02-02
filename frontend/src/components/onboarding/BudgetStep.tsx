@@ -82,8 +82,8 @@ export function BudgetStep({ budget, isFlexible, onSelect }: BudgetStepProps) {
                 isFlexible
                   ? 'opacity-40 cursor-not-allowed border-neutral-200 bg-neutral-50'
                   : isSelected
-                  ? 'border-primary-600 bg-primary-50 shadow-sm'
-                  : 'border-neutral-200 bg-white hover:border-primary-400 hover:bg-primary-50/30'
+                  ? 'border-neutral-800 bg-neutral-100 shadow-sm'
+                  : 'border-neutral-200 bg-white hover:border-neutral-400 hover:bg-neutral-50'
               }`}
             >
               <div className="text-base font-semibold text-neutral-900">
@@ -116,8 +116,8 @@ export function BudgetStep({ budget, isFlexible, onSelect }: BudgetStepProps) {
               isFlexible
                 ? 'bg-neutral-50 border-neutral-200 text-neutral-400 cursor-not-allowed'
                 : customBudget
-                ? 'border-primary-600 bg-primary-50'
-                : 'border-neutral-200 bg-white focus:border-primary-500 focus:ring-1 focus:ring-primary-100'
+                ? 'border-neutral-800 bg-neutral-100'
+                : 'border-neutral-200 bg-white focus:border-neutral-500 focus:ring-1 focus:ring-neutral-200'
             }`}
           />
         </div>
@@ -134,14 +134,14 @@ export function BudgetStep({ budget, isFlexible, onSelect }: BudgetStepProps) {
           onClick={handleFlexibleToggle}
           className={`w-full py-2.5 px-4 rounded-lg border transition-all duration-200 flex items-center justify-center gap-2 ${
             isFlexible
-              ? 'border-primary-600 bg-primary-50'
+              ? 'border-neutral-800 bg-neutral-100'
               : 'border-neutral-200 bg-white hover:border-neutral-300'
           }`}
         >
           <div
             className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
               isFlexible
-                ? 'border-primary-600 bg-primary-600'
+                ? 'border-neutral-800 bg-neutral-800'
                 : 'border-neutral-300'
             }`}
           >

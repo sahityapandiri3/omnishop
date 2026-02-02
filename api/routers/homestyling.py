@@ -75,12 +75,32 @@ async def create_session(
     user preferences, uploaded images, and generated views.
     """
     try:
+        # Map frontend pricing tier to backend HomeStylingTier
+        # Note: Curator users go directly to /curated and don't use homestyling flow
+        selected_tier = None
+        views_count = 1  # Default
+        if request.selected_tier:
+            tier_mapping = {
+                "free": (HomeStylingTier.FREE, 1),
+                "basic": (HomeStylingTier.BASIC, 3),
+                "basic_plus": (HomeStylingTier.PREMIUM, 6),
+                "advanced": (HomeStylingTier.PREMIUM, 6),
+                # curator not included - they don't use homestyling flow
+            }
+            if request.selected_tier in tier_mapping:
+                selected_tier, views_count = tier_mapping[request.selected_tier]
+                logger.info(
+                    f"Mapped frontend tier '{request.selected_tier}' to backend tier '{selected_tier.value}' with {views_count} views"
+                )
+
         session = HomeStylingSession(
             id=str(uuid.uuid4()),
             room_type=request.room_type.value if request.room_type else None,
             style=request.style.value if request.style else None,
             color_palette=[c.value for c in request.color_palette] if request.color_palette else [],
             budget_tier=request.budget_tier.value if request.budget_tier else None,
+            selected_tier=selected_tier,
+            views_count=views_count,
             status=HomeStylingSessionStatus.PREFERENCES,
         )
         db.add(session)
@@ -642,6 +662,7 @@ async def generate_views(
     session_id: str,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user),
 ):
     """
     Start visualization generation for the session (runs in background).
@@ -664,6 +685,11 @@ async def generate_views(
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
+        # Link session to user if authenticated (critical for purchases to work)
+        if current_user and not session.user_id:
+            session.user_id = current_user.id
+            logger.info(f"Linked session {session_id} to user {current_user.id}")
+
         # Check if already generating
         if session.status == HomeStylingSessionStatus.GENERATING:
             logger.info(f"Session {session_id} is already generating, returning started status")
@@ -681,10 +707,15 @@ async def generate_views(
             raise HTTPException(status_code=400, detail="Room type not selected")
         if not session.style:
             raise HTTPException(status_code=400, detail="Style not selected")
-        if not session.clean_room_image:
+        # For Free tier, room image is optional - will use curated look images as fallback
+        if not session.clean_room_image and session.selected_tier != HomeStylingTier.FREE:
             raise HTTPException(status_code=400, detail="Room image not uploaded")
+
+        # Set default tier for legacy sessions that don't have it
         if not session.selected_tier:
-            raise HTTPException(status_code=400, detail="Tier not selected")
+            logger.info(f"Session {session_id} has no tier set, defaulting to BASIC (3 views)")
+            session.selected_tier = HomeStylingTier.BASIC
+            session.views_count = 3
 
         # Update status to generating
         session.status = HomeStylingSessionStatus.GENERATING
@@ -788,10 +819,17 @@ async def _generate_views_impl(session_id: str, db: AsyncSession):
         return
 
     # Get the user's clean room image (furniture removed)
+    # For Free tier, this may be None - we'll use curated look images directly
     user_room_image = session.clean_room_image
-    # Remove data URL prefix if present
-    if user_room_image.startswith("data:"):
-        user_room_image = user_room_image.split(",", 1)[1] if "," in user_room_image else user_room_image
+    use_fallback_only = user_room_image is None  # Free tier - no room image uploaded
+
+    if user_room_image:
+        # Remove data URL prefix if present
+        if user_room_image.startswith("data:"):
+            user_room_image = user_room_image.split(",", 1)[1] if "," in user_room_image else user_room_image
+
+    if use_fallback_only:
+        logger.info(f"Free tier session - will use curated look images directly (no AI generation)")
 
     logger.info(f"Generating {len(looks)} new views for session {session_id} (already have {current_views}/{max_views})")
 
@@ -838,20 +876,26 @@ async def _generate_views_impl(session_id: str, db: AsyncSession):
 
     for i, look in enumerate(looks):
         products_for_viz = build_products_for_viz(look)
-        image, error = await try_generate_visualization(look, products_for_viz)
 
-        if image and not error:
-            logger.info(f"  Look {i+1}/{len(looks)} '{look.title}' - SUCCESS")
-            results.append((look, products_for_viz, image, None, False))
+        # For Free tier (no room image), use curated look's visualization image directly
+        if use_fallback_only:
+            logger.info(f"  Look {i+1}/{len(looks)} '{look.title}' - Using curated look image (Free tier)")
+            results.append((look, products_for_viz, look.visualization_image, None, True))
         else:
-            logger.warning(f"  Look {i+1}/{len(looks)} '{look.title}' - FAILED, will retry")
-            results.append((look, products_for_viz, None, error, False))
+            image, error = await try_generate_visualization(look, products_for_viz)
 
-        # Delay between generations
-        if i < len(looks) - 1:
-            delay_seconds = 5
-            logger.info(f"  Waiting {delay_seconds}s before next generation...")
-            await asyncio.sleep(delay_seconds)
+            if image and not error:
+                logger.info(f"  Look {i+1}/{len(looks)} '{look.title}' - SUCCESS")
+                results.append((look, products_for_viz, image, None, False))
+            else:
+                logger.warning(f"  Look {i+1}/{len(looks)} '{look.title}' - FAILED, will retry")
+                results.append((look, products_for_viz, None, error, False))
+
+            # Delay between generations
+            if i < len(looks) - 1:
+                delay_seconds = 5
+                logger.info(f"  Waiting {delay_seconds}s before next generation...")
+                await asyncio.sleep(delay_seconds)
 
     # Phase 2: Retry failed looks
     failed_indices = [i for i, r in enumerate(results) if r[2] is None]

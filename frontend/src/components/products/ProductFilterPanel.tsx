@@ -120,7 +120,7 @@ export function ProductFilterPanel({
               onClick={() => onStoreCategoryChange(category)}
               className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
                 filters.storeCategory === category
-                  ? 'bg-primary-600 text-white'
+                  ? 'bg-neutral-800 text-white'
                   : 'bg-white dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-600'
               }`}
             >
@@ -139,7 +139,7 @@ export function ProductFilterPanel({
             </label>
             <button
               onClick={toggleAllStores}
-              className="text-xs text-primary-600 hover:text-primary-700"
+              className="text-xs text-neutral-700 hover:text-neutral-800"
             >
               {filters.stores.length === storeCategories.flatMap(c => c.stores).length
                 ? 'Deselect all'
@@ -164,7 +164,7 @@ export function ProductFilterPanel({
                       onClick={() => onToggleStore(store.name)}
                       className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
                         filters.stores.includes(store.name)
-                          ? 'bg-primary-600 text-white'
+                          ? 'bg-neutral-800 text-white'
                           : 'bg-white dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-600'
                       }`}
                     >
@@ -191,7 +191,7 @@ export function ProductFilterPanel({
                 onClick={() => onToggleStore(store)}
                 className={`text-[10px] px-2 py-1 rounded-full transition-colors ${
                   filters.stores.includes(store)
-                    ? 'bg-primary-600 text-white'
+                    ? 'bg-neutral-800 text-white'
                     : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-600'
                 }`}
               >
@@ -212,7 +212,7 @@ export function ProductFilterPanel({
             {filters.styles.length > 0 && (
               <button
                 onClick={() => onStyleChange([])}
-                className="text-xs text-primary-600 hover:text-primary-700"
+                className="text-xs text-neutral-700 hover:text-neutral-800"
               >
                 Clear ({filters.styles.length})
               </button>
@@ -225,7 +225,7 @@ export function ProductFilterPanel({
                 onClick={() => onToggleStyle(style.value)}
                 className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
                   filters.styles.includes(style.value)
-                    ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 border border-primary-300 dark:border-primary-700'
+                    ? 'bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-400 dark:border-neutral-600'
                     : 'bg-white dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-600'
                 }`}
               >
@@ -253,7 +253,7 @@ export function ProductFilterPanel({
               placeholder="Min"
               value={priceMin === 0 ? '' : priceMin}
               onChange={(e) => handlePriceMinChange(e.target.value)}
-              className="flex-1 text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
+              className="flex-1 text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-neutral-500"
             />
             <span className="text-neutral-400 text-xs">-</span>
             <input
@@ -261,7 +261,7 @@ export function ProductFilterPanel({
               placeholder="Max"
               value={priceMax >= 999999 || priceMax === Infinity ? '' : priceMax}
               onChange={(e) => handlePriceMaxChange(e.target.value)}
-              className="flex-1 text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
+              className="flex-1 text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-neutral-500"
             />
           </div>
         </div>
@@ -276,7 +276,7 @@ export function ProductFilterPanel({
           <select
             value={filters.sortBy}
             onChange={(e) => onSortByChange(e.target.value as ProductFilters['sortBy'])}
-            className="w-full text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="w-full text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-neutral-500"
           >
             <option value="relevance">Relevance</option>
             <option value="price-low">Price: Low to High</option>
@@ -289,7 +289,7 @@ export function ProductFilterPanel({
       {hasActiveFilters && (
         <button
           onClick={onClearFilters}
-          className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
+          className="text-xs text-neutral-700 hover:text-neutral-800 dark:text-neutral-400 font-medium"
         >
           Clear all filters
         </button>
@@ -319,7 +319,7 @@ export function FilterToggleButton({
       onClick={onClick}
       className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
         hasActiveFilters
-          ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 border border-primary-300 dark:border-primary-700'
+          ? 'bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-400 dark:border-neutral-600'
           : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-600'
       }`}
     >
@@ -328,7 +328,7 @@ export function FilterToggleButton({
       </svg>
       Filter
       {hasActiveFilters && (
-        <span className="w-1.5 h-1.5 bg-primary-500 rounded-full"></span>
+        <span className="w-1.5 h-1.5 bg-neutral-800 rounded-full"></span>
       )}
     </button>
   );
@@ -364,12 +364,12 @@ export function ActiveFiltersSummary({
       {filters.stores.map(store => (
         <span
           key={store}
-          className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full"
+          className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-full"
         >
           {store}
           <button
             onClick={() => onRemoveStore(store)}
-            className="hover:text-primary-900 dark:hover:text-primary-100"
+            className="hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -378,11 +378,11 @@ export function ActiveFiltersSummary({
         </span>
       ))}
       {(priceMin > 0 || (priceMax < Infinity && priceMax !== 999999)) && (
-        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 rounded-full">
+        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-full">
           {'\u20B9'}{priceMin > 0 ? priceMin : '0'} - {'\u20B9'}{priceMax < Infinity && priceMax !== 999999 ? priceMax : '\u221E'}
           <button
             onClick={onClearPriceRange}
-            className="hover:text-primary-900 dark:hover:text-primary-100"
+            className="hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

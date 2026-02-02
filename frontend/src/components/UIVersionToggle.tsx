@@ -26,7 +26,7 @@ export default function UIVersionToggle() {
       {/* Toggle button */}
       <button
         onClick={() => setIsVisible(!isVisible)}
-        className="bg-gradient-to-r from-primary-600 to-secondary-600 text-white px-4 py-2 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
+        className="bg-gradient-to-r from-neutral-700 to-neutral-800 text-white px-4 py-2 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
         title="Toggle UI Version"
       >
         <svg
@@ -67,8 +67,8 @@ export default function UIVersionToggle() {
               <span
                 className={`px-3 py-1 rounded-full text-xs font-bold ${
                   flags.useNewUI
-                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                    : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                    ? 'bg-neutral-200 text-neutral-800 dark:bg-neutral-700 dark:text-neutral-200'
+                    : 'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300'
                 }`}
               >
                 {flags.useNewUI ? 'New UI (V2)' : 'Classic UI (V1)'}
@@ -84,7 +84,7 @@ export default function UIVersionToggle() {
           {/* Toggle button */}
           <button
             onClick={toggleNewUI}
-            className="w-full bg-primary-600 hover:bg-primary-700 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
+            className="w-full bg-neutral-800 hover:bg-neutral-900 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
           >
             <svg
               className="w-5 h-5"
@@ -110,19 +110,19 @@ export default function UIVersionToggle() {
             <div className="space-y-1">
               {flags.enableThreePanelLayout && (
                 <div className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <div className="w-2 h-2 bg-neutral-600 rounded-full"></div>
                   <span>Three-panel layout</span>
                 </div>
               )}
               {flags.enableCanvasPanel && (
                 <div className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <div className="w-2 h-2 bg-neutral-600 rounded-full"></div>
                   <span>Canvas panel</span>
                 </div>
               )}
               {flags.enableClickToMove && (
                 <div className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <div className="w-2 h-2 bg-neutral-600 rounded-full"></div>
                   <span>Click-to-move furniture</span>
                 </div>
               )}

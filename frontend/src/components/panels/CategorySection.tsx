@@ -289,7 +289,7 @@ export default function CategorySection({
               {budgetHint && (
                 <>
                   <span>•</span>
-                  <span className="text-primary-600 dark:text-primary-400">{budgetHint}</span>
+                  <span className="text-neutral-700 dark:text-neutral-400">{budgetHint}</span>
                 </>
               )}
             </div>
@@ -305,7 +305,7 @@ export default function CategorySection({
             }}
             className={`p-1.5 rounded-lg transition-colors ${
               showFilters || filters.selectedStores.length > 0 || filters.selectedStyles.length > 0
-                ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600'
+                ? 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700'
                 : 'hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-500'
             }`}
           >
@@ -331,7 +331,7 @@ export default function CategorySection({
                     </label>
                     <button
                       onClick={toggleAllStores}
-                      className="text-xs text-primary-600 hover:text-primary-700"
+                      className="text-xs text-neutral-700 hover:text-neutral-800"
                     >
                       {filters.selectedStores.length === allStores.length ? 'Deselect all' : 'Select all'}
                     </button>
@@ -354,7 +354,7 @@ export default function CategorySection({
                               onClick={() => toggleStore(store.name)}
                               className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
                                 filters.selectedStores.includes(store.name)
-                                  ? 'bg-primary-600 text-white'
+                                  ? 'bg-neutral-800 text-white'
                                   : 'bg-white dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-600'
                               }`}
                             >
@@ -377,7 +377,7 @@ export default function CategorySection({
                   {filters.selectedStyles.length > 0 && (
                     <button
                       onClick={() => setFilters(prev => ({ ...prev, selectedStyles: [] }))}
-                      className="text-xs text-primary-600 hover:text-primary-700"
+                      className="text-xs text-neutral-700 hover:text-neutral-800"
                     >
                       Clear ({filters.selectedStyles.length})
                     </button>
@@ -390,7 +390,7 @@ export default function CategorySection({
                       onClick={() => toggleStyle(style.value)}
                       className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
                         filters.selectedStyles.includes(style.value)
-                          ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 border border-primary-300 dark:border-primary-700'
+                          ? 'bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-400 dark:border-neutral-600'
                           : 'bg-white dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-600'
                       }`}
                     >
@@ -416,7 +416,7 @@ export default function CategorySection({
                     placeholder="Min"
                     value={filters.priceMin === 0 ? '' : filters.priceMin}
                     onChange={(e) => setFilters({ ...filters, priceMin: Number(e.target.value) || 0 })}
-                    className="flex-1 text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    className="flex-1 text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-neutral-500"
                   />
                   <span className="text-neutral-400 text-xs">-</span>
                   <input
@@ -424,7 +424,7 @@ export default function CategorySection({
                     placeholder="Max"
                     value={filters.priceMax >= 999999 ? '' : filters.priceMax}
                     onChange={(e) => setFilters({ ...filters, priceMax: Number(e.target.value) || Infinity })}
-                    className="flex-1 text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    className="flex-1 text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-neutral-500"
                   />
                 </div>
               </div>
@@ -437,7 +437,7 @@ export default function CategorySection({
                 <select
                   value={filters.sortBy}
                   onChange={(e) => setFilters({ ...filters, sortBy: e.target.value as any })}
-                  className="w-full text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  className="w-full text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-neutral-500"
                 >
                   <option value="relevance">Relevance</option>
                   <option value="price-low">Price: Low to High</option>
@@ -466,7 +466,7 @@ export default function CategorySection({
                           key={product.id}
                           className={`group border rounded-lg overflow-hidden transition-all duration-200 cursor-pointer ${
                             productInCanvas
-                              ? 'bg-green-50 dark:bg-green-900/10 border-green-300 dark:border-green-700'
+                              ? 'bg-neutral-100 dark:bg-neutral-800/30 border-neutral-400 dark:border-neutral-600'
                               : 'bg-white dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 hover:shadow-md'
                           }`}
                           onClick={() => setSelectedProduct(product)}
@@ -497,7 +497,7 @@ export default function CategorySection({
                             )}
 
                             {productInCanvas && (
-                              <span className="absolute top-1 right-1 bg-green-500 text-white text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                              <span className="absolute top-1 right-1 bg-neutral-700 text-white text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
                                 <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
                                   <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                                 </svg>
@@ -536,8 +536,8 @@ export default function CategorySection({
                               }}
                               className={`w-full mt-1.5 py-1 text-[10px] font-medium rounded transition-colors ${
                                 productInCanvas
-                                  ? 'bg-green-600 hover:bg-green-700 text-white'
-                                  : 'bg-primary-600 hover:bg-primary-700 text-white'
+                                  ? 'bg-neutral-700 hover:bg-neutral-800 text-white'
+                                  : 'bg-neutral-800 hover:bg-neutral-900 text-white'
                               }`}
                             >
                               {productInCanvas ? `Add +1 (${getCanvasQuantity(product.id)})` : 'Add to Canvas'}
@@ -555,7 +555,7 @@ export default function CategorySection({
                     {primaryProducts.length > 0 && (
                       <>
                         <div className="mb-2">
-                          <span className="text-xs font-semibold text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">
+                          <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 bg-neutral-200 dark:bg-neutral-700/50 px-2 py-1 rounded">
                             Best Matches ({primaryProducts.length})
                           </span>
                         </div>

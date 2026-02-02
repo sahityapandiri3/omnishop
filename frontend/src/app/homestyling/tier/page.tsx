@@ -102,12 +102,12 @@ export default function TierSelectionPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-neutral-50 py-8">
       <div className="max-w-4xl mx-auto px-4">
         {/* Progress */}
         <div className="mb-8">
           <div className="flex items-center justify-center gap-2 mb-4">
-            <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center text-sm font-bold">
+            <div className="w-8 h-8 rounded-full bg-neutral-800 text-white flex items-center justify-center text-sm font-bold">
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path
                   fillRule="evenodd"
@@ -116,8 +116,8 @@ export default function TierSelectionPage() {
                 />
               </svg>
             </div>
-            <div className="w-16 h-1 bg-emerald-600 rounded-full" />
-            <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center text-sm font-bold">
+            <div className="w-16 h-1 bg-neutral-800 rounded-full" />
+            <div className="w-8 h-8 rounded-full bg-neutral-800 text-white flex items-center justify-center text-sm font-bold">
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path
                   fillRule="evenodd"
@@ -126,22 +126,22 @@ export default function TierSelectionPage() {
                 />
               </svg>
             </div>
-            <div className="w-16 h-1 bg-emerald-600 rounded-full" />
-            <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center text-sm font-bold">
+            <div className="w-16 h-1 bg-neutral-800 rounded-full" />
+            <div className="w-8 h-8 rounded-full bg-neutral-800 text-white flex items-center justify-center text-sm font-bold">
               3
             </div>
-            <div className="w-16 h-1 bg-gray-200 rounded-full" />
-            <div className="w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-sm font-bold">
+            <div className="w-16 h-1 bg-neutral-200 rounded-full" />
+            <div className="w-8 h-8 rounded-full bg-neutral-200 text-neutral-400 flex items-center justify-center text-sm font-bold">
               4
             </div>
           </div>
-          <p className="text-center text-sm text-gray-500">Step 3 of 4: Choose Your Plan</p>
+          <p className="text-center text-sm text-neutral-500">Step 3 of 4: Choose Your Plan</p>
         </div>
 
         {/* Tier Selection */}
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Choose Your Plan</h1>
-          <p className="text-gray-600">Select how many design views you'd like to see</p>
+          <h1 className="font-display text-2xl font-light text-neutral-800 mb-2">Choose Your Plan</h1>
+          <p className="text-neutral-500">Select how many design views you'd like to see</p>
         </div>
 
         <div className="grid md:grid-cols-3 gap-6 mb-8">
@@ -152,21 +152,21 @@ export default function TierSelectionPage() {
               className={`relative bg-white rounded-xl border-2 p-6 transition-all ${
                 tier.enabled
                   ? selectedTier === tier.value
-                    ? 'border-emerald-500 shadow-lg'
-                    : 'border-gray-200 hover:border-gray-300 cursor-pointer'
-                  : 'border-gray-200 opacity-60 cursor-not-allowed'
+                    ? 'border-neutral-800 shadow-lg'
+                    : 'border-neutral-200 hover:border-neutral-300 cursor-pointer'
+                  : 'border-neutral-200 opacity-60 cursor-not-allowed'
               }`}
             >
               {tier.comingSoon && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <span className="bg-gray-800 text-white text-xs font-medium px-3 py-1 rounded-full">
+                  <span className="bg-neutral-800 text-white text-xs font-medium px-3 py-1 rounded-full">
                     Coming Soon
                   </span>
                 </div>
               )}
 
               {selectedTier === tier.value && tier.enabled && (
-                <div className="absolute top-4 right-4 w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center">
+                <div className="absolute top-4 right-4 w-6 h-6 bg-neutral-800 rounded-full flex items-center justify-center">
                   <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
                     <path
                       fillRule="evenodd"
@@ -177,22 +177,22 @@ export default function TierSelectionPage() {
                 </div>
               )}
 
-              <h3 className="text-lg font-bold text-gray-900 mb-1">{tier.name}</h3>
-              <p className="text-sm text-gray-500 mb-4">{tier.description}</p>
+              <h3 className="font-display text-lg font-normal text-neutral-800 mb-1">{tier.name}</h3>
+              <p className="text-sm text-neutral-500 mb-4">{tier.description}</p>
 
               <div className="mb-4">
-                <span className="text-3xl font-bold text-gray-900">{formatPrice(tier.price)}</span>
+                <span className="text-3xl font-bold text-neutral-800">{formatPrice(tier.price)}</span>
               </div>
 
-              <div className="text-lg font-semibold text-emerald-600 mb-4">
+              <div className="text-lg font-semibold text-neutral-700 mb-4">
                 {tier.views} {tier.views === 1 ? 'View' : 'Views'}
               </div>
 
               <ul className="space-y-2">
                 {tier.features.map((feature, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-gray-600">
+                  <li key={i} className="flex items-start gap-2 text-sm text-neutral-600">
                     <svg
-                      className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0"
+                      className="w-4 h-4 text-neutral-500 mt-0.5 flex-shrink-0"
                       fill="currentColor"
                       viewBox="0 0 20 20"
                     >
@@ -212,7 +212,7 @@ export default function TierSelectionPage() {
 
         {/* Error */}
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          <div className="mb-6 p-4 bg-accent-50 border border-accent-200 rounded-lg text-accent-700 text-sm">
             {error}
           </div>
         )}
@@ -221,17 +221,17 @@ export default function TierSelectionPage() {
         <div className="flex justify-between items-center">
           <button
             onClick={() => router.push('/homestyling/upload')}
-            className="text-gray-600 hover:text-gray-800 font-medium"
+            className="text-neutral-500 hover:text-neutral-700 font-medium"
           >
             Back
           </button>
           <button
             onClick={handleGenerate}
             disabled={!selectedTier || isSubmitting}
-            className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all ${
+            className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${
               selectedTier
-                ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                ? 'bg-neutral-800 hover:bg-neutral-900 text-white'
+                : 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
             }`}
           >
             {isSubmitting ? (

@@ -127,7 +127,7 @@ export default function UpgradePage() {
       <div className="max-w-4xl mx-auto px-4">
         {/* Header */}
         <div className="text-center mb-12">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-700 rounded-full text-sm font-medium mb-6">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-neutral-200 text-neutral-700 rounded-full text-sm font-medium mb-6">
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
               <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
             </svg>
@@ -141,13 +141,13 @@ export default function UpgradePage() {
 
         {/* Pricing Card */}
         <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden mb-12">
-          <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 p-8 text-center text-white">
-            <p className="text-emerald-100 mb-2">Build Your Own</p>
+          <div className="bg-gradient-to-r from-neutral-700 to-neutral-800 p-8 text-center text-white">
+            <p className="text-neutral-300 mb-2">Build Your Own</p>
             <div className="flex items-baseline justify-center gap-1">
               <span className="text-5xl font-bold">₹999</span>
-              <span className="text-emerald-100">/month</span>
+              <span className="text-neutral-300">/month</span>
             </div>
-            <p className="text-emerald-100 mt-2 text-sm">Cancel anytime</p>
+            <p className="text-neutral-300 mt-2 text-sm">Cancel anytime</p>
           </div>
 
           <div className="p-8">
@@ -155,7 +155,7 @@ export default function UpgradePage() {
             <div className="grid md:grid-cols-2 gap-6 mb-8">
               {FEATURES.map((feature, index) => (
                 <div key={index} className="flex gap-4">
-                  <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center flex-shrink-0 text-emerald-600">
+                  <div className="w-12 h-12 bg-neutral-100 rounded-xl flex items-center justify-center flex-shrink-0 text-neutral-700">
                     {feature.icon}
                   </div>
                   <div>
@@ -177,7 +177,7 @@ export default function UpgradePage() {
             <button
               onClick={handleUpgrade}
               disabled={isProcessing}
-              className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-4 bg-neutral-800 hover:bg-neutral-900 text-white font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isProcessing ? (
                 <span className="flex items-center justify-center gap-2">
@@ -206,14 +206,14 @@ export default function UpgradePage() {
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Feature</th>
                   <th className="px-6 py-3 text-center text-sm font-medium text-gray-500">Free</th>
-                  <th className="px-6 py-3 text-center text-sm font-medium text-emerald-600">Build Your Own</th>
+                  <th className="px-6 py-3 text-center text-sm font-medium text-neutral-700">Build Your Own</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 <tr>
                   <td className="px-6 py-4 text-sm text-gray-900">AI-generated room looks</td>
                   <td className="px-6 py-4 text-center text-sm text-gray-600">1-6 per session</td>
-                  <td className="px-6 py-4 text-center text-sm text-emerald-600 font-medium">Unlimited</td>
+                  <td className="px-6 py-4 text-center text-sm text-neutral-700 font-medium">Unlimited</td>
                 </tr>
                 <tr>
                   <td className="px-6 py-4 text-sm text-gray-900">Browse curated looks</td>
@@ -223,7 +223,7 @@ export default function UpgradePage() {
                     </svg>
                   </td>
                   <td className="px-6 py-4 text-center">
-                    <svg className="w-5 h-5 text-emerald-500 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-5 h-5 text-neutral-700 mx-auto" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
                   </td>
@@ -236,7 +236,7 @@ export default function UpgradePage() {
                     </svg>
                   </td>
                   <td className="px-6 py-4 text-center">
-                    <svg className="w-5 h-5 text-emerald-500 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-5 h-5 text-neutral-700 mx-auto" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
                   </td>
@@ -249,7 +249,7 @@ export default function UpgradePage() {
                     </svg>
                   </td>
                   <td className="px-6 py-4 text-center">
-                    <svg className="w-5 h-5 text-emerald-500 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-5 h-5 text-neutral-700 mx-auto" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
                   </td>
@@ -262,7 +262,7 @@ export default function UpgradePage() {
                     </svg>
                   </td>
                   <td className="px-6 py-4 text-center">
-                    <svg className="w-5 h-5 text-emerald-500 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-5 h-5 text-neutral-700 mx-auto" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8.586 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
                   </td>

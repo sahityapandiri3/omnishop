@@ -75,9 +75,9 @@ export default function VisualizePage() {
                 "I have a 15x12 living room with large windows. I love modern minimalist style with neutral colors. Help me choose a sofa, coffee table, and lighting."
               </p>
             </div>
-            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4">
-              <p className="text-sm text-green-800 font-medium mb-2">Bedroom Makeover</p>
-              <p className="text-sm text-green-700">
+            <div className="bg-gradient-to-r from-neutral-50 to-neutral-100 border border-neutral-200 rounded-lg p-4">
+              <p className="text-sm text-neutral-800 font-medium mb-2">Bedroom Makeover</p>
+              <p className="text-sm text-neutral-700">
                 "I want to create a cozy, Scandinavian-style bedroom. I need a bed frame, nightstands, and some decor. My budget is $1500."
               </p>
             </div>

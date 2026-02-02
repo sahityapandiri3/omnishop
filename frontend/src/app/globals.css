@@ -25,7 +25,17 @@
   }
 
   body {
-    @apply min-h-screen bg-neutral-50 text-neutral-900 antialiased;
+    @apply min-h-screen bg-neutral-50 text-neutral-700 antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Heading defaults - use display font */
+  h1, h2, h3 {
+    @apply font-display text-neutral-800;
+  }
+
+  h4, h5, h6 {
+    @apply font-sans text-neutral-700 font-medium;
   }
 
   /* Custom scrollbar styles */
@@ -47,25 +57,25 @@
 
   /* Focus styles for accessibility */
   *:focus {
-    @apply outline-none ring-2 ring-primary-500 ring-offset-2;
+    @apply outline-none ring-2 ring-neutral-500 ring-offset-2;
   }
 
   /* Button focus styles */
   button:focus,
   [role="button"]:focus {
-    @apply outline-none ring-2 ring-primary-500 ring-offset-2;
+    @apply outline-none ring-2 ring-neutral-500 ring-offset-2;
   }
 
   /* Link focus styles */
   a:focus {
-    @apply outline-none ring-2 ring-primary-500 ring-offset-2 rounded;
+    @apply outline-none ring-2 ring-neutral-500 ring-offset-2 rounded;
   }
 
   /* Input focus styles */
   input:focus,
   textarea:focus,
   select:focus {
-    @apply outline-none ring-2 ring-primary-500 border-primary-500;
+    @apply outline-none ring-2 ring-neutral-500 border-neutral-500;
   }
 
   /* Remove default number input spinners */
@@ -82,63 +92,72 @@
 
 /* Component layer for reusable patterns */
 @layer components {
-  /* Button variants */
+  /* Button variants - refined, elegant styling */
   .btn {
-    @apply inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex items-center justify-center rounded-md text-sm font-medium transition-all duration-300 ease-out focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
   }
 
   .btn-primary {
-    @apply bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
+    @apply bg-neutral-800 text-white hover:bg-neutral-900 active:bg-neutral-950 focus:ring-neutral-500 shadow-sm hover:shadow-md;
   }
 
   .btn-secondary {
-    @apply bg-neutral-200 text-neutral-900 hover:bg-neutral-300 focus:ring-neutral-500;
+    @apply bg-secondary-100 text-secondary-800 hover:bg-secondary-200 active:bg-secondary-300 focus:ring-secondary-500;
   }
 
   .btn-outline {
-    @apply border border-neutral-300 bg-transparent text-neutral-700 hover:bg-neutral-50 focus:ring-neutral-500;
+    @apply border border-neutral-300 bg-transparent text-neutral-700 hover:bg-neutral-100 hover:border-neutral-400 focus:ring-neutral-400;
   }
 
   .btn-ghost {
-    @apply bg-transparent text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 focus:ring-neutral-500;
+    @apply bg-transparent text-neutral-600 hover:bg-neutral-100 hover:text-neutral-800 focus:ring-neutral-400;
+  }
+
+  /* Elegant button - uppercase tracking for luxury feel */
+  .btn-elegant {
+    @apply uppercase tracking-[0.15em] text-xs font-medium;
   }
 
   .btn-sm {
-    @apply h-8 px-3 text-xs;
+    @apply h-9 px-4 text-xs;
   }
 
   .btn-md {
-    @apply h-10 px-4 text-sm;
+    @apply h-11 px-5 text-sm;
   }
 
   .btn-lg {
-    @apply h-12 px-6 text-base;
+    @apply h-13 px-8 text-sm;
   }
 
-  /* Input styles */
+  /* Input styles - taller, more refined */
   .input {
-    @apply flex h-10 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm placeholder:text-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply flex h-12 w-full rounded-md border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-700 placeholder:text-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-500/20 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200;
   }
 
   .input-error {
-    @apply border-red-500 focus:border-red-500 focus:ring-red-500;
+    @apply border-accent-500 focus:border-accent-500 focus:ring-accent-500/20;
   }
 
-  /* Card styles */
+  /* Card styles - softer shadows, refined borders */
   .card {
-    @apply rounded-lg border border-neutral-200 bg-white shadow-soft;
+    @apply rounded-xl border border-neutral-200/80 bg-white shadow-soft;
+  }
+
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-medium hover:-translate-y-0.5;
   }
 
   .card-header {
-    @apply px-6 py-4 border-b border-neutral-200;
+    @apply px-6 py-5 border-b border-neutral-200/80;
   }
 
   .card-content {
-    @apply px-6 py-4;
+    @apply px-6 py-5;
   }
 
   .card-footer {
-    @apply px-6 py-4 border-t border-neutral-200;
+    @apply px-6 py-5 border-t border-neutral-200/80;
   }
 
   /* Loading spinner */
@@ -151,37 +170,51 @@
     @apply animate-pulse bg-neutral-200 rounded;
   }
 
-  /* Typography - compact sizes */
+  /* Typography - elegant with display font for headings */
   .heading-1 {
-    @apply text-2xl font-bold tracking-tight lg:text-3xl;
+    @apply font-display text-3xl font-light tracking-tight text-neutral-800 lg:text-4xl;
   }
 
   .heading-2 {
-    @apply text-xl font-bold tracking-tight lg:text-2xl;
+    @apply font-display text-2xl font-light tracking-tight text-neutral-800 lg:text-3xl;
   }
 
   .heading-3 {
-    @apply text-lg font-semibold tracking-tight lg:text-xl;
+    @apply font-display text-xl font-normal tracking-tight text-neutral-800 lg:text-2xl;
   }
 
   .heading-4 {
-    @apply text-base font-semibold tracking-tight lg:text-lg;
+    @apply font-sans text-lg font-medium tracking-tight text-neutral-700 lg:text-xl;
+  }
+
+  /* Display text - for hero sections */
+  .display-xl {
+    @apply font-display text-4xl font-light tracking-tight text-neutral-800 md:text-5xl lg:text-6xl;
+  }
+
+  .display-lg {
+    @apply font-display text-3xl font-light tracking-tight text-neutral-800 md:text-4xl lg:text-5xl;
   }
 
   .body-large {
-    @apply text-sm text-neutral-600;
+    @apply text-base text-neutral-600 leading-relaxed;
   }
 
   .body-medium {
-    @apply text-sm text-neutral-600;
+    @apply text-sm text-neutral-600 leading-relaxed;
   }
 
   .body-small {
-    @apply text-xs text-neutral-500;
+    @apply text-xs text-neutral-500 leading-relaxed;
   }
 
   .caption {
-    @apply text-xs text-neutral-400;
+    @apply text-xs text-neutral-400 tracking-wide;
+  }
+
+  /* Elegant label - uppercase tracking */
+  .label-elegant {
+    @apply text-xs uppercase tracking-[0.15em] text-neutral-500 font-medium;
   }
 
   /* Product grid */
@@ -199,7 +232,7 @@
   }
 
   .chat-message-user {
-    @apply bg-primary-600 text-white ml-auto;
+    @apply bg-neutral-800 text-white ml-auto;
   }
 
   .chat-message-assistant {
@@ -226,15 +259,38 @@
 
   /* Gradient backgrounds */
   .gradient-primary {
-    @apply bg-gradient-to-r from-primary-600 to-primary-700;
+    @apply bg-gradient-to-br from-neutral-600 to-neutral-800;
   }
 
   .gradient-secondary {
-    @apply bg-gradient-to-r from-secondary-600 to-secondary-700;
+    @apply bg-gradient-to-br from-secondary-200 to-secondary-400;
   }
 
   .gradient-neutral {
-    @apply bg-gradient-to-r from-neutral-800 to-neutral-900;
+    @apply bg-gradient-to-br from-neutral-800 to-neutral-900;
+  }
+
+  /* Elegant section backgrounds */
+  .bg-cream {
+    @apply bg-[#faf9f7];
+  }
+
+  .bg-warm {
+    @apply bg-neutral-50;
+  }
+
+  /* Image overlay gradients */
+  .overlay-subtle {
+    @apply bg-gradient-to-t from-black/50 via-black/20 to-transparent;
+  }
+
+  .overlay-strong {
+    @apply bg-gradient-to-t from-black/70 via-black/40 to-black/10;
+  }
+
+  /* Section dividers */
+  .divider {
+    @apply border-t border-neutral-200/80;
   }
 }
 

@@ -31,7 +31,7 @@ export function RoomTypeStep({ selectedRoom, onSelect }: RoomTypeStepProps) {
               onClick={() => onSelect(room.id)}
               className={`group relative overflow-hidden rounded-xl transition-all duration-300 ${
                 isSelected
-                  ? 'ring-2 ring-primary-600 ring-offset-2 shadow-lg scale-[1.02]'
+                  ? 'ring-2 ring-neutral-800 ring-offset-2 shadow-lg scale-[1.02]'
                   : 'hover:shadow-md hover:scale-[1.01]'
               }`}
             >
@@ -46,7 +46,7 @@ export function RoomTypeStep({ selectedRoom, onSelect }: RoomTypeStepProps) {
                 <div
                   className={`absolute inset-0 transition-opacity duration-300 ${
                     isSelected
-                      ? 'bg-primary-600/20'
+                      ? 'bg-neutral-800/20'
                       : 'bg-black/0 group-hover:bg-black/10'
                   }`}
                 />
@@ -55,7 +55,7 @@ export function RoomTypeStep({ selectedRoom, onSelect }: RoomTypeStepProps) {
               {/* Label */}
               <div
                 className={`absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/70 to-transparent ${
-                  isSelected ? 'from-primary-900/80' : ''
+                  isSelected ? 'from-neutral-900/80' : ''
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -77,7 +77,7 @@ export function RoomTypeStep({ selectedRoom, onSelect }: RoomTypeStepProps) {
                     }`}
                   >
                     {isSelected && (
-                      <svg className="w-4 h-4 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-4 h-4 text-neutral-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                       </svg>
                     )}

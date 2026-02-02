@@ -3,14 +3,17 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, canAccessDesignStudio } from '@/contexts/AuthContext';
 import { purchasesAPI, PurchaseDetail, PurchaseView } from '@/utils/api';
 
 export default function PurchaseDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const purchaseId = params?.id as string;
+
+  // Check if user has Advanced tier (can access design studio directly)
+  const hasStudioAccess = canAccessDesignStudio(user);
 
   const [purchase, setPurchase] = useState<PurchaseDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,7 +71,7 @@ export default function PurchaseDetailPage() {
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-neutral-800" />
       </div>
     );
   }
@@ -79,10 +82,10 @@ export default function PurchaseDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-emerald-200 border-t-emerald-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading purchase...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-neutral-200 border-t-neutral-800 mx-auto mb-4" />
+          <p className="text-neutral-500">Loading purchase...</p>
         </div>
       </div>
     );
@@ -90,17 +93,17 @@ export default function PurchaseDetailPage() {
 
   if (error || !purchase) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="w-16 h-16 bg-accent-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-accent-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <p className="text-gray-600 mb-4">{error || 'Purchase not found'}</p>
+          <p className="text-neutral-500 mb-4">{error || 'Purchase not found'}</p>
           <Link
             href="/purchases"
-            className="text-emerald-600 hover:text-emerald-700 font-medium"
+            className="text-neutral-700 hover:text-neutral-800 font-medium"
           >
             Back to Purchases
           </Link>
@@ -112,12 +115,12 @@ export default function PurchaseDetailPage() {
   const currentView = purchase.views[selectedViewIndex];
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-neutral-50 py-8">
       <div className="max-w-7xl mx-auto px-4">
         {/* Back Link */}
         <Link
           href="/purchases"
-          className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6"
+          className="inline-flex items-center gap-2 text-neutral-500 hover:text-neutral-700 mb-6"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -127,16 +130,16 @@ export default function PurchaseDetailPage() {
 
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">{purchase.title}</h1>
-          <p className="text-gray-600">
+          <h1 className="font-display text-2xl font-light text-neutral-800 mb-2">{purchase.title}</h1>
+          <p className="text-neutral-500">
             {purchase.views.length} {purchase.views.length === 1 ? 'design' : 'designs'} for your{' '}
             {formatStyle(purchase.style)} {purchase.room_type?.replace('_', ' ')}
           </p>
         </div>
 
         {purchase.views.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
-            <p className="text-gray-600">No designs available.</p>
+          <div className="bg-white rounded-xl shadow-soft border border-neutral-200 p-12 text-center">
+            <p className="text-neutral-500">No designs available.</p>
           </div>
         ) : (
           <>
@@ -149,8 +152,8 @@ export default function PurchaseDetailPage() {
                     onClick={() => setSelectedViewIndex(index)}
                     className={`px-4 py-2 rounded-lg font-medium transition-all ${
                       selectedViewIndex === index
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                        ? 'bg-neutral-800 text-white'
+                        : 'bg-white text-neutral-600 hover:bg-neutral-50 border border-neutral-200'
                     }`}
                   >
                     View {view.view_number}
@@ -166,8 +169,8 @@ export default function PurchaseDetailPage() {
             <div className="grid lg:grid-cols-3 gap-6">
               {/* Visualization */}
               <div className="lg:col-span-2">
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  <div className="aspect-[4/3] relative bg-gray-100">
+                <div className="bg-white rounded-xl shadow-soft border border-neutral-200 overflow-hidden">
+                  <div className="aspect-[4/3] relative bg-neutral-100">
                     {currentView?.visualization_image ? (
                       <img
                         src={
@@ -179,7 +182,7 @@ export default function PurchaseDetailPage() {
                         className="w-full h-full object-contain"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-400">
+                      <div className="w-full h-full flex items-center justify-center text-neutral-400">
                         <svg className="w-16 h-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path
                             strokeLinecap="round"
@@ -192,27 +195,27 @@ export default function PurchaseDetailPage() {
                     )}
                   </div>
                   {/* AI Visualization Disclaimer */}
-                  <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
-                    <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                  <div className="px-4 py-2 bg-neutral-50 border-t border-neutral-100">
+                    <p className="text-xs text-neutral-500 flex items-center gap-1.5">
                       <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                       AI-generated visualization. Actual products may vary slightly in appearance.
                     </p>
                   </div>
-                  <div className="p-4 border-t border-gray-100">
+                  <div className="p-4 border-t border-neutral-100">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h2 className="font-semibold text-gray-900">
+                        <h2 className="font-display font-normal text-neutral-800">
                           {currentView?.style_theme || 'Design'} Look
                         </h2>
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-neutral-500">
                           {currentView?.products.length || 0} products
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm text-gray-500">Total Value</p>
-                        <p className="text-lg font-bold text-emerald-600">
+                        <p className="text-sm text-neutral-500">Total Value</p>
+                        <p className="text-lg font-bold text-neutral-700">
                           {formatPrice(currentView?.total_price || 0)}
                         </p>
                       </div>
@@ -223,16 +226,16 @@ export default function PurchaseDetailPage() {
 
               {/* Products List */}
               <div className="lg:col-span-1">
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  <div className="p-4 border-b border-gray-100">
-                    <h3 className="font-semibold text-gray-900">Products in this Design</h3>
+                <div className="bg-white rounded-xl shadow-soft border border-neutral-200 overflow-hidden">
+                  <div className="p-4 border-b border-neutral-100">
+                    <h3 className="font-display font-normal text-neutral-800">Products in this Design</h3>
                   </div>
-                  <div className="divide-y divide-gray-100 max-h-[600px] overflow-y-auto">
+                  <div className="divide-y divide-neutral-100 max-h-[600px] overflow-y-auto">
                     {currentView?.products.map((product) => (
-                      <div key={product.id} className="p-4 hover:bg-gray-50 transition-colors">
+                      <div key={product.id} className="p-4 hover:bg-neutral-50 transition-colors">
                         <div className="flex gap-3">
                           {/* Product Image */}
-                          <div className="w-16 h-16 flex-shrink-0 rounded-lg bg-gray-100 overflow-hidden">
+                          <div className="w-16 h-16 flex-shrink-0 rounded-lg bg-neutral-100 overflow-hidden">
                             {product.image_url ? (
                               <img
                                 src={product.image_url}
@@ -240,7 +243,7 @@ export default function PurchaseDetailPage() {
                                 className="w-full h-full object-cover"
                               />
                             ) : (
-                              <div className="w-full h-full flex items-center justify-center text-gray-400">
+                              <div className="w-full h-full flex items-center justify-center text-neutral-400">
                                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path
                                     strokeLinecap="round"
@@ -255,14 +258,14 @@ export default function PurchaseDetailPage() {
 
                           {/* Product Info */}
                           <div className="flex-1 min-w-0">
-                            <h4 className="font-medium text-gray-900 text-sm truncate">
+                            <h4 className="font-medium text-neutral-800 text-sm truncate">
                               {product.name}
                             </h4>
-                            <p className="text-xs text-gray-500 truncate">
+                            <p className="text-xs text-neutral-500 truncate">
                               {product.source_website}
                             </p>
                             <div className="flex items-center justify-between mt-1">
-                              <p className="text-emerald-600 font-semibold text-sm">
+                              <p className="text-neutral-700 font-semibold text-sm">
                                 {product.price ? formatPrice(product.price) : 'Price N/A'}
                               </p>
                               {product.source_url && (
@@ -270,7 +273,7 @@ export default function PurchaseDetailPage() {
                                   href={product.source_url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                                  className="text-xs text-neutral-700 hover:text-neutral-800 font-medium"
                                 >
                                   View
                                 </a>
@@ -281,7 +284,7 @@ export default function PurchaseDetailPage() {
                       </div>
                     ))}
                     {(!currentView?.products || currentView.products.length === 0) && (
-                      <div className="p-8 text-center text-gray-500">
+                      <div className="p-8 text-center text-neutral-500">
                         No products available
                       </div>
                     )}
@@ -290,8 +293,9 @@ export default function PurchaseDetailPage() {
               </div>
             </div>
 
-            {/* Action Buttons */}
+            {/* Action Buttons - Tier-based CTAs */}
             <div className="flex flex-wrap justify-center gap-4 mt-8">
+              {/* Style This Further - behavior depends on tier */}
               <button
                 onClick={() => {
                   // Clear ALL design-related sessionStorage to free up quota (5MB limit)
@@ -318,6 +322,7 @@ export default function PurchaseDetailPage() {
                     hasVisualization: !!visualization,
                     vizLength: visualization?.length || 0,
                     productsCount: products?.length || 0,
+                    hasStudioAccess,
                   });
 
                   try {
@@ -343,33 +348,49 @@ export default function PurchaseDetailPage() {
                     return;
                   }
 
-                  router.push('/upgrade?from=purchase');
+                  // Route based on tier
+                  if (hasStudioAccess) {
+                    // Advanced/Curator users: go directly to design with context loaded
+                    router.push('/design');
+                  } else {
+                    // Free/Basic/Basic+ users: go to pricing with Advanced highlighted
+                    // Set flag so payment page knows to redirect to /design after upgrade
+                    sessionStorage.setItem('upgradeSource', 'styleThisFurther');
+                    router.push('/pricing?highlight=advanced');
+                  }
                 }}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-neutral-800 text-white font-medium rounded-lg hover:bg-neutral-900 transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                 </svg>
                 Style This Further
               </button>
-              <Link
-                href="/homestyling/preferences"
-                className="inline-flex items-center gap-2 px-6 py-3 bg-white text-gray-700 font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                </svg>
-                Get More Looks
-              </Link>
-              <Link
-                href="/upgrade?redirect=design"
-                className="inline-flex items-center gap-2 px-6 py-3 bg-white text-gray-700 font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                </svg>
-                Build Your Own
-              </Link>
+
+              {/* Secondary CTA - different based on tier */}
+              {hasStudioAccess ? (
+                // Advanced/Curator: "See more looks" goes to curated gallery
+                <Link
+                  href="/curated"
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-white text-neutral-700 font-medium rounded-lg border border-neutral-300 hover:bg-neutral-50 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  See More Looks
+                </Link>
+              ) : (
+                // Free/Basic/Basic+: "Get more looks" goes to pricing
+                <Link
+                  href="/pricing"
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-white text-neutral-700 font-medium rounded-lg border border-neutral-300 hover:bg-neutral-50 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                  </svg>
+                  Get More Looks
+                </Link>
+              )}
             </div>
           </>
         )}

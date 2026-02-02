@@ -68,6 +68,7 @@ class CreateSessionRequest(BaseModel):
     style: Optional[StyleType] = None
     color_palette: Optional[List[ColorPalette]] = None
     budget_tier: Optional[BudgetTier] = None
+    selected_tier: Optional[str] = None  # Pricing tier from frontend (free, basic, basic_plus, advanced, curator)
 
 
 class UpdatePreferencesRequest(BaseModel):

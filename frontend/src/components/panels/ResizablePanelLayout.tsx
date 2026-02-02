@@ -60,7 +60,7 @@ class PanelErrorBoundary extends Component<
 function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => void }) {
   return (
     <div
-      className="w-1 bg-neutral-200 hover:bg-primary-400 cursor-col-resize transition-colors flex-shrink-0"
+      className="w-1 bg-neutral-200 hover:bg-neutral-400 cursor-col-resize transition-colors flex-shrink-0"
       onMouseDown={onMouseDown}
       style={{ touchAction: 'none' }}
     />

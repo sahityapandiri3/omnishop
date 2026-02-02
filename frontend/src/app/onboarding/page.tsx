@@ -274,7 +274,7 @@ function OnboardingPageContent() {
                 <button
                   onClick={handleComplete}
                   disabled={isSubmitting || isProcessingImage}
-                  className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-lg bg-neutral-800 text-white hover:bg-neutral-900 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? (
                     <>

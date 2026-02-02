@@ -9,7 +9,8 @@ import { AngleSelector, ViewingAngle } from '../AngleSelector';
 import { useVisualization } from '@/hooks/useVisualization';
 import { VisualizationProduct, VisualizationHistoryEntry } from '@/types/visualization';
 import { fetchWithRetry } from '@/utils/visualization-helpers';
-import { TextBasedEditControls } from '@/components/visualization';
+import { TextBasedEditControls, RoomImageUpload } from '@/components/visualization';
+import { WallColor } from '@/types/wall-colors';
 
 const DraggableFurnitureCanvas = dynamic(
   () => import('../DraggableFurnitureCanvas').then(mod => ({ default: mod.DraggableFurnitureCanvas })),
@@ -81,7 +82,7 @@ interface CanvasPanelProps {
   onRemoveProduct: (productId: string, removeAll?: boolean) => void;
   onIncrementQuantity: (productId: string) => void;  // Increment quantity for +/- controls
   onClearCanvas: () => void;
-  onRoomImageUpload: (imageData: string) => void;
+  onRoomImageUpload: (imageData: string, isAlreadyProcessed?: boolean) => void;
   onSetProducts: (products: Product[]) => void;
   onViewProductDetails?: (product: Product) => void;  // Callback to view product details
   initialVisualizationImage?: string | null;  // Pre-loaded visualization from curated looks
@@ -91,6 +92,12 @@ interface CanvasPanelProps {
   isProcessingFurniture?: boolean;  // Show furniture removal overlay on room image
   curatedLookId?: number;  // Curated look ID for precomputation cache
   projectId?: string | null;  // Project ID for design page room analysis cache
+  canvasWallColor?: WallColor | null;  // Wall color to apply during visualization
+  onRemoveWallColor?: () => void;  // Callback to remove wall color from canvas
+  // Extensibility props for curation page
+  children?: React.ReactNode;  // Additional content rendered in scrollable area after visualization
+  footerContent?: React.ReactNode;  // Custom footer content (replaces default Visualize button area)
+  hideDefaultFooter?: boolean;  // Hide default footer (Visualize button) when using custom footer
 }
 
 /**
@@ -114,6 +121,11 @@ export default function CanvasPanel({
   isProcessingFurniture = false,
   curatedLookId,
   projectId,
+  canvasWallColor,
+  onRemoveWallColor,
+  children,
+  footerContent,
+  hideDefaultFooter = false,
 }: CanvasPanelProps) {
   // ============================================================================
   // Use shared visualization hook - replaces most local state and handlers
@@ -122,6 +134,7 @@ export default function CanvasPanel({
     products: products as VisualizationProduct[],
     roomImage,
     cleanRoomImage: cleanRoomImage || roomImage,
+    wallColor: canvasWallColor,
     onSetProducts: onSetProducts as (products: VisualizationProduct[]) => void,
     config: {
       enableTextBasedEdits: true,  // Use text-based position editing
@@ -218,10 +231,11 @@ export default function CanvasPanel({
   const [pendingMoveData, setPendingMoveData] = useState<any>(null);  // Pending move for Re-visualize
   const [preEditVisualization, setPreEditVisualization] = useState<string | null>(null);  // For Exit button
 
+  // NOTE: Previous room images state is now handled by RoomImageUpload component
+
   // NOTE: Multi-angle viewing state (currentAngle, angleImages, loadingAngle)
   // is now provided by useVisualization hook
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasProductsRef = useRef<HTMLDivElement>(null);
   const visualizationRef = useRef<HTMLDivElement>(null);
 
@@ -290,36 +304,16 @@ export default function CanvasPanel({
   // - Curated look initialization
   // - Product ID and quantity sync
 
-  // Handle file upload
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // NOTE: Previous room fetching, file upload, and room selection
+  // are now handled by the shared RoomImageUpload component
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      alert('Please upload an image file');
-      return;
-    }
-
-    // Validate file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      alert('File size must be less than 10MB');
-      return;
-    }
-
-    // Read file as base64
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const imageData = event.target?.result as string;
-      onRoomImageUpload(imageData);
-      // Clear visualization and reset state when new room image is uploaded
-      resetVisualization();
-    };
-    reader.readAsDataURL(file);
-
-    // Reset the input value so selecting the same file triggers onChange again
-    e.target.value = '';
-  };
+  // Handle room image ready from RoomImageUpload component
+  // This is the callback for both new uploads and previously uploaded rooms
+  const handleRoomImageReady = useCallback((imageData: string, isAlreadyProcessed: boolean) => {
+    onRoomImageUpload(imageData, isAlreadyProcessed);
+    // Reset visualization state since we have a new room
+    resetVisualization();
+  }, [onRoomImageUpload, resetVisualization]);
 
   // NOTE: detectChangeType, fetchWithRetry, handleVisualize, handleUndo, handleRedo,
   // handleImproveQuality, and handleAngleSelect are now provided by useVisualization hook
@@ -677,8 +671,9 @@ export default function CanvasPanel({
   };
 
   // Determine button state
-  // Can visualize if we have any base image (prefer cleanRoomImage) and products
-  const canVisualize = (roomImage !== null || cleanRoomImage !== null) && products.length > 0;
+  // Can visualize if we have any base image (prefer cleanRoomImage) and either products OR wall color
+  const hasCanvasContent = products.length > 0 || canvasWallColor !== null;
+  const canVisualize = (roomImage !== null || cleanRoomImage !== null) && hasCanvasContent;
   const isUpToDate = canVisualize && !needsRevisualization && visualizationResult !== null;
   const isReady = canVisualize && (needsRevisualization || visualizationResult === null);
 
@@ -690,86 +685,14 @@ export default function CanvasPanel({
     <div className="flex flex-col h-full overflow-hidden relative">
       {/* Prominent Upload Prompt - shown when products loaded but no room image */}
       {needsRoomImageUpload && (
-        <div className="absolute inset-0 z-20 bg-gradient-to-br from-primary-50 to-secondary-50 dark:from-neutral-800 dark:to-neutral-900 flex flex-col items-center justify-center p-6">
-          <div className="max-w-sm text-center">
-            {/* Icon */}
-            <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-primary-500 to-secondary-500 rounded-2xl flex items-center justify-center shadow-lg">
-              <svg
-                className="w-10 h-10 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-              </svg>
-            </div>
-
-            {/* Title */}
-            <h2 className="text-2xl font-bold text-neutral-900 dark:text-white mb-3">
-              Upload Your Room
-            </h2>
-
-            {/* Description */}
-            <p className="text-neutral-600 dark:text-neutral-400 mb-2">
-              You have <span className="font-semibold text-primary-600 dark:text-primary-400">{products.length} curated products</span> ready to visualize!
-            </p>
-            <p className="text-sm text-neutral-500 dark:text-neutral-500 mb-6">
-              Upload a photo of your room to see how these products will look in your space.
-            </p>
-
-            {/* Upload Button */}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full py-4 px-6 bg-gradient-to-r from-primary-600 to-secondary-600 hover:from-primary-700 hover:to-secondary-700 text-white text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              Upload Room Photo
-            </button>
-
-            {/* File format info */}
-            <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-3">
-              JPG, PNG, WEBP • Max 10MB
-            </p>
-
-            {/* Products preview */}
-            <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">Products ready to visualize:</p>
-              <div className="flex justify-center gap-2 flex-wrap">
-                {products.slice(0, 4).map((product) => (
-                  <div key={product.id} className="w-12 h-12 bg-white dark:bg-neutral-700 rounded-lg shadow overflow-hidden">
-                    {product.image_url ? (
-                      <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-neutral-400">
-                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                        </svg>
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {products.length > 4 && (
-                  <div className="w-12 h-12 bg-neutral-100 dark:bg-neutral-700 rounded-lg flex items-center justify-center text-xs font-semibold text-neutral-600 dark:text-neutral-300">
-                    +{products.length - 4}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        <RoomImageUpload
+          roomImage={null}
+          onImageReady={handleRoomImageReady}
+          projectId={projectId}
+          fullScreen={true}
+          productsCount={products.length}
+          productThumbnails={products}
+        />
       )}
 
       {/* Header */}
@@ -825,84 +748,67 @@ export default function CanvasPanel({
 
           {!isRoomImageCollapsed && (
             <div className="p-4 pt-0">
-              {roomImage ? (
-                <div className="relative aspect-video bg-neutral-100 dark:bg-neutral-700 rounded-lg overflow-hidden">
-                  {isBase64Image(roomImage) ? (
-                    <img
-                      src={formatImageSrc(roomImage)}
-                      alt="Room"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <Image
-                      src={roomImage}
-                      alt="Room"
-                      fill
-                      className="object-cover"
-                    />
-                  )}
-                  {/* Image Processing Loading Overlay */}
-                  {isProcessingFurniture && (
-                    <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-10">
-                      <div className="animate-spin rounded-full h-8 w-8 border-4 border-purple-200 border-t-purple-500 mb-2"></div>
-                      <span className="text-white font-medium text-sm">Processing Image...</span>
-                    </div>
-                  )}
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="absolute bottom-2 right-2 px-3 py-1.5 bg-gradient-to-r from-primary-600 to-secondary-600 hover:from-primary-700 hover:to-secondary-700 backdrop-blur text-xs font-medium text-white rounded-lg transition-all shadow-md hover:shadow-lg flex items-center gap-1.5"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    Upload Your Room
-                  </button>
-                </div>
-              ) : (
-                <div className="aspect-video bg-neutral-100 dark:bg-neutral-700 rounded-lg flex flex-col items-center justify-center p-4 border-2 border-dashed border-neutral-300 dark:border-neutral-600">
-                  <svg
-                    className="w-12 h-12 text-neutral-400 mb-2"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                    />
-                  </svg>
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors"
-                  >
-                    Upload Your Room Image
-                  </button>
-                  <p className="text-xs text-neutral-600 dark:text-neutral-300 mt-2 text-center">
-                    Add your room image to style with these products
-                  </p>
-                  <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
-                    JPG, PNG, WEBP • Max 10MB
-                  </p>
-                </div>
-              )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFileUpload}
-                className="hidden"
+              <RoomImageUpload
+                roomImage={roomImage}
+                onImageReady={handleRoomImageReady}
+                isProcessing={isProcessingFurniture}
+                isRoomReady={!!cleanRoomImage && !isProcessingFurniture}
+                projectId={projectId}
               />
             </div>
           )}
         </div>
 
-        {/* Products in Canvas */}
-        <div ref={canvasProductsRef} className="p-4 border-b border-neutral-200 dark:border-neutral-700">
+        {/* Canvas Section Header */}
+        <div className="px-4 pt-4 pb-2">
+          <h2 className="text-base font-semibold text-neutral-900 dark:text-white">
+            Canvas
+          </h2>
+        </div>
+
+        {/* Wall Subsection */}
+        <div className="px-4 pb-3">
+          <h3 className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">
+            Wall
+          </h3>
+          {canvasWallColor ? (
+            <div className="flex items-center gap-3 p-2 bg-neutral-50 dark:bg-neutral-800 rounded-lg">
+              <div
+                className="w-10 h-10 rounded-lg flex-shrink-0 border border-neutral-200 dark:border-neutral-600"
+                style={{ backgroundColor: canvasWallColor.hex_value }}
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-neutral-900 dark:text-white truncate">
+                  {canvasWallColor.name}
+                </p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  {canvasWallColor.code}
+                </p>
+              </div>
+              {onRemoveWallColor && (
+                <button
+                  onClick={onRemoveWallColor}
+                  className="p-1 text-neutral-400 hover:text-red-500 transition-colors"
+                  title="Remove wall color"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-neutral-400 dark:text-neutral-500 italic">
+              No wall color selected
+            </p>
+          )}
+        </div>
+
+        {/* Furniture & Decor Subsection */}
+        <div ref={canvasProductsRef} className="p-4 border-t border-neutral-200 dark:border-neutral-700">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium text-neutral-900 dark:text-white">
-              Products in Canvas
+            <h3 className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">
+              Furniture & Decor
             </h3>
             {products.length > 0 && (
               <div className="flex gap-1 bg-neutral-100 dark:bg-neutral-700 rounded-lg p-1">
@@ -989,7 +895,7 @@ export default function CanvasPanel({
                         </div>
                       )}
                       {/* Quantity badge */}
-                      <div className="absolute top-0.5 left-0.5 bg-primary-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                      <div className="absolute top-0.5 left-0.5 bg-neutral-800 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
                         {qty}x
                       </div>
                       {/* Hover overlay with actions */}
@@ -1012,7 +918,7 @@ export default function CanvasPanel({
                               e.stopPropagation();
                               onIncrementQuantity(product.id);
                             }}
-                            className="w-5 h-5 bg-primary-600 hover:bg-primary-700 text-white rounded text-xs font-bold flex items-center justify-center"
+                            className="w-5 h-5 bg-neutral-800 hover:bg-neutral-900 text-white rounded text-xs font-bold flex items-center justify-center"
                             title="Increase quantity"
                           >
                             +
@@ -1053,7 +959,7 @@ export default function CanvasPanel({
                         {product.name}
                       </p>
                       {product.price && (
-                        <p className="text-[10px] text-primary-600 dark:text-primary-400 font-semibold">
+                        <p className="text-[10px] text-neutral-700 dark:text-neutral-400 font-semibold">
                           ₹{(product.price * qty).toLocaleString()}
                           {qty > 1 && <span className="text-neutral-400 font-normal"> (₹{product.price.toLocaleString()} x {qty})</span>}
                         </p>
@@ -1091,7 +997,7 @@ export default function CanvasPanel({
                       )}
                       {/* Quantity badge */}
                       {qty > 1 && (
-                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary-600 text-white rounded-full flex items-center justify-center text-[9px] font-bold">
+                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-neutral-800 text-white rounded-full flex items-center justify-center text-[9px] font-bold">
                           {qty}
                         </div>
                       )}
@@ -1104,7 +1010,7 @@ export default function CanvasPanel({
                         {product.source}
                       </p>
                       {product.price && (
-                        <p className="text-xs font-semibold text-primary-600 dark:text-primary-400">
+                        <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-400">
                           ₹{(product.price * qty).toLocaleString()}
                           {qty > 1 && <span className="text-neutral-400 font-normal text-[10px]"> (x{qty})</span>}
                         </p>
@@ -1124,7 +1030,7 @@ export default function CanvasPanel({
                       </span>
                       <button
                         onClick={() => onIncrementQuantity(product.id)}
-                        className="w-6 h-6 bg-primary-100 dark:bg-primary-900/30 hover:bg-primary-200 dark:hover:bg-primary-900/50 text-primary-700 dark:text-primary-300 rounded flex items-center justify-center text-sm font-bold"
+                        className="w-6 h-6 bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-700 dark:text-neutral-300 rounded flex items-center justify-center text-sm font-bold"
                         title="Increase quantity"
                       >
                         +
@@ -1350,15 +1256,26 @@ export default function CanvasPanel({
             )}
 
             {!needsRevisualization && !isEditingPositions && (
-              <p className="text-xs text-green-600 dark:text-green-400 mt-2 text-center">
+              <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-2 text-center">
                 ✓ Visualization up to date
               </p>
             )}
           </div>
         )}
+
+        {/* Additional content from parent (e.g., Look Details form in curation page) */}
+        {children}
       </div>
 
-      {/* Visualize Button with Smart States - Fixed at bottom */}
+      {/* Custom footer content (e.g., Save/Publish buttons in curation page) */}
+      {footerContent && (
+        <div className="border-t border-neutral-200 dark:border-neutral-700 flex-shrink-0">
+          {footerContent}
+        </div>
+      )}
+
+      {/* Visualize Button with Smart States - Fixed at bottom (hidden if hideDefaultFooter) */}
+      {!hideDefaultFooter && (
       <div className="p-4 border-t border-neutral-200 dark:border-neutral-700 flex-shrink-0">
         {isEditingPositions && hasUnsavedPositions && useMagicGrab ? (
           // State: Click-to-Select Edit Mode with Pending Move (Purple, Enabled)
@@ -1434,7 +1351,7 @@ export default function CanvasPanel({
           // State 2: Up to Date (Green, Disabled)
           <button
             disabled
-            className="w-full py-3 px-4 bg-green-500 dark:bg-green-600 text-white font-semibold rounded-lg flex items-center justify-center gap-2 cursor-not-allowed opacity-90"
+            className="w-full py-3 px-4 bg-neutral-600 dark:bg-neutral-700 text-white font-semibold rounded-lg flex items-center justify-center gap-2 cursor-not-allowed opacity-90"
           >
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -1446,7 +1363,7 @@ export default function CanvasPanel({
           <button
             onClick={handleVisualize}
             disabled={isVisualizing}
-            className="w-full py-3 px-4 bg-gradient-to-r from-primary-600 to-secondary-600 hover:from-primary-700 hover:to-secondary-700 disabled:from-neutral-400 disabled:to-neutral-400 text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
+            className="w-full py-3 px-4 bg-gradient-to-r from-neutral-700 to-neutral-800 hover:from-neutral-800 hover:to-neutral-900 disabled:from-neutral-400 disabled:to-neutral-400 text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
           >
             {isVisualizing ? (
               <>
@@ -1505,9 +1422,9 @@ export default function CanvasPanel({
             Upload a room image to visualize
           </p>
         )}
-        {roomImage && products.length === 0 && (
+        {roomImage && !hasCanvasContent && (
           <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 text-center">
-            Add products to canvas to visualize
+            Add products or wall color to canvas to visualize
           </p>
         )}
         {isUpToDate && (
@@ -1546,6 +1463,7 @@ export default function CanvasPanel({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

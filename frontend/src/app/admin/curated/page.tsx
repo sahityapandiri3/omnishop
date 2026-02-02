@@ -521,7 +521,7 @@ function AdminCuratedLooksContent() {
                       <div className="absolute top-3 left-3">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                           look.is_published
-                            ? 'bg-green-100 text-green-700'
+                            ? 'bg-neutral-200 text-neutral-700'
                             : 'bg-yellow-100 text-yellow-700'
                         }`}>
                           {look.is_published ? 'Published' : 'Draft'}
@@ -569,7 +569,7 @@ function AdminCuratedLooksContent() {
                       ) : (
                         <button
                           onClick={() => handlePublish(look.id)}
-                          className="px-3 py-2 bg-green-100 hover:bg-green-200 text-green-700 text-xs font-medium rounded-lg transition-colors"
+                          className="px-3 py-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-700 text-xs font-medium rounded-lg transition-colors"
                         >
                           Publish
                         </button>

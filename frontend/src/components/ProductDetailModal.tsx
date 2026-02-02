@@ -247,8 +247,8 @@ export function ProductDetailModal({
                     disabled={!product.is_available}
                     className={`w-full font-semibold py-3 px-6 rounded-xl transition-colors disabled:cursor-not-allowed ${
                       inCanvas
-                        ? 'bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white'
-                        : 'bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white'
+                        ? 'bg-neutral-700 hover:bg-neutral-800 disabled:bg-gray-300 text-white'
+                        : 'bg-neutral-800 hover:bg-neutral-900 disabled:bg-gray-300 text-white'
                     }`}
                   >
                     {!product.is_available

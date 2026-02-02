@@ -945,6 +945,86 @@ async def get_visualization_usage_stats():
         raise HTTPException(status_code=500, detail="Failed to get usage statistics")
 
 
+class ChangeWallColorRequest(BaseModel):
+    """Request to change wall color in visualization"""
+
+    room_image: str  # Base64 encoded current visualization image
+    color_name: str  # Asian Paints color name (e.g., "Air Breeze")
+    color_code: str  # Asian Paints code (e.g., "L134")
+    color_hex: str  # Hex color value (e.g., "#F5F5F0")
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
+
+
+class ChangeWallColorResponse(BaseModel):
+    """Response from wall color change"""
+
+    success: bool
+    rendered_image: Optional[str] = None  # Base64 encoded result image
+    error_message: Optional[str] = None
+    processing_time: float = 0.0
+
+
+@router.post("/change-wall-color", response_model=ChangeWallColorResponse)
+async def change_wall_color(request: ChangeWallColorRequest):
+    """
+    Change wall color in a room visualization using AI-powered inpainting.
+
+    This endpoint takes a room visualization image and repaints the walls
+    with the specified Asian Paints color while preserving all furniture
+    and other room elements.
+
+    Note: Color matching is approximate (~80% match). The UI should display
+    the exact hex value for reference alongside the rendered result.
+    """
+    import time
+
+    start_time = time.time()
+
+    try:
+        logger.info(f"[WallColor API] Changing wall color to {request.color_name} ({request.color_hex})")
+
+        # Strip data URL prefix if present
+        room_image = request.room_image
+        if room_image.startswith("data:"):
+            room_image = room_image.split(",", 1)[1]
+
+        # Call the Google AI service to change wall color
+        result_image = await google_ai_service.change_wall_color(
+            room_image=room_image,
+            color_name=request.color_name,
+            color_hex=request.color_hex,
+            user_id=request.user_id,
+            session_id=request.session_id,
+        )
+
+        processing_time = time.time() - start_time
+
+        if result_image:
+            logger.info(f"[WallColor API] Successfully changed wall color in {processing_time:.2f}s")
+            return ChangeWallColorResponse(
+                success=True,
+                rendered_image=result_image,
+                processing_time=processing_time,
+            )
+        else:
+            logger.error("[WallColor API] Failed to generate wall color change")
+            return ChangeWallColorResponse(
+                success=False,
+                error_message="Failed to generate wall color visualization. Please try again.",
+                processing_time=processing_time,
+            )
+
+    except Exception as e:
+        processing_time = time.time() - start_time
+        logger.error(f"[WallColor API] Error: {e}", exc_info=True)
+        return ChangeWallColorResponse(
+            success=False,
+            error_message=f"Error changing wall color: {str(e)}",
+            processing_time=processing_time,
+        )
+
+
 @router.post("/sessions/{session_id}/analyze-preferences")
 async def analyze_room_preferences(session_id: str, room_description: str, db: AsyncSession = Depends(get_db)):
     """Analyze room preferences from natural language description"""

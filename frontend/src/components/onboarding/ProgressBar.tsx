@@ -25,7 +25,7 @@ export function ProgressBar({ currentStep, totalSteps }: ProgressBarProps) {
                   <div
                     className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all ${
                       isCompleted
-                        ? 'bg-primary-600 text-white'
+                        ? 'bg-neutral-800 text-white'
                         : isCurrent
                         ? 'bg-neutral-900 text-white'
                         : 'bg-neutral-200 text-neutral-500'
@@ -52,7 +52,7 @@ export function ProgressBar({ currentStep, totalSteps }: ProgressBarProps) {
                 {stepNum < totalSteps && (
                   <div
                     className={`w-16 sm:w-24 md:w-32 h-0.5 mx-2 transition-colors ${
-                      isCompleted ? 'bg-primary-600' : 'bg-neutral-200'
+                      isCompleted ? 'bg-neutral-800' : 'bg-neutral-200'
                     }`}
                   />
                 )}
@@ -64,7 +64,7 @@ export function ProgressBar({ currentStep, totalSteps }: ProgressBarProps) {
         {/* Progress bar */}
         <div className="mt-4 h-1 bg-neutral-200 rounded-full overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-primary-600 to-primary-500 rounded-full transition-all duration-500 ease-out"
+            className="h-full bg-gradient-to-r from-neutral-700 to-neutral-600 rounded-full transition-all duration-500 ease-out"
             style={{ width: `${((currentStep - 1) / (totalSteps - 1)) * 100}%` }}
           />
         </div>

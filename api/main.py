@@ -49,6 +49,7 @@ try:
         projects,
         stores,
         visualization,
+        wall_colors,
     )
     from routers.curated import warm_curated_looks_cache
     from services.furniture_removal_service import furniture_removal_service
@@ -406,6 +407,9 @@ if "permissions" in dir():
 
 if "homestyling" in dir():
     app.include_router(homestyling.router, prefix="/api", tags=["homestyling"])
+
+if "wall_colors" in dir():
+    app.include_router(wall_colors.router, prefix="/api", tags=["wall-colors"])
 
 # Additional routers can be added here as needed
 

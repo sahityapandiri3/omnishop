@@ -4,22 +4,35 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useRef, useEffect } from 'react'
 import { Bars3Icon, XMarkIcon, UserCircleIcon, FolderIcon, ArrowRightOnRectangleIcon, ArrowLeftOnRectangleIcon } from '@heroicons/react/24/outline'
-import { useAuth, isAdmin, isSuperAdmin, hasBuildYourOwn } from '@/contexts/AuthContext'
+import { useAuth, isAdmin, isSuperAdmin, canAccessDesignStudio, canAccessCurated } from '@/contexts/AuthContext'
 
 // Base navigation - shown to all users
 const baseNavigation = [
   { name: 'Home', href: '/' },
 ]
 
-// Navigation for upgraded users
+// Navigation for upgraded users (Advanced/Curator)
 const premiumNavigation = [
-  { name: 'Design', href: '/design' },
+  { name: 'Studio', href: '/design' },
 ]
 
-// Admin-only navigation
-const adminNavigation = [
-  { name: 'Curated', href: '/curated' },
+// Navigation for users with curated access (Advanced/Curator)
+const curatedNavigation = [
+  { name: 'Curated Looks', href: '/curated' },
 ]
+
+// Helper to get tier display label
+const getTierDisplayLabel = (tier: string | undefined): string => {
+  switch (tier) {
+    case 'free': return 'Free';
+    case 'basic': return 'Basic';
+    case 'basic_plus': return 'Basic+';
+    case 'advanced': return 'Advanced';
+    case 'upgraded': return 'Advanced'; // Legacy tier name
+    case 'curator': return 'Curator';
+    default: return tier?.replace('_', ' ') || '';
+  }
+}
 
 export function Navigation() {
   const pathname = usePathname()
@@ -38,8 +51,9 @@ export function Navigation() {
         setUserMenuOpen(false)
       }
     }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
+    // Use 'click' instead of 'mousedown' so menu items can handle clicks before menu closes
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
   }, [])
 
   const handleLogout = () => {
@@ -59,21 +73,20 @@ export function Navigation() {
   }
 
   return (
-    <nav className="bg-white shadow-sm border-b border-gray-200">
+    <nav className="bg-white/95 backdrop-blur-sm shadow-sm border-b border-neutral-200/60">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <div className="flex items-center">
-            <Link href="/" className="flex items-center">
+            <Link href="/" className="flex items-center group">
               <div className="flex-shrink-0">
-                <svg className="h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v6H8V5z" />
+                <svg className="h-7 w-7 text-neutral-700 transition-colors group-hover:text-neutral-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v6H8V5z" />
                 </svg>
               </div>
               <div className="ml-2">
-                <span className="text-xl font-bold text-gray-900">Omnishop</span>
-                <span className="ml-1 text-sm text-gray-500">AI Design</span>
+                <span className="font-display text-xl font-medium text-neutral-800">Omnishop</span>
               </div>
             </Link>
           </div>
@@ -81,7 +94,7 @@ export function Navigation() {
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-4">
             <div className="flex items-baseline space-x-1">
-              {/* Base navigation and Home Styling - only shown to authenticated users */}
+              {/* 1. Home - shown to authenticated users */}
               {isAuthenticated && (
                 <>
                   {baseNavigation.map((item) => {
@@ -90,56 +103,30 @@ export function Navigation() {
                       <Link
                         key={item.name}
                         href={item.href}
-                        className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                        className={`px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                           isActive
-                            ? 'bg-gray-100 text-gray-900'
-                            : 'text-gray-600 hover:text-gray-900'
+                            ? 'bg-neutral-100 text-neutral-900'
+                            : 'text-neutral-600 hover:text-neutral-800 hover:bg-neutral-100'
                         }`}
                       >
                         {item.name}
                       </Link>
                     )
                   })}
-
-                  {/* Home Styling - shown to authenticated users */}
-                  <Link
-                    href="/homestyling"
-                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                      pathname?.startsWith('/homestyling')
-                        ? 'bg-gray-100 text-gray-900'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Home Styling
-                  </Link>
                 </>
               )}
 
-              {/* Purchases - shown to authenticated users */}
-              {isAuthenticated && (
-                <Link
-                  href="/purchases"
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    pathname?.startsWith('/purchases')
-                      ? 'bg-gray-100 text-gray-900'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  Purchases
-                </Link>
-              )}
-
-              {/* Premium navigation - only for upgraded users and admins */}
-              {hasBuildYourOwn(user) && premiumNavigation.map((item) => {
+              {/* 2. Studio - only for upgraded users and admins */}
+              {canAccessDesignStudio(user) && premiumNavigation.map((item) => {
                 const isActive = pathname === item.href
                 return (
                   <Link
                     key={item.name}
                     href={item.href}
-                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    className={`px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                       isActive
-                        ? 'bg-gray-100 text-gray-900'
-                        : 'text-gray-600 hover:text-gray-900'
+                        ? 'bg-neutral-100 text-neutral-900'
+                        : 'text-neutral-600 hover:text-neutral-800 hover:bg-neutral-100'
                     }`}
                   >
                     {item.name}
@@ -147,17 +134,17 @@ export function Navigation() {
                 )
               })}
 
-              {/* Admin-only navigation - Curated */}
-              {isAdmin(user) && adminNavigation.map((item) => {
+              {/* 3. Curated Looks - for advanced/curator users and admins */}
+              {canAccessCurated(user) && curatedNavigation.map((item) => {
                 const isActive = pathname === item.href
                 return (
                   <Link
                     key={item.name}
                     href={item.href}
-                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    className={`px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                       isActive
-                        ? 'bg-gray-100 text-gray-900'
-                        : 'text-gray-600 hover:text-gray-900'
+                        ? 'bg-neutral-100 text-neutral-900'
+                        : 'text-neutral-600 hover:text-neutral-800 hover:bg-neutral-100'
                     }`}
                   >
                     {item.name}
@@ -165,17 +152,31 @@ export function Navigation() {
                 )
               })}
 
-              {/* Projects - Only for upgraded users and admins */}
-              {isAuthenticated && hasBuildYourOwn(user) && (
+              {/* 4. Projects - Only for upgraded users and admins */}
+              {isAuthenticated && canAccessDesignStudio(user) && (
                 <Link
                   href="/projects"
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                     pathname === '/projects'
-                      ? 'bg-gray-100 text-gray-900'
-                      : 'text-gray-600 hover:text-gray-900'
+                      ? 'bg-neutral-100 text-neutral-900'
+                      : 'text-neutral-600 hover:text-neutral-800 hover:bg-neutral-100'
                   }`}
                 >
                   Projects
+                </Link>
+              )}
+
+              {/* 5. Purchases - shown to authenticated users */}
+              {isAuthenticated && (
+                <Link
+                  href="/purchases"
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                    pathname?.startsWith('/purchases')
+                      ? 'bg-neutral-100 text-neutral-900'
+                      : 'text-neutral-600 hover:text-neutral-800 hover:bg-neutral-100'
+                  }`}
+                >
+                  Purchases
                 </Link>
               )}
 
@@ -183,10 +184,10 @@ export function Navigation() {
               {isAuthenticated && isAdmin(user) && (
                 <Link
                   href="/admin"
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                     pathname === '/admin' || (pathname?.startsWith('/admin') && !pathname?.startsWith('/admin/permissions'))
-                      ? 'bg-gray-100 text-gray-900'
-                      : 'text-gray-600 hover:text-gray-900'
+                      ? 'bg-neutral-100 text-neutral-900'
+                      : 'text-neutral-600 hover:text-neutral-800 hover:bg-neutral-100'
                   }`}
                 >
                   Admin
@@ -195,25 +196,45 @@ export function Navigation() {
             </div>
 
             {/* User Menu / Login Button */}
-            <div className="ml-4 relative" ref={userMenuRef}>
+            <div className="ml-4 relative flex items-center gap-3" ref={userMenuRef}>
               {isLoading ? (
-                <div className="w-9 h-9 rounded-full bg-gray-200 animate-pulse" />
+                <div className="w-9 h-9 rounded-full bg-neutral-200 animate-pulse" />
               ) : isAuthenticated ? (
                 <>
+                  {/* Tier Badge - visible in nav bar */}
+                  {user?.subscription_tier && (
+                    <Link
+                      href="/pricing"
+                      className={`hidden sm:inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold transition-colors border ${
+                        (user.subscription_tier as string) === 'curator'
+                          ? 'bg-purple-100 text-purple-700 border-purple-200 hover:bg-purple-200'
+                          : (user.subscription_tier as string) === 'advanced' || (user.subscription_tier as string) === 'upgraded'
+                          ? 'bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200'
+                          : user.subscription_tier === 'basic_plus'
+                          ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-200'
+                          : user.subscription_tier === 'basic'
+                          ? 'bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200'
+                          : 'bg-neutral-100 text-neutral-600 border-neutral-200 hover:bg-neutral-200'
+                      }`}
+                    >
+                      {getTierDisplayLabel(user.subscription_tier)}
+                    </Link>
+                  )}
+
                   <button
                     onClick={() => setUserMenuOpen(!userMenuOpen)}
-                    className="flex items-center gap-2 p-1 rounded-full hover:bg-gray-100 transition-colors"
+                    className="flex items-center gap-2 p-1 rounded-full hover:bg-neutral-100 transition-all duration-200"
                   >
                     {user?.profile_image_url && !imageError ? (
                       <img
                         src={user.profile_image_url}
                         alt={user.name || 'User'}
-                        className="w-9 h-9 rounded-full object-cover border-2 border-gray-200"
+                        className="w-9 h-9 rounded-full object-cover border-2 border-neutral-200"
                         onError={() => setImageError(true)}
                         referrerPolicy="no-referrer"
                       />
                     ) : (
-                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-sky-500 to-sky-600 flex items-center justify-center text-white font-medium text-sm">
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-neutral-600 to-neutral-700 flex items-center justify-center text-white font-medium text-sm">
                         {getUserInitials()}
                       </div>
                     )}
@@ -221,42 +242,37 @@ export function Navigation() {
 
                   {/* Dropdown Menu */}
                   {userMenuOpen && (
-                    <div className="absolute right-0 mt-2 w-56 rounded-lg bg-white shadow-lg border border-gray-200 py-1 z-50">
-                      <div className="px-4 py-3 border-b border-gray-100">
-                        <p className="text-sm font-medium text-gray-900 truncate">
+                    <div className="absolute right-0 top-full mt-2 w-56 rounded-xl bg-white shadow-lg border border-neutral-200/80 py-1 z-[9999]">
+                      <div className="px-4 py-3 border-b border-neutral-100">
+                        <p className="text-sm font-medium text-neutral-800 truncate">
                           {user?.name || 'User'}
                         </p>
-                        <p className="text-xs text-gray-500 truncate">
+                        <p className="text-xs text-neutral-500 truncate">
                           {user?.email}
                         </p>
                       </div>
-                      <Link
-                        href="/purchases"
-                        onClick={() => setUserMenuOpen(false)}
-                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      <div
+                        className="flex items-center gap-2 px-4 py-2 text-sm text-neutral-400 cursor-not-allowed"
                       >
-                        My Purchases
-                      </Link>
-                      <Link
-                        href="/projects"
-                        onClick={() => setUserMenuOpen(false)}
-                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        My Projects
-                      </Link>
-                      <button
-                        onClick={handleLogout}
-                        className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                      >
-                        Sign Out
-                      </button>
+                        <UserCircleIcon className="w-4 h-4" />
+                        Profile
+                      </div>
+                      <div className="border-t border-neutral-100 mt-1 pt-1">
+                        <button
+                          onClick={handleLogout}
+                          className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm text-accent-600 hover:bg-accent-50 transition-colors"
+                        >
+                          <ArrowRightOnRectangleIcon className="w-4 h-4" />
+                          Sign Out
+                        </button>
+                      </div>
                     </div>
                   )}
                 </>
               ) : (
                 <Link
                   href="/login"
-                  className="px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors"
+                  className="px-5 py-2 bg-neutral-800 text-white text-sm font-medium rounded-md hover:bg-neutral-900 transition-all duration-200"
                 >
                   Sign In
                 </Link>
@@ -273,12 +289,12 @@ export function Navigation() {
                   <img
                     src={user.profile_image_url}
                     alt={user.name || 'User'}
-                    className="w-8 h-8 rounded-full object-cover border-2 border-gray-200"
+                    className="w-8 h-8 rounded-full object-cover border-2 border-neutral-200"
                     onError={() => setImageError(true)}
                     referrerPolicy="no-referrer"
                   />
                 ) : (
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sky-500 to-sky-600 flex items-center justify-center text-white font-medium text-xs">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-neutral-600 to-neutral-700 flex items-center justify-center text-white font-medium text-xs">
                     {getUserInitials()}
                   </div>
                 )}
@@ -286,7 +302,7 @@ export function Navigation() {
             )}
             <button
               type="button"
-              className="bg-white p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+              className="bg-white p-2 rounded-md text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-500 transition-all duration-200"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
               <span className="sr-only">Open main menu</span>
@@ -302,8 +318,8 @@ export function Navigation() {
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
           <div className="md:hidden">
-            <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 border-t border-gray-200">
-              {/* Base navigation and Home Styling - only shown to authenticated users */}
+            <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 border-t border-neutral-200/60">
+              {/* 1. Home - shown to authenticated users */}
               {isAuthenticated && (
                 <>
                   {baseNavigation.map((item) => {
@@ -312,10 +328,10 @@ export function Navigation() {
                       <Link
                         key={item.name}
                         href={item.href}
-                        className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                        className={`block px-3 py-2 rounded-md text-base font-medium transition-all duration-200 ${
                           isActive
-                            ? 'bg-gray-100 text-gray-900'
-                            : 'text-gray-600 hover:text-gray-900'
+                            ? 'bg-neutral-100 text-neutral-900'
+                            : 'text-neutral-600 hover:text-neutral-800 hover:bg-neutral-100'
                         }`}
                         onClick={() => setMobileMenuOpen(false)}
                       >
@@ -323,48 +339,20 @@ export function Navigation() {
                       </Link>
                     )
                   })}
-
-                  {/* Home Styling - shown to authenticated users */}
-                  <Link
-                    href="/homestyling"
-                    className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
-                      pathname?.startsWith('/homestyling')
-                        ? 'bg-gray-100 text-gray-900'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    Home Styling
-                  </Link>
                 </>
               )}
 
-              {/* Purchases - shown to authenticated users */}
-              {isAuthenticated && (
-                <Link
-                  href="/purchases"
-                  className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
-                    pathname?.startsWith('/purchases')
-                      ? 'bg-gray-100 text-gray-900'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Purchases
-                </Link>
-              )}
-
-              {/* Premium navigation - only for upgraded users and admins */}
-              {hasBuildYourOwn(user) && premiumNavigation.map((item) => {
+              {/* 2. Studio - only for upgraded users and admins */}
+              {canAccessDesignStudio(user) && premiumNavigation.map((item) => {
                 const isActive = pathname === item.href
                 return (
                   <Link
                     key={item.name}
                     href={item.href}
-                    className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                    className={`block px-3 py-2 rounded-md text-base font-medium transition-all duration-200 ${
                       isActive
-                        ? 'bg-gray-100 text-gray-900'
-                        : 'text-gray-600 hover:text-gray-900'
+                        ? 'bg-neutral-100 text-neutral-900'
+                        : 'text-neutral-600 hover:text-neutral-800 hover:bg-neutral-100'
                     }`}
                     onClick={() => setMobileMenuOpen(false)}
                   >
@@ -373,17 +361,17 @@ export function Navigation() {
                 )
               })}
 
-              {/* Admin-only navigation - Curated */}
-              {isAdmin(user) && adminNavigation.map((item) => {
+              {/* 3. Curated Looks - for advanced/curator users and admins */}
+              {canAccessCurated(user) && curatedNavigation.map((item) => {
                 const isActive = pathname === item.href
                 return (
                   <Link
                     key={item.name}
                     href={item.href}
-                    className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                    className={`block px-3 py-2 rounded-md text-base font-medium transition-all duration-200 ${
                       isActive
-                        ? 'bg-gray-100 text-gray-900'
-                        : 'text-gray-600 hover:text-gray-900'
+                        ? 'bg-neutral-100 text-neutral-900'
+                        : 'text-neutral-600 hover:text-neutral-800 hover:bg-neutral-100'
                     }`}
                     onClick={() => setMobileMenuOpen(false)}
                   >
@@ -392,14 +380,14 @@ export function Navigation() {
                 )
               })}
 
-              {/* Projects - Only for upgraded users and admins */}
-              {isAuthenticated && hasBuildYourOwn(user) && (
+              {/* 4. Projects - Only for upgraded users and admins */}
+              {isAuthenticated && canAccessDesignStudio(user) && (
                 <Link
                   href="/projects"
-                  className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                  className={`block px-3 py-2 rounded-md text-base font-medium transition-all duration-200 ${
                     pathname === '/projects'
-                      ? 'bg-gray-100 text-gray-900'
-                      : 'text-gray-600 hover:text-gray-900'
+                      ? 'bg-neutral-100 text-neutral-900'
+                      : 'text-neutral-600 hover:text-neutral-800 hover:bg-neutral-100'
                   }`}
                   onClick={() => setMobileMenuOpen(false)}
                 >
@@ -407,14 +395,29 @@ export function Navigation() {
                 </Link>
               )}
 
+              {/* 5. Purchases - shown to authenticated users */}
+              {isAuthenticated && (
+                <Link
+                  href="/purchases"
+                  className={`block px-3 py-2 rounded-md text-base font-medium transition-all duration-200 ${
+                    pathname?.startsWith('/purchases')
+                      ? 'bg-neutral-100 text-neutral-900'
+                      : 'text-neutral-600 hover:text-neutral-800 hover:bg-neutral-100'
+                  }`}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Purchases
+                </Link>
+              )}
+
               {/* Admin - Mobile (only for admin/super_admin) */}
               {isAuthenticated && isAdmin(user) && (
                 <Link
                   href="/admin"
-                  className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                  className={`block px-3 py-2 rounded-md text-base font-medium transition-all duration-200 ${
                     pathname === '/admin' || (pathname?.startsWith('/admin') && !pathname?.startsWith('/admin/permissions'))
-                      ? 'bg-gray-100 text-gray-900'
-                      : 'text-gray-600 hover:text-gray-900'
+                      ? 'bg-neutral-100 text-neutral-900'
+                      : 'text-neutral-600 hover:text-neutral-800 hover:bg-neutral-100'
                   }`}
                   onClick={() => setMobileMenuOpen(false)}
                 >
@@ -423,10 +426,10 @@ export function Navigation() {
               )}
 
               {/* Auth Actions - Mobile */}
-              <div className="pt-3 border-t border-gray-200 mt-3">
+              <div className="pt-3 border-t border-neutral-200/60 mt-3">
                 {isAuthenticated ? (
                   <>
-                    <div className="px-3 py-2 text-sm text-gray-500">
+                    <div className="px-3 py-2 text-sm text-neutral-500">
                       {user?.name || user?.email}
                     </div>
                     <button
@@ -434,7 +437,7 @@ export function Navigation() {
                         handleLogout()
                         setMobileMenuOpen(false)
                       }}
-                      className="w-full text-left px-3 py-2 rounded-md text-base font-medium text-red-600 hover:bg-red-50 transition-colors"
+                      className="w-full text-left px-3 py-2 rounded-md text-base font-medium text-accent-600 hover:bg-accent-50 transition-colors"
                     >
                       Sign Out
                     </button>
@@ -442,7 +445,7 @@ export function Navigation() {
                 ) : (
                   <Link
                     href="/login"
-                    className="block px-3 py-2 rounded-md text-base font-medium text-gray-900 hover:bg-gray-100 transition-colors"
+                    className="block px-3 py-2 rounded-md text-base font-medium text-neutral-800 hover:bg-neutral-100 transition-colors"
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     Sign In

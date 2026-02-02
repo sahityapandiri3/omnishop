@@ -2771,8 +2771,9 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         curated_look_id = request.get("curated_look_id")  # For curated look editing
         project_id = request.get("project_id")  # For design page project editing
         visualized_products = request.get("visualized_products", [])  # Products already in base image (for incremental)
+        wall_color = request.get("wall_color")  # Wall color to apply: {name, code, hex_value}
         logger.info(
-            f"[Visualize] Received request with curated_look_id={curated_look_id}, project_id={project_id}, session_id={session_id}, removal_mode={removal_mode}, visualized_products={len(visualized_products)}"
+            f"[Visualize] Received request with curated_look_id={curated_look_id}, project_id={project_id}, session_id={session_id}, removal_mode={removal_mode}, visualized_products={len(visualized_products)}, wall_color={wall_color.get('name') if wall_color else None}"
         )
         # Debug: Log products_to_add details with quantities
         logger.info(
@@ -2838,8 +2839,8 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         if not base_image:
             raise HTTPException(status_code=400, detail="Image is required")
 
-        if not products and not removal_mode:
-            raise HTTPException(status_code=400, detail="At least one product must be selected")
+        if not products and not removal_mode and not wall_color:
+            raise HTTPException(status_code=400, detail="At least one product or wall color must be selected")
 
         # Handle REMOVAL MODE - remove specific products from visualization while preserving others
         # Skip this block for REMOVE_AND_ADD - that's handled separately below
@@ -3076,6 +3077,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                         existing_products=[],  # Don't tell AI about existing products - they're already in the image
                         workflow_id=workflow_id,
                         session_id=session_id,
+                        wall_color=wall_color,  # Optional wall color to apply
                     )
 
                     if visualization_result:
@@ -3564,6 +3566,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     existing_products=visualized_products,  # Products already in base image to preserve
                     workflow_id=workflow_id,
                     session_id=session_id,
+                    wall_color=wall_color,  # Optional wall color to apply
                 )
             except ValueError as e:
                 logger.error(f"Batch visualization error: {e}")
@@ -3617,6 +3620,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                         products=batch,
                         workflow_id=workflow_id,
                         session_id=session_id,
+                        wall_color=None,  # Wall color already applied in first batch, don't reapply
                     )
                     batch_num += 1
 

@@ -171,8 +171,13 @@ export default function UploadPage() {
   };
 
   const handleContinue = () => {
-    // Already processed, just navigate
-    router.push('/homestyling/tier');
+    // Already processed, skip tier page and go directly to generate
+    const currentSessionId = sessionStorage.getItem('homestyling_session_id');
+    if (currentSessionId) {
+      router.push(`/homestyling/results/${currentSessionId}`);
+    } else {
+      router.push('/homestyling/preferences');
+    }
   };
 
   const handleRemoveImage = () => {
@@ -238,12 +243,12 @@ export default function UploadPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-neutral-50 py-8">
       <div className="max-w-3xl mx-auto px-4">
         {/* Progress */}
         <div className="mb-8">
           <div className="flex items-center justify-center gap-2 mb-4">
-            <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center text-sm font-bold">
+            <div className="w-8 h-8 rounded-full bg-neutral-800 text-white flex items-center justify-center text-sm font-bold">
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path
                   fillRule="evenodd"
@@ -252,26 +257,22 @@ export default function UploadPage() {
                 />
               </svg>
             </div>
-            <div className="w-16 h-1 bg-emerald-600 rounded-full" />
-            <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center text-sm font-bold">
+            <div className="w-16 h-1 bg-neutral-800 rounded-full" />
+            <div className="w-8 h-8 rounded-full bg-neutral-800 text-white flex items-center justify-center text-sm font-bold">
               2
             </div>
-            <div className="w-16 h-1 bg-gray-200 rounded-full" />
-            <div className="w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-sm font-bold">
+            <div className="w-16 h-1 bg-neutral-200 rounded-full" />
+            <div className="w-8 h-8 rounded-full bg-neutral-200 text-neutral-400 flex items-center justify-center text-sm font-bold">
               3
             </div>
-            <div className="w-16 h-1 bg-gray-200 rounded-full" />
-            <div className="w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-sm font-bold">
-              4
-            </div>
           </div>
-          <p className="text-center text-sm text-gray-500">Step 2 of 4: Upload Your Room</p>
+          <p className="text-center text-sm text-neutral-500">Step 2 of 3: Upload Your Room</p>
         </div>
 
         {/* Upload Section */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6 relative">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Upload Room Photo</h2>
-          <p className="text-sm text-gray-500 mb-4">
+        <div className="bg-white rounded-xl shadow-soft border border-neutral-200/80 p-6 mb-6 relative">
+          <h2 className="font-display text-lg font-normal text-neutral-800 mb-1">Upload Room Photo</h2>
+          <p className="text-sm text-neutral-500 mb-4">
             Upload a new photo or select from your previously uploaded rooms.
           </p>
 
@@ -282,8 +283,8 @@ export default function UploadPage() {
                 onClick={() => setActiveTab('upload')}
                 className={`flex-1 py-2.5 px-4 rounded-lg font-medium text-sm transition-all ${
                   activeTab === 'upload'
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    ? 'bg-neutral-800 text-white shadow-sm'
+                    : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
                 }`}
               >
                 <span className="flex items-center justify-center gap-2">
@@ -297,8 +298,8 @@ export default function UploadPage() {
                 onClick={() => setActiveTab('previous')}
                 className={`flex-1 py-2.5 px-4 rounded-lg font-medium text-sm transition-all ${
                   activeTab === 'previous'
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    ? 'bg-neutral-800 text-white shadow-sm'
+                    : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
                 }`}
               >
                 <span className="flex items-center justify-center gap-2">
@@ -325,13 +326,13 @@ export default function UploadPage() {
               onClick={() => fileInputRef.current?.click()}
               className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all ${
                 isDragOver
-                  ? 'border-emerald-500 bg-emerald-50'
-                  : 'border-gray-300 hover:border-gray-400'
+                  ? 'border-neutral-800 bg-neutral-100'
+                  : 'border-neutral-300 hover:border-neutral-400'
               }`}
             >
               <svg
                 className={`w-12 h-12 mx-auto mb-4 ${
-                  isDragOver ? 'text-emerald-500' : 'text-gray-400'
+                  isDragOver ? 'text-neutral-700' : 'text-neutral-400'
                 }`}
                 fill="none"
                 viewBox="0 0 24 24"
@@ -344,11 +345,11 @@ export default function UploadPage() {
                   d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
                 />
               </svg>
-              <p className="text-gray-600 font-medium mb-1">
+              <p className="text-neutral-600 font-medium mb-1">
                 {isDragOver ? 'Drop your image here' : 'Drag and drop your room photo'}
               </p>
-              <p className="text-sm text-gray-500">or click to browse</p>
-              <p className="text-xs text-gray-400 mt-2">PNG, JPG up to 10MB</p>
+              <p className="text-sm text-neutral-500">or click to browse</p>
+              <p className="text-xs text-neutral-400 mt-2">PNG, JPG up to 10MB</p>
             </div>
           )}
 
@@ -357,20 +358,20 @@ export default function UploadPage() {
             <div>
               {loadingPrevious ? (
                 <div className="flex justify-center items-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-emerald-600 border-t-transparent" />
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-neutral-800 border-t-transparent" />
                 </div>
               ) : previousRooms.length === 0 ? (
                 <div className="text-center py-12">
-                  <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-12 h-12 mx-auto mb-4 text-neutral-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                  <p className="text-gray-500 font-medium">No previous rooms yet</p>
-                  <p className="text-sm text-gray-400 mt-1">Upload your first room to get started</p>
+                  <p className="text-neutral-500 font-medium">No previous rooms yet</p>
+                  <p className="text-sm text-neutral-400 mt-1">Upload your first room to get started</p>
                   <button
                     onClick={() => setActiveTab('upload')}
-                    className="mt-4 text-emerald-600 hover:text-emerald-700 font-medium text-sm"
+                    className="mt-4 text-neutral-700 hover:text-neutral-900 font-medium text-sm"
                   >
-                    Upload Now →
+                    Upload Now
                   </button>
                 </div>
               ) : (
@@ -382,8 +383,8 @@ export default function UploadPage() {
                       disabled={isProcessing}
                       className={`group relative aspect-[4/3] rounded-xl overflow-hidden border-2 transition-all ${
                         selectedPreviousRoom === room.session_id
-                          ? 'border-emerald-500 ring-2 ring-emerald-200'
-                          : 'border-transparent hover:border-emerald-300'
+                          ? 'border-neutral-800 ring-2 ring-neutral-300'
+                          : 'border-transparent hover:border-neutral-400'
                       } ${isProcessing && selectedPreviousRoom === room.session_id ? 'opacity-75' : ''}`}
                     >
                       <img
@@ -404,11 +405,11 @@ export default function UploadPage() {
                       {selectedPreviousRoom === room.session_id && (
                         <div className="absolute top-2 right-2">
                           {isProcessing ? (
-                            <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center">
+                            <div className="w-6 h-6 bg-neutral-800 rounded-full flex items-center justify-center">
                               <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent" />
                             </div>
                           ) : (
-                            <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center">
+                            <div className="w-6 h-6 bg-neutral-800 rounded-full flex items-center justify-center">
                               <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                               </svg>
@@ -426,7 +427,7 @@ export default function UploadPage() {
           {/* Image Preview (shown after upload or selection) */}
           {originalImage && (
             <div className="relative">
-              <div className="aspect-video rounded-xl overflow-hidden bg-gray-100">
+              <div className="aspect-video rounded-xl overflow-hidden bg-neutral-100">
                 <img
                   src={showOriginal ? originalImage : (processedImage || originalImage)}
                   alt={showOriginal ? "Original room" : "Processed room"}
@@ -437,17 +438,17 @@ export default function UploadPage() {
               {/* Processing Overlay */}
               {isProcessing && (
                 <div className="absolute inset-0 bg-white/90 rounded-xl flex flex-col items-center justify-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-4 border-emerald-200 border-t-emerald-600 mb-4" />
-                  <p className="text-lg font-medium text-gray-900 mb-1">Processing Your Room</p>
-                  <p className="text-sm text-gray-500">Removing existing furniture...</p>
-                  <p className="text-xs text-gray-400 mt-2">This may take 15-30 seconds</p>
+                  <div className="animate-spin rounded-full h-12 w-12 border-4 border-neutral-200 border-t-neutral-800 mb-4" />
+                  <p className="text-lg font-medium text-neutral-800 mb-1">Processing Your Room</p>
+                  <p className="text-sm text-neutral-500">Removing existing furniture...</p>
+                  <p className="text-xs text-neutral-400 mt-2">This may take 15-30 seconds</p>
                 </div>
               )}
 
               {/* Success Badge + Before/After Toggle */}
               {isProcessed && !isProcessing && (
                 <div className="absolute top-3 left-3 flex items-center gap-2">
-                  <div className="flex items-center gap-2 bg-emerald-500 text-white px-3 py-1.5 rounded-full text-sm font-medium">
+                  <div className="flex items-center gap-2 bg-neutral-800 text-white px-3 py-1.5 rounded-full text-sm font-medium">
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                       <path
                         fillRule="evenodd"
@@ -460,7 +461,7 @@ export default function UploadPage() {
                   {processedImage && (
                     <button
                       onClick={() => setShowOriginal(!showOriginal)}
-                      className="bg-gray-800/80 text-white px-3 py-1.5 rounded-full text-sm font-medium hover:bg-gray-700 transition-colors"
+                      className="bg-neutral-800/80 text-white px-3 py-1.5 rounded-full text-sm font-medium hover:bg-neutral-700 transition-colors"
                     >
                       {showOriginal ? 'Show After' : 'Show Before'}
                     </button>
@@ -472,7 +473,7 @@ export default function UploadPage() {
               {!isProcessing && (
                 <button
                   onClick={handleRemoveImage}
-                  className="absolute top-3 right-3 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                  className="absolute top-3 right-3 p-2 bg-accent-500 text-white rounded-full hover:bg-accent-600 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -492,11 +493,11 @@ export default function UploadPage() {
         </div>
 
         {/* Tips */}
-        <div className="bg-emerald-50 rounded-xl p-6 mb-6">
-          <h3 className="font-medium text-emerald-800 mb-3">Tips for best results:</h3>
-          <ul className="space-y-2 text-sm text-emerald-700">
+        <div className="bg-neutral-100 rounded-xl p-6 mb-6">
+          <h3 className="font-medium text-neutral-800 mb-3">Tips for best results:</h3>
+          <ul className="space-y-2 text-sm text-neutral-600">
             <li className="flex items-start gap-2">
-              <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-neutral-500" fill="currentColor" viewBox="0 0 20 20">
                 <path
                   fillRule="evenodd"
                   d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
@@ -506,7 +507,7 @@ export default function UploadPage() {
               Take a wide-angle shot from a corner to capture more of the room
             </li>
             <li className="flex items-start gap-2">
-              <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-neutral-500" fill="currentColor" viewBox="0 0 20 20">
                 <path
                   fillRule="evenodd"
                   d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
@@ -516,7 +517,7 @@ export default function UploadPage() {
               Ensure good lighting - natural light works best
             </li>
             <li className="flex items-start gap-2">
-              <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-neutral-500" fill="currentColor" viewBox="0 0 20 20">
                 <path
                   fillRule="evenodd"
                   d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
@@ -530,7 +531,7 @@ export default function UploadPage() {
 
         {/* Error */}
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          <div className="mb-6 p-4 bg-accent-50 border border-accent-200 rounded-lg text-accent-700 text-sm">
             {error}
           </div>
         )}
@@ -539,17 +540,17 @@ export default function UploadPage() {
         <div className="flex justify-between items-center">
           <button
             onClick={() => router.push('/homestyling/preferences')}
-            className="text-gray-600 hover:text-gray-800 font-medium"
+            className="text-neutral-500 hover:text-neutral-700 font-medium"
           >
             Back
           </button>
           <button
             onClick={handleContinue}
             disabled={!isProcessed || isProcessing}
-            className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all ${
+            className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${
               isProcessed && !isProcessing
-                ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                ? 'bg-neutral-800 hover:bg-neutral-900 text-white'
+                : 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
             }`}
           >
             {isProcessing ? (

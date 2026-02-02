@@ -27,6 +27,7 @@ import {
   SerializableHistoryEntry,
   normalizeProductId,
 } from '@/types/visualization';
+import { WallColor } from '@/types/wall-colors';
 import {
   useVisualizationHistory,
   UseVisualizationHistoryReturn,
@@ -54,6 +55,9 @@ export interface UseVisualizationProps {
 
   /** Clean room image without products (used for reset visualization) */
   cleanRoomImage?: string | null;
+
+  /** Wall color to apply during visualization */
+  wallColor?: WallColor | null;
 
   /** Callback to update products (e.g., from undo/redo) */
   onSetProducts: (products: VisualizationProduct[]) => void;
@@ -90,6 +94,7 @@ export function useVisualization({
   products,
   roomImage,
   cleanRoomImage,
+  wallColor,
   onSetProducts,
   onVisualizationImageChange,
   onVisualizationHistoryChange,
@@ -119,6 +124,7 @@ export function useVisualization({
   const [visualizedProductIds, setVisualizedProductIds] = useState<Set<string>>(new Set());
   const [visualizedProducts, setVisualizedProducts] = useState<VisualizationProduct[]>([]);
   const [visualizedQuantities, setVisualizedQuantities] = useState<Map<string, number>>(new Map());
+  const [visualizedWallColor, setVisualizedWallColor] = useState<WallColor | null>(null);
   const [needsRevisualization, setNeedsRevisualization] = useState(false);
 
   // Edit mode
@@ -162,7 +168,7 @@ export function useVisualization({
 
   useEffect(() => {
     // Don't trigger on initial load or if never visualized
-    if (visualizedProductIds.size === 0 && !visualizationImage) {
+    if (visualizedProductIds.size === 0 && !visualizationImage && !visualizedWallColor) {
       return;
     }
 
@@ -179,13 +185,24 @@ export function useVisualization({
       return currentQty !== visualizedQty;
     });
 
-    if (productsChanged || quantitiesChanged) {
+    // Check if wall color has changed
+    // Note: wallColor can be undefined (optional prop) or null (explicitly cleared)
+    const currentWallColor = wallColor ?? null;
+    const wallColorChanged = (
+      (currentWallColor === null && visualizedWallColor !== null) ||
+      (currentWallColor !== null && visualizedWallColor === null) ||
+      (currentWallColor !== null && visualizedWallColor !== null && currentWallColor.id !== visualizedWallColor.id)
+    );
+
+    if (productsChanged || quantitiesChanged || wallColorChanged) {
       setNeedsRevisualization(true);
-      if (quantitiesChanged && !productsChanged) {
+      if (wallColorChanged) {
+        console.log('[useVisualization] Wall color changed, needs re-visualization');
+      } else if (quantitiesChanged && !productsChanged) {
         console.log('[useVisualization] Quantity changed, needs re-visualization');
       }
     }
-  }, [products, visualizedProductIds, visualizedQuantities, visualizationImage]);
+  }, [products, visualizedProductIds, visualizedQuantities, visualizationImage, wallColor, visualizedWallColor]);
 
   // ============================================================================
   // Sync Effect: Keep visualizedProducts in sync when products change
@@ -402,6 +419,12 @@ export function useVisualization({
             user_uploaded_new_image: changeInfo.type === 'initial',
             curated_look_id: config.curatedLookId,
             project_id: config.projectId,
+            // Wall color to apply during visualization
+            wall_color: wallColor ? {
+              name: wallColor.name,
+              code: wallColor.code,
+              hex_value: wallColor.hex_value,
+            } : undefined,
           }),
         },
         { maxRetries: 2, timeoutMs: 300000, retryDelayMs: 3000 }
@@ -427,6 +450,7 @@ export function useVisualization({
       setVisualizedProductIds(newProductIds);
       setVisualizedProducts([...products]);
       setVisualizedQuantities(newQuantities);
+      setVisualizedWallColor(wallColor || null);
       setNeedsRevisualization(false);
 
       // Push to history
@@ -566,6 +590,12 @@ export function useVisualization({
             action: 'add',
             curated_look_id: config.curatedLookId,
             project_id: config.projectId,
+            // Wall color to apply during visualization
+            wall_color: wallColor ? {
+              name: wallColor.name,
+              code: wallColor.code,
+              hex_value: wallColor.hex_value,
+            } : undefined,
           }),
         }
       );
@@ -598,6 +628,7 @@ export function useVisualization({
       setVisualizedProductIds(buildProductIdSet(products));
       setVisualizedProducts([...products]);
       setVisualizedQuantities(buildQuantityMap(products));
+      setVisualizedWallColor(wallColor || null);
       setNeedsRevisualization(false);
 
     } catch (error) {
@@ -755,6 +786,7 @@ export function useVisualization({
     setVisualizedProductIds(new Set());
     setVisualizedProducts([]);
     setVisualizedQuantities(new Map());
+    setVisualizedWallColor(null);
     setNeedsRevisualization(false);
     historyHook.reset();
     initializationRef.current = false;

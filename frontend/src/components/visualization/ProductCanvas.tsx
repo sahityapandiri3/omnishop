@@ -242,7 +242,7 @@ function ProductCard({
             <button
               onClick={onIncrement}
               disabled={disabled}
-              className="p-1 text-neutral-400 hover:text-green-500 transition-colors disabled:opacity-50"
+              className="p-1 text-neutral-400 hover:text-neutral-700 transition-colors disabled:opacity-50"
               title="Add one more"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -288,7 +288,7 @@ function ProductCard({
         )}
         {/* Quantity badge */}
         {hasMultiple && (
-          <div className="absolute top-1 right-1 bg-primary-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
+          <div className="absolute top-1 right-1 bg-neutral-800 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
             x{quantity}
           </div>
         )}
@@ -322,7 +322,7 @@ function ProductCard({
               <button
                 onClick={onIncrement}
                 disabled={disabled}
-                className="p-1 text-neutral-400 hover:text-green-500 transition-colors disabled:opacity-50"
+                className="p-1 text-neutral-400 hover:text-neutral-700 transition-colors disabled:opacity-50"
                 title="Add one more"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

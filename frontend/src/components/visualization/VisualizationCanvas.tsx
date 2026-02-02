@@ -258,7 +258,7 @@ export const VisualizationResult = forwardRef<HTMLDivElement, VisualizationResul
 
         {/* Status messages */}
         {!needsRevisualization && !isEditingPositions && (
-          <p className="text-xs text-green-600 dark:text-green-400 mt-2 text-center">
+          <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-2 text-center">
             Visualization up to date
           </p>
         )}
@@ -298,7 +298,7 @@ export function RoomImageSection({
         </h3>
         <button
           onClick={onUpload}
-          className="w-full p-6 border-2 border-dashed border-neutral-300 dark:border-neutral-600 rounded-lg hover:border-primary-500 dark:hover:border-primary-400 transition-colors"
+          className="w-full p-6 border-2 border-dashed border-neutral-300 dark:border-neutral-600 rounded-lg hover:border-neutral-500 dark:hover:border-neutral-500 transition-colors"
         >
           <div className="flex flex-col items-center text-neutral-500 dark:text-neutral-400">
             <svg className="w-8 h-8 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -322,7 +322,7 @@ export function RoomImageSection({
           {onReplace && (
             <button
               onClick={onReplace}
-              className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
+              className="text-xs text-neutral-700 hover:text-neutral-800 dark:text-neutral-400 font-medium"
             >
               Replace
             </button>

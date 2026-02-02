@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
-import { useAuth, hasBuildYourOwn } from '@/contexts/AuthContext';
+import { useAuth, canAccessDesignStudio } from '@/contexts/AuthContext';
 
 type AuthMode = 'login' | 'register';
 
@@ -48,7 +48,8 @@ export default function LoginPage() {
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
       // Use explicit redirect if available, otherwise determine by user tier
-      const targetUrl = explicitRedirectUrl || (hasBuildYourOwn(user) ? '/projects' : '/homestyling');
+      // Advanced/Curator users go to projects, others go to pricing to select a tier
+      const targetUrl = explicitRedirectUrl || (canAccessDesignStudio(user) ? '/projects' : '/pricing');
       router.push(targetUrl);
     }
   }, [isAuthenticated, isLoading, router, explicitRedirectUrl, user]);
@@ -66,7 +67,7 @@ export default function LoginPage() {
         loggedInUser = await register(email, password, name);
       }
       // Use explicit redirect if available, otherwise determine by user tier
-      const targetUrl = explicitRedirectUrl || (hasBuildYourOwn(loggedInUser) ? '/projects' : '/homestyling');
+      const targetUrl = explicitRedirectUrl || (canAccessDesignStudio(loggedInUser) ? '/projects' : '/pricing');
       router.push(targetUrl);
     } catch (err: any) {
       setError(err.message || 'An error occurred');
@@ -87,7 +88,7 @@ export default function LoginPage() {
     try {
       const loggedInUser = await loginWithGoogle(credentialResponse.credential);
       // Use explicit redirect if available, otherwise determine by user tier
-      const targetUrl = explicitRedirectUrl || (hasBuildYourOwn(loggedInUser) ? '/projects' : '/homestyling');
+      const targetUrl = explicitRedirectUrl || (canAccessDesignStudio(loggedInUser) ? '/projects' : '/pricing');
       router.push(targetUrl);
     } catch (err: any) {
       setError(err.message || 'Google login failed');
@@ -103,30 +104,27 @@ export default function LoginPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-neutral-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-neutral-200 border-t-neutral-800" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-100 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
+    <div className="min-h-screen flex items-center justify-center bg-secondary-50/50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-6">
         {/* Header */}
         <div className="text-center">
-          <Link href="/" className="inline-flex items-center gap-2 mb-6">
-            <svg className="h-10 w-10 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v6H8V5z" />
+          <Link href="/" className="inline-flex items-center gap-2 mb-8 group">
+            <svg className="h-8 w-8 text-neutral-600 transition-colors group-hover:text-neutral-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v6H8V5z" />
             </svg>
-            <div>
-              <span className="text-xl font-bold text-neutral-900">Omnishop</span>
-              <span className="ml-1 text-sm text-neutral-500">AI Design</span>
-            </div>
+            <span className="font-display text-2xl font-medium text-neutral-800">Omnishop</span>
           </Link>
-          <h2 className="heading-2 text-neutral-900">
+          <h2 className="font-display text-3xl font-light text-neutral-800 mb-2">
             {mode === 'login' ? 'Welcome back' : 'Create your account'}
           </h2>
-          <p className="mt-2 body-medium">
+          <p className="text-neutral-500 text-sm">
             {mode === 'login'
               ? 'Sign in to continue to your projects'
               : 'Start designing your dream space'}
@@ -134,16 +132,16 @@ export default function LoginPage() {
         </div>
 
         {/* Form Card */}
-        <div className="card p-6">
+        <div className="bg-white rounded-xl shadow-soft border border-neutral-200/80 p-8">
           {/* Mode Toggle */}
           <div className="flex bg-neutral-100 rounded-lg p-1 mb-6">
             <button
               type="button"
               onClick={() => setMode('login')}
-              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all ${
+              className={`flex-1 py-2.5 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
                 mode === 'login'
-                  ? 'bg-white text-neutral-900 shadow-sm'
-                  : 'text-neutral-600 hover:text-neutral-900'
+                  ? 'bg-white text-neutral-800 shadow-sm'
+                  : 'text-neutral-500 hover:text-neutral-700'
               }`}
             >
               Sign In
@@ -151,10 +149,10 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => setMode('register')}
-              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all ${
+              className={`flex-1 py-2.5 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
                 mode === 'register'
-                  ? 'bg-white text-neutral-900 shadow-sm'
-                  : 'text-neutral-600 hover:text-neutral-900'
+                  ? 'bg-white text-neutral-800 shadow-sm'
+                  : 'text-neutral-500 hover:text-neutral-700'
               }`}
             >
               Sign Up
@@ -163,10 +161,10 @@ export default function LoginPage() {
 
           {/* Session expired message */}
           {searchParams?.get('reason') === 'session_expired' && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-sm mb-4">
+            <div className="bg-secondary-100 border border-secondary-300 text-secondary-800 px-4 py-3 rounded-lg text-sm mb-4">
               <div className="flex items-center gap-2">
                 <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <span>Your session has expired. Please sign in again to continue.</span>
               </div>
@@ -176,7 +174,7 @@ export default function LoginPage() {
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+              <div className="bg-accent-50 border border-accent-200 text-accent-700 px-4 py-3 rounded-lg text-sm">
                 {error}
               </div>
             )}
@@ -184,7 +182,7 @@ export default function LoginPage() {
             <div className="space-y-4">
               {mode === 'register' && (
                 <div>
-                  <label htmlFor="name" className="block text-sm font-medium text-neutral-700 mb-1">
+                  <label htmlFor="name" className="block text-sm font-medium text-neutral-600 mb-1.5">
                     Full Name
                   </label>
                   <input
@@ -193,14 +191,14 @@ export default function LoginPage() {
                     required={mode === 'register'}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="input h-11"
+                    className="w-full h-12 px-4 rounded-lg border border-neutral-200 bg-white text-neutral-800 placeholder:text-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-500/20 transition-all duration-200"
                     placeholder="John Doe"
                   />
                 </div>
               )}
 
               <div>
-                <label htmlFor="email" className="block text-sm font-medium text-neutral-700 mb-1">
+                <label htmlFor="email" className="block text-sm font-medium text-neutral-600 mb-1.5">
                   Email Address
                 </label>
                 <input
@@ -209,13 +207,13 @@ export default function LoginPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="input h-11"
+                  className="w-full h-12 px-4 rounded-lg border border-neutral-200 bg-white text-neutral-800 placeholder:text-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-500/20 transition-all duration-200"
                   placeholder="you@example.com"
                 />
               </div>
 
               <div>
-                <label htmlFor="password" className="block text-sm font-medium text-neutral-700 mb-1">
+                <label htmlFor="password" className="block text-sm font-medium text-neutral-600 mb-1.5">
                   Password
                 </label>
                 <input
@@ -225,7 +223,7 @@ export default function LoginPage() {
                   minLength={8}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="input h-11"
+                  className="w-full h-12 px-4 rounded-lg border border-neutral-200 bg-white text-neutral-800 placeholder:text-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-500/20 transition-all duration-200"
                   placeholder={mode === 'register' ? 'At least 8 characters' : 'Enter your password'}
                 />
               </div>
@@ -234,7 +232,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="btn btn-primary w-full h-11"
+              className="w-full h-12 bg-neutral-800 text-white text-sm font-medium rounded-lg hover:bg-neutral-900 active:bg-neutral-950 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
             >
               {submitting ? (
                 <span className="flex items-center justify-center gap-2">
@@ -250,12 +248,12 @@ export default function LoginPage() {
             </button>
 
             {/* Divider */}
-            <div className="relative">
+            <div className="relative my-6">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-neutral-200" />
               </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-neutral-500">
+              <div className="relative flex justify-center text-xs uppercase tracking-wide">
+                <span className="px-3 bg-white text-neutral-400">
                   Or continue with
                 </span>
               </div>
@@ -282,13 +280,13 @@ export default function LoginPage() {
         </div>
 
         {/* Footer links */}
-        <p className="text-center text-xs text-neutral-500">
+        <p className="text-center text-xs text-neutral-400">
           By continuing, you agree to our{' '}
-          <Link href="/terms" className="text-primary-600 hover:text-primary-700">
+          <Link href="/terms" className="text-neutral-600 hover:text-neutral-700 transition-colors">
             Terms of Service
           </Link>{' '}
           and{' '}
-          <Link href="/privacy" className="text-primary-600 hover:text-primary-700">
+          <Link href="/privacy" className="text-neutral-600 hover:text-neutral-700 transition-colors">
             Privacy Policy
           </Link>
         </p>

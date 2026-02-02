@@ -180,11 +180,11 @@ function CuratedPageContent() {
   return (
     <div className="min-h-screen bg-neutral-50">
       {/* Main content */}
-      <div className="py-6 px-4">
+      <div className="py-8 px-4">
         <div className="max-w-6xl mx-auto">
           {/* Header */}
-          <div className="text-center mb-5">
-            <h1 className="text-xl md:text-2xl font-bold text-neutral-800 mb-2">
+          <div className="text-center mb-6">
+            <h1 className="font-display text-3xl md:text-4xl font-light text-neutral-800 mb-2">
               Designer's Choice
             </h1>
             <p className="text-sm text-neutral-500 max-w-xl mx-auto">
@@ -193,22 +193,22 @@ function CuratedPageContent() {
           </div>
 
           {/* Search Bar */}
-          <div className="flex justify-center mb-4">
+          <div className="flex justify-center mb-5">
             <div className="relative w-full max-w-md">
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <input
                 type="text"
                 placeholder="Search looks..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-white border border-neutral-200 rounded-lg text-sm text-neutral-700 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent shadow-sm"
+                className="w-full pl-11 pr-4 py-3 bg-white border border-neutral-200 rounded-lg text-sm text-neutral-700 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-500/20 focus:border-neutral-800 shadow-sm transition-all duration-200"
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -219,18 +219,18 @@ function CuratedPageContent() {
           </div>
 
           {/* Filters + Create Your Own */}
-          <div className="flex flex-col gap-3 mb-6">
+          <div className="flex flex-col gap-4 mb-6">
             {/* Room Type + Budget Filter Row */}
             <div className="flex justify-center items-center gap-3 flex-wrap">
               {/* Room Type Filter */}
-              <div className="bg-white rounded-lg p-1 shadow-sm border border-neutral-200 inline-flex gap-1">
+              <div className="bg-white rounded-lg p-1 shadow-sm border border-neutral-200/80 inline-flex gap-1">
                 {roomTypes.map((type) => (
                   <button
                     key={type.value}
                     onClick={() => setRoomTypeFilter(type.value)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    className={`px-4 py-2 rounded-md text-xs font-medium transition-all duration-200 ${
                       roomTypeFilter === type.value
-                        ? 'bg-primary-600 text-white'
+                        ? 'bg-neutral-800 text-white shadow-sm'
                         : 'text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50'
                     }`}
                   >
@@ -243,7 +243,7 @@ function CuratedPageContent() {
               <select
                 value={budgetFilter}
                 onChange={(e) => setBudgetFilter(e.target.value as BudgetOption)}
-                className="bg-white rounded-lg pl-3 pr-8 py-1.5 text-xs font-medium shadow-sm border border-neutral-200 text-neutral-600 hover:border-neutral-300 focus:ring-2 focus:ring-primary-500 focus:border-transparent cursor-pointer"
+                className="bg-white rounded-lg pl-4 pr-8 py-2 text-xs font-medium shadow-sm border border-neutral-200/80 text-neutral-600 hover:border-neutral-300 focus:ring-2 focus:ring-neutral-500/20 focus:border-neutral-800 cursor-pointer transition-all duration-200"
               >
                 {budgetOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -262,10 +262,10 @@ function CuratedPageContent() {
                     <button
                       key={style.value}
                       onClick={() => toggleStyle(style.value)}
-                      className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${
+                      className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border ${
                         isSelected
-                          ? 'bg-purple-100 text-purple-700 border-purple-300'
-                          : 'bg-white text-neutral-500 border-neutral-200 hover:border-neutral-300 hover:text-neutral-700'
+                          ? 'bg-neutral-100 text-neutral-800 border-neutral-400'
+                          : 'bg-white text-neutral-500 border-neutral-200 hover:border-neutral-400 hover:text-neutral-700'
                       }`}
                     >
                       {isSelected && (
@@ -280,7 +280,7 @@ function CuratedPageContent() {
                 {selectedStyles.length > 0 && (
                   <button
                     onClick={() => setSelectedStyles([])}
-                    className="px-2 py-1 text-xs text-neutral-400 hover:text-neutral-600 transition-colors"
+                    className="px-2 py-1.5 text-xs text-neutral-400 hover:text-neutral-700 transition-colors"
                   >
                     Clear
                   </button>
@@ -292,7 +292,7 @@ function CuratedPageContent() {
             <div className="flex justify-center">
               <button
                 onClick={handleStyleFromScratch}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-900 text-white text-sm font-medium rounded-lg transition-all shadow-sm"
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-neutral-800 hover:bg-neutral-900 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-sm hover:shadow-md"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -304,12 +304,9 @@ function CuratedPageContent() {
 
           {/* Loading state */}
           {loading && (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex items-center justify-center py-16">
               <div className="text-center">
-                <div className="relative mb-4">
-                  <div className="animate-spin rounded-full h-10 w-10 border-3 border-primary-200 mx-auto"></div>
-                  <div className="animate-spin rounded-full h-10 w-10 border-t-3 border-primary-600 mx-auto absolute top-0 left-1/2 -translate-x-1/2"></div>
-                </div>
+                <div className="animate-spin rounded-full h-10 w-10 border-2 border-neutral-200 border-t-neutral-800 mx-auto mb-4"></div>
                 <p className="text-sm text-neutral-500">Loading looks...</p>
               </div>
             </div>
@@ -326,7 +323,7 @@ function CuratedPageContent() {
               <h2 className="text-sm font-semibold text-neutral-800 mb-2">{error}</h2>
               <button
                 onClick={() => window.location.reload()}
-                className="mt-2 bg-primary-600 text-white py-2 px-4 rounded-lg hover:bg-primary-700 transition-all text-sm font-medium"
+                className="mt-2 bg-neutral-800 text-white py-2 px-4 rounded-lg hover:bg-neutral-900 transition-all text-sm font-medium"
               >
                 Try Again
               </button>
@@ -336,8 +333,8 @@ function CuratedPageContent() {
           {/* Empty state */}
           {!loading && !error && (!looksData?.looks || looksData.looks.length === 0) && (
             <div className="bg-white rounded-xl shadow-sm p-8 max-w-sm mx-auto border border-neutral-200 text-center">
-              <div className="w-14 h-14 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-7 h-7 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="w-14 h-14 bg-neutral-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-7 h-7 text-neutral-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
               </div>
@@ -354,7 +351,7 @@ function CuratedPageContent() {
                     setSelectedStyles([]);
                     setBudgetFilter('all');
                   }}
-                  className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+                  className="text-neutral-700 hover:text-neutral-800 text-sm font-medium"
                 >
                   Clear filters
                 </button>
@@ -372,8 +369,8 @@ function CuratedPageContent() {
             if (filteredLooks.length === 0) {
               return (
                 <div className="bg-white rounded-xl shadow-sm p-8 max-w-sm mx-auto border border-neutral-200 text-center">
-                  <div className="w-14 h-14 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg className="w-7 h-7 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="w-14 h-14 bg-neutral-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-7 h-7 text-neutral-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                   </div>
@@ -383,7 +380,7 @@ function CuratedPageContent() {
                   </p>
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+                    className="text-neutral-700 hover:text-neutral-800 text-sm font-medium"
                   >
                     Clear search
                   </button>
@@ -445,20 +442,20 @@ function CuratedPageContent() {
           })()}
 
           {/* Design from scratch section */}
-          <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-5 text-center mt-4">
+          <div className="bg-secondary-50/50 rounded-xl border border-neutral-200/60 p-6 text-center mt-6">
             <div className="max-w-md mx-auto">
-              <div className="w-10 h-10 bg-neutral-100 rounded-lg flex items-center justify-center mx-auto mb-3">
-                <svg className="w-5 h-5 text-neutral-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              <div className="w-12 h-12 bg-neutral-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-6 h-6 text-neutral-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                 </svg>
               </div>
-              <h2 className="text-sm font-semibold text-neutral-800 mb-1">Create Your Own</h2>
-              <p className="text-xs text-neutral-500 mb-3">
+              <h2 className="font-display text-xl font-light text-neutral-800 mb-2">Create Your Own</h2>
+              <p className="text-sm text-neutral-500 mb-4">
                 Design from scratch with our full catalog
               </p>
               <button
                 onClick={handleStyleFromScratch}
-                className="bg-neutral-800 hover:bg-neutral-900 text-white py-2 px-4 rounded-lg text-sm font-medium transition-all inline-flex items-center gap-2"
+                className="bg-neutral-800 hover:bg-neutral-900 text-white py-2.5 px-6 rounded-lg text-sm font-medium transition-all duration-200 inline-flex items-center gap-2 shadow-sm hover:shadow-md"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -469,15 +466,15 @@ function CuratedPageContent() {
           </div>
 
           {/* Back to home */}
-          <div className="mt-4 text-center">
+          <div className="mt-6 text-center">
             <button
               onClick={() => router.push('/')}
-              className="text-neutral-400 hover:text-neutral-600 text-xs font-medium inline-flex items-center gap-1 transition-colors"
+              className="text-neutral-400 hover:text-neutral-700 text-sm font-medium inline-flex items-center gap-1.5 transition-colors duration-200"
             >
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>
-              Back
+              Back to Home
             </button>
           </div>
         </div>
@@ -501,7 +498,11 @@ function CuratedPageContent() {
 
 export default function CuratedPage() {
   return (
-    <ProtectedRoute requiredRole="admin">
+    <ProtectedRoute
+      requiredRole="user"
+      requiredTiers={['advanced', 'curator']}
+      allowAdmin={true}
+    >
       <CuratedPageContent />
     </ProtectedRoute>
   );

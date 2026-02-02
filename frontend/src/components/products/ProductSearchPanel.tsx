@@ -3,8 +3,10 @@
 import { useState, ReactNode } from 'react';
 import { ExtendedProduct } from '@/utils/product-transforms';
 import { KeywordSearchPanel } from './KeywordSearchPanel';
+import { WallColorPanel } from '@/components/wall-colors';
+import { WallColor } from '@/types/wall-colors';
 
-type SearchMode = 'keyword' | 'ai';
+type SearchMode = 'keyword' | 'ai' | 'wallColor';
 
 interface ProductSearchPanelProps {
   /** Callback when product is added to canvas */
@@ -21,19 +23,31 @@ interface ProductSearchPanelProps {
   compact?: boolean;
   /** Custom header content */
   headerContent?: ReactNode;
+  /** Whether to enable wall color tab */
+  enableWallColors?: boolean;
+  /** Callback when wall color is added to canvas */
+  onAddWallColorToCanvas?: (color: WallColor) => void;
+  /** Wall color currently on canvas */
+  canvasWallColor?: WallColor | null;
+  /** Currently selected/previewing wall color */
+  selectedWallColor?: WallColor | null;
+  /** Callback when wall color is selected (for preview) */
+  onSelectWallColor?: (color: WallColor) => void;
 }
 
 /**
  * ModeToggle Component
  *
- * Toggle switch between AI Assistant and Keyword Search modes.
+ * Toggle switch between AI Assistant, Keyword Search, and Wall Colors modes.
  */
 function ModeToggle({
   mode,
   onModeChange,
+  showWallColors = false,
 }: {
   mode: SearchMode;
   onModeChange: (mode: SearchMode) => void;
+  showWallColors?: boolean;
 }) {
   return (
     <div className="inline-flex items-center p-0.5 bg-neutral-100 dark:bg-neutral-800 rounded-lg">
@@ -41,22 +55,34 @@ function ModeToggle({
         onClick={() => onModeChange('keyword')}
         className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all text-center ${
           mode === 'keyword'
-            ? 'bg-white dark:bg-neutral-700 text-primary-600 dark:text-primary-400 shadow-sm'
+            ? 'bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 shadow-sm'
             : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
         }`}
       >
-        Keyword Search
+        Furniture
       </button>
       <button
         onClick={() => onModeChange('ai')}
         className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all text-center ${
           mode === 'ai'
-            ? 'bg-white dark:bg-neutral-700 text-primary-600 dark:text-primary-400 shadow-sm'
+            ? 'bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 shadow-sm'
             : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
         }`}
       >
         AI Stylist
       </button>
+      {showWallColors && (
+        <button
+          onClick={() => onModeChange('wallColor')}
+          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all text-center ${
+            mode === 'wallColor'
+              ? 'bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 shadow-sm'
+              : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+          }`}
+        >
+          Wall Colors
+        </button>
+      )}
     </div>
   );
 }
@@ -65,11 +91,12 @@ function ModeToggle({
  * ProductSearchPanel Component
  *
  * Unified search panel with optional mode toggle between:
- * - AI Assistant: Conversational product discovery
- * - Keyword Search: Direct search with filters
+ * - Furniture (Keyword Search): Direct search with filters
+ * - AI Stylist: Conversational product discovery
+ * - Wall Colors: Asian Paints color selection for wall visualization
  *
  * For admin pages, use enableModeToggle={false} to show only keyword search.
- * For design pages, use enableModeToggle={true} to allow switching.
+ * For design pages, use enableModeToggle={true} and enableWallColors={true}.
  */
 export function ProductSearchPanel({
   onAddProduct,
@@ -79,11 +106,34 @@ export function ProductSearchPanel({
   renderAIAssistant,
   compact = false,
   headerContent,
+  enableWallColors = false,
+  onAddWallColorToCanvas,
+  canvasWallColor,
+  selectedWallColor,
+  onSelectWallColor,
 }: ProductSearchPanelProps) {
   const [mode, setMode] = useState<SearchMode>(defaultMode);
 
   // If AI mode is selected but no AI assistant renderer is provided, fall back to keyword
-  const effectiveMode = mode === 'ai' && !renderAIAssistant ? 'keyword' : mode;
+  // If wall color mode is selected but no handler is provided, fall back to keyword
+  let effectiveMode = mode;
+  if (mode === 'ai' && !renderAIAssistant) {
+    effectiveMode = 'keyword';
+  }
+  if (mode === 'wallColor' && !onAddWallColorToCanvas) {
+    effectiveMode = 'keyword';
+  }
+
+  const getModeDescription = () => {
+    switch (effectiveMode) {
+      case 'ai':
+        return 'Chat with our AI to get personalized furniture recommendations';
+      case 'wallColor':
+        return 'Browse and apply wall paint colors to your room';
+      default:
+        return 'Search and filter furniture to add to your design';
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -95,20 +145,22 @@ export function ProductSearchPanel({
               headerContent
             ) : (
               <h2 className="font-semibold text-neutral-900 dark:text-white">
-                Product Discovery
+                {effectiveMode === 'wallColor' ? 'Wall Colors' : 'Product Discovery'}
               </h2>
             )}
             {enableModeToggle && (
-              <ModeToggle mode={effectiveMode} onModeChange={setMode} />
+              <ModeToggle
+                mode={effectiveMode}
+                onModeChange={setMode}
+                showWallColors={enableWallColors && !!onAddWallColorToCanvas}
+              />
             )}
           </div>
 
           {/* Mode Description */}
           {enableModeToggle && (
             <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-              {effectiveMode === 'ai'
-                ? 'Chat with our AI to get personalized furniture recommendations'
-                : 'Search and filter products directly'}
+              {getModeDescription()}
             </p>
           )}
         </div>
@@ -116,7 +168,14 @@ export function ProductSearchPanel({
 
       {/* Content based on mode */}
       <div className="flex-1 overflow-hidden">
-        {effectiveMode === 'keyword' ? (
+        {effectiveMode === 'wallColor' && onAddWallColorToCanvas ? (
+          <WallColorPanel
+            onAddToCanvas={onAddWallColorToCanvas}
+            canvasWallColor={canvasWallColor}
+            selectedColor={selectedWallColor}
+            onSelectColor={onSelectWallColor}
+          />
+        ) : effectiveMode === 'keyword' ? (
           <KeywordSearchPanel
             onAddProduct={onAddProduct}
             canvasProducts={canvasProducts}

@@ -23,3 +23,6 @@ export {
 
 // Product display
 export { ProductCanvas } from './ProductCanvas';
+
+// Room Image Upload (with Previously Uploaded support)
+export { RoomImageUpload } from './RoomImageUpload';

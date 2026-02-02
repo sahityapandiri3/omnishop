@@ -271,7 +271,7 @@ function Pagination({ currentPage, totalPages, onPageChange, hasNext, hasPrev }:
 
 export default function ProductsPage() {
   return (
-    <ProtectedRoute requiredTier="build_your_own">
+    <ProtectedRoute requiredTiers={['advanced', 'curator']} allowAdmin={true}>
       <ProductsPageContent />
     </ProtectedRoute>
   );

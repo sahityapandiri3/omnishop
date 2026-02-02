@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { getCuratedLooks, CuratedLook } from '@/utils/api';
 import { useAuth, isAdmin } from '@/contexts/AuthContext';
@@ -18,20 +18,94 @@ const formatImageSrc = (src: string | null | undefined): string => {
   return src;
 };
 
-// Helper to find a look by style theme name (case-insensitive partial match)
-// Also checks title field as fallback
-const findLookByTheme = (looks: CuratedLook[], themeName: string): CuratedLook | undefined => {
-  const themeNameLower = themeName.toLowerCase();
-  return looks.find(look =>
-    look.style_theme?.toLowerCase().includes(themeNameLower) ||
-    (look as any).title?.toLowerCase().includes(themeNameLower)
-  );
-};
-
 export default function HomePage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [looks, setLooks] = useState<CuratedLook[]>([]);
   const [loading, setLoading] = useState(true);
+  const carouselRef = useRef<HTMLDivElement>(null);
+  const isScrolling = useRef(false);
+
+  // Get carousel items (triplicated for infinite scroll effect)
+  const getCarouselLooks = () => {
+    const displayLooks = looks.slice(0, 6).filter(look => look && (look.visualization_image || look.room_image));
+    // Triple the items: [clone of end items] [original items] [clone of start items]
+    return [...displayLooks, ...displayLooks, ...displayLooks];
+  };
+
+  // Initialize carousel position to the middle set
+  useEffect(() => {
+    if (!carouselRef.current || looks.length === 0) return;
+    const container = carouselRef.current;
+    const displayLooks = looks.slice(0, 6).filter(look => look && (look.visualization_image || look.room_image));
+    const singleSetWidth = container.scrollWidth / 3;
+    // Start at the middle set (instant, no animation)
+    container.scrollLeft = singleSetWidth;
+  }, [looks]);
+
+  // Handle infinite scroll - snap back when reaching clone sections
+  useEffect(() => {
+    if (!carouselRef.current || looks.length === 0) return;
+    const container = carouselRef.current;
+    let scrollTimeout: NodeJS.Timeout;
+
+    const handleScrollEnd = () => {
+      if (isScrolling.current) return;
+
+      const singleSetWidth = container.scrollWidth / 3;
+
+      // If scrolled to the third set (clones at the end), snap back to middle
+      if (container.scrollLeft >= singleSetWidth * 2 - 50) {
+        isScrolling.current = true;
+        container.style.scrollBehavior = 'auto';
+        container.scrollLeft = container.scrollLeft - singleSetWidth;
+        container.style.scrollBehavior = 'smooth';
+        isScrolling.current = false;
+      }
+      // If scrolled to the first set (clones at the start), snap forward to middle
+      else if (container.scrollLeft < singleSetWidth * 0.1) {
+        isScrolling.current = true;
+        container.style.scrollBehavior = 'auto';
+        container.scrollLeft = container.scrollLeft + singleSetWidth;
+        container.style.scrollBehavior = 'smooth';
+        isScrolling.current = false;
+      }
+    };
+
+    const handleScroll = () => {
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(handleScrollEnd, 100);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      clearTimeout(scrollTimeout);
+    };
+  }, [looks]);
+
+  // Carousel scroll functions
+  const scrollCarousel = (direction: 'left' | 'right') => {
+    if (!carouselRef.current) return;
+    const container = carouselRef.current;
+    const scrollAmount = 400; // Scroll by roughly one card width
+
+    if (direction === 'right') {
+      container.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    } else {
+      container.scrollBy({ left: -scrollAmount, behavior: 'smooth' });
+    }
+  };
+
+  // Auto-scroll carousel every 4 seconds
+  useEffect(() => {
+    if (looks.length === 0) return;
+
+    const interval = setInterval(() => {
+      scrollCarousel('right');
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [looks]);
 
   // Landing page is always accessible - no auto-redirect
   // Users can navigate to their dashboard via "Home Styling" or "Curated" links
@@ -55,144 +129,180 @@ export default function HomePage() {
   // Show loading only while fetching looks (auth check no longer blocks the page)
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-neutral-900" />
+      <div className="min-h-screen flex items-center justify-center bg-neutral-50">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-neutral-200 border-t-neutral-800" />
       </div>
     );
   }
 
-  // Find specific looks by name for consistent display (fixed looks for landing page)
-  const heroLook = findLookByTheme(looks, 'Coastal Chic');
-  const featuredLook = findLookByTheme(looks, 'Modern Luxe');
-  const bottomLook = findLookByTheme(looks, 'Organic Modern Foyer');
-  const smallLook1 = findLookByTheme(looks, 'Palace-Inspired');
-  const smallLook2 = findLookByTheme(looks, 'Scandinavian');
+  // Use first look with a visualization image for the hero section
+  const heroLook = looks.find(look => look.visualization_image || look.room_image);
 
-  // Get hero image - use Coastal Chic Living & Kitchen Space
+  // Get hero image
   const heroImage = formatImageSrc(heroLook?.visualization_image || heroLook?.room_image);
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-neutral-50">
       {/* Hero Section - Full Bleed */}
       <section className="relative h-screen w-full overflow-hidden">
         {/* Background Image */}
-        <div className="absolute inset-0 bg-neutral-900">
+        <div className="absolute inset-0 bg-neutral-800">
           {heroImage ? (
             <img
               src={heroImage}
               alt="Beautifully styled room"
-              className="absolute inset-0 w-full h-full object-cover opacity-80"
+              className="absolute inset-0 w-full h-full object-cover opacity-90"
             />
           ) : (
-            <div className="absolute inset-0 bg-gradient-to-br from-neutral-800 to-neutral-900" />
+            <div className="absolute inset-0 bg-gradient-to-br from-neutral-700 to-neutral-900" />
           )}
-          {/* Overlay */}
-          <div className="absolute inset-0 bg-black/40" />
+          {/* Softer Overlay - gradient for depth */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/30 to-black/50" />
         </div>
 
         {/* Hero Content */}
         <div className="relative z-10 flex flex-col items-center justify-center h-full px-6 text-center">
-          <h1 className="text-5xl md:text-7xl font-light text-white tracking-tight mb-6 max-w-4xl">
-            Design Your Space with Real Products
+          <h1 className="font-display text-5xl md:text-6xl lg:text-7xl font-light text-white tracking-tight mb-6 max-w-4xl leading-tight">
+            Style Your Space with Real Products
           </h1>
-          <p className="text-lg md:text-xl text-white/80 font-light mb-12 max-w-2xl">
-            AI-powered interior styling with furniture and decor from top stores
+          <p className="text-lg md:text-xl text-white/85 font-light mb-10 max-w-2xl leading-relaxed">
+            AI-powered interior styling with furniture and decor from top brands
           </p>
           <Link
-            href="/login"
-            className="px-10 py-4 bg-white text-neutral-900 text-sm uppercase tracking-[0.2em] font-medium hover:bg-neutral-100 transition-colors"
+            href="/pricing"
+            className="px-10 py-4 bg-white text-neutral-800 text-xs uppercase tracking-[0.2em] font-medium hover:bg-neutral-100 transition-all duration-300 rounded-sm shadow-lg hover:shadow-xl"
           >
             Start Styling
           </Link>
         </div>
 
         {/* Scroll Indicator */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-white/60">
-          <span className="text-xs uppercase tracking-widest">Scroll</span>
-          <div className="w-px h-8 bg-white/40 animate-pulse" />
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-white/70">
+          <span className="text-xs uppercase tracking-[0.2em]">Scroll</span>
+          <div className="w-px h-8 bg-white/50 animate-pulse" />
         </div>
       </section>
 
-      {/* Curated Looks Section */}
-      <section className="py-24 md:py-32 px-6">
+      {/* Curated Looks Section - Horizontal Carousel */}
+      <section className="py-12 md:py-16 bg-neutral-50">
         <div className="max-w-7xl mx-auto">
-          <h2 className="text-3xl md:text-4xl font-light text-neutral-900 text-center mb-16">
+          <h2 className="font-display text-3xl md:text-4xl font-light text-neutral-800 text-center mb-10 px-6">
             Curated Looks
           </h2>
 
           {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {[...Array(3)].map((_, i) => (
-                <div key={i} className={`${i === 0 ? 'md:col-span-2 md:row-span-2' : ''} aspect-[4/3] bg-neutral-100 animate-pulse rounded-lg`} />
+            <div className="flex gap-4 px-6 overflow-hidden">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="flex-shrink-0 w-[300px] md:w-[400px] aspect-[4/3] bg-neutral-200 animate-pulse rounded-lg" />
               ))}
             </div>
           ) : looks.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Large Featured Look - Modern Luxe Living Room */}
-              {featuredLook && (featuredLook.visualization_image || featuredLook.room_image) && (
-                <div className="md:col-span-2 md:row-span-2 relative aspect-[4/3] md:aspect-auto md:min-h-[500px] overflow-hidden group rounded-lg">
-                  <img
-                    src={formatImageSrc(featuredLook.visualization_image || featuredLook.room_image)}
-                    alt={featuredLook.style_theme}
-                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                  <div className="absolute bottom-0 left-0 right-0 p-6 translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-500">
-                    <p className="text-white text-xl font-light">{featuredLook.style_theme}</p>
-                  </div>
-                </div>
-              )}
+            <div className="relative group/carousel">
+              {/* Left Arrow */}
+              <button
+                onClick={() => scrollCarousel('left')}
+                className="absolute left-2 md:left-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 md:w-12 md:h-12 bg-white/90 hover:bg-white rounded-full shadow-lg flex items-center justify-center opacity-0 group-hover/carousel:opacity-100 transition-opacity duration-300 backdrop-blur-sm"
+                aria-label="Scroll left"
+              >
+                <svg className="w-5 h-5 md:w-6 md:h-6 text-neutral-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
 
-              {/* Smaller Looks - Palace-Inspired and Scandinavian */}
-              {[smallLook1, smallLook2].filter(Boolean).map((look) => (
-                look && (look.visualization_image || look.room_image) && (
-                  <div key={look.look_id} className="relative aspect-[4/3] overflow-hidden group rounded-lg">
+              {/* Carousel Container */}
+              <div
+                ref={carouselRef}
+                className="flex gap-4 px-6 overflow-x-auto scrollbar-hide scroll-smooth"
+                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+              >
+                {getCarouselLooks().map((look, index) => (
+                  <div
+                    key={`${look.look_id}-${index}`}
+                    className="flex-shrink-0 w-[280px] md:w-[380px] relative aspect-[4/3] overflow-hidden group rounded-xl cursor-pointer"
+                  >
                     <img
                       src={formatImageSrc(look.visualization_image || look.room_image)}
                       alt={look.style_theme}
-                      className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                      className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                    <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-500">
-                      <p className="text-white text-lg font-light">{look.style_theme}</p>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent opacity-70 group-hover:opacity-90 transition-opacity duration-500" />
+                    <div className="absolute bottom-0 left-0 right-0 p-5">
+                      <p className="font-display text-white text-lg font-light tracking-wide">{look.style_theme}</p>
+                      {(look as any).room_type && (
+                        <p className="text-white/70 text-sm mt-1 capitalize">{(look as any).room_type.replace('_', ' ')}</p>
+                      )}
                     </div>
                   </div>
-                )
-              ))}
+                ))}
+              </div>
+
+              {/* Right Arrow */}
+              <button
+                onClick={() => scrollCarousel('right')}
+                className="absolute right-2 md:right-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 md:w-12 md:h-12 bg-white/90 hover:bg-white rounded-full shadow-lg flex items-center justify-center opacity-0 group-hover/carousel:opacity-100 transition-opacity duration-300 backdrop-blur-sm"
+                aria-label="Scroll right"
+              >
+                <svg className="w-5 h-5 md:w-6 md:h-6 text-neutral-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+
+              {/* Scroll Indicator Dots - Mobile */}
+              <div className="flex justify-center gap-2 mt-6 md:hidden">
+                {looks.slice(0, 6).map((_, index) => (
+                  <div key={index} className="w-2 h-2 rounded-full bg-neutral-300" />
+                ))}
+              </div>
             </div>
           ) : (
-            <p className="text-center text-neutral-500">Curated looks coming soon</p>
+            <p className="text-center text-neutral-500 px-6">Curated looks coming soon</p>
           )}
         </div>
       </section>
 
-      {/* Features Section */}
-      <section className="py-24 md:py-32 bg-[#FAFAF9]">
+      {/* Features Section - Compact with warm cream background */}
+      <section className="py-10 md:py-12 bg-secondary-50 border-y border-neutral-200/60">
         <div className="max-w-5xl mx-auto px-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-16 md:gap-12">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-10 md:gap-8">
             <div className="text-center">
-              <h3 className="text-2xl font-light text-neutral-900 mb-4">
+              <div className="w-10 h-10 mx-auto mb-4 rounded-full bg-neutral-100 flex items-center justify-center">
+                <svg className="w-5 h-5 text-neutral-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                </svg>
+              </div>
+              <h3 className="font-display text-2xl md:text-3xl font-light text-neutral-800 mb-2">
                 Curated by Professional Stylists
               </h3>
-              <p className="text-neutral-500 font-light leading-relaxed">
+              <p className="text-neutral-500 text-sm leading-relaxed">
                 Room styles featuring products you can actually buy
               </p>
             </div>
 
             <div className="text-center">
-              <h3 className="text-2xl font-light text-neutral-900 mb-4">
+              <div className="w-10 h-10 mx-auto mb-4 rounded-full bg-neutral-100 flex items-center justify-center">
+                <svg className="w-5 h-5 text-neutral-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+              </div>
+              <h3 className="font-display text-2xl md:text-3xl font-light text-neutral-800 mb-2">
                 AI-Powered Styling
               </h3>
-              <p className="text-neutral-500 font-light leading-relaxed">
+              <p className="text-neutral-500 text-sm leading-relaxed">
                 Personalized recommendations that understand your taste
               </p>
             </div>
 
             <div className="text-center">
-              <h3 className="text-2xl font-light text-neutral-900 mb-4">
+              <div className="w-10 h-10 mx-auto mb-4 rounded-full bg-neutral-100 flex items-center justify-center">
+                <svg className="w-5 h-5 text-neutral-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              </div>
+              <h3 className="font-display text-2xl md:text-3xl font-light text-neutral-800 mb-2">
                 Visualize Before You Buy
               </h3>
-              <p className="text-neutral-500 font-light leading-relaxed">
+              <p className="text-neutral-500 text-sm leading-relaxed">
                 See furniture in your actual space
               </p>
             </div>
@@ -200,36 +310,37 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Visual Break with CTA - Organic Modern Foyer */}
-      <section className="relative h-[70vh] overflow-hidden">
-        {/* Background - Organic Modern Foyer with Statement Decor */}
-        <div className="absolute inset-0 bg-neutral-900">
-          {bottomLook?.visualization_image || bottomLook?.room_image ? (
+      {/* Visual Break with CTA */}
+      <section className="relative h-[60vh] overflow-hidden">
+        {/* Background - Use a different look from the carousel if available */}
+        <div className="absolute inset-0 bg-neutral-800">
+          {looks[2]?.visualization_image || looks[2]?.room_image ? (
             <img
-              src={formatImageSrc(bottomLook.visualization_image || bottomLook.room_image)}
+              src={formatImageSrc(looks[2].visualization_image || looks[2].room_image)}
               alt="Transform your space"
-              className="absolute inset-0 w-full h-full object-cover opacity-70"
+              className="absolute inset-0 w-full h-full object-cover opacity-85"
             />
           ) : heroLook?.visualization_image || heroLook?.room_image ? (
             <img
               src={formatImageSrc(heroLook.visualization_image || heroLook.room_image)}
               alt="Transform your space"
-              className="absolute inset-0 w-full h-full object-cover opacity-70"
+              className="absolute inset-0 w-full h-full object-cover opacity-85"
             />
           ) : (
             <div className="absolute inset-0 bg-gradient-to-br from-neutral-700 to-neutral-900" />
           )}
-          <div className="absolute inset-0 bg-black/50" />
+          {/* Softer overlay */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/40 to-black/50" />
         </div>
 
         {/* Content */}
         <div className="relative z-10 flex flex-col items-center justify-center h-full px-6 text-center">
-          <h2 className="text-4xl md:text-5xl font-light text-white tracking-tight mb-8">
+          <h2 className="font-display text-4xl md:text-5xl font-light text-white tracking-tight mb-6">
             Transform Your Space
           </h2>
           <Link
-            href="/login"
-            className="px-10 py-4 border border-white text-white text-sm uppercase tracking-[0.2em] font-medium hover:bg-white hover:text-neutral-900 transition-all"
+            href="/pricing"
+            className="px-10 py-4 border border-white/80 text-white text-xs uppercase tracking-[0.2em] font-medium hover:bg-white hover:text-neutral-800 transition-all duration-300 rounded-sm"
           >
             Start Styling
           </Link>
@@ -237,39 +348,40 @@ export default function HomePage() {
       </section>
 
       {/* Partner Stores */}
-      <section className="py-16 md:py-20 border-t border-neutral-100">
-        <div className="max-w-5xl mx-auto px-6">
-          <p className="text-center text-neutral-400 text-sm uppercase tracking-widest mb-8">
-            Products from
+      <section className="py-12 md:py-14 bg-secondary-50/50 border-t border-neutral-200/60">
+        <div className="max-w-6xl mx-auto px-6">
+          <p className="text-center text-neutral-500 text-xs uppercase tracking-[0.25em] mb-8">
+            Featuring Products From
           </p>
-          <div className="flex flex-wrap justify-center items-center gap-8 md:gap-16">
-            <span className="text-xl md:text-2xl font-light text-neutral-300 hover:text-neutral-600 transition-colors">Mason Home</span>
-            <span className="text-xl md:text-2xl font-light text-neutral-300 hover:text-neutral-600 transition-colors">Fleck</span>
-            <span className="text-xl md:text-2xl font-light text-neutral-300 hover:text-neutral-600 transition-colors">Palasa</span>
-            <span className="text-xl md:text-2xl font-light text-neutral-300 hover:text-neutral-600 transition-colors">House of Things</span>
-            <span className="text-xl md:text-2xl font-light text-neutral-300 hover:text-neutral-600 transition-colors">Modern Quests</span>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-8 md:gap-10 items-center justify-items-center">
+            <div className="text-center">
+              <span className="font-display text-3xl md:text-4xl font-light text-neutral-800 hover:text-neutral-700 transition-colors duration-300 cursor-pointer">Mason Home</span>
+            </div>
+            <div className="text-center">
+              <span className="font-display text-3xl md:text-4xl font-light text-neutral-800 hover:text-neutral-700 transition-colors duration-300 cursor-pointer">Fleck</span>
+            </div>
+            <div className="text-center">
+              <span className="font-display text-3xl md:text-4xl font-light text-neutral-800 hover:text-neutral-700 transition-colors duration-300 cursor-pointer">Palasa</span>
+            </div>
+            <div className="text-center">
+              <span className="font-display text-3xl md:text-4xl font-light text-neutral-800 hover:text-neutral-700 transition-colors duration-300 cursor-pointer">House of Things</span>
+            </div>
+            <div className="text-center col-span-2 md:col-span-1">
+              <span className="font-display text-3xl md:text-4xl font-light text-neutral-800 hover:text-neutral-700 transition-colors duration-300 cursor-pointer">Modern Quests</span>
+            </div>
           </div>
+          <p className="text-center text-neutral-500 text-lg font-medium mt-6">
+            and many more
+          </p>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="bg-neutral-900 text-neutral-400 py-12">
-        <div className="max-w-5xl mx-auto px-6">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-            <div className="text-center md:text-left">
-              <h3 className="text-xl font-light text-white tracking-wide">Omnishop</h3>
-            </div>
-            <div className="flex gap-10 text-sm tracking-wide">
-              <Link href="/curated" className="hover:text-white transition-colors">Curated Looks</Link>
-              <Link href="/design" className="hover:text-white transition-colors">Design Studio</Link>
-              <Link href="/products" className="hover:text-white transition-colors">Products</Link>
-            </div>
-          </div>
-          <div className="border-t border-neutral-800 mt-8 pt-8 text-center">
-            <p className="text-sm text-neutral-500">
-              © 2024 Omnishop
-            </p>
-          </div>
+      {/* Footer - Simple */}
+      <footer className="bg-neutral-800 py-6">
+        <div className="max-w-5xl mx-auto px-6 text-center">
+          <p className="text-xs text-neutral-400">
+            © 2025 Omnishop. All rights reserved.
+          </p>
         </div>
       </footer>
     </div>

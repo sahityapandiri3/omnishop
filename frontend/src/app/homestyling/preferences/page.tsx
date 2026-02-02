@@ -1,8 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import api from '@/utils/api';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
+
+type PricingTier = 'free' | 'basic' | 'basic_plus' | 'advanced' | 'curator';
 
 type RoomType = 'living_room' | 'bedroom';
 type StyleType = 'modern' | 'modern_luxury' | 'indian_contemporary';
@@ -83,13 +86,31 @@ const BUDGET_TIERS = [
   },
 ];
 
-export default function PreferencesPage() {
+function PreferencesPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [roomType, setRoomType] = useState<RoomType | null>(null);
   const [style, setStyle] = useState<StyleType | null>(null);
   const [budgetTier, setBudgetTier] = useState<BudgetTier | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedPricingTier, setSelectedPricingTier] = useState<PricingTier>('free');
+
+  // Get pricing tier from URL params or sessionStorage
+  useEffect(() => {
+    const tierParam = searchParams?.get('tier') as PricingTier;
+    if (tierParam && ['free', 'basic', 'basic_plus', 'advanced', 'curator'].includes(tierParam)) {
+      setSelectedPricingTier(tierParam);
+      // Also store in sessionStorage for later steps
+      sessionStorage.setItem('selectedPricingTier', tierParam);
+    } else {
+      // Check sessionStorage
+      const storedTier = sessionStorage.getItem('selectedPricingTier') as PricingTier;
+      if (storedTier && ['free', 'basic', 'basic_plus', 'advanced', 'curator'].includes(storedTier)) {
+        setSelectedPricingTier(storedTier);
+      }
+    }
+  }, [searchParams]);
 
   const canContinue = roomType && style && budgetTier;
 
@@ -106,14 +127,23 @@ export default function PreferencesPage() {
         style: style,
         budget_tier: budgetTier,
         color_palette: [],
+        selected_tier: selectedPricingTier || 'free', // Include the pricing tier
       });
 
       const sessionId = response.data.id;
       // Store session ID in sessionStorage
       sessionStorage.setItem('homestyling_session_id', sessionId);
 
-      // Navigate to upload page
-      router.push('/homestyling/upload');
+      // NEW FLOW: Payment already happened before preferences
+      // Navigate based on pricing tier
+      if (selectedPricingTier === 'free') {
+        // Free tier: skip upload (uses sample room), go directly to results page
+        // The results page will trigger generation which uses curated look images as fallback
+        router.push(`/homestyling/results/${sessionId}`);
+      } else {
+        // All paid tiers (Basic, Basic+, Advanced): go to upload page
+        router.push('/homestyling/upload');
+      }
     } catch (err: any) {
       console.error('Error creating session:', err);
       setError(err.response?.data?.detail || 'Failed to save preferences. Please try again.');
@@ -123,34 +153,30 @@ export default function PreferencesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-neutral-50 py-8">
       <div className="max-w-3xl mx-auto px-4">
         {/* Progress */}
         <div className="mb-8">
           <div className="flex items-center justify-center gap-2 mb-4">
-            <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center text-sm font-bold">
+            <div className="w-8 h-8 rounded-full bg-neutral-800 text-white flex items-center justify-center text-sm font-bold">
               1
             </div>
-            <div className="w-16 h-1 bg-gray-200 rounded-full" />
-            <div className="w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-sm font-bold">
+            <div className="w-16 h-1 bg-neutral-200 rounded-full" />
+            <div className="w-8 h-8 rounded-full bg-neutral-200 text-neutral-400 flex items-center justify-center text-sm font-bold">
               2
             </div>
-            <div className="w-16 h-1 bg-gray-200 rounded-full" />
-            <div className="w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-sm font-bold">
+            <div className="w-16 h-1 bg-neutral-200 rounded-full" />
+            <div className="w-8 h-8 rounded-full bg-neutral-200 text-neutral-400 flex items-center justify-center text-sm font-bold">
               3
             </div>
-            <div className="w-16 h-1 bg-gray-200 rounded-full" />
-            <div className="w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-sm font-bold">
-              4
-            </div>
           </div>
-          <p className="text-center text-sm text-gray-500">Step 1 of 4: Choose Your Preferences</p>
+          <p className="text-center text-sm text-neutral-500">Step 1 of 3: Choose Your Preferences</p>
         </div>
 
         {/* Room Type */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Select Room Type</h2>
-          <p className="text-sm text-gray-500 mb-4">What room are you styling?</p>
+        <div className="bg-white rounded-xl shadow-soft border border-neutral-200/80 p-6 mb-6">
+          <h2 className="font-display text-lg font-normal text-neutral-800 mb-1">Select Room Type</h2>
+          <p className="text-sm text-neutral-500 mb-4">What room are you styling?</p>
 
           <div className="grid grid-cols-2 gap-4">
             {ROOM_TYPES.map((room) => (
@@ -160,31 +186,31 @@ export default function PreferencesPage() {
                 disabled={room.comingSoon}
                 className={`relative p-4 rounded-xl border-2 transition-all text-left ${
                   room.comingSoon
-                    ? 'border-gray-100 bg-gray-50 cursor-not-allowed opacity-60'
+                    ? 'border-neutral-100 bg-neutral-50 cursor-not-allowed opacity-60'
                     : roomType === room.value
-                    ? 'border-emerald-500 bg-emerald-50'
-                    : 'border-gray-200 hover:border-gray-300'
+                    ? 'border-neutral-800 bg-neutral-50'
+                    : 'border-neutral-200 hover:border-neutral-300'
                 }`}
               >
                 <div
                   className={`mb-2 ${
                     room.comingSoon
-                      ? 'text-gray-300'
+                      ? 'text-neutral-300'
                       : roomType === room.value
-                      ? 'text-emerald-600'
-                      : 'text-gray-400'
+                      ? 'text-neutral-800'
+                      : 'text-neutral-400'
                   }`}
                 >
                   {room.icon}
                 </div>
-                <h3 className={`font-medium ${room.comingSoon ? 'text-gray-400' : 'text-gray-900'}`}>
+                <h3 className={`font-medium ${room.comingSoon ? 'text-neutral-400' : 'text-neutral-800'}`}>
                   {room.label}
                 </h3>
-                <p className={`text-xs ${room.comingSoon ? 'text-gray-400' : 'text-gray-500'}`}>
+                <p className={`text-xs ${room.comingSoon ? 'text-neutral-400' : 'text-neutral-500'}`}>
                   {room.description}
                 </p>
                 {room.comingSoon && (
-                  <span className="absolute top-2 right-2 px-2 py-0.5 bg-gray-200 text-gray-500 text-xs font-medium rounded-full">
+                  <span className="absolute top-2 right-2 px-2 py-0.5 bg-neutral-200 text-neutral-500 text-xs font-medium rounded-full">
                     Coming Soon
                   </span>
                 )}
@@ -194,9 +220,9 @@ export default function PreferencesPage() {
         </div>
 
         {/* Style */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Select Design Style</h2>
-          <p className="text-sm text-gray-500 mb-4">What aesthetic speaks to you?</p>
+        <div className="bg-white rounded-xl shadow-soft border border-neutral-200/80 p-6 mb-6">
+          <h2 className="font-display text-lg font-normal text-neutral-800 mb-1">Select Design Style</h2>
+          <p className="text-sm text-neutral-500 mb-4">What aesthetic speaks to you?</p>
 
           <div className="grid grid-cols-3 gap-4">
             {STYLES.map((s) => (
@@ -204,11 +230,11 @@ export default function PreferencesPage() {
                 key={s.value}
                 onClick={() => setStyle(s.value)}
                 className={`relative rounded-xl overflow-hidden transition-all ${
-                  style === s.value ? 'ring-4 ring-emerald-500 ring-offset-2' : 'hover:shadow-lg'
+                  style === s.value ? 'ring-4 ring-neutral-800 ring-offset-2' : 'hover:shadow-lg'
                 }`}
               >
                 {/* Thumbnail Image */}
-                <div className="aspect-[4/3] relative overflow-hidden bg-gray-100">
+                <div className="aspect-[4/3] relative overflow-hidden bg-neutral-100">
                   <img
                     src={s.imagePath}
                     alt={s.label}
@@ -219,14 +245,14 @@ export default function PreferencesPage() {
 
                   {/* Label overlay */}
                   <div className="absolute bottom-0 left-0 right-0 p-3 text-white text-left">
-                    <h3 className="font-semibold text-sm">{s.label}</h3>
-                    <p className="text-xs text-white/80">{s.description}</p>
+                    <h3 className="font-bold text-base drop-shadow-lg">{s.label}</h3>
+                    <p className="text-xs text-white/90 drop-shadow-md">{s.description}</p>
                   </div>
                 </div>
 
                 {/* Selection checkmark */}
                 {style === s.value && (
-                  <div className="absolute top-2 right-2 w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center">
+                  <div className="absolute top-2 right-2 w-6 h-6 bg-neutral-800 rounded-full flex items-center justify-center">
                     <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
                       <path
                         fillRule="evenodd"
@@ -242,9 +268,9 @@ export default function PreferencesPage() {
         </div>
 
         {/* Budget Tier */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Select Your Budget</h2>
-          <p className="text-sm text-gray-500 mb-4">We'll show you looks that match your budget range</p>
+        <div className="bg-white rounded-xl shadow-soft border border-neutral-200/80 p-6 mb-6">
+          <h2 className="font-display text-lg font-normal text-neutral-800 mb-1">Select Your Budget</h2>
+          <p className="text-sm text-neutral-500 mb-4">We'll show you looks that match your budget range</p>
 
           <div className="grid grid-cols-2 gap-3">
             {BUDGET_TIERS.map((tier) => (
@@ -253,16 +279,16 @@ export default function PreferencesPage() {
                 onClick={() => setBudgetTier(tier.value)}
                 className={`relative p-4 rounded-xl border-2 transition-all text-left ${
                   budgetTier === tier.value
-                    ? 'border-emerald-500 bg-emerald-50'
-                    : 'border-gray-200 hover:border-gray-300'
+                    ? 'border-neutral-800 bg-neutral-50'
+                    : 'border-neutral-200 hover:border-neutral-300'
                 }`}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <h3 className={`font-medium ${budgetTier === tier.value ? 'text-emerald-700' : 'text-gray-900'}`}>
+                  <h3 className={`font-medium ${budgetTier === tier.value ? 'text-neutral-800' : 'text-neutral-800'}`}>
                     {tier.label}
                   </h3>
                   {budgetTier === tier.value && (
-                    <svg className="w-5 h-5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-5 h-5 text-neutral-800" fill="currentColor" viewBox="0 0 20 20">
                       <path
                         fillRule="evenodd"
                         d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
@@ -271,10 +297,10 @@ export default function PreferencesPage() {
                     </svg>
                   )}
                 </div>
-                <p className={`text-sm font-medium ${budgetTier === tier.value ? 'text-emerald-600' : 'text-gray-600'}`}>
+                <p className={`text-sm font-medium ${budgetTier === tier.value ? 'text-neutral-700' : 'text-neutral-600'}`}>
                   {tier.range}
                 </p>
-                <p className="text-xs text-gray-500">{tier.description}</p>
+                <p className="text-xs text-neutral-500">{tier.description}</p>
               </button>
             ))}
           </div>
@@ -282,7 +308,7 @@ export default function PreferencesPage() {
 
         {/* Error */}
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          <div className="mb-6 p-4 bg-accent-50 border border-accent-200 rounded-lg text-accent-700 text-sm">
             {error}
           </div>
         )}
@@ -290,20 +316,20 @@ export default function PreferencesPage() {
         {/* Navigation */}
         <div className="flex justify-between items-center">
           <button
-            onClick={() => router.push('/homestyling')}
-            className="text-gray-600 hover:text-gray-800 font-medium"
+            onClick={() => router.push('/pricing')}
+            className="text-neutral-500 hover:text-neutral-700 font-medium"
           >
             Back
           </button>
           <button
             onClick={handleContinue}
             disabled={!canContinue || isSubmitting}
-            className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all ${
+            className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${
               !canContinue
-                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                ? 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
                 : isSubmitting
-                ? 'bg-emerald-700 text-white cursor-wait opacity-80'
-                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                ? 'bg-neutral-700 text-white cursor-wait opacity-80'
+                : 'bg-neutral-800 hover:bg-neutral-900 text-white'
             }`}
           >
             {isSubmitting ? (
@@ -323,5 +349,13 @@ export default function PreferencesPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function PreferencesPage() {
+  return (
+    <ProtectedRoute requiredRole="user">
+      <PreferencesPageContent />
+    </ProtectedRoute>
   );
 }

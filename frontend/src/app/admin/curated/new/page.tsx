@@ -29,6 +29,13 @@ import {
 import { KeywordSearchPanel, KeywordSearchPanelRef } from '@/components/products';
 import ProductDiscoveryPanel from '@/components/panels/ProductDiscoveryPanel';
 import { ResizablePanelLayout } from '@/components/panels/ResizablePanelLayout';
+import CanvasPanel from '@/components/panels/CanvasPanel';
+// Wall color components
+import { WallColorPanel } from '@/components/wall-colors';
+import { useWallColor } from '@/hooks/useWallColor';
+import { WallColor } from '@/types/wall-colors';
+// Shared search components
+import { SubModeToggle, SearchSubMode } from '@/components/search';
 
 const DraggableFurnitureCanvas = dynamic(
   () => import('@/components/DraggableFurnitureCanvas').then(mod => ({ default: mod.DraggableFurnitureCanvas })),
@@ -103,6 +110,22 @@ export default function CreateCuratedLookPage() {
   const [selectedProducts, setSelectedProducts] = useState<any[]>([]);
   const [roomImage, setRoomImage] = useState<string | null>(null);
 
+  // Visualization state tracked from CanvasPanel for save/publish
+  const [trackedVisualizationImage, setTrackedVisualizationImage] = useState<string | null>(null);
+  const [initialVisualizationForCanvas, setInitialVisualizationForCanvas] = useState<string | null>(null);
+
+  // Search sub-mode state (furniture vs walls)
+  const [searchSubMode, setSearchSubMode] = useState<SearchSubMode>('furniture');
+
+  // Wall color hook
+  const {
+    selectedColor: selectedWallColor,
+    canvasWallColor,
+    handleSelectColor: selectWallColor,
+    handleAddToCanvas: addWallColorToCanvas,
+    removeFromCanvas: removeWallColorFromCanvas,
+  } = useWallColor();
+
   // Furniture removal state (declared before hook since preparedRoomImage is used by hook)
   const [isRemovingFurniture, setIsRemovingFurniture] = useState(false);
   const [furnitureRemovalJobId, setFurnitureRemovalJobId] = useState<string | null>(null);
@@ -118,6 +141,7 @@ export default function CreateCuratedLookPage() {
     roomImage,
     cleanRoomImage: preparedRoomImage || roomImage, // Use furniture-removed image if available
     onSetProducts: setSelectedProducts,
+    wallColor: canvasWallColor,  // Include wall color for visualization
     config: {
       enableTextBasedEdits: true,
       enablePositionEditing: true,
@@ -376,15 +400,15 @@ export default function CreateCuratedLookPage() {
       }));
       setSelectedProducts(productsWithQuantity);
 
-      // Use hook's initializeFromExisting to properly set visualization state
-      // This handles visualizedProductIds, visualizedProducts, visualizedQuantities,
-      // needsRevisualization, and visualization history in a consistent way
+      // Set initial visualization for CanvasPanel
+      // CanvasPanel will use this to initialize its internal visualization state
       if (look.visualization_image) {
         const vizImg = look.visualization_image.startsWith('data:')
           ? look.visualization_image
           : `data:image/png;base64,${look.visualization_image}`;
-        initializeFromExisting(vizImg, productsWithQuantity as VisualizationProduct[]);
-        console.log('[StyleFrom] Initialized visualization via hook');
+        setInitialVisualizationForCanvas(vizImg);
+        setTrackedVisualizationImage(vizImg);
+        console.log('[StyleFrom] Set initial visualization for CanvasPanel');
       }
 
       console.log('[StyleFrom] Pre-populated canvas with', productsWithQuantity.length, 'products');
@@ -587,6 +611,35 @@ export default function CreateCuratedLookPage() {
     reader.readAsDataURL(file);
   };
 
+  // Handler for CanvasPanel's onRoomImageUpload callback
+  // This bridges CanvasPanel's callback signature to our furniture removal logic
+  const handleCanvasPanelRoomImageUpload = useCallback((imageData: string, isAlreadyProcessed?: boolean) => {
+    console.log('[CuratedNew] CanvasPanel room image upload, isAlreadyProcessed:', isAlreadyProcessed);
+
+    // Clear any existing polling interval
+    if (furnitureRemovalIntervalRef.current) {
+      clearInterval(furnitureRemovalIntervalRef.current);
+      furnitureRemovalIntervalRef.current = null;
+    }
+
+    // Set the original image
+    setRoomImage(imageData);
+    setInitialVisualizationForCanvas(null); // Reset initial visualization when room changes
+    setTrackedVisualizationImage(null);
+    setError(null);
+
+    if (isAlreadyProcessed) {
+      // Room was previously uploaded and furniture already removed
+      console.log('[CuratedNew] Room already processed, skipping furniture removal');
+      setPreparedRoomImage(imageData);
+      setIsRemovingFurniture(false);
+    } else {
+      // New upload - start furniture removal
+      setPreparedRoomImage(null);
+      startFurnitureRemovalProcess(imageData);
+    }
+  }, []);
+
   // Separate async function for furniture removal to avoid closure issues
   const startFurnitureRemovalProcess = async (base64Image: string) => {
     try {
@@ -786,7 +839,7 @@ export default function CreateCuratedLookPage() {
       setError('Please enter a title');
       return;
     }
-    if (!visualizationImage) {
+    if (!trackedVisualizationImage) {
       isSavingRef.current = false;
       setError('Please generate a visualization first');
       return;
@@ -797,56 +850,16 @@ export default function CreateCuratedLookPage() {
       return;
     }
 
-    // Check for product mismatch between selected products and visualized products
-    const selectedIds = new Set(selectedProducts.map(p => String(p.id)));
-    const visualizedIds = visualizedProductIds;
-
-    // Find products that were visualized but are not in the selected list
-    const missingFromSelected: string[] = [];
-    visualizedIds.forEach(id => {
-      if (!selectedIds.has(id)) {
-        const product = visualizedProducts.find(p => String(p.id) === id);
-        if (product) {
-          missingFromSelected.push(product.name);
-        }
-      }
-    });
-
-    // Find products that are selected but weren't visualized
-    const notVisualized: string[] = [];
-    selectedProducts.forEach(p => {
-      if (!visualizedIds.has(String(p.id))) {
-        notVisualized.push(p.name);
-      }
-    });
-
-    // Warn if there's a mismatch
-    if (missingFromSelected.length > 0 || notVisualized.length > 0) {
-      let warningMessage = 'Warning: Product mismatch detected!\n\n';
-
-      if (missingFromSelected.length > 0) {
-        warningMessage += `Products shown in visualization but NOT in product list:\n- ${missingFromSelected.join('\n- ')}\n\n`;
-      }
-
-      if (notVisualized.length > 0) {
-        warningMessage += `Products in list but NOT shown in visualization:\n- ${notVisualized.join('\n- ')}\n\n`;
-      }
-
-      warningMessage += 'The saved curated look will only include products from the product list. Continue anyway?';
-
-      if (!confirm(warningMessage)) {
-        isSavingRef.current = false;
-        return;
-      }
-    }
+    // Note: Product mismatch validation is handled by CanvasPanel's internal state
+    // The trackedVisualizationImage reflects the latest visualization from CanvasPanel
 
     try {
       setSaving(true);
       setError(null);
 
-      const vizImageData = visualizationImage.includes('base64,')
-        ? visualizationImage.split('base64,')[1]
-        : visualizationImage;
+      const vizImageData = trackedVisualizationImage!.includes('base64,')
+        ? trackedVisualizationImage!.split('base64,')[1]
+        : trackedVisualizationImage;
 
       const roomImageData = roomImage?.includes('base64,')
         ? roomImage.split('base64,')[1]
@@ -925,9 +938,9 @@ export default function CreateCuratedLookPage() {
       setSavingDraft(true);
       setError(null);
 
-      const vizImageData = visualizationImage?.includes('base64,')
-        ? visualizationImage.split('base64,')[1]
-        : visualizationImage;
+      const vizImageData = trackedVisualizationImage?.includes('base64,')
+        ? trackedVisualizationImage.split('base64,')[1]
+        : trackedVisualizationImage;
 
       const roomImageData = roomImage?.includes('base64,')
         ? roomImage.split('base64,')[1]
@@ -1549,7 +1562,7 @@ export default function CreateCuratedLookPage() {
             </span>
           )}
           {visualizationImage && (
-            <span className="flex items-center gap-1 text-green-600">
+            <span className="flex items-center gap-1 text-neutral-600">
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
               </svg>
@@ -1571,18 +1584,37 @@ export default function CreateCuratedLookPage() {
         <ResizablePanelLayout
           chatPanel={
             <div className="flex flex-col h-full">
-              {/* KeywordSearchPanel - search + filters, results go to Panel 2 */}
-              <div className="flex-1 min-h-0">
-                <KeywordSearchPanel
-                  ref={keywordSearchRef}
-                  onAddProduct={addProduct}
-                  canvasProducts={selectedProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
-                  showSearchInput={true}
-                  showResultsInline={false}
-                  onSearchResults={setKeywordSearchResults}
-                  compact={false}
-                />
+              {/* Sub-mode toggle - Furniture & Decor vs Walls */}
+              <div className="p-3 border-b border-neutral-200 dark:border-neutral-700 flex justify-center">
+                <SubModeToggle subMode={searchSubMode} onSubModeChange={setSearchSubMode} />
               </div>
+
+              {/* Furniture & Decor Search */}
+              {searchSubMode === 'furniture' && (
+                <div className="flex-1 min-h-0">
+                  <KeywordSearchPanel
+                    ref={keywordSearchRef}
+                    onAddProduct={addProduct}
+                    canvasProducts={selectedProducts.map(p => ({ id: p.id, quantity: p.quantity }))}
+                    showSearchInput={true}
+                    showResultsInline={false}
+                    onSearchResults={setKeywordSearchResults}
+                    compact={false}
+                  />
+                </div>
+              )}
+
+              {/* Wall Colors */}
+              {searchSubMode === 'walls' && (
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  <WallColorPanel
+                    selectedColor={selectedWallColor}
+                    canvasWallColor={canvasWallColor}
+                    onSelectColor={selectWallColor}
+                    onAddToCanvas={addWallColorToCanvas}
+                  />
+                </div>
+              )}
             </div>
           }
           productsPanel={
@@ -1591,804 +1623,195 @@ export default function CreateCuratedLookPage() {
               onAddToCanvas={addProduct}
               canvasProducts={selectedProducts}
               enableModeToggle={false}
-              isKeywordSearchMode={true}
-              keywordSearchResults={keywordSearchResults}
+              isKeywordSearchMode={searchSubMode === 'furniture'}
+              keywordSearchResults={searchSubMode === 'furniture' ? keywordSearchResults : null}
               onLoadMoreKeywordResults={() => keywordSearchRef.current?.loadMore()}
             />
           }
           canvasPanel={
-            <div className="h-full flex flex-col overflow-hidden">
-          {/* Hidden file input - always in DOM */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleRoomImageUpload}
-            className="hidden"
-          />
-
-          {/* Header */}
-          <div className="p-4 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="font-semibold text-neutral-900 dark:text-white">Your Canvas</h2>
-              {selectedProducts.length > 0 && (
-                <button
-                  onClick={() => setSelectedProducts([])}
-                  className="text-sm text-red-600 hover:text-red-700 font-medium"
-                >
-                  Clear All
-                </button>
-              )}
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-neutral-600 dark:text-neutral-400">
-                {selectedProducts.length} {selectedProducts.length === 1 ? 'item' : 'items'}
-              </span>
-              {selectedProducts.length > 0 && (
-                <span className="font-semibold text-neutral-900 dark:text-white">{formatPrice(totalPrice)}</span>
-              )}
-            </div>
-          </div>
-
-          {/* Scrollable Content Area */}
-          <div className="flex-1 overflow-y-auto">
-            {/* Collapsible Room Image Section */}
-            <div className="border-b border-neutral-200 dark:border-neutral-700">
-              <button
-                onClick={() => setIsRoomImageCollapsed(!isRoomImageCollapsed)}
-                className="w-full p-4 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <h3 className="text-sm font-medium text-neutral-900 dark:text-white">Room Image</h3>
-                <svg
-                  className={`w-5 h-5 text-neutral-600 dark:text-neutral-400 transition-transform ${isRoomImageCollapsed ? '' : 'rotate-180'}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {!isRoomImageCollapsed && (
-                <div className="px-4 pb-4">
-                  {roomImage ? (
-                    <div className="relative aspect-video bg-neutral-100 dark:bg-neutral-800 rounded-lg overflow-hidden">
-                      <img
-                        src={roomImage.startsWith('data:') ? roomImage : `data:image/jpeg;base64,${roomImage}`}
-                        alt="Room"
-                        className="w-full h-full object-cover"
-                        onLoad={() => console.log('Room image loaded successfully')}
-                      />
-                      {/* Image Processing Loading Overlay */}
-                      {isRemovingFurniture && (
-                        <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-10">
-                          <div className="animate-spin rounded-full h-8 w-8 border-4 border-purple-200 border-t-purple-500 mb-2"></div>
-                          <span className="text-white font-medium text-sm">Processing Image...</span>
-                        </div>
-                      )}
-                      <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="absolute bottom-2 right-2 px-3 py-1.5 bg-white/90 dark:bg-neutral-800/90 backdrop-blur text-xs font-medium text-neutral-900 dark:text-white rounded-lg hover:bg-white dark:hover:bg-neutral-700 transition-colors"
-                      >
-                        Change
-                      </button>
-                      {preparedRoomImage && !isRemovingFurniture && (
-                        <div className="absolute top-2 left-2 bg-green-500 text-white px-2 py-0.5 rounded-full text-xs font-medium">
-                          Room Ready
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div
-                      className="aspect-video bg-neutral-100 dark:bg-neutral-700 rounded-lg flex flex-col items-center justify-center p-4 border-2 border-dashed border-neutral-300 dark:border-neutral-600 cursor-pointer hover:border-primary-400 transition-colors"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <svg className="w-12 h-12 text-neutral-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <button className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors">
-                        Upload Your Room Image
-                      </button>
-                      <p className="text-xs text-neutral-600 dark:text-neutral-300 mt-2 text-center">
-                        Add your room image to style with these products
-                      </p>
-                      <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
-                        JPG, PNG, WEBP • Max 10MB
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Products in Canvas */}
-            <div ref={canvasProductsRef} className="p-4 border-b border-neutral-200 dark:border-neutral-700">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-medium text-neutral-900 dark:text-white">Products in Canvas</h3>
-                {selectedProducts.length > 0 && (
-                  <div className="flex gap-1 bg-neutral-100 dark:bg-neutral-700 rounded-lg p-1">
+            <CanvasPanel
+              products={selectedProducts}
+              roomImage={roomImage}
+              cleanRoomImage={preparedRoomImage || roomImage}
+              onRemoveProduct={(id, removeAll) => {
+                const numId = typeof id === 'string' ? parseInt(id) : id;
+                if (removeAll) {
+                  removeProduct(numId);
+                } else {
+                  decrementQuantity(numId);
+                }
+              }}
+              onIncrementQuantity={(id) => {
+                const numId = typeof id === 'string' ? parseInt(id) : id;
+                incrementQuantity(numId);
+              }}
+              onClearCanvas={() => setSelectedProducts([])}
+              onRoomImageUpload={handleCanvasPanelRoomImageUpload}
+              onSetProducts={setSelectedProducts}
+              onViewProductDetails={setDetailProduct}
+              initialVisualizationImage={initialVisualizationForCanvas}
+              onVisualizationImageChange={setTrackedVisualizationImage}
+              isProcessingFurniture={isRemovingFurniture}
+              curatedLookId={curatedLookIdForCanvas}
+              canvasWallColor={canvasWallColor}
+              onRemoveWallColor={removeWallColorFromCanvas}
+              hideDefaultFooter={false}
+              footerContent={
+                <div className="p-4 space-y-2">
+                  {/* Save & Publish Buttons */}
+                  <div className="flex gap-2">
+                    {/* Save as Draft Button */}
                     <button
-                      onClick={() => setViewMode('grid')}
-                      className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-white dark:bg-neutral-600 text-neutral-900 dark:text-white shadow-sm' : 'text-neutral-600 dark:text-neutral-400'}`}
+                      onClick={handleSaveAsDraft}
+                      disabled={savingDraft || saving || !title.trim()}
+                      className="flex-1 py-3 px-4 bg-neutral-100 dark:bg-neutral-700 hover:bg-neutral-200 dark:hover:bg-neutral-600 disabled:bg-neutral-50 dark:disabled:bg-neutral-800 disabled:cursor-not-allowed text-neutral-700 dark:text-neutral-200 disabled:text-neutral-400 dark:disabled:text-neutral-500 font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 border border-neutral-300 dark:border-neutral-600"
                     >
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => setViewMode('list')}
-                      className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-white dark:bg-neutral-600 text-neutral-900 dark:text-white shadow-sm' : 'text-neutral-600 dark:text-neutral-400'}`}
-                    >
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
-                      </svg>
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {selectedProducts.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <div className="w-16 h-16 bg-neutral-100 dark:bg-neutral-700 rounded-full flex items-center justify-center mb-3">
-                    <svg className="w-8 h-8 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                    </svg>
-                  </div>
-                  <p className="text-sm text-neutral-600 dark:text-neutral-300">No products added yet</p>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Select products from the discovery panel</p>
-                </div>
-              ) : viewMode === 'grid' ? (
-                <div className="grid grid-cols-3 gap-2">
-                  {selectedProducts.map((product) => (
-                    <div key={product.id} className="relative bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg overflow-hidden group">
-                      <div className="aspect-square bg-neutral-100 dark:bg-neutral-700 relative">
-                        {getProductImage(product) ? (
-                          <Image src={getProductImage(product)} alt={product.name} fill className="object-cover" sizes="100px" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <svg className="w-8 h-8 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                          </div>
-                        )}
-                        {/* Quantity badge */}
-                        {(product.quantity || 1) > 1 && (
-                          <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-purple-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center z-10">
-                            {product.quantity}x
-                          </div>
-                        )}
-                        {/* Hover overlay with controls - same as product panel */}
-                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
-                          {/* Quantity controls */}
-                          <div className="flex items-center gap-1.5 bg-white rounded-lg px-2 py-1">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                decrementQuantity(product.id);
-                              }}
-                              className="w-6 h-6 bg-neutral-200 hover:bg-neutral-300 rounded text-sm font-bold flex items-center justify-center"
-                            >
-                              -
-                            </button>
-                            <span className="w-5 text-center font-semibold text-sm">{product.quantity || 1}</span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                incrementQuantity(product.id);
-                              }}
-                              className="w-6 h-6 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-bold flex items-center justify-center"
-                            >
-                              +
-                            </button>
-                          </div>
-                          {/* Remove button */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removeProduct(product.id);
-                            }}
-                            className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium rounded-lg flex items-center gap-1"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                            Remove
-                          </button>
-                          {/* View Details button */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDetailProduct(product);
-                            }}
-                            className="px-3 py-1.5 bg-white/90 hover:bg-white text-neutral-800 text-xs font-medium rounded-lg flex items-center gap-1"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            View Details
-                          </button>
-                        </div>
-                      </div>
-                      <div className="p-1">
-                        <p className="text-[10px] font-medium text-neutral-900 dark:text-white line-clamp-1 cursor-pointer hover:text-purple-600" onClick={() => setDetailProduct(product)}>{product.name}</p>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] text-neutral-500 dark:text-neutral-400 capitalize">{product.source_website || product.source}</span>
-                          <p className="text-[10px] text-purple-600 font-semibold">{formatPrice((product.price || 0) * (product.quantity || 1))}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {selectedProducts.map((product) => (
-                    <div key={product.id} className="flex items-center gap-2 p-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg">
-                      <div className="w-12 h-12 bg-neutral-100 dark:bg-neutral-700 rounded relative flex-shrink-0">
-                        {getProductImage(product) ? (
-                          <Image src={getProductImage(product)} alt={product.name} fill className="object-cover rounded" sizes="48px" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <svg className="w-6 h-6 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                          </div>
-                        )}
-                        {/* Quantity badge */}
-                        {(product.quantity || 1) > 1 && (
-                          <div className="absolute -top-1 -right-1 w-5 h-5 bg-purple-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                            {product.quantity}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-neutral-900 dark:text-white truncate cursor-pointer hover:text-purple-600" onClick={() => setDetailProduct(product)}>{product.name}</p>
-                        <p className="text-[10px] text-neutral-500 dark:text-neutral-400 capitalize">{product.source_website || product.source}</p>
-                        <p className="text-xs font-semibold text-purple-600">{formatPrice((product.price || 0) * (product.quantity || 1))}</p>
-                      </div>
-                      {/* Quantity controls */}
-                      <div className="flex items-center gap-1 mr-2">
-                        <button
-                          onClick={() => decrementQuantity(product.id)}
-                          className="w-6 h-6 bg-neutral-200 dark:bg-neutral-600 hover:bg-neutral-300 dark:hover:bg-neutral-500 rounded text-sm font-bold flex items-center justify-center"
-                        >
-                          -
-                        </button>
-                        <span className="w-6 text-sm text-center font-medium dark:text-white">{product.quantity || 1}</span>
-                        <button
-                          onClick={() => incrementQuantity(product.id)}
-                          className="w-6 h-6 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded text-sm font-bold flex items-center justify-center"
-                        >
-                          +
-                        </button>
-                      </div>
-                      <button
-                        onClick={() => setDetailProduct(product)}
-                        className="text-blue-600 hover:text-blue-700 p-0.5 mr-1"
-                        title="View Details"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => removeProduct(product.id)}
-                        className="text-red-600 hover:text-red-700 p-0.5"
-                        title="Remove"
-                      >
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Visualization In Progress - Shimmer Preview (first-time visualization) */}
-            {isVisualizing && !visualizationImage && roomImage && (
-              <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium text-neutral-900 dark:text-white">Generating Visualization...</h3>
-                </div>
-                <div className="relative aspect-video bg-neutral-100 dark:bg-neutral-800 rounded-lg overflow-hidden ring-2 ring-blue-400">
-                  {/* Room image as preview background */}
-                  <img
-                    src={roomImage?.startsWith('data:') ? roomImage : `data:image/jpeg;base64,${roomImage}`}
-                    alt="Room preview"
-                    className="w-full h-full object-cover opacity-50"
-                  />
-                  {/* Shimmer overlay animation */}
-                  <div
-                    className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer z-10"
-                    style={{ backgroundSize: '200% 100%' }}
-                  />
-                  {/* Progress indicator */}
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 z-20">
-                    <div className="bg-black/70 backdrop-blur-sm rounded-xl px-6 py-4 flex flex-col items-center shadow-2xl">
-                      <svg className="animate-spin h-10 w-10 text-white mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      <span className="text-white font-semibold text-base">Placing furniture in your room...</span>
-                      <span className="text-white/80 text-sm mt-1">Omni is styling your space</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Visualization Result with Edit Positions, Undo/Redo (Exact copy from CanvasPanel) */}
-            {visualizationImage && (
-              <div ref={visualizationRef} className="p-4 border-b border-neutral-200 dark:border-neutral-700">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium text-neutral-900 dark:text-white">Visualization Result</h3>
-                  <div className="flex items-center gap-2">
-                    {/* Edit Positions button */}
-                    {!isEditingPositions && (
-                      <button
-                        onClick={handleEnterEditMode}
-                        disabled={isExtractingLayers}
-                        className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white text-xs font-medium transition-colors flex items-center gap-1.5 disabled:cursor-not-allowed"
-                        title="Edit furniture positions"
-                      >
-                        {isExtractingLayers ? (
-                          <>
-                            <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Extracting...
-                          </>
-                        ) : (
-                          <>
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                            Edit Positions
-                          </>
-                        )}
-                      </button>
-                    )}
-
-                    {/* Undo/Redo buttons */}
-                    <button
-                      onClick={handleUndo}
-                      disabled={!canUndo || isEditingPositions}
-                      className="p-1.5 rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                      title="Undo"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={handleRedo}
-                      disabled={!canRedo || isEditingPositions}
-                      className="p-1.5 rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                      title="Redo"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setVisualizationImage(null);
-                        setVisualizedProductIds(new Set());
-                        setNeedsRevisualization(false);
-                        // Reset angle state
-                        setCurrentAngle('front');
-                        setAngleImages({ front: null, left: null, right: null, back: null });
-                      }}
-                      disabled={isEditingPositions}
-                      className="text-xs text-red-600 hover:text-red-700 font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                </div>
-
-                {/* Angle Selector - Multi-angle viewing */}
-                {!isEditingPositions && (
-                  <div className="mt-2 mb-2">
-                    <AngleSelector
-                      currentAngle={currentAngle}
-                      loadingAngle={loadingAngle}
-                      availableAngles={Object.entries(angleImages)
-                        .filter(([_, img]) => img !== null)
-                        .map(([angle]) => angle as ViewingAngle)}
-                      onAngleSelect={handleAngleSelect}
-                      disabled={isVisualizing || isExtractingLayers}
-                    />
-                  </div>
-                )}
-
-                {/* Outdated Warning Banner */}
-                {needsRevisualization && (
-                  <div className="mb-2 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
-                    <svg className="w-5 h-5 text-amber-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                    <p className="text-xs text-amber-800 font-medium">Canvas changed - Re-visualize to update</p>
-                  </div>
-                )}
-
-                {/* Image/Canvas Container */}
-                <div className={`relative aspect-video bg-neutral-100 dark:bg-neutral-800 rounded-lg overflow-hidden ${needsRevisualization ? 'ring-2 ring-amber-400' : ''} ${isEditingPositions ? 'ring-2 ring-purple-400' : ''}`}>
-                  <img
-                    src={isEditingPositions ? visualizationImage : (angleImages[currentAngle] || visualizationImage)}
-                    alt={`Visualization result${isEditingPositions ? ' - Edit Mode' : ` - ${currentAngle} view`}`}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute bottom-2 left-2 flex items-center gap-2">
-                    {isEditingPositions ? (
-                      <span className="bg-purple-500 text-white px-2 py-0.5 rounded-full text-xs font-medium">
-                        Edit Mode
-                      </span>
-                    ) : (
-                      <>
-                        <span className="bg-green-500 text-white px-2 py-0.5 rounded-full text-xs font-medium">
-                          AI Visualization
-                        </span>
-                        {currentAngle !== 'front' && (
-                          <span className="bg-purple-500 text-white px-2 py-0.5 rounded-full text-xs font-medium capitalize">
-                            {currentAngle} View
-                          </span>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  {loadingAngle && !isEditingPositions && (
-                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                      <div className="bg-white rounded-lg px-4 py-3 flex items-center gap-3 shadow-lg">
-                        <svg className="animate-spin h-5 w-5 text-purple-600" viewBox="0 0 24 24" fill="none">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                        <span className="text-sm font-medium text-neutral-700">Generating {loadingAngle} view...</span>
-                      </div>
-                    </div>
-                  )}
-                  {/* Re-visualization / Improve Quality shimmer overlay */}
-                  {(isVisualizing || isImprovingQuality) && !isEditingPositions && (
-                    <div className="absolute inset-0 z-20">
-                      <div
-                        className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer"
-                        style={{ backgroundSize: '200% 100%' }}
-                      />
-                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30">
-                        <div className="bg-black/70 backdrop-blur-sm rounded-xl px-6 py-4 flex flex-col items-center shadow-2xl">
-                          <svg className="animate-spin h-10 w-10 text-white mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      {savingDraft ? (
+                        <>
+                          <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                           </svg>
-                          <span className="text-white font-semibold text-base">
-                            {isImprovingQuality ? 'Improving quality...' : 'Updating visualization...'}
-                          </span>
-                          <span className="text-white/80 text-sm mt-1">
-                            {isImprovingQuality ? 'Re-rendering from original room' : 'Omni is updating your space'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                          </svg>
+                          Save Draft
+                        </>
+                      )}
+                    </button>
+
+                    {/* Publish Button */}
+                    <button
+                      onClick={handlePublish}
+                      disabled={saving || savingDraft || !trackedVisualizationImage || selectedProducts.length === 0 || !title.trim()}
+                      className="flex-1 py-3 px-4 bg-neutral-800 hover:bg-neutral-900 disabled:bg-neutral-300 dark:disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                    >
+                      {saving ? (
+                        <>
+                          <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Publishing...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          Publish
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Helper Messages */}
+                  {!roomImage && (
+                    <p className="text-xs text-amber-600 text-center">Upload a room image to visualize</p>
+                  )}
+                  {roomImage && selectedProducts.length === 0 && (
+                    <p className="text-xs text-amber-600 text-center">Add products to canvas to visualize</p>
+                  )}
+                  {trackedVisualizationImage && !title.trim() && (
+                    <p className="text-xs text-amber-600 text-center">Enter a title to publish</p>
                   )}
                 </div>
-
-                {/* Edit Mode Actions - Special Instructions + Exit button */}
-                {isEditingPositions && (
-                  <div className="mt-3 space-y-3">
-                    {/* Special Instructions Input */}
-                    <div>
-                      <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                        Special Instructions
-                      </label>
-                      <textarea
-                        value={editSpecialInstructions}
-                        onChange={(e) => setEditSpecialInstructions(e.target.value)}
-                        placeholder="e.g., 'Place the flower vase on the bench' or 'Move the lamp to the left corner'"
-                        rows={2}
-                        className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
-                      />
+              }
+            >
+              {/* Look Details - rendered in scrollable area */}
+              <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
+                <h3 className="text-sm font-medium text-neutral-900 dark:text-white mb-3">Look Details</h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">Title *</label>
+                    <input
+                      type="text"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="Give your look a name..."
+                      className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">Description</label>
+                    <textarea
+                      value={styleDescription}
+                      onChange={(e) => setStyleDescription(e.target.value)}
+                      placeholder="Describe this curated look..."
+                      rows={3}
+                      className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">Room Type</label>
+                    <select
+                      value={roomType}
+                      onChange={(e) => setRoomType(e.target.value as 'living_room' | 'bedroom')}
+                      className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
+                    >
+                      <option value="living_room">Living Room</option>
+                      <option value="bedroom">Bedroom</option>
+                      <option value="dining_room">Dining Room</option>
+                      <option value="office">Office</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">Budget Tier (auto-calculated)</label>
+                    <div className="w-full px-3 py-2 border border-neutral-200 dark:border-neutral-600 rounded-lg text-sm bg-neutral-50 dark:bg-neutral-800">
+                      {(() => {
+                        const tier = calculateBudgetTier(totalPrice);
+                        return (
+                          <span className="flex items-center justify-between">
+                            <span className="font-medium text-neutral-800 dark:text-white">{tier.label}</span>
+                            <span className="text-xs text-neutral-500 dark:text-neutral-400">{tier.range}</span>
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">Style Labels (for filtering)</label>
+                    <div className="flex flex-wrap gap-2 p-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-neutral-50 dark:bg-neutral-800 min-h-[80px]">
+                      {STYLE_LABEL_OPTIONS.map((option) => {
+                        const isSelected = styleLabels.includes(option.value);
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => {
+                              if (isSelected) {
+                                setStyleLabels(styleLabels.filter(l => l !== option.value));
+                              } else {
+                                setStyleLabels([...styleLabels, option.value]);
+                              }
+                            }}
+                            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                              isSelected
+                                ? 'bg-purple-600 text-white'
+                                : 'bg-white dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-neutral-300 dark:border-neutral-600 hover:border-purple-400'
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {styleLabels.length > 0 && (
                       <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                        Describe how you want to reposition items
+                        Selected: {styleLabels.map(l => STYLE_LABEL_OPTIONS.find(o => o.value === l)?.label).join(', ')}
                       </p>
-                    </div>
-
-                    {/* Exit button */}
-                    <div className="flex items-center justify-center">
-                      <button
-                        onClick={handleExitEditMode}
-                        className="px-4 py-2 rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-sm font-medium transition-colors"
-                      >
-                        Exit Edit Mode
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {!needsRevisualization && !isEditingPositions && (
-                  <p className="text-xs text-green-600 mt-2 text-center">Visualization up to date</p>
-                )}
-              </div>
-            )}
-
-            {/* Look Details */}
-            <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
-              <h3 className="text-sm font-medium text-neutral-900 dark:text-white mb-3">Look Details</h3>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">Title *</label>
-                  <input
-                    type="text"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="Give your look a name..."
-                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">Description</label>
-                  <textarea
-                    value={styleDescription}
-                    onChange={(e) => setStyleDescription(e.target.value)}
-                    placeholder="Describe this curated look..."
-                    rows={3}
-                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">Room Type</label>
-                  <select
-                    value={roomType}
-                    onChange={(e) => setRoomType(e.target.value as 'living_room' | 'bedroom')}
-                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
-                  >
-                    <option value="living_room">Living Room</option>
-                    <option value="bedroom">Bedroom</option>
-                    <option value="dining_room">Dining Room</option>
-                    <option value="office">Office</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">Budget Tier (auto-calculated)</label>
-                  <div className="w-full px-3 py-2 border border-neutral-200 dark:border-neutral-600 rounded-lg text-sm bg-neutral-50 dark:bg-neutral-800">
-                    {(() => {
-                      const tier = calculateBudgetTier(totalPrice);
-                      return (
-                        <span className="flex items-center justify-between">
-                          <span className="font-medium text-neutral-800 dark:text-white">{tier.label}</span>
-                          <span className="text-xs text-neutral-500 dark:text-neutral-400">{tier.range}</span>
-                        </span>
-                      );
-                    })()}
+                    )}
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">Style Labels (for filtering)</label>
-                  <div className="flex flex-wrap gap-2 p-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-neutral-50 dark:bg-neutral-800 min-h-[80px]">
-                    {STYLE_LABEL_OPTIONS.map((option) => {
-                      const isSelected = styleLabels.includes(option.value);
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => {
-                            if (isSelected) {
-                              setStyleLabels(styleLabels.filter(l => l !== option.value));
-                            } else {
-                              setStyleLabels([...styleLabels, option.value]);
-                            }
-                          }}
-                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                            isSelected
-                              ? 'bg-purple-600 text-white'
-                              : 'bg-white dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-neutral-300 dark:border-neutral-600 hover:border-purple-400'
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {styleLabels.length > 0 && (
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                      Selected: {styleLabels.map(l => STYLE_LABEL_OPTIONS.find(o => o.value === l)?.label).join(', ')}
-                    </p>
-                  )}
-                </div>
               </div>
-            </div>
-          </div>
-
-          {/* Visualize & Publish Buttons - Fixed at bottom (Smart states from CanvasPanel) */}
-          <div className="p-4 border-t border-neutral-200 dark:border-neutral-700 flex-shrink-0 space-y-2">
-            {/* Visualize Button with Smart States */}
-            {isEditingPositions ? (
-              /* Edit Mode: Show Apply button if instructions exist, otherwise show prompt */
-              editSpecialInstructions.trim() ? (
-                /* State: Edit Mode with Special Instructions (Purple, Enabled) */
-                <button
-                  onClick={handleRevisualizeWithInstructions}
-                  disabled={isVisualizing}
-                  className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 disabled:bg-neutral-400 text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
-                >
-                  {isVisualizing ? (
-                    <>
-                      <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Applying Instructions...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                      Apply Edit Instructions
-                    </>
-                  )}
-                </button>
-              ) : (
-                /* State: Edit Mode without instructions - prompt user */
-                <button
-                  disabled
-                  className="w-full py-3 px-4 bg-purple-200 text-purple-600 font-semibold rounded-lg cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                  Enter instructions above or exit edit mode
-                </button>
-              )
-            ) : isUpToDate ? (
-              /* State 2: Up to Date (Green, Disabled) */
-              <button
-                disabled
-                className="w-full py-3 px-4 bg-green-500 text-white font-semibold rounded-lg flex items-center justify-center gap-2 cursor-not-allowed opacity-90"
-              >
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                Up to date
-              </button>
-            ) : isReady ? (
-              /* State 1: Ready to Visualize (Primary gradient, Enabled) */
-              <button
-                onClick={handleVisualize}
-                disabled={isVisualizing || isRemovingFurniture}
-                className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:from-neutral-400 disabled:to-neutral-400 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
-              >
-                {isVisualizing ? (
-                  <>
-                    <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Visualizing...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
-                      <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
-                    </svg>
-                    Visualize Room
-                  </>
-                )}
-              </button>
-            ) : (
-              /* State 3: Not Ready (Gray, Disabled) */
-              <button
-                disabled
-                className="w-full py-3 px-4 bg-neutral-300 dark:bg-neutral-600 text-neutral-500 dark:text-neutral-400 font-semibold rounded-lg cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
-                  <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
-                </svg>
-                Visualize Room
-              </button>
-            )}
-
-            {/* Save & Publish Buttons */}
-            <div className="flex gap-2">
-              {/* Save as Draft Button */}
-              <button
-                onClick={handleSaveAsDraft}
-                disabled={savingDraft || saving || !title.trim()}
-                className="flex-1 py-3 px-4 bg-neutral-100 dark:bg-neutral-700 hover:bg-neutral-200 dark:hover:bg-neutral-600 disabled:bg-neutral-50 dark:disabled:bg-neutral-800 disabled:cursor-not-allowed text-neutral-700 dark:text-neutral-200 disabled:text-neutral-400 dark:disabled:text-neutral-500 font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 border border-neutral-300 dark:border-neutral-600"
-              >
-                {savingDraft ? (
-                  <>
-                    <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                    </svg>
-                    Save Draft
-                  </>
-                )}
-              </button>
-
-              {/* Publish Button */}
-              <button
-                onClick={handlePublish}
-                disabled={saving || savingDraft || !visualizationImage || selectedProducts.length === 0 || !title.trim()}
-                className="flex-1 py-3 px-4 bg-green-600 hover:bg-green-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-600 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
-              >
-                {saving ? (
-                  <>
-                    <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Publishing...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Publish
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Helper Messages */}
-            {!roomImage && (
-              <p className="text-xs text-amber-600 text-center">Upload a room image to visualize</p>
-            )}
-            {roomImage && selectedProducts.length === 0 && (
-              <p className="text-xs text-amber-600 text-center">Add products to canvas to visualize</p>
-            )}
-            {visualizationImage && !title.trim() && (
-              <p className="text-xs text-amber-600 text-center">Enter a title to publish</p>
-            )}
-
-            {/* Improve Quality - Advanced action at bottom */}
-            {visualizationImage && selectedProducts.length > 0 && (
-              <div className="mt-4 pt-3 border-t border-neutral-200 dark:border-neutral-700">
-                <button
-                  onClick={handleImproveQuality}
-                  disabled={isImprovingQuality || isVisualizing}
-                  className="w-full py-2 px-3 bg-neutral-100 dark:bg-neutral-700 hover:bg-neutral-200 dark:hover:bg-neutral-600 disabled:bg-neutral-50 dark:disabled:bg-neutral-800 disabled:cursor-not-allowed text-neutral-600 dark:text-neutral-300 disabled:text-neutral-400 dark:disabled:text-neutral-500 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
-                  title="Re-visualize all products on the original room image to improve quality. Resets undo/redo history."
-                >
-                  {isImprovingQuality ? (
-                    <>
-                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Improving Quality...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                      Improve Quality
-                    </>
-                  )}
-                </button>
-                <p className="text-xs text-neutral-400 dark:text-neutral-500 text-center mt-1">Re-renders from original room image. Resets undo/redo.</p>
-              </div>
-            )}
-          </div>
-            </div>
+            </CanvasPanel>
           }
         />
       </div>
-
       {/* Product Detail Modal */}
       {detailProduct && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">

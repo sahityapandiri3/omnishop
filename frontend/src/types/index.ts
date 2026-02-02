@@ -341,3 +341,6 @@ export interface CategoryProductsMetadata {
   has_more: boolean;
   next_cursor: PaginationCursor | null;
 }
+
+// Wall Color types
+export * from './wall-colors';

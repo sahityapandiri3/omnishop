@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
-import { adminCuratedAPI, getCategorizedStores, StoreCategory } from '@/utils/api';
+import { adminCuratedAPI, searchProducts, getCategorizedStores, StoreCategory } from '@/utils/api';
 import { PRODUCT_STYLES, FURNITURE_COLORS, PRODUCT_MATERIALS } from '@/constants/products';
 import { transformProduct, ExtendedProduct } from '@/utils/product-transforms';
 import { ProductResultsGrid } from './ProductResultsGrid';
@@ -174,7 +174,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
         setProducts([]);
       }
 
-      const response = await adminCuratedAPI.searchProducts(buildSearchParams(resetPage ? 1 : currentPage));
+      const response = await searchProducts(buildSearchParams(resetPage ? 1 : currentPage));
 
       const transformedProducts = response.products.map(transformProduct);
 
@@ -207,7 +207,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
       setIsLoadingMore(true);
       const nextPage = currentPage + 1;
 
-      const response = await adminCuratedAPI.searchProducts(buildSearchParams(nextPage));
+      const response = await searchProducts(buildSearchParams(nextPage));
 
       // Mark all products from page 2+ as non-primary so they append to "More Products"
       const transformedProducts = response.products.map(p => ({
@@ -355,7 +355,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
               <button
                 type="button"
                 onClick={() => updateFilters({ selectedStores: [] })}
-                className="text-xs text-primary-600 hover:text-primary-700"
+                className="text-xs text-neutral-700 hover:text-neutral-800"
               >
                 Clear ({selectedStores.length})
               </button>
@@ -377,7 +377,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
                       onClick={() => toggleStore(store.name)}
                       className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
                         selectedStores.includes(store.name)
-                          ? 'bg-primary-600 text-white'
+                          ? 'bg-neutral-800 text-white'
                           : 'bg-white dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-600'
                       }`}
                     >
@@ -399,7 +399,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
             <button
               type="button"
               onClick={() => updateFilters({ selectedStyles: [] })}
-              className="text-xs text-primary-600 hover:text-primary-700"
+              className="text-xs text-neutral-700 hover:text-neutral-800"
             >
               Clear ({selectedStyles.length})
             </button>
@@ -413,7 +413,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
               onClick={() => toggleStyle(style.value)}
               className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
                 selectedStyles.includes(style.value)
-                  ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 border border-primary-300 dark:border-primary-700'
+                  ? 'bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-400 dark:border-neutral-600'
                   : 'bg-white dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-600'
               }`}
             >
@@ -436,7 +436,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
             <button
               type="button"
               onClick={() => updateFilters({ selectedColors: [] })}
-              className="text-xs text-primary-600 hover:text-primary-700"
+              className="text-xs text-neutral-700 hover:text-neutral-800"
             >
               Clear ({selectedColors.length})
             </button>
@@ -451,7 +451,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
               title={color.name}
               className={`w-6 h-6 rounded-full transition-all ${
                 selectedColors.includes(color.value)
-                  ? 'ring-2 ring-primary-500 ring-offset-2 dark:ring-offset-neutral-800'
+                  ? 'ring-2 ring-neutral-800 ring-offset-2 dark:ring-offset-neutral-800'
                   : color.border
                     ? 'border border-neutral-300 dark:border-neutral-600'
                     : ''
@@ -470,7 +470,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
             <button
               type="button"
               onClick={() => updateFilters({ selectedMaterials: [] })}
-              className="text-xs text-primary-600 hover:text-primary-700"
+              className="text-xs text-neutral-700 hover:text-neutral-800"
             >
               Clear ({selectedMaterials.length})
             </button>
@@ -484,7 +484,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
               onClick={() => toggleMaterial(material.value)}
               className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
                 selectedMaterials.includes(material.value)
-                  ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 border border-primary-300 dark:border-primary-700'
+                  ? 'bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-400 dark:border-neutral-600'
                   : 'bg-white dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-600'
               }`}
             >
@@ -505,7 +505,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
             placeholder="Min"
             value={priceMin === 0 ? '' : priceMin}
             onChange={(e) => updateFilters({ priceMin: Number(e.target.value) || 0 })}
-            className="flex-1 text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="flex-1 text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-neutral-500"
           />
           <span className="text-neutral-400 text-xs">-</span>
           <input
@@ -513,7 +513,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
             placeholder="Max"
             value={priceMax >= 999999 || priceMax === Infinity ? '' : priceMax}
             onChange={(e) => updateFilters({ priceMax: Number(e.target.value) || Infinity })}
-            className="flex-1 text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="flex-1 text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-lg focus:outline-none focus:ring-1 focus:ring-neutral-500"
           />
         </div>
       </div>
@@ -525,7 +525,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as any)}
-            className="text-xs px-2 py-1 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded focus:outline-none focus:ring-1 focus:ring-primary-500"
+            className="text-xs px-2 py-1 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded focus:outline-none focus:ring-1 focus:ring-neutral-500"
           >
             <option value="relevance">Relevance</option>
             <option value="price-low">Price: Low to High</option>
@@ -536,7 +536,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
           <button
             type="button"
             onClick={clearFilters}
-            className="text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
+            className="text-xs text-neutral-700 hover:text-neutral-800 dark:text-neutral-400 font-medium"
           >
             Clear all filters
           </button>
@@ -566,7 +566,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
                   }
                 }}
                 placeholder={searchPlaceholder}
-                className="w-full px-4 py-2 pl-10 text-sm border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full px-4 py-2 pl-10 text-sm border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:border-transparent"
               />
               <svg
                 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400"
@@ -596,7 +596,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
                 </svg>
                 Filters
                 {hasActiveFilters && (
-                  <span className="px-1.5 py-0.5 text-xs bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300 rounded">
+                  <span className="px-1.5 py-0.5 text-xs bg-neutral-200 text-neutral-800 dark:bg-neutral-700 dark:text-neutral-200 rounded">
                     Active
                   </span>
                 )}
@@ -625,7 +625,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
             {products.length > 0 && (
               <div className="text-xs text-neutral-600 dark:text-neutral-400 mb-2 text-center">
                 {totalPrimary > 0 && (
-                  <span className="text-primary-600 dark:text-primary-400 font-medium">{totalPrimary} best matches</span>
+                  <span className="text-neutral-800 dark:text-neutral-200 font-medium">{totalPrimary} best matches</span>
                 )}
                 {totalPrimary > 0 && totalRelated > 0 && <span> + </span>}
                 {totalRelated > 0 && <span>{totalRelated} more</span>}
@@ -637,7 +637,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
               type="button"
               onClick={() => handleSearch(true)}
               disabled={isSearching || (!searchQuery.trim() && selectedStores.length === 0 && selectedStyles.length === 0)}
-              className="w-full py-2.5 bg-primary-600 hover:bg-primary-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+              className="w-full py-2.5 bg-neutral-800 hover:bg-neutral-900 disabled:bg-neutral-300 dark:disabled:bg-neutral-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
             >
               {isSearching ? (
                 <>
@@ -666,7 +666,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
                   <p className="text-red-500 dark:text-red-400">{searchError}</p>
                   <button
                     onClick={() => handleSearch(true)}
-                    className="mt-3 text-sm text-primary-600 hover:text-primary-700"
+                    className="mt-3 text-sm text-neutral-700 hover:text-neutral-800"
                   >
                     Try again
                   </button>
@@ -719,7 +719,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
         <div className="flex items-center justify-between">
           <div className="text-sm text-neutral-600 dark:text-neutral-400">
             {hasActiveFilters ? (
-              <span className="text-primary-600 dark:text-primary-400 font-medium">Filters active</span>
+              <span className="text-neutral-800 dark:text-neutral-200 font-medium">Filters active</span>
             ) : (
               <span>Filter recommendations</span>
             )}
@@ -750,7 +750,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
               <p className="text-red-500 dark:text-red-400">{searchError}</p>
               <button
                 onClick={() => handleSearch(true)}
-                className="mt-3 text-sm text-primary-600 hover:text-primary-700"
+                className="mt-3 text-sm text-neutral-700 hover:text-neutral-800"
               >
                 Try again
               </button>
