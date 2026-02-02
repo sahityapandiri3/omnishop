@@ -8,7 +8,7 @@
  * causing false "needs revisualization" detection.
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   VisualizationHistoryEntry,
   VisualizationProduct,
@@ -16,6 +16,7 @@ import {
   serializeHistoryEntry,
   deserializeHistoryEntry,
 } from '@/types/visualization';
+import { WallColor } from '@/types/wall-colors';
 import { buildQuantityMap, buildProductIdSet } from '@/utils/visualization-helpers';
 
 export interface UseVisualizationHistoryOptions {
@@ -45,6 +46,7 @@ export interface UseVisualizationHistoryReturn {
   pushState: (entry: {
     image: string;
     products: VisualizationProduct[];
+    wallColor?: WallColor | null;
   }) => void;
 
   /**
@@ -101,27 +103,30 @@ export function useVisualizationHistory({
   // Use ref to track if we've notified about history changes (prevent duplicate calls)
   const lastHistoryLengthRef = useRef(history.length);
 
-  // Notify parent when history changes
-  const notifyHistoryChange = useCallback((newHistory: VisualizationHistoryEntry[]) => {
-    if (onHistoryChange && newHistory.length !== lastHistoryLengthRef.current) {
-      lastHistoryLengthRef.current = newHistory.length;
-      onHistoryChange(newHistory.map(serializeHistoryEntry));
+  // Notify parent when history changes - use useEffect to avoid setState during render
+  useEffect(() => {
+    if (onHistoryChange && history.length !== lastHistoryLengthRef.current) {
+      lastHistoryLengthRef.current = history.length;
+      onHistoryChange(history.map(serializeHistoryEntry));
     }
-  }, [onHistoryChange]);
+  }, [history, onHistoryChange]);
 
   // Push new state to history
   const pushState = useCallback(({
     image,
     products,
+    wallColor,
   }: {
     image: string;
     products: VisualizationProduct[];
+    wallColor?: WallColor | null;
   }) => {
     const newEntry: VisualizationHistoryEntry = {
       image,
       products: [...products],  // Copy to avoid mutation
       productIds: buildProductIdSet(products),
       visualizedQuantities: buildQuantityMap(products),  // CRITICAL: Store quantities
+      wallColor: wallColor ?? null,  // Store wall color for undo/redo
     };
 
     setHistory(prev => {
@@ -129,8 +134,6 @@ export function useVisualizationHistory({
       const newHistory = prev.length >= maxHistorySize
         ? [...prev.slice(1), newEntry]
         : [...prev, newEntry];
-
-      notifyHistoryChange(newHistory);
       return newHistory;
     });
 
@@ -138,8 +141,8 @@ export function useVisualizationHistory({
     setRedoStack([]);
     setHistoryInitialized(true);
 
-    console.log('[useVisualizationHistory] Pushed state with', products.length, 'products');
-  }, [maxHistorySize, notifyHistoryChange]);
+    console.log('[useVisualizationHistory] Pushed state with', products.length, 'products', wallColor ? `and wall color ${wallColor.name}` : '');
+  }, [maxHistorySize]);
 
   // Undo to previous state
   const undo = useCallback((): VisualizationHistoryEntry | null => {
@@ -160,19 +163,20 @@ export function useVisualizationHistory({
     }
 
     setHistory(newHistory);
-    notifyHistoryChange(newHistory);
+    // Note: onHistoryChange will be called via useEffect when history changes
 
     // Return previous state (or null if going back to empty)
     if (newHistory.length > 0) {
       const previousState = newHistory[newHistory.length - 1];
       console.log('[useVisualizationHistory] Returning previous state with', previousState.products.length, 'products');
       console.log('[useVisualizationHistory] State includes visualizedQuantities:', previousState.visualizedQuantities.size, 'entries');
+      console.log('[useVisualizationHistory] State includes wallColor:', previousState.wallColor?.name || 'none');
       return previousState;
     }
 
     console.log('[useVisualizationHistory] No previous state - returning null (will clear visualization)');
     return null;
-  }, [history, notifyHistoryChange]);
+  }, [history]);
 
   // Redo to next state
   const redo = useCallback((): VisualizationHistoryEntry | null => {
@@ -192,17 +196,15 @@ export function useVisualizationHistory({
     }
 
     // Push to history
-    setHistory(prev => {
-      const newHistory = [...prev, stateToRestore];
-      notifyHistoryChange(newHistory);
-      return newHistory;
-    });
+    setHistory(prev => [...prev, stateToRestore]);
     setRedoStack(newRedoStack);
+    // Note: onHistoryChange will be called via useEffect when history changes
 
     console.log('[useVisualizationHistory] Restored state with', stateToRestore.products.length, 'products');
     console.log('[useVisualizationHistory] State includes visualizedQuantities:', stateToRestore.visualizedQuantities.size, 'entries');
+    console.log('[useVisualizationHistory] State includes wallColor:', stateToRestore.wallColor?.name || 'none');
     return stateToRestore;
-  }, [redoStack, notifyHistoryChange]);
+  }, [redoStack]);
 
   // Reset history
   const reset = useCallback(() => {
@@ -210,8 +212,8 @@ export function useVisualizationHistory({
     setHistory([]);
     setRedoStack([]);
     setHistoryInitialized(false);
-    notifyHistoryChange([]);
-  }, [notifyHistoryChange]);
+    // Note: onHistoryChange will be called via useEffect when history changes
+  }, []);
 
   // Initialize from existing history
   const initializeFromExisting = useCallback((

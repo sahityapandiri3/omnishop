@@ -94,6 +94,7 @@ interface CanvasPanelProps {
   projectId?: string | null;  // Project ID for design page room analysis cache
   canvasWallColor?: WallColor | null;  // Wall color to apply during visualization
   onRemoveWallColor?: () => void;  // Callback to remove wall color from canvas
+  onSetWallColor?: (wallColor: WallColor | null) => void;  // Callback to set wall color (e.g., from undo/redo)
   // Extensibility props for curation page
   children?: React.ReactNode;  // Additional content rendered in scrollable area after visualization
   footerContent?: React.ReactNode;  // Custom footer content (replaces default Visualize button area)
@@ -123,6 +124,7 @@ export default function CanvasPanel({
   projectId,
   canvasWallColor,
   onRemoveWallColor,
+  onSetWallColor,
   children,
   footerContent,
   hideDefaultFooter = false,
@@ -136,6 +138,7 @@ export default function CanvasPanel({
     cleanRoomImage: cleanRoomImage || roomImage,
     wallColor: canvasWallColor,
     onSetProducts: onSetProducts as (products: VisualizationProduct[]) => void,
+    onSetWallColor,  // Pass wall color callback for undo/redo
     config: {
       enableTextBasedEdits: true,  // Use text-based position editing
       enablePositionEditing: true,

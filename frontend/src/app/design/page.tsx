@@ -184,6 +184,7 @@ function DesignPageContent() {
     handleSelectColor: handleSelectWallColor,
     handleAddToCanvas: handleAddWallColorToCanvas,
     removeFromCanvas: removeWallColorFromCanvas,
+    setCanvasWallColor,  // For undo/redo
   } = useWallColor();
 
   // Track if we have unsaved changes
@@ -1998,6 +1999,7 @@ function DesignPageContent() {
                 projectId={projectId}
                 canvasWallColor={canvasWallColor}
                 onRemoveWallColor={removeWallColorFromCanvas}
+                onSetWallColor={setCanvasWallColor}
               />
             }
           />
@@ -2105,6 +2107,7 @@ function DesignPageContent() {
               projectId={projectId}
               canvasWallColor={canvasWallColor}
               onRemoveWallColor={removeWallColorFromCanvas}
+              onSetWallColor={setCanvasWallColor}
             />
           </div>
         </div>

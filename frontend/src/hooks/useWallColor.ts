@@ -10,6 +10,8 @@ interface UseWallColorReturn {
   selectedColor: WallColor | null;
   /** Set selected wall color for preview */
   setSelectedColor: (color: WallColor | null) => void;
+  /** Set canvas wall color directly (used for undo/redo) */
+  setCanvasWallColor: (color: WallColor | null) => void;
   /** Add selected wall color to canvas */
   addToCanvas: (color: WallColor) => void;
   /** Remove wall color from canvas */
@@ -80,6 +82,7 @@ export function useWallColor(): UseWallColorReturn {
     canvasWallColor,
     selectedColor,
     setSelectedColor,
+    setCanvasWallColor,  // Expose for undo/redo
     addToCanvas,
     removeFromCanvas,
     handleSelectColor,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   WallColor,
   WallColorFamily,
@@ -45,6 +45,10 @@ export function WallColorPanel({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [internalSelectedColor, setInternalSelectedColor] = useState<WallColor | null>(null);
+  // Track which family is expanded (accordion behavior - only one at a time)
+  const [expandedFamily, setExpandedFamily] = useState<WallColorFamily | null>(
+    WALL_COLOR_FAMILY_ORDER[0] // Default to first family expanded
+  );
 
   // Use external state if provided, otherwise use internal state
   const selectedColor = externalSelectedColor !== undefined ? externalSelectedColor : internalSelectedColor;
@@ -55,6 +59,11 @@ export function WallColorPanel({
       setInternalSelectedColor(color);
     }
   };
+
+  // Toggle family expansion (accordion behavior - clicking expands that family, collapses others)
+  const handleToggleExpand = useCallback((family: WallColorFamily) => {
+    setExpandedFamily((current) => (current === family ? null : family));
+  }, []);
 
   // Fetch colors on mount
   useEffect(() => {
@@ -173,7 +182,8 @@ export function WallColorPanel({
             colors={colors[family] || []}
             selectedColorId={selectedColor?.id ?? null}
             onSelectColor={handleSelectColor}
-            defaultExpanded={true}
+            isExpanded={expandedFamily === family}
+            onToggleExpand={() => handleToggleExpand(family)}
           />
         ))}
 

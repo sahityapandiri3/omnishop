@@ -110,6 +110,7 @@ class VisualizationRequest:
     style_consistency: bool
     user_style_description: str = ""  # User's actual text request
     exclusive_products: bool = False  # When True, ONLY show specified products, remove any existing furniture from base image
+    wall_color: Optional[Dict[str, Any]] = None  # Wall color to apply: {name, code, hex_value}
 
 
 @dataclass
@@ -3757,36 +3758,46 @@ Paint ALL visible walls with the following color:
                 color_hex = wall_color.get("hex_value", "")
                 prompt = f"""{VisualizationPrompts.get_system_intro()}
 
-🎨🎨🎨 WALL COLOR CHANGE REQUEST 🎨🎨🎨
-Paint ALL visible walls with the following color:
+🎨🎨🎨 WALL COLOR CHANGE ONLY - NO OTHER CHANGES 🎨🎨🎨
+Your ONLY task is to change the wall color. Do NOT make any other changes.
 
 🎯 WALL COLOR TO APPLY:
 - Name: {color_name} (Asian Paints)
 - Code: {color_code}
 - Hex Reference: {color_hex}
 
-✅ WALL COLOR APPLICATION RULES:
-1. Paint ALL visible wall surfaces with this color
+✅ WHAT TO DO:
+1. Paint ALL visible wall surfaces with this exact color ({color_hex})
 2. Apply the color uniformly across all walls
 3. Maintain realistic matte/satin paint finish
 4. Preserve natural shadows and lighting on walls
-5. The color should be a close match to the hex value provided
 
-🚨🚨🚨 ABSOLUTE REQUIREMENT - ROOM DIMENSIONS 🚨🚨🚨
+⛔⛔⛔ ABSOLUTELY FORBIDDEN - DO NOT DO ANY OF THESE ⛔⛔⛔
 ═══════════════════════════════════════════════════════════════
-THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
-- NEVER change the aspect ratio
-- NEVER crop, resize, or alter the image dimensions in ANY way
-- The camera angle, perspective, and field of view MUST remain UNCHANGED
+- ⛔ DO NOT add ANY new furniture (sofas, chairs, tables, etc.)
+- ⛔ DO NOT add ANY rugs or carpets
+- ⛔ DO NOT add ANY decor items (plants, lamps, artwork, cushions)
+- ⛔ DO NOT remove ANY existing furniture or objects
+- ⛔ DO NOT move or reposition ANY existing furniture
+- ⛔ DO NOT change ANY furniture colors or materials
+- ⛔ DO NOT change the floor color or material
+- ⛔ DO NOT paint the ceiling - ONLY walls
+- ⛔ DO NOT change window frames, door frames, or trim
+- ⛔ DO NOT change the camera angle or zoom level
+- ⛔ DO NOT crop or resize the image
+═══════════════════════════════════════════════════════════════
 
-🔒 CRITICAL PRESERVATION RULES:
-1. KEEP ALL EXISTING FURNITURE: Do NOT remove, move, or replace any furniture
-2. PRESERVE EXISTING COLORS: Do NOT change the color of ANY furniture or decor
-3. PRESERVE THE FLOOR: Keep the same flooring material and color
-4. PRESERVE THE CEILING: Do NOT paint the ceiling - only walls
-5. PRESERVE WINDOWS/DOORS: Keep window frames, door frames, and trim unchanged
+🚨 CRITICAL: THE ONLY CHANGE ALLOWED IS THE WALL COLOR 🚨
+Everything else in the room must remain EXACTLY as it appears in the input image.
+The furniture, floor, decor, and all other elements must be IDENTICAL.
 
-OUTPUT: Same room with ONLY the wall color changed to {color_name}."""
+🔒 PIXEL-PERFECT PRESERVATION:
+- All furniture must be at the EXACT same pixel positions
+- The room layout and composition must be IDENTICAL to input
+- Output dimensions must EXACTLY match input dimensions
+
+OUTPUT: The EXACT same room with ONLY the wall color changed to {color_name} ({color_hex}).
+No furniture, rugs, decor, or any other elements should be added, removed, or changed."""
             else:
                 # Build prompt for ADD MULTIPLE action (with or without wall color)
                 # Use total_items_to_add which accounts for quantities (e.g., 2 products with qty=3 each = 6 items)
@@ -4840,6 +4851,8 @@ SHADOW REQUIREMENTS:
 - ❌ Do NOT make products appear "highlighted" or "spotlit" compared to the room
 - ❌ Do NOT render products with neutral/studio lighting if room has warm/cool lighting
 - ❌ Do NOT make product shadows go in a different direction than room shadows
+
+{self._build_wall_color_instruction(visualization_request.wall_color)}
 
 OUTPUT: One photorealistic image of THE SAME ROOM with {product_count} product(s) naturally integrated, where products look like they physically exist in the space with proper lighting, shadows, and material interactions."""
 
@@ -6018,6 +6031,47 @@ DO NOT:
             "height_vs_door_percent": round(height_vs_door, 1) if height_vs_door else None,
             "raw_dimensions": {"width": product_width, "depth": product_depth, "height": product_height},
         }
+
+    def _build_wall_color_instruction(self, wall_color: Optional[Dict[str, Any]]) -> str:
+        """
+        Build wall color instruction for visualization prompts.
+
+        Args:
+            wall_color: Optional dict with 'name', 'code', 'hex_value' for wall color to apply
+
+        Returns:
+            Formatted wall color instruction string
+        """
+        if wall_color:
+            color_name = wall_color.get("name", "Unknown")
+            color_code = wall_color.get("code", "")
+            color_hex = wall_color.get("hex_value", "")
+            logger.info(f"🎨 WALL COLOR REQUESTED: {color_name} ({color_code}) - {color_hex}")
+            return f"""🎨🎨🎨 WALL COLOR CHANGE - APPLY NEW WALL COLOR 🎨🎨🎨
+Paint ALL visible walls with the following color:
+
+🎯 WALL COLOR TO APPLY:
+- Name: {color_name} (Asian Paints)
+- Code: {color_code}
+- Hex: {color_hex}
+
+⚠️ WALL COLOR RULES:
+- Apply this EXACT color to ALL visible walls
+- Match the hex value {color_hex} as closely as possible
+- Maintain the wall's existing texture and lighting conditions
+- Shadows and highlights on walls should still be visible (don't make walls flat)
+- The color should look like professionally painted walls
+
+⛔ DO NOT change the ceiling color - ceiling remains as-is
+⛔ DO NOT change window frames, door frames, or trim
+⛔ DO NOT add textures, patterns, or wallpaper - just solid paint color"""
+        else:
+            return """🚫🚫🚫 WALL COLOR PRESERVATION - ABSOLUTE REQUIREMENT 🚫🚫🚫
+⛔ DO NOT CHANGE THE WALL COLOR - walls must remain EXACTLY the same color as input
+⛔ DO NOT add paint, wallpaper, or any wall treatment that wasn't there
+- If walls are white → output walls MUST be white
+- If walls are grey → output walls MUST be grey
+- The wall color scheme is FIXED - you are ONLY adding furniture"""
 
     def _build_perspective_scaling_instructions(
         self,

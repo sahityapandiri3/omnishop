@@ -3603,6 +3603,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     style_consistency=True,
                     user_style_description=user_style_description,
                     exclusive_products=True,
+                    wall_color=wall_color,  # Apply wall color during visualization
                 )
                 viz_result = await google_ai_service.generate_room_visualization(viz_request)
                 current_image = viz_result.rendered_image
@@ -3633,8 +3634,31 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     lighting_realism=0.85,
                     confidence_score=0.87,
                 )
+            elif wall_color and not expanded_products:
+                # WALL COLOR ONLY - No products to add, just change wall color
+                # Use generate_add_multiple_visualization which has proper wall-color-only handling
+                logger.info(f"🎨 WALL COLOR ONLY MODE: Applying {wall_color.get('name')} ({wall_color.get('hex_value')})")
+
+                current_image = await google_ai_service.generate_add_multiple_visualization(
+                    room_image=base_image,
+                    products=[],  # No products, wall color only
+                    existing_products=[],
+                    workflow_id=workflow_id,
+                    session_id=session_id,
+                    wall_color=wall_color,
+                )
+
+                # Create a VisualizationResult to match expected return type
+                viz_result = VisualizationResult(
+                    rendered_image=current_image,
+                    processing_time=0.0,
+                    quality_score=0.90,
+                    placement_accuracy=1.0,  # No products placed
+                    lighting_realism=0.90,
+                    confidence_score=0.90,
+                )
             else:
-                # Normal single-batch visualization
+                # Normal single-batch visualization with products
                 # Create visualization request
                 # When force_reset is True, use exclusive_products mode to ONLY show specified products
                 # and remove any existing furniture from the base image
@@ -3647,6 +3671,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     style_consistency=True,
                     user_style_description=user_style_description,
                     exclusive_products=force_reset,  # When True, ONLY show specified products
+                    wall_color=wall_color,  # Apply wall color during visualization
                 )
 
                 # Log if using custom positions

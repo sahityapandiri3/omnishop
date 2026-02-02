@@ -62,6 +62,9 @@ export interface UseVisualizationProps {
   /** Callback to update products (e.g., from undo/redo) */
   onSetProducts: (products: VisualizationProduct[]) => void;
 
+  /** Callback to update wall color (e.g., from undo/redo) */
+  onSetWallColor?: (wallColor: WallColor | null) => void;
+
   /** Callback when visualization image changes */
   onVisualizationImageChange?: (image: string | null) => void;
 
@@ -96,6 +99,7 @@ export function useVisualization({
   cleanRoomImage,
   wallColor,
   onSetProducts,
+  onSetWallColor,
   onVisualizationImageChange,
   onVisualizationHistoryChange,
   initialVisualizationImage,
@@ -187,8 +191,11 @@ export function useVisualization({
 
     // Check if wall color has changed
     // Note: wallColor can be undefined (optional prop) or null (explicitly cleared)
+    // IMPORTANT: Only consider wall color "changed" if we have already done at least one visualization
+    // with products. This prevents triggering re-visualization when setting wall color for the first time.
     const currentWallColor = wallColor ?? null;
-    const wallColorChanged = (
+    const hasExistingVisualization = visualizedProductIds.size > 0 || visualizationImage;
+    const wallColorChanged = hasExistingVisualization && (
       (currentWallColor === null && visualizedWallColor !== null) ||
       (currentWallColor !== null && visualizedWallColor === null) ||
       (currentWallColor !== null && visualizedWallColor !== null && currentWallColor.id !== visualizedWallColor.id)
@@ -238,10 +245,11 @@ export function useVisualization({
     setVisualizedProducts([...products]);
     setVisualizedQuantities(buildQuantityMap(products));
 
-    // Add to history
+    // Add to history (including wall color if present)
     historyHook.pushState({
       image: formattedImage,
       products: [...products],
+      wallColor: wallColor || null,
     });
 
     console.log('[useVisualization] Curated visualization initialized successfully');
@@ -309,7 +317,15 @@ export function useVisualization({
     setVisualizationProgress('Preparing visualization...');
 
     try {
-      // Detect change type
+      // Check for wall color changes
+      const currentWallColor = wallColor ?? null;
+      const wallColorChanged = (
+        (currentWallColor === null && visualizedWallColor !== null) ||
+        (currentWallColor !== null && visualizedWallColor === null) ||
+        (currentWallColor !== null && visualizedWallColor !== null && currentWallColor.id !== visualizedWallColor.id)
+      );
+
+      // Detect change type for products
       const changeInfo = detectChangeType({
         products,
         visualizedProductIds,
@@ -318,9 +334,9 @@ export function useVisualization({
         visualizationResult: visualizationImage,
       });
 
-      console.log('[useVisualization] Change detection result:', changeInfo.type, changeInfo.reason);
+      console.log('[useVisualization] Change detection result:', changeInfo.type, changeInfo.reason, 'wallColorChanged:', wallColorChanged);
 
-      if (changeInfo.type === 'no_change') {
+      if (changeInfo.type === 'no_change' && !wallColorChanged) {
         console.log('[useVisualization] No changes detected, skipping');
         setIsVisualizing(false);
         setVisualizationStartTime(null);
@@ -371,6 +387,11 @@ export function useVisualization({
         productsToVisualize = products;
         forceReset = true;
         console.log('[useVisualization] Reset: re-visualizing all products');
+      } else if (changeInfo.type === 'no_change' && wallColorChanged) {
+        // Wall color changed but products didn't - apply wall color to existing visualization
+        imageToUse = visualizationImage!;
+        productsToVisualize = [];  // No products to add, just wall color change
+        console.log('[useVisualization] Wall color only change');
       } else {
         // Initial
         imageToUse = cleanRoomImage || roomImage!;
@@ -453,10 +474,11 @@ export function useVisualization({
       setVisualizedWallColor(wallColor || null);
       setNeedsRevisualization(false);
 
-      // Push to history
+      // Push to history (including wall color)
       historyHook.pushState({
         image: newImage,
         products: [...products],
+        wallColor: wallColor || null,
       });
 
       console.log('[useVisualization] Visualization successful');
@@ -481,6 +503,7 @@ export function useVisualization({
   }, [
     products, roomImage, cleanRoomImage, visualizationImage,
     visualizedProductIds, visualizedProducts, visualizedQuantities,
+    wallColor, visualizedWallColor,
     config.curatedLookId, config.projectId, historyHook
   ]);
 
@@ -492,12 +515,17 @@ export function useVisualization({
     const previousState = historyHook.undo();
 
     if (previousState) {
-      console.log('[useVisualization] Restoring previous state with', previousState.products.length, 'products');
+      console.log('[useVisualization] Restoring previous state with', previousState.products.length, 'products', 'wallColor:', previousState.wallColor?.name || 'none');
       setVisualizationImage(previousState.image);
       setVisualizedProductIds(previousState.productIds);
       setVisualizedProducts(previousState.products);
       setVisualizedQuantities(previousState.visualizedQuantities);  // CRITICAL: Restore quantities
+      setVisualizedWallColor(previousState.wallColor || null);  // Restore wall color
       onSetProducts(previousState.products);
+      // Notify parent to update wall color state
+      if (onSetWallColor) {
+        onSetWallColor(previousState.wallColor || null);
+      }
     } else {
       // No previous state - clear visualization
       console.log('[useVisualization] No previous state - clearing visualization');
@@ -505,11 +533,16 @@ export function useVisualization({
       setVisualizedProductIds(new Set());
       setVisualizedProducts([]);
       setVisualizedQuantities(new Map());
+      setVisualizedWallColor(null);
       onSetProducts([]);
+      // Clear wall color in parent
+      if (onSetWallColor) {
+        onSetWallColor(null);
+      }
     }
 
     console.log('[useVisualization] Undo complete');
-  }, [historyHook, onSetProducts]);
+  }, [historyHook, onSetProducts, onSetWallColor]);
 
   // ============================================================================
   // Handle Redo
@@ -519,16 +552,21 @@ export function useVisualization({
     const stateToRestore = historyHook.redo();
 
     if (stateToRestore) {
-      console.log('[useVisualization] Restoring state with', stateToRestore.products.length, 'products');
+      console.log('[useVisualization] Restoring state with', stateToRestore.products.length, 'products', 'wallColor:', stateToRestore.wallColor?.name || 'none');
       setVisualizationImage(stateToRestore.image);
       setVisualizedProductIds(stateToRestore.productIds);
       setVisualizedProducts(stateToRestore.products);
       setVisualizedQuantities(stateToRestore.visualizedQuantities);  // CRITICAL: Restore quantities
+      setVisualizedWallColor(stateToRestore.wallColor || null);  // Restore wall color
       onSetProducts(stateToRestore.products);
+      // Notify parent to update wall color state
+      if (onSetWallColor) {
+        onSetWallColor(stateToRestore.wallColor || null);
+      }
     }
 
     console.log('[useVisualization] Redo complete');
-  }, [historyHook, onSetProducts]);
+  }, [historyHook, onSetProducts, onSetWallColor]);
 
   // ============================================================================
   // Handle Improve Quality
@@ -617,11 +655,12 @@ export function useVisualization({
       // Update visualization
       setVisualizationImage(newImage);
 
-      // Reset history with new state
+      // Reset history with new state (including wall color)
       historyHook.reset();
       historyHook.pushState({
         image: newImage,
         products: [...products],
+        wallColor: wallColor || null,
       });
 
       // Update visualized state
@@ -757,10 +796,11 @@ export function useVisualization({
 
       setVisualizationImage(data.image);
 
-      // Add to history
+      // Add to history (including wall color)
       historyHook.pushState({
         image: data.image,
         products: [...visualizedProducts],
+        wallColor: visualizedWallColor,
       });
 
       setNeedsRevisualization(false);
@@ -823,6 +863,7 @@ export function useVisualization({
       historyHook.pushState({
         image: formattedImage,
         products: [...existingProducts],
+        wallColor: null,  // No wall color when initializing from existing
       });
     }
 

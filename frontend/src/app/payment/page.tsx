@@ -114,9 +114,14 @@ function PaymentPageContent() {
         // Free, Basic, Basic+: go to preferences to set up their styling session
         router.push('/homestyling/preferences');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Payment/upgrade failed:', error);
-      alert('Failed to process payment. Please try again.');
+      // Show more specific error message
+      const errorMessage = error?.response?.data?.detail
+        || error?.response?.data?.message
+        || error?.message
+        || 'Failed to process payment. Please try again.';
+      alert(errorMessage);
       setIsProcessing(false);
     }
   };

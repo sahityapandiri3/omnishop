@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { WallColor, WallColorFamily, WALL_COLOR_FAMILY_LABELS } from '@/types/wall-colors';
 import { WallColorSwatch } from './WallColorSwatch';
 
@@ -9,7 +8,10 @@ interface WallColorFamilyGroupProps {
   colors: WallColor[];
   selectedColorId: number | null;
   onSelectColor: (color: WallColor) => void;
-  defaultExpanded?: boolean;
+  /** Whether this family group is currently expanded */
+  isExpanded: boolean;
+  /** Callback when user clicks to toggle expansion */
+  onToggleExpand: () => void;
 }
 
 /**
@@ -17,15 +19,16 @@ interface WallColorFamilyGroupProps {
  *
  * Collapsible group header with color swatches for one family.
  * Shows family name with color count and expandable swatch grid.
+ * Expansion state is controlled by parent for accordion behavior.
  */
 export function WallColorFamilyGroup({
   family,
   colors,
   selectedColorId,
   onSelectColor,
-  defaultExpanded = true,
+  isExpanded,
+  onToggleExpand,
 }: WallColorFamilyGroupProps) {
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   if (colors.length === 0) {
     return null;
@@ -35,7 +38,7 @@ export function WallColorFamilyGroup({
     <div className="border-b border-neutral-100 dark:border-neutral-700 last:border-b-0">
       {/* Family Header */}
       <button
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={onToggleExpand}
         className="w-full flex items-center justify-between py-3 px-1 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors"
       >
         <div className="flex items-center gap-2">
@@ -58,7 +61,7 @@ export function WallColorFamilyGroup({
 
       {/* Color Swatches Grid */}
       {isExpanded && (
-        <div className="pb-3 px-1">
+        <div className="pt-2 pb-3 px-1">
           <div className="grid grid-cols-6 gap-2">
             {colors.map((color) => (
               <WallColorSwatch

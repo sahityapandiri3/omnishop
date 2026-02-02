@@ -240,7 +240,7 @@ export default function PricingPage() {
               )}
               {highlightedTier === tier.id && !tier.highlighted && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <span className="bg-secondary-600 text-white text-xs font-medium px-3 py-1 rounded-full">
+                  <span className="bg-secondary-600 text-white text-xs font-medium px-3 py-1 rounded-full whitespace-nowrap">
                     Upgrade to style further
                   </span>
                 </div>

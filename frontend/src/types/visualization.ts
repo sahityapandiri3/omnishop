@@ -9,6 +9,7 @@
  */
 
 import { ViewingAngle } from '@/components/AngleSelector';
+import { WallColor } from '@/types/wall-colors';
 
 // ============================================================================
 // Product Types (for visualization context)
@@ -79,6 +80,7 @@ export interface VisualizationHistoryEntry {
   products: VisualizationProduct[];
   productIds: Set<string>;
   visualizedQuantities: Map<string, number>;  // CRITICAL: Must track quantities
+  wallColor?: WallColor | null;  // Wall color applied in this visualization state
 }
 
 /**
@@ -89,6 +91,7 @@ export interface SerializableHistoryEntry {
   products: VisualizationProduct[];
   productIds: string[];  // Array instead of Set
   visualizedQuantities: Record<string, number>;  // Object instead of Map
+  wallColor?: WallColor | null;  // Wall color applied in this visualization state
 }
 
 // ============================================================================
@@ -290,6 +293,7 @@ export function serializeHistoryEntry(entry: VisualizationHistoryEntry): Seriali
     products: entry.products,
     productIds: Array.from(entry.productIds),
     visualizedQuantities: Object.fromEntries(entry.visualizedQuantities),
+    wallColor: entry.wallColor,
   };
 }
 
@@ -304,5 +308,6 @@ export function deserializeHistoryEntry(entry: SerializableHistoryEntry): Visual
     visualizedQuantities: new Map(Object.entries(entry.visualizedQuantities).map(
       ([k, v]) => [k, typeof v === 'number' ? v : Number(v)]
     )),
+    wallColor: entry.wallColor,
   };
 }
