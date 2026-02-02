@@ -129,6 +129,7 @@ export function useVisualization({
   const [visualizedProducts, setVisualizedProducts] = useState<VisualizationProduct[]>([]);
   const [visualizedQuantities, setVisualizedQuantities] = useState<Map<string, number>>(new Map());
   const [visualizedWallColor, setVisualizedWallColor] = useState<WallColor | null>(null);
+  const [visualizedRoomImage, setVisualizedRoomImage] = useState<string | null>(null);  // Track which room image was visualized
   const [needsRevisualization, setNeedsRevisualization] = useState(false);
 
   // Edit mode
@@ -245,6 +246,12 @@ export function useVisualization({
     setVisualizedProducts([...products]);
     setVisualizedQuantities(buildQuantityMap(products));
 
+    // Track the room image used for this visualization
+    const baseImage = cleanRoomImage || roomImage;
+    if (baseImage) {
+      setVisualizedRoomImage(baseImage);
+    }
+
     // Add to history (including wall color if present)
     historyHook.pushState({
       image: formattedImage,
@@ -253,7 +260,7 @@ export function useVisualization({
     });
 
     console.log('[useVisualization] Curated visualization initialized successfully');
-  }, [initialVisualizationImage, visualizationImage, products]);
+  }, [initialVisualizationImage, visualizationImage, products, cleanRoomImage, roomImage]);
 
   // ============================================================================
   // Notify parent when visualization image changes
@@ -325,6 +332,12 @@ export function useVisualization({
         (currentWallColor !== null && visualizedWallColor !== null && currentWallColor.id !== visualizedWallColor.id)
       );
 
+      // Check for room image changes - compare current base image with the one used in last visualization
+      const roomImageChanged = visualizedRoomImage !== null && baseImage !== visualizedRoomImage;
+      if (roomImageChanged) {
+        console.log('[useVisualization] Room image changed - will force reset visualization');
+      }
+
       // Detect change type for products
       const changeInfo = detectChangeType({
         products,
@@ -334,9 +347,9 @@ export function useVisualization({
         visualizationResult: visualizationImage,
       });
 
-      console.log('[useVisualization] Change detection result:', changeInfo.type, changeInfo.reason, 'wallColorChanged:', wallColorChanged);
+      console.log('[useVisualization] Change detection result:', changeInfo.type, changeInfo.reason, 'wallColorChanged:', wallColorChanged, 'roomImageChanged:', roomImageChanged);
 
-      if (changeInfo.type === 'no_change' && !wallColorChanged) {
+      if (changeInfo.type === 'no_change' && !wallColorChanged && !roomImageChanged) {
         console.log('[useVisualization] No changes detected, skipping');
         setIsVisualizing(false);
         setVisualizationStartTime(null);
@@ -355,7 +368,14 @@ export function useVisualization({
       let productsToRemove: VisualizationProduct[] = [];
       let productsToAdd: VisualizationProduct[] = [];
 
-      if (changeInfo.type === 'additive') {
+      // CRITICAL: If room image changed, force a complete reset regardless of product changes
+      // This ensures the new room image is used as the base
+      if (roomImageChanged) {
+        imageToUse = baseImage;
+        productsToVisualize = products;
+        forceReset = true;
+        console.log('[useVisualization] Room image changed: re-visualizing all products on NEW room image');
+      } else if (changeInfo.type === 'additive') {
         imageToUse = visualizationImage!;
         productsToVisualize = changeInfo.newProducts!;
         isIncremental = true;
@@ -472,6 +492,7 @@ export function useVisualization({
       setVisualizedProducts([...products]);
       setVisualizedQuantities(newQuantities);
       setVisualizedWallColor(wallColor || null);
+      setVisualizedRoomImage(baseImage);  // CRITICAL: Track which room image was used
       setNeedsRevisualization(false);
 
       // Push to history (including wall color)
@@ -481,7 +502,7 @@ export function useVisualization({
         wallColor: wallColor || null,
       });
 
-      console.log('[useVisualization] Visualization successful');
+      console.log('[useVisualization] Visualization successful, tracked room image');
 
     } catch (error: unknown) {
       console.error('[useVisualization] Visualization error:', error);
@@ -503,7 +524,7 @@ export function useVisualization({
   }, [
     products, roomImage, cleanRoomImage, visualizationImage,
     visualizedProductIds, visualizedProducts, visualizedQuantities,
-    wallColor, visualizedWallColor,
+    wallColor, visualizedWallColor, visualizedRoomImage,
     config.curatedLookId, config.projectId, historyHook
   ]);
 
@@ -668,6 +689,7 @@ export function useVisualization({
       setVisualizedProducts([...products]);
       setVisualizedQuantities(buildQuantityMap(products));
       setVisualizedWallColor(wallColor || null);
+      setVisualizedRoomImage(baseImage);  // CRITICAL: Track which room image was used
       setNeedsRevisualization(false);
 
     } catch (error) {
@@ -827,6 +849,7 @@ export function useVisualization({
     setVisualizedProducts([]);
     setVisualizedQuantities(new Map());
     setVisualizedWallColor(null);
+    setVisualizedRoomImage(null);  // Reset room image tracking
     setNeedsRevisualization(false);
     historyHook.reset();
     initializationRef.current = false;
