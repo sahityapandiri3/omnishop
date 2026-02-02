@@ -110,5 +110,5 @@ This will:
 - `.env.example` - Environment configuration template
 
 ---
-  
+
 **Built with ❤️ using Next.js, FastAPI, and OpenAI**
