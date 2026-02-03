@@ -14,7 +14,8 @@ import { WallColor } from '@/types/wall-colors';
 import { WallTexture, WallTextureVariant } from '@/types/wall-textures';
 import type { CanvasItem } from '@/hooks/useCanvas';
 import CanvasItemCard from './CanvasItemCard';
-import { isWallColorData, isWallTextureData, getWallColorItem, getWallTextureItem, getProductItems } from '@/hooks/useCanvas';
+import { isWallColorData, isWallTextureData, getWallColorItem, getWallTextureItem, getProductItems, WallTextureCanvasData } from '@/hooks/useCanvas';
+import { TextureDetailModal } from '@/components/walls/TextureDetailModal';
 
 const DraggableFurnitureCanvas = dynamic(
   () => import('../DraggableFurnitureCanvas').then(mod => ({ default: mod.DraggableFurnitureCanvas })),
@@ -236,6 +237,10 @@ export default function CanvasPanel({
   const [visualizationStartTime, setVisualizationStartTime] = useState<number | null>(null);
   // Start expanded if user needs to upload their room image (no roomImage but has curated visualization)
   const [isRoomImageCollapsed, setIsRoomImageCollapsed] = useState(false);
+
+  // Texture detail modal state
+  const [textureDetailOpen, setTextureDetailOpen] = useState(false);
+  const [textureDetailData, setTextureDetailData] = useState<WallTextureCanvasData | null>(null);
 
   // Furniture position editing state (DraggableFurnitureCanvas-specific)
   const [furniturePositions, setFurniturePositions] = useState<FurniturePosition[]>([]);
@@ -709,6 +714,7 @@ export default function CanvasPanel({
   const needsRoomImageUpload = products.length > 0 && !roomImage && !visualizationResult && !initialVisualizationImage;
 
   return (
+    <>
     <div className="flex flex-col h-full overflow-hidden relative">
       {/* Prominent Upload Prompt - shown when products loaded but no room image */}
       {needsRoomImageUpload && (
@@ -808,7 +814,11 @@ export default function CanvasPanel({
                   <CanvasItemCard
                     item={textureItem}
                     onRemove={() => onRemoveCanvasItem ? onRemoveCanvasItem(textureItem.id) : onRemoveTexture?.()}
-                    onViewDetails={() => {/* View texture details */}}
+                    onViewDetails={() => {
+                      const data = textureItem.data as WallTextureCanvasData;
+                      setTextureDetailData(data);
+                      setTextureDetailOpen(true);
+                    }}
                   />
                 );
               }
@@ -1556,5 +1566,17 @@ export default function CanvasPanel({
       </div>
       )}
     </div>
+
+    {/* Texture Detail Modal */}
+    {textureDetailData && (
+      <TextureDetailModal
+        texture={textureDetailData.texture}
+        variant={textureDetailData.textureVariant}
+        isOpen={textureDetailOpen}
+        onClose={() => setTextureDetailOpen(false)}
+        inCanvas={true}
+      />
+    )}
+    </>
   );
 }

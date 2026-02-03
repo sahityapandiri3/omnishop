@@ -45,7 +45,7 @@ function WallTypeToggle({
   onChange: (type: WallType) => void;
 }) {
   return (
-    <div className="flex items-center gap-1 p-0.5 bg-neutral-100 dark:bg-neutral-800 rounded-lg">
+    <div className="inline-flex items-center gap-1 p-0.5 bg-neutral-100 dark:bg-neutral-800 rounded-lg">
       <button
         onClick={() => onChange('color')}
         className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
@@ -184,7 +184,7 @@ export function WallFilterPanel({
       <div className={`${compact ? 'p-2' : 'p-3'} border-b border-neutral-200 dark:border-neutral-700`}>
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">
-            Wall Type
+            Design Type
           </span>
           {hasActiveFilters && (
             <button
