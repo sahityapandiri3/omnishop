@@ -28,10 +28,13 @@ import {
   normalizeProductId,
 } from '@/types/visualization';
 import { WallColor } from '@/types/wall-colors';
+import { WallTextureVariant } from '@/types/wall-textures';
 import {
   useVisualizationHistory,
   UseVisualizationHistoryReturn,
 } from './useVisualizationHistory';
+import type { CanvasItem } from '@/hooks/useCanvas';
+import { extractProducts, extractWallColor, extractTextureVariant } from '@/hooks/useCanvas';
 import {
   detectChangeType,
   formatProductForApi,
@@ -59,11 +62,23 @@ export interface UseVisualizationProps {
   /** Wall color to apply during visualization */
   wallColor?: WallColor | null;
 
+  /** Wall texture variant to apply during visualization */
+  textureVariant?: WallTextureVariant | null;
+
   /** Callback to update products (e.g., from undo/redo) */
   onSetProducts: (products: VisualizationProduct[]) => void;
 
   /** Callback to update wall color (e.g., from undo/redo) */
   onSetWallColor?: (wallColor: WallColor | null) => void;
+
+  /** Callback to update texture (e.g., from undo/redo) */
+  onSetTexture?: (texture: WallTextureVariant | null) => void;
+
+  /** Unified canvas items (if using useCanvas hook) */
+  canvasItems?: CanvasItem[];
+
+  /** Callback to restore canvas items on undo/redo */
+  onSetCanvasItems?: (items: CanvasItem[]) => void;
 
   /** Callback when visualization image changes */
   onVisualizationImageChange?: (image: string | null) => void;
@@ -94,18 +109,26 @@ function getApiUrl(): string {
 // ============================================================================
 
 export function useVisualization({
-  products,
+  products: productsProp,
   roomImage,
   cleanRoomImage,
-  wallColor,
+  wallColor: wallColorProp,
+  textureVariant: textureVariantProp,
   onSetProducts,
   onSetWallColor,
+  onSetTexture,
+  canvasItems: canvasItemsProp,
+  onSetCanvasItems,
   onVisualizationImageChange,
   onVisualizationHistoryChange,
   initialVisualizationImage,
   initialVisualizationHistory = [],
   config = {},
 }: UseVisualizationProps): UseVisualizationReturn {
+  // Derive products/wallColor/textureVariant from canvasItems if provided
+  const products = canvasItemsProp ? extractProducts(canvasItemsProp) : productsProp;
+  const wallColor = canvasItemsProp ? extractWallColor(canvasItemsProp) : (wallColorProp ?? null);
+  const textureVariant = canvasItemsProp ? extractTextureVariant(canvasItemsProp) : (textureVariantProp ?? null);
   // ============================================================================
   // History Hook
   // ============================================================================
@@ -129,6 +152,7 @@ export function useVisualization({
   const [visualizedProducts, setVisualizedProducts] = useState<VisualizationProduct[]>([]);
   const [visualizedQuantities, setVisualizedQuantities] = useState<Map<string, number>>(new Map());
   const [visualizedWallColor, setVisualizedWallColor] = useState<WallColor | null>(null);
+  const [visualizedTextureVariant, setVisualizedTextureVariant] = useState<WallTextureVariant | null>(null);
   const [visualizedRoomImage, setVisualizedRoomImage] = useState<string | null>(null);  // Track which room image was visualized
   const [needsRevisualization, setNeedsRevisualization] = useState(false);
 
@@ -173,7 +197,7 @@ export function useVisualization({
 
   useEffect(() => {
     // Don't trigger on initial load or if never visualized
-    if (visualizedProductIds.size === 0 && !visualizationImage && !visualizedWallColor) {
+    if (visualizedProductIds.size === 0 && !visualizationImage && !visualizedWallColor && !visualizedTextureVariant) {
       return;
     }
 
@@ -191,9 +215,6 @@ export function useVisualization({
     });
 
     // Check if wall color has changed
-    // Note: wallColor can be undefined (optional prop) or null (explicitly cleared)
-    // IMPORTANT: Only consider wall color "changed" if we have already done at least one visualization
-    // with products. This prevents triggering re-visualization when setting wall color for the first time.
     const currentWallColor = wallColor ?? null;
     const hasExistingVisualization = visualizedProductIds.size > 0 || visualizationImage;
     const wallColorChanged = hasExistingVisualization && (
@@ -202,15 +223,25 @@ export function useVisualization({
       (currentWallColor !== null && visualizedWallColor !== null && currentWallColor.id !== visualizedWallColor.id)
     );
 
-    if (productsChanged || quantitiesChanged || wallColorChanged) {
+    // Check if texture variant has changed
+    const currentTexture = textureVariant ?? null;
+    const textureChanged = hasExistingVisualization && (
+      (currentTexture === null && visualizedTextureVariant !== null) ||
+      (currentTexture !== null && visualizedTextureVariant === null) ||
+      (currentTexture !== null && visualizedTextureVariant !== null && currentTexture.id !== visualizedTextureVariant.id)
+    );
+
+    if (productsChanged || quantitiesChanged || wallColorChanged || textureChanged) {
       setNeedsRevisualization(true);
-      if (wallColorChanged) {
+      if (textureChanged) {
+        console.log('[useVisualization] Texture changed, needs re-visualization');
+      } else if (wallColorChanged) {
         console.log('[useVisualization] Wall color changed, needs re-visualization');
       } else if (quantitiesChanged && !productsChanged) {
         console.log('[useVisualization] Quantity changed, needs re-visualization');
       }
     }
-  }, [products, visualizedProductIds, visualizedQuantities, visualizationImage, wallColor, visualizedWallColor]);
+  }, [products, visualizedProductIds, visualizedQuantities, visualizationImage, wallColor, visualizedWallColor, textureVariant, visualizedTextureVariant]);
 
   // ============================================================================
   // Sync Effect: Keep visualizedProducts in sync when products change
@@ -252,11 +283,12 @@ export function useVisualization({
       setVisualizedRoomImage(baseImage);
     }
 
-    // Add to history (including wall color if present)
+    // Add to history (including wall color and canvas items if present)
     historyHook.pushState({
       image: formattedImage,
       products: [...products],
       wallColor: wallColor || null,
+      canvasItems: canvasItemsProp ? [...canvasItemsProp] : undefined,
     });
 
     console.log('[useVisualization] Curated visualization initialized successfully');
@@ -315,21 +347,151 @@ export function useVisualization({
 
   const handleVisualize = useCallback(async () => {
     const baseImage = cleanRoomImage || roomImage;
-    if (!baseImage || products.length === 0) return;
+    if (!baseImage) return;
 
-    console.log('[useVisualization] handleVisualize called with', products.length, 'products');
+    // Allow visualization with products, wall color, or texture
+    const hasProducts = products.length > 0;
+    const hasWallColor = !!(wallColor);
+    const hasTexture = !!(textureVariant);
+
+    if (!hasProducts && !hasWallColor && !hasTexture) return;
+
+    console.log('[useVisualization] handleVisualize called:', {
+      products: products.length,
+      wallColorId: wallColor?.id ?? null,
+      textureVariantId: textureVariant?.id ?? null,
+      baseImage: baseImage ? 'exists' : 'null',
+    });
 
     setIsVisualizing(true);
     setVisualizationStartTime(Date.now());
     setVisualizationProgress('Preparing visualization...');
 
     try {
+      // ================================================================
+      // Wall-only / Texture-only visualization (no furniture products)
+      // Apply wall color and/or texture directly to the room image
+      // ================================================================
+      if (!hasProducts) {
+        // Use existing visualization image if available (preserves previously rendered furniture)
+        // Fall back to baseImage only if there's no existing visualization
+        const startImage = visualizationImage || baseImage;
+        console.log('[useVisualization] No products in canvas - applying wall color/texture only', {
+          usingExistingVisualization: !!visualizationImage,
+        });
+        let newImage = startImage;
+
+        // Apply wall color
+        if (hasWallColor && wallColor) {
+          setVisualizationProgress('Applying wall color...');
+          const sessionId = await getOrCreateSession();
+          const colorResponse = await fetch(
+            `${getApiUrl()}/api/visualization/change-wall-color`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                room_image: newImage,
+                color_name: wallColor.name,
+                color_code: wallColor.code,
+                color_hex: wallColor.hex_value,
+                session_id: sessionId,
+              }),
+            }
+          );
+          if (colorResponse.ok) {
+            const colorData = await colorResponse.json();
+            if (colorData.success && colorData.rendered_image) {
+              newImage = colorData.rendered_image;
+              console.log('[useVisualization] Wall color applied successfully');
+            } else {
+              const errorMsg = colorData.error_message || 'Wall color visualization returned no image';
+              console.error('[useVisualization] Wall color API returned failure:', errorMsg);
+              throw new Error(errorMsg);
+            }
+          } else {
+            console.error('[useVisualization] Wall color API HTTP error:', colorResponse.status);
+            throw new Error(`Wall color API failed with status ${colorResponse.status}`);
+          }
+        }
+
+        // Apply texture
+        if (hasTexture && textureVariant) {
+          setVisualizationProgress('Applying wall texture...');
+          const textureResponse = await fetch(
+            `${getApiUrl()}/api/visualization/change-wall-texture`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                room_image: newImage,
+                texture_variant_id: textureVariant.id,
+              }),
+            }
+          );
+          if (textureResponse.ok) {
+            const textureData = await textureResponse.json();
+            if (textureData.success && textureData.rendered_image) {
+              newImage = textureData.rendered_image;
+              console.log('[useVisualization] Texture applied successfully');
+            } else {
+              const errorMsg = textureData.error_message || 'Texture visualization returned no image';
+              console.error('[useVisualization] Texture API returned failure:', errorMsg);
+              throw new Error(errorMsg);
+            }
+          } else {
+            console.error('[useVisualization] Texture API HTTP error:', textureResponse.status);
+            throw new Error(`Texture API failed with status ${textureResponse.status}`);
+          }
+        }
+
+        // Only update visualization if we actually got a new image
+        if (newImage === startImage) {
+          throw new Error('Visualization produced no changes. Please try again.');
+        }
+
+        // Update state
+        setVisualizationImage(newImage);
+        // Preserve existing visualized products if we started from a visualization image
+        if (!visualizationImage) {
+          setVisualizedProductIds(new Set());
+          setVisualizedProducts([]);
+          setVisualizedQuantities(new Map());
+        }
+        setVisualizedWallColor(wallColor || null);
+        setVisualizedTextureVariant(textureVariant || null);
+        setVisualizedRoomImage(baseImage);
+        setNeedsRevisualization(false);
+
+        historyHook.pushState({
+          image: newImage,
+          products: [],
+          wallColor: wallColor || null,
+          canvasItems: canvasItemsProp ? [...canvasItemsProp] : undefined,
+        });
+
+        console.log('[useVisualization] Wall/texture-only visualization complete');
+        return;
+      }
+
+      // ================================================================
+      // Product visualization (with optional wall color / texture overlay)
+      // ================================================================
+
       // Check for wall color changes
       const currentWallColor = wallColor ?? null;
       const wallColorChanged = (
         (currentWallColor === null && visualizedWallColor !== null) ||
         (currentWallColor !== null && visualizedWallColor === null) ||
         (currentWallColor !== null && visualizedWallColor !== null && currentWallColor.id !== visualizedWallColor.id)
+      );
+
+      // Check for texture changes
+      const currentTexture = textureVariant ?? null;
+      const textureChanged = (
+        (currentTexture === null && visualizedTextureVariant !== null) ||
+        (currentTexture !== null && visualizedTextureVariant === null) ||
+        (currentTexture !== null && visualizedTextureVariant !== null && currentTexture.id !== visualizedTextureVariant.id)
       );
 
       // Check for room image changes - compare current base image with the one used in last visualization
@@ -347,10 +509,62 @@ export function useVisualization({
         visualizationResult: visualizationImage,
       });
 
-      console.log('[useVisualization] Change detection result:', changeInfo.type, changeInfo.reason, 'wallColorChanged:', wallColorChanged, 'roomImageChanged:', roomImageChanged);
+      console.log('[useVisualization] Change detection result:', changeInfo.type, changeInfo.reason, 'wallColorChanged:', wallColorChanged, 'textureChanged:', textureChanged, 'roomImageChanged:', roomImageChanged);
 
-      if (changeInfo.type === 'no_change' && !wallColorChanged && !roomImageChanged) {
+      if (changeInfo.type === 'no_change' && !wallColorChanged && !textureChanged && !roomImageChanged) {
         console.log('[useVisualization] No changes detected, skipping');
+        setIsVisualizing(false);
+        setVisualizationStartTime(null);
+        setVisualizationProgress('');
+        return;
+      }
+
+      // Handle texture-only change (products unchanged, just apply texture to existing visualization)
+      if (changeInfo.type === 'no_change' && textureChanged && !wallColorChanged && !roomImageChanged && visualizationImage) {
+        console.log('[useVisualization] Texture-only change on existing visualization');
+        let newImage = visualizationImage;
+
+        if (currentTexture && currentTexture.id) {
+          setVisualizationProgress('Applying wall texture...');
+          const textureResponse = await fetch(
+            `${getApiUrl()}/api/visualization/change-wall-texture`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                room_image: newImage,
+                texture_variant_id: currentTexture.id,
+              }),
+            }
+          );
+          if (textureResponse.ok) {
+            const textureData = await textureResponse.json();
+            if (textureData.success && textureData.rendered_image) {
+              newImage = textureData.rendered_image;
+              console.log('[useVisualization] Texture applied to existing visualization successfully');
+            } else {
+              const errorMsg = textureData.error_message || 'Texture visualization returned no image';
+              console.error('[useVisualization] Texture API returned failure:', errorMsg);
+              throw new Error(errorMsg);
+            }
+          } else {
+            console.error('[useVisualization] Texture API HTTP error:', textureResponse.status);
+            throw new Error(`Texture API failed with status ${textureResponse.status}`);
+          }
+        }
+
+        setVisualizationImage(newImage);
+        setVisualizedTextureVariant(currentTexture);
+        setNeedsRevisualization(false);
+
+        historyHook.pushState({
+          image: newImage,
+          products: [...products],
+          wallColor: wallColor || null,
+          canvasItems: canvasItemsProp ? [...canvasItemsProp] : undefined,
+        });
+
+        console.log('[useVisualization] Texture-only visualization complete');
         setIsVisualizing(false);
         setVisualizationStartTime(null);
         setVisualizationProgress('');
@@ -407,11 +621,11 @@ export function useVisualization({
         productsToVisualize = products;
         forceReset = true;
         console.log('[useVisualization] Reset: re-visualizing all products');
-      } else if (changeInfo.type === 'no_change' && wallColorChanged) {
-        // Wall color changed but products didn't - apply wall color to existing visualization
+      } else if (changeInfo.type === 'no_change' && (wallColorChanged || textureChanged)) {
+        // Wall color and/or texture changed but products didn't - apply changes to existing visualization
         imageToUse = visualizationImage!;
-        productsToVisualize = [];  // No products to add, just wall color change
-        console.log('[useVisualization] Wall color only change');
+        productsToVisualize = [];  // No products to add, just wall/texture change
+        console.log('[useVisualization] Wall color/texture change only');
       } else {
         // Initial
         imageToUse = cleanRoomImage || roomImage!;
@@ -483,23 +697,58 @@ export function useVisualization({
       }
 
       // Update state with new visualization
-      const newImage = data.visualization.rendered_image;
+      let newImage = data.visualization.rendered_image;
       const newProductIds = buildProductIdSet(products);
       const newQuantities = buildQuantityMap(products);
+
+      // If texture variant is selected, apply it after the main visualization
+      if (textureVariant && textureVariant.id) {
+        console.log('[useVisualization] Applying texture:', textureVariant.code);
+        setVisualizationProgress('Applying wall texture...');
+
+        try {
+          const textureResponse = await fetch(
+            `${getApiUrl()}/api/visualization/change-wall-texture`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                room_image: newImage,
+                texture_variant_id: textureVariant.id,
+              }),
+            }
+          );
+
+          if (textureResponse.ok) {
+            const textureData = await textureResponse.json();
+            if (textureData.success && textureData.rendered_image) {
+              newImage = textureData.rendered_image;
+              console.log('[useVisualization] Texture applied successfully');
+            }
+          } else {
+            console.warn('[useVisualization] Texture application failed, using base visualization');
+          }
+        } catch (textureError) {
+          console.warn('[useVisualization] Texture application error:', textureError);
+          // Continue with base visualization if texture fails
+        }
+      }
 
       setVisualizationImage(newImage);
       setVisualizedProductIds(newProductIds);
       setVisualizedProducts([...products]);
       setVisualizedQuantities(newQuantities);
       setVisualizedWallColor(wallColor || null);
+      setVisualizedTextureVariant(textureVariant || null);
       setVisualizedRoomImage(baseImage);  // CRITICAL: Track which room image was used
       setNeedsRevisualization(false);
 
-      // Push to history (including wall color)
+      // Push to history (including wall color and canvas items)
       historyHook.pushState({
         image: newImage,
         products: [...products],
         wallColor: wallColor || null,
+        canvasItems: canvasItemsProp ? [...canvasItemsProp] : undefined,
       });
 
       console.log('[useVisualization] Visualization successful, tracked room image');
@@ -525,7 +774,9 @@ export function useVisualization({
     products, roomImage, cleanRoomImage, visualizationImage,
     visualizedProductIds, visualizedProducts, visualizedQuantities,
     wallColor, visualizedWallColor, visualizedRoomImage,
-    config.curatedLookId, config.projectId, historyHook
+    textureVariant, visualizedTextureVariant,
+    config.curatedLookId, config.projectId, historyHook,
+    canvasItemsProp,
   ]);
 
   // ============================================================================
@@ -542,10 +793,16 @@ export function useVisualization({
       setVisualizedProducts(previousState.products);
       setVisualizedQuantities(previousState.visualizedQuantities);  // CRITICAL: Restore quantities
       setVisualizedWallColor(previousState.wallColor || null);  // Restore wall color
-      onSetProducts(previousState.products);
-      // Notify parent to update wall color state
-      if (onSetWallColor) {
-        onSetWallColor(previousState.wallColor || null);
+      setVisualizedTextureVariant(null);  // Texture not tracked in history yet
+
+      // Restore full canvas state if available (unified canvas mode)
+      if (previousState.canvasItems && onSetCanvasItems) {
+        onSetCanvasItems(previousState.canvasItems);
+      } else {
+        onSetProducts(previousState.products);
+        if (onSetWallColor) {
+          onSetWallColor(previousState.wallColor || null);
+        }
       }
     } else {
       // No previous state - clear visualization
@@ -555,15 +812,20 @@ export function useVisualization({
       setVisualizedProducts([]);
       setVisualizedQuantities(new Map());
       setVisualizedWallColor(null);
-      onSetProducts([]);
-      // Clear wall color in parent
-      if (onSetWallColor) {
-        onSetWallColor(null);
+      setVisualizedTextureVariant(null);
+
+      if (onSetCanvasItems) {
+        onSetCanvasItems([]);
+      } else {
+        onSetProducts([]);
+        if (onSetWallColor) {
+          onSetWallColor(null);
+        }
       }
     }
 
     console.log('[useVisualization] Undo complete');
-  }, [historyHook, onSetProducts, onSetWallColor]);
+  }, [historyHook, onSetProducts, onSetWallColor, onSetCanvasItems]);
 
   // ============================================================================
   // Handle Redo
@@ -579,15 +841,21 @@ export function useVisualization({
       setVisualizedProducts(stateToRestore.products);
       setVisualizedQuantities(stateToRestore.visualizedQuantities);  // CRITICAL: Restore quantities
       setVisualizedWallColor(stateToRestore.wallColor || null);  // Restore wall color
-      onSetProducts(stateToRestore.products);
-      // Notify parent to update wall color state
-      if (onSetWallColor) {
-        onSetWallColor(stateToRestore.wallColor || null);
+      setVisualizedTextureVariant(null);  // Texture not tracked in history yet
+
+      // Restore full canvas state if available (unified canvas mode)
+      if (stateToRestore.canvasItems && onSetCanvasItems) {
+        onSetCanvasItems(stateToRestore.canvasItems);
+      } else {
+        onSetProducts(stateToRestore.products);
+        if (onSetWallColor) {
+          onSetWallColor(stateToRestore.wallColor || null);
+        }
       }
     }
 
     console.log('[useVisualization] Redo complete');
-  }, [historyHook, onSetProducts, onSetWallColor]);
+  }, [historyHook, onSetProducts, onSetWallColor, onSetCanvasItems]);
 
   // ============================================================================
   // Handle Improve Quality
@@ -595,7 +863,7 @@ export function useVisualization({
 
   const handleImproveQuality = useCallback(async () => {
     const baseImage = cleanRoomImage || roomImage;
-    if (!baseImage || products.length === 0) {
+    if (!baseImage || (products.length === 0 && !wallColor && !textureVariant)) {
       console.log('[useVisualization] Improve quality: missing requirements');
       return;
     }
@@ -670,18 +938,51 @@ export function useVisualization({
         throw new Error('No visualization image was generated');
       }
 
-      const newImage = data.visualization.rendered_image;
+      let newImage = data.visualization.rendered_image;
       console.log('[useVisualization] Quality improvement success');
+
+      // Apply texture if present (same post-processing as handleVisualize)
+      if (textureVariant && textureVariant.id) {
+        console.log('[useVisualization] Applying texture after quality improvement:', textureVariant.code);
+        try {
+          const textureResponse = await fetch(
+            `${getApiUrl()}/api/visualization/change-wall-texture`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                room_image: newImage,
+                texture_variant_id: textureVariant.id,
+              }),
+            }
+          );
+
+          if (textureResponse.ok) {
+            const textureData = await textureResponse.json();
+            if (textureData.success && textureData.rendered_image) {
+              newImage = textureData.rendered_image;
+              console.log('[useVisualization] Texture applied successfully after quality improvement');
+            } else {
+              console.warn('[useVisualization] Texture application failed during quality improvement');
+            }
+          } else {
+            console.warn('[useVisualization] Texture API failed during quality improvement, using base visualization');
+          }
+        } catch (textureError) {
+          console.warn('[useVisualization] Texture application error during quality improvement:', textureError);
+        }
+      }
 
       // Update visualization
       setVisualizationImage(newImage);
 
-      // Reset history with new state (including wall color)
+      // Reset history with new state (including wall color and canvas items)
       historyHook.reset();
       historyHook.pushState({
         image: newImage,
         products: [...products],
         wallColor: wallColor || null,
+        canvasItems: canvasItemsProp ? [...canvasItemsProp] : undefined,
       });
 
       // Update visualized state
@@ -689,6 +990,7 @@ export function useVisualization({
       setVisualizedProducts([...products]);
       setVisualizedQuantities(buildQuantityMap(products));
       setVisualizedWallColor(wallColor || null);
+      setVisualizedTextureVariant(textureVariant || null);
       setVisualizedRoomImage(baseImage);  // CRITICAL: Track which room image was used
       setNeedsRevisualization(false);
 
@@ -698,7 +1000,8 @@ export function useVisualization({
     } finally {
       setIsImprovingQuality(false);
     }
-  }, [products, roomImage, cleanRoomImage, config.curatedLookId, config.projectId, historyHook]);
+  }, [products, roomImage, cleanRoomImage, wallColor, textureVariant,
+    config.curatedLookId, config.projectId, historyHook, canvasItemsProp]);
 
   // ============================================================================
   // Handle Angle Select
@@ -818,11 +1121,12 @@ export function useVisualization({
 
       setVisualizationImage(data.image);
 
-      // Add to history (including wall color)
+      // Add to history (including wall color and canvas items)
       historyHook.pushState({
         image: data.image,
         products: [...visualizedProducts],
         wallColor: visualizedWallColor,
+        canvasItems: canvasItemsProp ? [...canvasItemsProp] : undefined,
       });
 
       setNeedsRevisualization(false);
@@ -849,6 +1153,7 @@ export function useVisualization({
     setVisualizedProducts([]);
     setVisualizedQuantities(new Map());
     setVisualizedWallColor(null);
+    setVisualizedTextureVariant(null);
     setVisualizedRoomImage(null);  // Reset room image tracking
     setNeedsRevisualization(false);
     historyHook.reset();
@@ -887,6 +1192,7 @@ export function useVisualization({
         image: formattedImage,
         products: [...existingProducts],
         wallColor: null,  // No wall color when initializing from existing
+        canvasItems: canvasItemsProp ? [...canvasItemsProp] : undefined,
       });
     }
 

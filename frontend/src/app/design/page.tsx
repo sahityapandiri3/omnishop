@@ -8,9 +8,20 @@ import CanvasPanel from '@/components/panels/CanvasPanel';
 import { ProductDetailModal } from '@/components/ProductDetailModal';
 import { ResizablePanelLayout } from '@/components/panels/ResizablePanelLayout';
 import { KeywordSearchPanel, SearchFilters, KeywordSearchPanelRef } from '@/components/products';
-import { WallColorPanel } from '@/components/wall-colors';
+import { WallFilterPanel } from '@/components/walls';
 import { useWallColor } from '@/hooks/useWallColor';
-import { WallColor } from '@/types/wall-colors';
+import { useWallFilters } from '@/hooks/useWallFilters';
+import { useWallTextures } from '@/hooks/useWallTextures';
+import {
+  useCanvas,
+  CanvasItem,
+  extractProducts as extractCanvasProducts,
+  extractWallColor as extractCanvasWallColor,
+  extractTextureVariant as extractCanvasTextureVariant,
+  extractTexture as extractCanvasTexture,
+} from '@/hooks/useCanvas';
+import { WallColor, WallColorFamily } from '@/types/wall-colors';
+import { WallType, TextureType } from '@/types/wall-textures';
 import { SubModeToggle, SearchSubMode } from '@/components/search';
 
 type SearchMode = 'ai' | 'search';
@@ -38,12 +49,9 @@ function ModeToggle({
         Search
       </button>
       <button
-        onClick={() => onModeChange('ai')}
-        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all text-center ${
-          mode === 'ai'
-            ? 'bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 shadow-sm'
-            : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-        }`}
+        disabled
+        className="px-3 py-1.5 text-xs font-medium rounded-md transition-all text-center text-neutral-400 dark:text-neutral-500 cursor-not-allowed opacity-50"
+        title="Coming soon"
       >
         AI Stylist
       </button>
@@ -186,6 +194,78 @@ function DesignPageContent() {
     removeFromCanvas: removeWallColorFromCanvas,
     setCanvasWallColor,  // For undo/redo
   } = useWallColor();
+
+  // Wall filters state - manages Color/Textured toggle and filter selections
+  const {
+    wallType,
+    selectedFamilies,
+    selectedBrands,
+    setWallType,
+    toggleFamily,
+    toggleBrand,
+    clearAllFilters,
+    hasActiveFilters,
+  } = useWallFilters();
+
+  // Wall textures state - fetches textures lazily when textured tab is selected
+  const {
+    textures,
+    brands: availableTextureBrands,
+    isLoading: isLoadingTextures,
+    fetchTextures,
+    selectedVariant: selectedTextureVariant,
+    selectedTexture,
+    canvasTextureVariant,
+    canvasTexture,
+    setSelectedVariant: handleSelectTextureVariant,
+    addToCanvas: handleAddTextureToCanvas,
+    removeFromCanvas: removeTextureFromCanvas,
+    setCanvasTextureVariant,  // For undo/redo
+  } = useWallTextures();
+
+  // Lazy-load textures only when user switches to textured wall tab
+  useEffect(() => {
+    if (searchSubMode === 'walls' && wallType === 'textured') {
+      fetchTextures();
+    }
+  }, [searchSubMode, wallType, fetchTextures]);
+
+  // Unified canvas state management
+  const canvas = useCanvas();
+
+  // Wrap wall color/texture add-to-canvas to sync with unified canvas
+  const handleAddWallColorToCanvasUnified = useCallback((color: WallColor) => {
+    handleAddWallColorToCanvas(color);
+    canvas.addWallColor(color);
+  }, [handleAddWallColorToCanvas, canvas.addWallColor]);
+
+  const handleAddTextureToCanvasUnified = useCallback((variant: any, texture: any) => {
+    handleAddTextureToCanvas(variant, texture);
+    canvas.addTexture(variant, texture);
+  }, [handleAddTextureToCanvas, canvas.addTexture]);
+
+  const removeWallColorFromCanvasUnified = useCallback(() => {
+    removeWallColorFromCanvas();
+    canvas.setWallColor(null);
+  }, [removeWallColorFromCanvas, canvas.setWallColor]);
+
+  const removeTextureFromCanvasUnified = useCallback(() => {
+    removeTextureFromCanvas();
+    canvas.setTextureVariant(null);
+  }, [removeTextureFromCanvas, canvas.setTextureVariant]);
+
+  // Handle canvas items restore from undo/redo
+  const handleSetCanvasItems = useCallback((items: CanvasItem[]) => {
+    canvas.setItems(items);
+    // Also sync legacy state from the canvas items
+    const restoredProducts = extractCanvasProducts(items);
+    const restoredWallColor = extractCanvasWallColor(items);
+    const restoredTextureVariant = extractCanvasTextureVariant(items);
+    const restoredTexture = extractCanvasTexture(items);
+    setCanvasProducts(restoredProducts);
+    setCanvasWallColor(restoredWallColor);
+    setCanvasTextureVariant(restoredTextureVariant, restoredTexture);
+  }, [canvas.setItems, setCanvasWallColor, setCanvasTextureVariant]);
 
   // Track if we have unsaved changes
   const hasUnsavedChanges = saveStatus === 'unsaved' || saveStatus === 'saving';
@@ -398,6 +478,7 @@ function DesignPageContent() {
           attributes: p.attributes,  // Preserve attributes for dimensions (width, height, depth)
         }));
         setCanvasProducts(formattedProducts);
+        canvas.setProducts(formattedProducts);
         console.log('[DesignPage] Loaded', formattedProducts.length, 'preselected products from curated look with full context');
         // Clear after loading
         sessionStorage.removeItem('preselectedProducts');
@@ -410,6 +491,7 @@ function DesignPageContent() {
       try {
         const products = JSON.parse(persistedCanvasProducts);
         setCanvasProducts(products);
+        canvas.setProducts(products);
         console.log('[DesignPage] Restored', products.length, 'canvas products after page reload');
         // Clear after loading
         sessionStorage.removeItem('persistedCanvasProducts');
@@ -719,13 +801,16 @@ function DesignPageContent() {
                 attributes: p.attributes,
               }));
               setCanvasProducts(formattedProducts);
+              canvas.setProducts(formattedProducts);
               console.log('[DesignPage] Loaded', formattedProducts.length, 'preselected products from curated look');
             } catch (e) {
               console.error('[DesignPage] Failed to parse preselected products:', e);
               setCanvasProducts([]);
+              canvas.setProducts([]);
             }
           } else {
             setCanvasProducts([]);
+            canvas.setProducts([]);
           }
 
           // Clear other state that might persist from previous project
@@ -769,6 +854,7 @@ function DesignPageContent() {
           setCleanRoomImage(null);
           setInitialVisualizationImage(null);
           setCanvasProducts([]);
+          canvas.setProducts([]);
           setVisualizationHistory([]);
           setChatSessionId(null);
           setProjectLoaded(true);
@@ -798,6 +884,7 @@ function DesignPageContent() {
                 try {
                   const products = JSON.parse(recoveredCanvasProducts);
                   setCanvasProducts(products);
+                  canvas.setProducts(products);
                   console.log('[DesignPage] Restored', products.length, 'products from session recovery');
                 } catch (e) {
                   console.error('[DesignPage] Failed to parse recovered canvas products:', e);
@@ -861,13 +948,16 @@ function DesignPageContent() {
               try {
                 const products = JSON.parse(project.canvas_products);
                 setCanvasProducts(products);
+                canvas.setProducts(products);
                 console.log('[DesignPage] Loaded', products.length, 'products from project');
               } catch (e) {
                 console.error('[DesignPage] Failed to parse project canvas_products:', e);
                 setCanvasProducts([]);
+                canvas.setProducts([]);
               }
             } else {
               setCanvasProducts([]);
+              canvas.setProducts([]);
             }
             // Load visualization history for undo/redo (or clear if none)
             if (project.visualization_history) {
@@ -1405,6 +1495,9 @@ function DesignPageContent() {
       console.log('[DesignPage] Added new product to canvas with quantity 1');
     }
 
+    // Sync with unified canvas
+    canvas.addProduct(productWithType);
+
     // Auto-switch to canvas tab on mobile
     if (window.innerWidth < 768) {
       setActiveTab('canvas');
@@ -1436,6 +1529,9 @@ function DesignPageContent() {
       setCanvasProducts(updatedProducts);
       console.log('[DesignPage] Decremented quantity for:', product.name, 'to', currentQuantity - 1);
     }
+
+    // Sync with unified canvas
+    canvas.removeProduct(productId, removeAll);
   };
 
   // Handle increment quantity (used by CanvasPanel +/- controls)
@@ -1453,11 +1549,15 @@ function DesignPageContent() {
       quantity: currentQuantity + 1,
     };
     setCanvasProducts(updatedProducts);
+
+    // Sync with unified canvas
+    canvas.updateQuantity(`product-${productId}`, 1);
   };
 
   // Handle clear canvas
   const handleClearCanvas = () => {
     setCanvasProducts([]);
+    canvas.clearAll();
   };
 
   // Handle room image upload with furniture removal
@@ -1931,15 +2031,19 @@ function DesignPageContent() {
                   </div>
                 )}
 
-                {/* Wall Color Panel - visible when Search + Walls sub-mode */}
+                {/* Wall Filter Panel - visible when Search + Walls sub-mode */}
                 {searchMode === 'search' && searchSubMode === 'walls' && (
                   <div className="flex-1 min-h-0 overflow-hidden">
-                    <WallColorPanel
-                      onAddToCanvas={handleAddWallColorToCanvas}
-                      canvasWallColor={canvasWallColor}
-                      selectedColor={selectedWallColor}
-                      onSelectColor={handleSelectWallColor}
-                      showHeader={false}
+                    <WallFilterPanel
+                      wallType={wallType}
+                      onWallTypeChange={setWallType}
+                      selectedFamilies={selectedFamilies}
+                      onToggleFamily={toggleFamily}
+                      selectedBrands={selectedBrands}
+                      availableBrands={availableTextureBrands}
+                      onToggleBrand={toggleBrand}
+                      onClearFilters={clearAllFilters}
+                      hasActiveFilters={hasActiveFilters}
                     />
                   </div>
                 )}
@@ -1978,6 +2082,25 @@ function DesignPageContent() {
                 isKeywordSearchMode={searchMode === 'search' && searchSubMode === 'furniture'}
                 keywordSearchResults={keywordSearchResults}
                 onLoadMoreKeywordResults={() => keywordSearchRef.current?.loadMore()}
+                // Wall mode props
+                searchSubMode={searchSubMode}
+                wallType={wallType}
+                colorFamilyFilter={selectedFamilies}
+                textureBrandFilter={selectedBrands}
+                textures={textures}
+                texturesLoading={isLoadingTextures}
+                texturesError={null}
+                selectedWallColor={selectedWallColor}
+                canvasWallColor={canvasWallColor}
+                onSelectWallColor={handleSelectWallColor}
+                onAddWallColorToCanvas={handleAddWallColorToCanvasUnified}
+                selectedTextureVariant={selectedTextureVariant}
+                selectedTexture={selectedTexture}
+                canvasTextureVariant={canvasTextureVariant}
+                canvasTexture={canvasTexture}
+                onSelectTextureVariant={handleSelectTextureVariant}
+                onAddTextureToCanvas={handleAddTextureToCanvasUnified}
+                onRemoveWallFromCanvas={wallType === 'color' ? removeWallColorFromCanvasUnified : removeTextureFromCanvasUnified}
               />
             }
             canvasPanel={
@@ -1998,8 +2121,15 @@ function DesignPageContent() {
                 isProcessingFurniture={isProcessingFurniture}
                 projectId={projectId}
                 canvasWallColor={canvasWallColor}
-                onRemoveWallColor={removeWallColorFromCanvas}
+                onRemoveWallColor={removeWallColorFromCanvasUnified}
                 onSetWallColor={setCanvasWallColor}
+                canvasTexture={canvasTexture}
+                canvasTextureVariant={canvasTextureVariant}
+                onRemoveTexture={removeTextureFromCanvasUnified}
+                canvasItems={canvas.items}
+                onSetCanvasItems={handleSetCanvasItems}
+                onRemoveCanvasItem={canvas.removeItem}
+                onUpdateCanvasItemQuantity={canvas.updateQuantity}
               />
             }
           />
@@ -2040,14 +2170,20 @@ function DesignPageContent() {
                 </div>
               )}
 
-              {/* Wall Color Panel - visible when Search + Walls sub-mode on mobile */}
+              {/* Wall Filter Panel - visible when Search + Walls sub-mode on mobile */}
               {searchMode === 'search' && searchSubMode === 'walls' && (
                 <div className="flex-1 min-h-0 overflow-hidden">
-                  <WallColorPanel
-                    onAddToCanvas={handleAddWallColorToCanvas}
-                    canvasWallColor={canvasWallColor}
-                    selectedColor={selectedWallColor}
-                    onSelectColor={handleSelectWallColor}
+                  <WallFilterPanel
+                    wallType={wallType}
+                    onWallTypeChange={setWallType}
+                    selectedFamilies={selectedFamilies}
+                    onToggleFamily={toggleFamily}
+                    selectedBrands={selectedBrands}
+                    availableBrands={availableTextureBrands}
+                    onToggleBrand={toggleBrand}
+                    onClearFilters={clearAllFilters}
+                    hasActiveFilters={hasActiveFilters}
+                    compact={true}
                   />
                 </div>
               )}
@@ -2086,6 +2222,25 @@ function DesignPageContent() {
               isKeywordSearchMode={searchMode === 'search' && searchSubMode === 'furniture'}
               keywordSearchResults={keywordSearchResults}
               onLoadMoreKeywordResults={() => keywordSearchRef.current?.loadMore()}
+              // Wall mode props
+              searchSubMode={searchSubMode}
+              wallType={wallType}
+              colorFamilyFilter={selectedFamilies}
+              textureBrandFilter={selectedBrands}
+              textures={textures}
+              texturesLoading={isLoadingTextures}
+              texturesError={null}
+              selectedWallColor={selectedWallColor}
+              canvasWallColor={canvasWallColor}
+              onSelectWallColor={handleSelectWallColor}
+              onAddWallColorToCanvas={handleAddWallColorToCanvasUnified}
+              selectedTextureVariant={selectedTextureVariant}
+              selectedTexture={selectedTexture}
+              canvasTextureVariant={canvasTextureVariant}
+              canvasTexture={canvasTexture}
+              onSelectTextureVariant={handleSelectTextureVariant}
+              onAddTextureToCanvas={handleAddTextureToCanvasUnified}
+              onRemoveWallFromCanvas={wallType === 'color' ? removeWallColorFromCanvasUnified : removeTextureFromCanvasUnified}
             />
           </div>
           <div className={`h-full ${activeTab === 'canvas' ? 'block' : 'hidden'}`}>
@@ -2106,8 +2261,15 @@ function DesignPageContent() {
               isProcessingFurniture={isProcessingFurniture}
               projectId={projectId}
               canvasWallColor={canvasWallColor}
-              onRemoveWallColor={removeWallColorFromCanvas}
+              onRemoveWallColor={removeWallColorFromCanvasUnified}
               onSetWallColor={setCanvasWallColor}
+              canvasTexture={canvasTexture}
+              canvasTextureVariant={canvasTextureVariant}
+              onRemoveTexture={removeTextureFromCanvasUnified}
+              canvasItems={canvas.items}
+              onSetCanvasItems={handleSetCanvasItems}
+              onRemoveCanvasItem={canvas.removeItem}
+              onUpdateCanvasItemQuantity={canvas.updateQuantity}
             />
           </div>
         </div>
