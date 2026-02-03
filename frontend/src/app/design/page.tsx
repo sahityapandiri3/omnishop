@@ -664,10 +664,10 @@ function DesignPageContent() {
         const isNewlyCreatedProject = newlyCreatedProjectId === project.id;
         const hasNoSavedData = !project.room_image && !project.visualization_image && !project.canvas_products;
 
-        // Clear the marker after checking (one-time use)
-        if (newlyCreatedProjectId) {
-          sessionStorage.removeItem('newlyCreatedProjectId');
-        }
+        // NOTE: Don't clear newlyCreatedProjectId here — if the useEffect re-runs
+        // (React Strict Mode, searchParams change), the second run would miss the
+        // marker and fall into the "existing empty project" branch, clearing all
+        // sessionStorage data. Clear it only after data is fully consumed (line below).
 
         if (isNewlyCreatedProject && hasNoSavedData) {
           // For newly created projects, load sessionStorage data (from curated looks or user upload)
@@ -826,6 +826,8 @@ function DesignPageContent() {
           sessionStorage.removeItem('curatedRoomImage');
           sessionStorage.removeItem('preselectedProducts');
           sessionStorage.removeItem('preselectedLookTheme');
+          // Now safe to clear the marker — data has been fully consumed
+          sessionStorage.removeItem('newlyCreatedProjectId');
 
           // Set initial state for change detection (starts as "unsaved" so first save works)
           lastSaveDataRef.current = JSON.stringify({
