@@ -101,6 +101,7 @@ function CuratedPageContent() {
       sessionStorage.removeItem('curatedRoomImage');
       sessionStorage.removeItem('roomImage');
       sessionStorage.removeItem('cleanRoomImage');
+      sessionStorage.removeItem('_projectConsumed');
 
       console.log('[CuratedPage] Use Style clicked - cleared all images, user will upload their own');
 

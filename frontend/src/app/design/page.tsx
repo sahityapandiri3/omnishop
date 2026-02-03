@@ -554,6 +554,10 @@ function DesignPageContent() {
 
   // Load project data if projectId is in URL params, or auto-create if authenticated without projectId
   useEffect(() => {
+    // Track if this effect invocation has been superseded by a newer one (React Strict Mode
+    // unmount/remount, or searchParams change). Any state updates after cancellation are skipped.
+    let cancelled = false;
+
     const loadProject = async () => {
       const urlProjectId = searchParams?.get('projectId');
 
@@ -643,6 +647,15 @@ function DesignPageContent() {
         isCreatingProjectRef.current = false;
         console.log('[DesignPage] Loading project:', urlProjectId);
         const project = await projectsAPI.get(urlProjectId);
+
+        // If this effect was cancelled while we were awaiting the API call
+        // (React Strict Mode unmount/remount), bail out — a fresh invocation
+        // will handle loading. This prevents the stale call from clearing state.
+        if (cancelled) {
+          console.log('[DesignPage] loadProject cancelled after API call — skipping state updates');
+          return;
+        }
+
         console.log('[DesignPage] Project API response:', {
           id: project.id,
           name: project.name,
@@ -664,13 +677,7 @@ function DesignPageContent() {
         const isNewlyCreatedProject = newlyCreatedProjectId === project.id;
         const hasNoSavedData = !project.room_image && !project.visualization_image && !project.canvas_products;
 
-        // NOTE: Don't clear newlyCreatedProjectId here — if the useEffect re-runs
-        // (React Strict Mode, searchParams change), the second run would miss the
-        // marker and fall into the "existing empty project" branch, clearing all
-        // sessionStorage data. Clear it only after data is fully consumed (line below).
-
         if (isNewlyCreatedProject && hasNoSavedData) {
-          // For newly created projects, load sessionStorage data (from curated looks or user upload)
           console.log('[DesignPage] Newly created project detected, loading sessionStorage data');
 
           // Check for curated look data
@@ -827,6 +834,8 @@ function DesignPageContent() {
           sessionStorage.removeItem('preselectedProducts');
           sessionStorage.removeItem('preselectedLookTheme');
           // Now safe to clear the marker — data has been fully consumed
+          // Set a consumed flag so Strict Mode remount skips re-processing
+          sessionStorage.setItem('_projectConsumed', project.id);
           sessionStorage.removeItem('newlyCreatedProjectId');
 
           // Set initial state for change detection (starts as "unsaved" so first save works)
@@ -1013,6 +1022,10 @@ function DesignPageContent() {
     };
 
     loadProject();
+
+    return () => {
+      cancelled = true;
+    };
   }, [searchParams, isAuthenticated, router]);
 
   // Manual save function
