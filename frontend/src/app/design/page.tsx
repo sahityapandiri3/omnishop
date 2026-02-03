@@ -2432,8 +2432,8 @@ function DesignPageContent() {
 
       {/* Publish Modal (Curator tier only) */}
       {showPublishModal && canPublishLooks(user) && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-neutral-800 rounded-xl max-w-lg w-full shadow-2xl">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-neutral-800 rounded-xl max-w-lg w-full shadow-2xl max-h-[90vh] flex flex-col my-auto">
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-neutral-200 dark:border-neutral-700 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-neutral-800 dark:text-neutral-200">
@@ -2453,7 +2453,7 @@ function DesignPageContent() {
             </div>
 
             {/* Modal Body */}
-            <div className="p-6">
+            <div className="p-6 overflow-y-auto flex-1">
               {publishSuccess ? (
                 <div className="text-center py-8">
                   <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
