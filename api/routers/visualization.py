@@ -1100,8 +1100,8 @@ async def change_wall_texture(request: ChangeWallTextureRequest, db: AsyncSessio
         if room_image.startswith("data:"):
             room_image = room_image.split(",", 1)[1]
 
-        # Get texture image from variant
-        texture_image = variant.image_data
+        # Get texture image from variant — prefer swatch (pure texture pattern) over room shot
+        texture_image = variant.swatch_data or variant.image_data
         if not texture_image:
             logger.error(f"[WallTexture API] Texture variant {variant.id} has no image data")
             return ChangeWallTextureResponse(

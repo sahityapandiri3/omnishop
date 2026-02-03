@@ -929,8 +929,10 @@ class WallTextureVariant(Base):
     texture_id = Column(Integer, ForeignKey("wall_textures.id"), nullable=False, index=True)
     code = Column(String(50), unique=True, nullable=False, index=True)  # "TNB1003CMB1001"
     name = Column(String(255), nullable=True)  # Variant name if different from parent
-    image_data = Column(Text, nullable=False)  # Base64 encoded image
+    image_data = Column(Text, nullable=False)  # Base64 encoded image (room/wall shot for UI thumbnail)
     image_url = Column(String(500), nullable=True)  # Original source URL (for reference)
+    swatch_data = Column(Text, nullable=True)  # Base64 encoded texture swatch pattern for AI visualization
+    swatch_url = Column(String(500), nullable=True)  # Original swatch URL
     color_family = Column(
         Enum(WallColorFamily, values_callable=lambda x: [e.value for e in x], name="wallcolorfamily"),
         nullable=True,
