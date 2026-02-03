@@ -435,9 +435,9 @@ export function ProductResultsGrid({
       {/* More Products Section - Show even if not loaded yet, if API says there are more */}
       {hasMoreProducts && (
         <>
-          <div className={`mb-2 ${bestMatches.length > 0 ? 'mt-4 pt-3 border-t border-neutral-200 dark:border-neutral-700' : ''}`}>
+          <div className={`mb-2 ${(bestMatches.length > 0 || displayPrimaryCount > 0) ? 'mt-4 pt-3 border-t border-neutral-200 dark:border-neutral-700' : ''}`}>
             <span className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-1 rounded">
-              {bestMatches.length > 0 ? 'More Products' : 'Products'} ({displayRelatedCount || moreProducts.length})
+              {(bestMatches.length > 0 || displayPrimaryCount > 0) ? 'More Products' : 'Products'} ({displayRelatedCount || moreProducts.length})
             </span>
             {moreProducts.length === 0 && displayRelatedCount > 0 && (
               <span className="ml-2 text-xs text-neutral-500 dark:text-neutral-400">

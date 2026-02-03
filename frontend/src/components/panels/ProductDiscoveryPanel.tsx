@@ -467,7 +467,9 @@ export default function ProductDiscoveryPanel({
           </h2>
           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
             {hasKeywordResults
-              ? `${keywordSearchResults.totalProducts} products found`
+              ? (keywordSearchResults.totalPrimary > 0
+                  ? `${keywordSearchResults.totalPrimary} best matches + ${keywordSearchResults.totalRelated} more`
+                  : `${keywordSearchResults.totalProducts} products found`)
               : 'Use the search panel to find products'}
           </p>
         </div>
