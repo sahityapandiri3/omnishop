@@ -117,6 +117,8 @@ function CuratedPageContent() {
           console.log('[CuratedPage] Creating new project:', projectName);
           const project = await projectsAPI.create({ name: projectName });
           console.log('[CuratedPage] Project created:', project.id);
+          // Mark as newly created so design page loads sessionStorage data
+          sessionStorage.setItem('newlyCreatedProjectId', project.id);
           // Navigate to design page with project ID
           router.push(`/design?projectId=${project.id}`);
         } catch (projectError) {
