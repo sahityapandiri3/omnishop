@@ -15,8 +15,9 @@ from services.chatgpt_service import chatgpt_service
 from services.google_ai_service import generate_workflow_id, google_ai_service
 from services.ml_recommendation_model import ml_recommendation_model
 from services.recommendation_engine import RecommendationRequest, recommendation_engine
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from core.config import settings
 from core.database import get_db
@@ -1021,6 +1022,135 @@ async def change_wall_color(request: ChangeWallColorRequest):
         return ChangeWallColorResponse(
             success=False,
             error_message=f"Error changing wall color: {str(e)}",
+            processing_time=processing_time,
+        )
+
+
+class ChangeWallTextureRequest(BaseModel):
+    """Request to change wall texture in visualization"""
+
+    room_image: str  # Base64 encoded current visualization image
+    texture_variant_id: int  # ID of the texture variant to apply
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
+
+
+class ChangeWallTextureResponse(BaseModel):
+    """Response from wall texture change"""
+
+    success: bool
+    rendered_image: Optional[str] = None  # Base64 encoded result image
+    error_message: Optional[str] = None
+    processing_time: float = 0.0
+    texture_name: Optional[str] = None
+    texture_type: Optional[str] = None
+
+
+@router.post("/change-wall-texture", response_model=ChangeWallTextureResponse)
+async def change_wall_texture(request: ChangeWallTextureRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Change wall texture in a room visualization using AI-powered inpainting.
+
+    This endpoint takes a room visualization image and applies a textured wall finish
+    by passing both the room image and the texture swatch to the AI model.
+    The AI uses the texture swatch as a reference to accurately apply the pattern
+    to all visible walls while preserving furniture and other room elements.
+
+    Args:
+        request: Contains room_image (base64) and texture_variant_id
+
+    Returns:
+        ChangeWallTextureResponse with rendered image or error
+    """
+    import time
+
+    start_time = time.time()
+
+    try:
+        # Import models here to avoid circular imports
+        from database.models import WallTexture, WallTextureVariant
+
+        logger.info(f"[WallTexture API] Changing wall texture using variant ID {request.texture_variant_id}")
+
+        # Fetch texture variant from database
+        query = (
+            select(WallTextureVariant)
+            .options(selectinload(WallTextureVariant.texture))
+            .where(WallTextureVariant.id == request.texture_variant_id)
+        )
+        result = await db.execute(query)
+        variant = result.scalar_one_or_none()
+
+        if not variant:
+            logger.error(f"[WallTexture API] Texture variant {request.texture_variant_id} not found")
+            return ChangeWallTextureResponse(
+                success=False,
+                error_message=f"Texture variant with ID {request.texture_variant_id} not found",
+                processing_time=time.time() - start_time,
+            )
+
+        texture = variant.texture
+        texture_name = texture.name
+        texture_type = texture.texture_type.value if texture.texture_type else "other"
+
+        logger.info(f"[WallTexture API] Applying texture: {texture_name} ({texture_type})")
+
+        # Strip data URL prefix if present
+        room_image = request.room_image
+        if room_image.startswith("data:"):
+            room_image = room_image.split(",", 1)[1]
+
+        # Get texture image from variant
+        texture_image = variant.image_data
+        if not texture_image:
+            logger.error(f"[WallTexture API] Texture variant {variant.id} has no image data")
+            return ChangeWallTextureResponse(
+                success=False,
+                error_message=f"Texture variant {variant.id} has no image data",
+                processing_time=time.time() - start_time,
+                texture_name=texture_name,
+                texture_type=texture_type,
+            )
+        if texture_image.startswith("data:"):
+            texture_image = texture_image.split(",", 1)[1]
+
+        # Call the Google AI service to change wall texture
+        result_image = await google_ai_service.change_wall_texture(
+            room_image=room_image,
+            texture_image=texture_image,
+            texture_name=texture_name,
+            texture_type=texture_type,
+            user_id=request.user_id,
+            session_id=request.session_id,
+        )
+
+        processing_time = time.time() - start_time
+
+        if result_image:
+            logger.info(f"[WallTexture API] Successfully applied texture in {processing_time:.2f}s")
+            return ChangeWallTextureResponse(
+                success=True,
+                rendered_image=result_image,
+                processing_time=processing_time,
+                texture_name=texture_name,
+                texture_type=texture_type,
+            )
+        else:
+            logger.error("[WallTexture API] Failed to generate texture visualization")
+            return ChangeWallTextureResponse(
+                success=False,
+                error_message="Failed to generate texture visualization. Please try again.",
+                processing_time=processing_time,
+                texture_name=texture_name,
+                texture_type=texture_type,
+            )
+
+    except Exception as e:
+        processing_time = time.time() - start_time
+        logger.error(f"[WallTexture API] Error: {e}", exc_info=True)
+        return ChangeWallTextureResponse(
+            success=False,
+            error_message=f"Error applying wall texture: {str(e)}",
             processing_time=processing_time,
         )
 

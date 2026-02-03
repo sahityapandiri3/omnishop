@@ -4,9 +4,11 @@ import { useState, ReactNode } from 'react';
 import { ExtendedProduct } from '@/utils/product-transforms';
 import { KeywordSearchPanel } from './KeywordSearchPanel';
 import { WallColorPanel } from '@/components/wall-colors';
-import { WallColor } from '@/types/wall-colors';
+import { WallFilterPanel } from '@/components/walls';
+import { WallColor, WallColorFamily } from '@/types/wall-colors';
+import { WallType, TextureBrandInfo } from '@/types/wall-textures';
 
-type SearchMode = 'keyword' | 'ai' | 'wallColor';
+type SearchMode = 'keyword' | 'ai' | 'walls';
 
 interface ProductSearchPanelProps {
   /** Callback when product is added to canvas */
@@ -23,31 +25,55 @@ interface ProductSearchPanelProps {
   compact?: boolean;
   /** Custom header content */
   headerContent?: ReactNode;
-  /** Whether to enable wall color tab */
+  /** Whether to enable walls tab */
+  enableWalls?: boolean;
+
+  // === WALL FILTER STATE ===
+  /** Current wall type (color or textured) */
+  wallType?: WallType;
+  /** Callback when wall type changes */
+  onWallTypeChange?: (type: WallType) => void;
+  /** Selected color families */
+  selectedFamilies?: WallColorFamily[];
+  /** Toggle color family selection */
+  onToggleFamily?: (family: WallColorFamily) => void;
+  /** Selected texture brands */
+  selectedBrands?: string[];
+  /** Available brands */
+  availableBrands?: TextureBrandInfo[];
+  /** Toggle brand selection */
+  onToggleBrand?: (brand: string) => void;
+  /** Clear all filters */
+  onClearFilters?: () => void;
+  /** Whether filters are active */
+  hasActiveFilters?: boolean;
+
+  // === LEGACY WALL COLOR PROPS (for backward compatibility) ===
+  /** @deprecated Use enableWalls instead */
   enableWallColors?: boolean;
-  /** Callback when wall color is added to canvas */
+  /** @deprecated Use walls mode instead */
   onAddWallColorToCanvas?: (color: WallColor) => void;
-  /** Wall color currently on canvas */
+  /** @deprecated Use walls mode instead */
   canvasWallColor?: WallColor | null;
-  /** Currently selected/previewing wall color */
+  /** @deprecated Use walls mode instead */
   selectedWallColor?: WallColor | null;
-  /** Callback when wall color is selected (for preview) */
+  /** @deprecated Use walls mode instead */
   onSelectWallColor?: (color: WallColor) => void;
 }
 
 /**
  * ModeToggle Component
  *
- * Toggle switch between AI Assistant, Keyword Search, and Wall Colors modes.
+ * Toggle switch between AI Assistant, Keyword Search, and Walls modes.
  */
 function ModeToggle({
   mode,
   onModeChange,
-  showWallColors = false,
+  showWalls = false,
 }: {
   mode: SearchMode;
   onModeChange: (mode: SearchMode) => void;
-  showWallColors?: boolean;
+  showWalls?: boolean;
 }) {
   return (
     <div className="inline-flex items-center p-0.5 bg-neutral-100 dark:bg-neutral-800 rounded-lg">
@@ -71,16 +97,16 @@ function ModeToggle({
       >
         AI Stylist
       </button>
-      {showWallColors && (
+      {showWalls && (
         <button
-          onClick={() => onModeChange('wallColor')}
+          onClick={() => onModeChange('walls')}
           className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all text-center ${
-            mode === 'wallColor'
+            mode === 'walls'
               ? 'bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 shadow-sm'
               : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
           }`}
         >
-          Wall Colors
+          Walls
         </button>
       )}
     </div>
@@ -93,10 +119,10 @@ function ModeToggle({
  * Unified search panel with optional mode toggle between:
  * - Furniture (Keyword Search): Direct search with filters
  * - AI Stylist: Conversational product discovery
- * - Wall Colors: Asian Paints color selection for wall visualization
+ * - Walls: Wall color and texture filters
  *
  * For admin pages, use enableModeToggle={false} to show only keyword search.
- * For design pages, use enableModeToggle={true} and enableWallColors={true}.
+ * For design pages, use enableModeToggle={true} and enableWalls={true}.
  */
 export function ProductSearchPanel({
   onAddProduct,
@@ -106,6 +132,18 @@ export function ProductSearchPanel({
   renderAIAssistant,
   compact = false,
   headerContent,
+  enableWalls = false,
+  // Wall filter props
+  wallType = 'color',
+  onWallTypeChange,
+  selectedFamilies = [],
+  onToggleFamily,
+  selectedBrands = [],
+  availableBrands = [],
+  onToggleBrand,
+  onClearFilters,
+  hasActiveFilters = false,
+  // Legacy wall color props (deprecated)
   enableWallColors = false,
   onAddWallColorToCanvas,
   canvasWallColor,
@@ -114,13 +152,16 @@ export function ProductSearchPanel({
 }: ProductSearchPanelProps) {
   const [mode, setMode] = useState<SearchMode>(defaultMode);
 
+  // Support both new enableWalls and deprecated enableWallColors
+  const showWalls = enableWalls || enableWallColors;
+
   // If AI mode is selected but no AI assistant renderer is provided, fall back to keyword
-  // If wall color mode is selected but no handler is provided, fall back to keyword
+  // If walls mode is selected but not enabled, fall back to keyword
   let effectiveMode = mode;
   if (mode === 'ai' && !renderAIAssistant) {
     effectiveMode = 'keyword';
   }
-  if (mode === 'wallColor' && !onAddWallColorToCanvas) {
+  if (mode === 'walls' && !showWalls) {
     effectiveMode = 'keyword';
   }
 
@@ -128,8 +169,10 @@ export function ProductSearchPanel({
     switch (effectiveMode) {
       case 'ai':
         return 'Chat with our AI to get personalized furniture recommendations';
-      case 'wallColor':
-        return 'Browse and apply wall paint colors to your room';
+      case 'walls':
+        return wallType === 'color'
+          ? 'Filter wall colors by family'
+          : 'Filter textured wall finishes';
       default:
         return 'Search and filter furniture to add to your design';
     }
@@ -145,14 +188,14 @@ export function ProductSearchPanel({
               headerContent
             ) : (
               <h2 className="font-semibold text-neutral-900 dark:text-white">
-                {effectiveMode === 'wallColor' ? 'Wall Colors' : 'Product Discovery'}
+                {effectiveMode === 'walls' ? 'Wall Filters' : 'Product Discovery'}
               </h2>
             )}
             {enableModeToggle && (
               <ModeToggle
                 mode={effectiveMode}
                 onModeChange={setMode}
-                showWallColors={enableWallColors && !!onAddWallColorToCanvas}
+                showWalls={showWalls}
               />
             )}
           </div>
@@ -168,12 +211,18 @@ export function ProductSearchPanel({
 
       {/* Content based on mode */}
       <div className="flex-1 overflow-hidden">
-        {effectiveMode === 'wallColor' && onAddWallColorToCanvas ? (
-          <WallColorPanel
-            onAddToCanvas={onAddWallColorToCanvas}
-            canvasWallColor={canvasWallColor}
-            selectedColor={selectedWallColor}
-            onSelectColor={onSelectWallColor}
+        {effectiveMode === 'walls' ? (
+          <WallFilterPanel
+            wallType={wallType}
+            onWallTypeChange={onWallTypeChange || (() => {})}
+            selectedFamilies={selectedFamilies}
+            onToggleFamily={onToggleFamily || (() => {})}
+            selectedBrands={selectedBrands}
+            availableBrands={availableBrands}
+            onToggleBrand={onToggleBrand || (() => {})}
+            onClearFilters={onClearFilters || (() => {})}
+            hasActiveFilters={hasActiveFilters}
+            compact={compact}
           />
         ) : effectiveMode === 'keyword' ? (
           <KeywordSearchPanel

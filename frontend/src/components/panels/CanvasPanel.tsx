@@ -11,6 +11,10 @@ import { VisualizationProduct, VisualizationHistoryEntry } from '@/types/visuali
 import { fetchWithRetry } from '@/utils/visualization-helpers';
 import { TextBasedEditControls, RoomImageUpload } from '@/components/visualization';
 import { WallColor } from '@/types/wall-colors';
+import { WallTexture, WallTextureVariant } from '@/types/wall-textures';
+import type { CanvasItem } from '@/hooks/useCanvas';
+import CanvasItemCard from './CanvasItemCard';
+import { isWallColorData, isWallTextureData, getWallColorItem, getWallTextureItem, getProductItems } from '@/hooks/useCanvas';
 
 const DraggableFurnitureCanvas = dynamic(
   () => import('../DraggableFurnitureCanvas').then(mod => ({ default: mod.DraggableFurnitureCanvas })),
@@ -95,6 +99,14 @@ interface CanvasPanelProps {
   canvasWallColor?: WallColor | null;  // Wall color to apply during visualization
   onRemoveWallColor?: () => void;  // Callback to remove wall color from canvas
   onSetWallColor?: (wallColor: WallColor | null) => void;  // Callback to set wall color (e.g., from undo/redo)
+  canvasTexture?: WallTexture | null;  // Wall texture to apply during visualization
+  canvasTextureVariant?: WallTextureVariant | null;  // Selected texture variant
+  onRemoveTexture?: () => void;  // Callback to remove texture from canvas
+  // Unified canvas items (optional — when using useCanvas hook)
+  canvasItems?: CanvasItem[];
+  onSetCanvasItems?: (items: CanvasItem[]) => void;
+  onRemoveCanvasItem?: (id: string) => void;
+  onUpdateCanvasItemQuantity?: (id: string, delta: number) => void;
   // Extensibility props for curation page
   children?: React.ReactNode;  // Additional content rendered in scrollable area after visualization
   footerContent?: React.ReactNode;  // Custom footer content (replaces default Visualize button area)
@@ -125,6 +137,13 @@ export default function CanvasPanel({
   canvasWallColor,
   onRemoveWallColor,
   onSetWallColor,
+  canvasTexture,
+  canvasTextureVariant,
+  onRemoveTexture,
+  canvasItems,
+  onSetCanvasItems,
+  onRemoveCanvasItem,
+  onUpdateCanvasItemQuantity,
   children,
   footerContent,
   hideDefaultFooter = false,
@@ -137,8 +156,11 @@ export default function CanvasPanel({
     roomImage,
     cleanRoomImage: cleanRoomImage || roomImage,
     wallColor: canvasWallColor,
+    textureVariant: canvasTextureVariant,  // Pass texture for visualization
     onSetProducts: onSetProducts as (products: VisualizationProduct[]) => void,
     onSetWallColor,  // Pass wall color callback for undo/redo
+    canvasItems,  // Pass unified canvas items
+    onSetCanvasItems,  // Pass callback for undo/redo canvas restoration
     config: {
       enableTextBasedEdits: true,  // Use text-based position editing
       enablePositionEditing: true,
@@ -674,8 +696,10 @@ export default function CanvasPanel({
   };
 
   // Determine button state
-  // Can visualize if we have any base image (prefer cleanRoomImage) and either products OR wall color
-  const hasCanvasContent = products.length > 0 || canvasWallColor !== null;
+  // Can visualize if we have any base image (prefer cleanRoomImage) and either products OR wall color OR texture
+  const hasCanvasContent = canvasItems
+    ? canvasItems.length > 0
+    : (products.length > 0 || canvasWallColor !== null || canvasTextureVariant !== null);
   const canVisualize = (roomImage !== null || cleanRoomImage !== null) && hasCanvasContent;
   const isUpToDate = canVisualize && !needsRevisualization && visualizationResult !== null;
   const isReady = canVisualize && (needsRevisualization || visualizationResult === null);
@@ -774,37 +798,101 @@ export default function CanvasPanel({
           <h3 className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">
             Wall
           </h3>
-          {canvasWallColor ? (
-            <div className="flex items-center gap-3 p-2 bg-neutral-50 dark:bg-neutral-800 rounded-lg">
-              <div
-                className="w-10 h-10 rounded-lg flex-shrink-0 border border-neutral-200 dark:border-neutral-600"
-                style={{ backgroundColor: canvasWallColor.hex_value }}
-              />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-neutral-900 dark:text-white truncate">
-                  {canvasWallColor.name}
+          {(() => {
+            // Use unified canvas items if available
+            if (canvasItems) {
+              const textureItem = getWallTextureItem(canvasItems);
+              const wallColorItem = getWallColorItem(canvasItems);
+              if (textureItem) {
+                return (
+                  <CanvasItemCard
+                    item={textureItem}
+                    onRemove={() => onRemoveCanvasItem ? onRemoveCanvasItem(textureItem.id) : onRemoveTexture?.()}
+                    onViewDetails={() => {/* View texture details */}}
+                  />
+                );
+              }
+              if (wallColorItem) {
+                return (
+                  <CanvasItemCard
+                    item={wallColorItem}
+                    onRemove={() => onRemoveCanvasItem ? onRemoveCanvasItem(wallColorItem.id) : onRemoveWallColor?.()}
+                    onViewDetails={() => {/* View wall color details */}}
+                  />
+                );
+              }
+              return (
+                <p className="text-xs text-neutral-400 dark:text-neutral-500 italic">
+                  No wall color or texture selected
                 </p>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  {canvasWallColor.code}
-                </p>
-              </div>
-              {onRemoveWallColor && (
-                <button
-                  onClick={onRemoveWallColor}
-                  className="p-1 text-neutral-400 hover:text-red-500 transition-colors"
-                  title="Remove wall color"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
-            </div>
-          ) : (
-            <p className="text-xs text-neutral-400 dark:text-neutral-500 italic">
-              No wall color selected
-            </p>
-          )}
+              );
+            }
+
+            // Legacy: separate wall color/texture props
+            if (canvasTextureVariant && canvasTexture) {
+              return (
+                <div className="relative flex items-center gap-3 p-2 bg-neutral-50 dark:bg-neutral-800 rounded-lg group overflow-hidden">
+                  <div className="w-16 h-16 rounded-lg flex-shrink-0 border border-neutral-200 dark:border-neutral-600 overflow-hidden">
+                    <img
+                      src={canvasTextureVariant.image_data
+                        ? formatImageSrc(canvasTextureVariant.image_data)
+                        : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/wall-textures/variant/${canvasTextureVariant.id}/image`
+                      }
+                      alt={canvasTexture.name}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-neutral-900 dark:text-white truncate">{canvasTexture.name}</p>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">{canvasTextureVariant.code}</p>
+                  </div>
+                  {/* Hover overlay */}
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onRemoveTexture?.(); }}
+                      className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-[10px] font-medium rounded-lg flex items-center gap-1"
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+            if (canvasWallColor) {
+              return (
+                <div className="relative flex items-center gap-3 p-2 bg-neutral-50 dark:bg-neutral-800 rounded-lg group overflow-hidden">
+                  <div
+                    className="w-16 h-16 rounded-lg flex-shrink-0 border border-neutral-200 dark:border-neutral-600"
+                    style={{ backgroundColor: canvasWallColor.hex_value }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-neutral-900 dark:text-white truncate">{canvasWallColor.name}</p>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">{canvasWallColor.code}</p>
+                  </div>
+                  {/* Hover overlay */}
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onRemoveWallColor?.(); }}
+                      className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-[10px] font-medium rounded-lg flex items-center gap-1"
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <p className="text-xs text-neutral-400 dark:text-neutral-500 italic">
+                No wall color or texture selected
+              </p>
+            );
+          })()}
         </div>
 
         {/* Furniture & Decor Subsection */}

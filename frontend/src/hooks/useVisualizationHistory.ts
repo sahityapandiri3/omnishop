@@ -18,6 +18,7 @@ import {
 } from '@/types/visualization';
 import { WallColor } from '@/types/wall-colors';
 import { buildQuantityMap, buildProductIdSet } from '@/utils/visualization-helpers';
+import type { CanvasItem } from '@/hooks/useCanvas';
 
 export interface UseVisualizationHistoryOptions {
   /** Initial history entries (from saved project) */
@@ -47,6 +48,7 @@ export interface UseVisualizationHistoryReturn {
     image: string;
     products: VisualizationProduct[];
     wallColor?: WallColor | null;
+    canvasItems?: CanvasItem[];
   }) => void;
 
   /**
@@ -116,10 +118,12 @@ export function useVisualizationHistory({
     image,
     products,
     wallColor,
+    canvasItems,
   }: {
     image: string;
     products: VisualizationProduct[];
     wallColor?: WallColor | null;
+    canvasItems?: CanvasItem[];
   }) => {
     const newEntry: VisualizationHistoryEntry = {
       image,
@@ -127,6 +131,7 @@ export function useVisualizationHistory({
       productIds: buildProductIdSet(products),
       visualizedQuantities: buildQuantityMap(products),  // CRITICAL: Store quantities
       wallColor: wallColor ?? null,  // Store wall color for undo/redo
+      canvasItems: canvasItems ? [...canvasItems] : undefined,  // Store full canvas state
     };
 
     setHistory(prev => {

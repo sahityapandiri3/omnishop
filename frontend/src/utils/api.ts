@@ -2093,4 +2093,109 @@ export const visualizationAPI = {
     const response = await api.post('/api/visualization/change-wall-color', request);
     return response.data;
   },
+
+  /**
+   * Change wall texture in a room visualization
+   *
+   * @param request - The wall texture change request
+   * @returns Response with rendered image or error
+   */
+  changeWallTexture: async (request: ChangeWallTextureRequest): Promise<ChangeWallTextureResponse> => {
+    const response = await api.post('/api/visualization/change-wall-texture', request);
+    return response.data;
+  },
+};
+
+// =============================================================================
+// Wall Textures API
+// =============================================================================
+
+import type {
+  WallTextureWithVariants,
+  WallTexturesGroupedResponse as WallTexturesResponse,
+  TextureBrandInfo,
+  TextureTypeInfo,
+  TextureType,
+  WallTextureVariant,
+  ChangeWallTextureRequest,
+  ChangeWallTextureResponse,
+} from '@/types/wall-textures';
+
+/**
+ * Wall Textures API
+ *
+ * API for fetching wall texture catalog and changing wall textures in visualizations.
+ * Textures are grouped by base name with multiple color variants per texture.
+ */
+export const wallTexturesAPI = {
+  /**
+   * Get all wall textures with their variants
+   * Includes filter metadata (brands, texture types)
+   *
+   * @param brand - Optional brand filter
+   * @param textureType - Optional texture type filter
+   * @param collection - Optional collection filter
+   */
+  getAll: async (
+    brand?: string,
+    textureType?: TextureType,
+    collection?: string
+  ): Promise<WallTexturesResponse> => {
+    const params: Record<string, string> = {};
+    if (brand) params.brand = brand;
+    if (textureType) params.texture_type = textureType;
+    if (collection) params.collection = collection;
+
+    const response = await api.get('/api/wall-textures/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get available texture brands
+   */
+  getBrands: async (): Promise<TextureBrandInfo[]> => {
+    const response = await api.get('/api/wall-textures/brands');
+    return response.data;
+  },
+
+  /**
+   * Get available texture types with counts
+   */
+  getTypes: async (): Promise<TextureTypeInfo[]> => {
+    const response = await api.get('/api/wall-textures/types');
+    return response.data;
+  },
+
+  /**
+   * Get available collections (optionally filtered by brand)
+   */
+  getCollections: async (brand?: string): Promise<string[]> => {
+    const params = brand ? { brand } : {};
+    const response = await api.get('/api/wall-textures/collections', { params });
+    return response.data;
+  },
+
+  /**
+   * Get a specific wall texture by ID with all its variants
+   */
+  getById: async (textureId: number): Promise<WallTextureWithVariants> => {
+    const response = await api.get(`/api/wall-textures/${textureId}`);
+    return response.data;
+  },
+
+  /**
+   * Get a specific texture variant by ID
+   */
+  getVariantById: async (variantId: number): Promise<WallTextureVariant> => {
+    const response = await api.get(`/api/wall-textures/variant/${variantId}`);
+    return response.data;
+  },
+
+  /**
+   * Get a texture variant by its code
+   */
+  getVariantByCode: async (code: string): Promise<WallTextureVariant> => {
+    const response = await api.get(`/api/wall-textures/variant/code/${code}`);
+    return response.data;
+  },
 };

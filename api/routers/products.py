@@ -1,9 +1,10 @@
 """
 Product API routes
 """
+import json
 import logging
 import re
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from schemas.products import (
@@ -26,12 +27,128 @@ from database.models import Category, Product, ProductAttribute, ProductImage
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/products", tags=["products"])
 
+# Embedding service singleton for semantic search
+_embedding_service = None
+
+
+def _get_embedding_service():
+    """Lazily initialize the embedding service for semantic search."""
+    global _embedding_service
+    if _embedding_service is None:
+        try:
+            from services.embedding_service import EmbeddingService
+
+            _embedding_service = EmbeddingService()
+            logger.info("[SEARCH] Embedding service initialized for public search")
+        except Exception as e:
+            logger.warning(f"[SEARCH] Could not initialize embedding service: {e}")
+            return None
+    return _embedding_service
+
+
+async def _semantic_search(
+    query_text: str,
+    db: AsyncSession,
+    source_websites: Optional[List[str]] = None,
+    category_id: Optional[int] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    limit: int = 10000,
+) -> Dict[int, float]:
+    """
+    Perform semantic search using embeddings.
+    Returns dict mapping product_id to similarity score.
+    """
+    embedding_service = _get_embedding_service()
+    if not embedding_service:
+        return {}
+
+    query_embedding = await embedding_service.get_query_embedding(query_text)
+    if not query_embedding:
+        return {}
+
+    # Fetch products with embeddings
+    emb_query = (
+        select(Product.id, Product.embedding).where(Product.is_available.is_(True)).where(Product.embedding.isnot(None))
+    )
+    if source_websites:
+        emb_query = emb_query.where(Product.source_website.in_(source_websites))
+    if category_id:
+        emb_query = emb_query.where(Product.category_id == category_id)
+    if min_price is not None:
+        emb_query = emb_query.where(Product.price >= min_price)
+    if max_price is not None:
+        emb_query = emb_query.where(Product.price <= max_price)
+
+    result = await db.execute(emb_query)
+    rows = result.fetchall()
+
+    if not rows:
+        return {}
+
+    scores: Dict[int, float] = {}
+    for product_id, embedding_json in rows:
+        try:
+            product_embedding = json.loads(embedding_json)
+            similarity = embedding_service.compute_cosine_similarity(query_embedding, product_embedding)
+            scores[product_id] = similarity
+        except Exception:
+            continue
+
+    # Sort and limit
+    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:limit]
+    return dict(sorted_scores)
+
+
+def _format_product(product) -> dict:
+    """Format a product for API response."""
+    primary_image_url = None
+    formatted_images = []
+    if product.images:
+        for img in product.images:
+            img_data = {
+                "id": img.id,
+                "original_url": img.original_url,
+                "thumbnail_url": img.thumbnail_url,
+                "medium_url": img.medium_url,
+                "large_url": img.large_url,
+                "is_primary": img.is_primary,
+            }
+            formatted_images.append(img_data)
+            if img.is_primary:
+                primary_image_url = img.large_url or img.medium_url or img.original_url
+        if not primary_image_url and formatted_images:
+            first_img = formatted_images[0]
+            primary_image_url = first_img.get("large_url") or first_img.get("medium_url") or first_img.get("original_url")
+
+    return {
+        "id": product.id,
+        "name": product.name,
+        "price": product.price,
+        "original_price": product.original_price,
+        "currency": product.currency or "INR",
+        "brand": product.brand,
+        "source_website": product.source_website,
+        "source_url": product.source_url,
+        "is_available": product.is_available,
+        "is_on_sale": product.is_on_sale,
+        "image_url": primary_image_url,
+        "images": formatted_images,
+        "category": {
+            "id": product.category.id,
+            "name": product.category.name,
+        }
+        if product.category
+        else None,
+        "description": product.description,
+    }
+
 
 @router.get("/search")
 async def search_products(
     query: Optional[str] = Query(None),
     category_id: Optional[int] = Query(None),
-    source_website: Optional[str] = Query(None),
+    source_website: Optional[str] = Query(None, description="Comma-separated list of stores"),
     min_price: Optional[float] = Query(None, ge=0),
     max_price: Optional[float] = Query(None, ge=0),
     colors: Optional[str] = Query(None),
@@ -41,16 +158,37 @@ async def search_products(
     page_size: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    """Search products with keyword and filters - public endpoint for design studio"""
+    """Search products with semantic + keyword search and filters - public endpoint for design studio"""
     try:
-        logger.info(f"Search products: query={query}, category={category_id}, page={page}")
+        # Parse comma-separated source websites
+        source_websites: Optional[List[str]] = None
+        if source_website:
+            source_websites = [s.strip() for s in source_website.split(",") if s.strip()]
+            if not source_websites:
+                source_websites = None
 
-        # Build base query
+        logger.info(f"Search products: query={query}, sources={source_websites}, category={category_id}, page={page}")
+
+        # Step 1: Try semantic search for the query
+        semantic_ids: Dict[int, float] = {}
+        if query:
+            try:
+                semantic_ids = await _semantic_search(
+                    query_text=query,
+                    db=db,
+                    source_websites=source_websites,
+                    category_id=category_id,
+                    min_price=min_price,
+                    max_price=max_price,
+                )
+                logger.info(f"[SEARCH] Semantic search returned {len(semantic_ids)} products")
+            except Exception as e:
+                logger.warning(f"[SEARCH] Semantic search failed, using keyword only: {e}")
+
+        # Step 2: Keyword search (ILIKE)
         base_query = select(Product).options(selectinload(Product.category), selectinload(Product.images))
 
-        # Apply search filter
         if query:
-            escaped_query = re.escape(query)
             base_query = base_query.where(
                 or_(
                     Product.name.ilike(f"%{query}%"),
@@ -59,91 +197,85 @@ async def search_products(
                 )
             )
 
-        # Apply category filter
         if category_id:
             base_query = base_query.where(Product.category_id == category_id)
 
-        # Apply source website filter
-        if source_website:
-            base_query = base_query.where(Product.source_website == source_website)
+        # Support comma-separated source websites with IN filter
+        if source_websites:
+            base_query = base_query.where(Product.source_website.in_(source_websites))
 
-        # Apply price filters
         if min_price is not None:
             base_query = base_query.where(Product.price >= min_price)
         if max_price is not None:
             base_query = base_query.where(Product.price <= max_price)
 
-        # Only show available products
         base_query = base_query.where(Product.is_available == True)
 
-        # Get total count
-        count_query = select(func.count()).select_from(base_query.subquery())
-        total_result = await db.execute(count_query)
-        total = total_result.scalar() or 0
+        # Execute keyword search
+        keyword_result = await db.execute(base_query)
+        keyword_products = keyword_result.scalars().unique().all()
+        keyword_ids = {p.id for p in keyword_products}
+
+        # Step 3: Merge results - semantic matches that aren't in keyword results
+        # Fetch high-similarity semantic-only products (similarity >= 0.3)
+        SIMILARITY_THRESHOLD = 0.3
+        HIGH_SIMILARITY = 0.5
+        semantic_only_ids = [
+            pid for pid, score in semantic_ids.items() if pid not in keyword_ids and score >= SIMILARITY_THRESHOLD
+        ]
+
+        semantic_only_products = []
+        if semantic_only_ids:
+            sem_query = (
+                select(Product)
+                .options(selectinload(Product.category), selectinload(Product.images))
+                .where(Product.id.in_(semantic_only_ids))
+            )
+            sem_result = await db.execute(sem_query)
+            semantic_only_products = list(sem_result.scalars().unique().all())
+
+        # Combine and rank: keyword matches first (boosted if also semantic), then semantic-only
+        all_products = []
+        seen_ids = set()
+
+        # Primary: keyword matches, sorted by semantic score if available
+        keyword_list = sorted(
+            keyword_products,
+            key=lambda p: semantic_ids.get(p.id, 0),
+            reverse=True,
+        )
+        for p in keyword_list:
+            if p.id not in seen_ids:
+                all_products.append(p)
+                seen_ids.add(p.id)
+
+        # Related: semantic-only matches, sorted by similarity
+        semantic_sorted = sorted(
+            semantic_only_products,
+            key=lambda p: semantic_ids.get(p.id, 0),
+            reverse=True,
+        )
+        for p in semantic_sorted:
+            if p.id not in seen_ids:
+                all_products.append(p)
+                seen_ids.add(p.id)
+
+        total_primary = len(keyword_products)
+        total_related = len(semantic_only_products)
+        total = total_primary + total_related
 
         # Apply pagination
         offset = (page - 1) * page_size
-        paginated_query = base_query.offset(offset).limit(page_size)
+        paginated = all_products[offset : offset + page_size]
 
-        # Execute query
-        result = await db.execute(paginated_query)
-        products = result.scalars().unique().all()
-
-        # Format products for response
-        formatted_products = []
-        for product in products:
-            primary_image_url = None
-            formatted_images = []
-            if product.images:
-                for img in product.images:
-                    img_data = {
-                        "id": img.id,
-                        "original_url": img.original_url,
-                        "thumbnail_url": img.thumbnail_url,
-                        "medium_url": img.medium_url,
-                        "large_url": img.large_url,
-                        "is_primary": img.is_primary,
-                    }
-                    formatted_images.append(img_data)
-                    if img.is_primary:
-                        primary_image_url = img.large_url or img.medium_url or img.original_url
-                if not primary_image_url and formatted_images:
-                    first_img = formatted_images[0]
-                    primary_image_url = (
-                        first_img.get("large_url") or first_img.get("medium_url") or first_img.get("original_url")
-                    )
-
-            formatted_products.append(
-                {
-                    "id": product.id,
-                    "name": product.name,
-                    "price": product.price,
-                    "original_price": product.original_price,
-                    "currency": product.currency or "INR",
-                    "brand": product.brand,
-                    "source_website": product.source_website,
-                    "source_url": product.source_url,
-                    "is_available": product.is_available,
-                    "is_on_sale": product.is_on_sale,
-                    "image_url": primary_image_url,  # Fallback for frontend
-                    "images": formatted_images,  # Full image objects for frontend
-                    "category": {
-                        "id": product.category.id,
-                        "name": product.category.name,
-                    }
-                    if product.category
-                    else None,
-                    "description": product.description,
-                }
-            )
-
-        has_more = (offset + len(products)) < total
+        formatted_products = [_format_product(p) for p in paginated]
+        has_more = (offset + len(paginated)) < total
 
         return {
             "products": formatted_products,
             "total": total,
-            "total_primary": total,
-            "total_related": 0,
+            "total_primary": total_primary,
+            "total_related": total_related,
             "page": page,
             "page_size": page_size,
             "has_more": has_more,

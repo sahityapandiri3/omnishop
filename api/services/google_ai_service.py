@@ -660,6 +660,95 @@ OUTPUT: One photorealistic image showing THE ENTIRE ROOM with walls painted in {
 The room structure, furniture, and camera angle MUST be identical to the input image.
 """
 
+    @staticmethod
+    def get_wall_texture_change_prompt(
+        texture_name: str,
+        texture_type: str,
+    ) -> str:
+        """
+        Prompt for applying texture to walls using Gemini.
+
+        IMPORTANT: This prompt is used with TWO images:
+        1. The room image (to modify)
+        2. The texture swatch image (pattern reference)
+
+        Args:
+            texture_name: Name of the texture (e.g., "Basket", "Bandhej")
+            texture_type: Type of texture finish (e.g., "marble", "velvet")
+
+        Returns:
+            Formatted prompt for wall texture visualization
+        """
+        return f"""{VisualizationPrompts.get_system_intro()}
+
+═══════════════════════════════════════════════════════════════
+🧱 TASK: APPLY WALL TEXTURE
+═══════════════════════════════════════════════════════════════
+
+You are given TWO images:
+1. FIRST IMAGE: A room photograph
+2. SECOND IMAGE: A texture swatch/pattern to apply
+
+TEXTURE INFO:
+- Name: {texture_name}
+- Type: {texture_type} finish
+
+🚨🚨🚨 CRITICAL INSTRUCTIONS 🚨🚨🚨
+═══════════════════════════════════════════════════════════════
+
+1. MATCH THE TEXTURE EXACTLY from the SECOND IMAGE:
+   - Study the pattern, colors, and details in the texture swatch
+   - Reproduce this EXACT pattern on all visible walls
+   - Maintain the texture's natural scale (not too small or large)
+   - Preserve the texture's color palette accurately
+
+2. APPLY TEXTURE TO VISIBLE WALLS ONLY:
+   - Cover ONLY the walls that are already visible in the input image
+   - DO NOT add any new walls, partitions, or architectural elements
+   - DO NOT add, remove, or modify any furniture, objects, or decorations
+   - Blend texture naturally at wall corners and edges
+   - Maintain realistic perspective (texture should follow wall angles)
+   - Preserve natural shadows and lighting ON the texture
+   - Add depth and realism to the textured surface
+
+3. MUST KEEP UNCHANGED (MANDATORY):
+   - ⛔ ALL FURNITURE: Exact position, size, color, style - DO NOT MODIFY
+   - ⛔ FLOOR: Same material, color, texture - DO NOT MODIFY
+   - ⛔ CEILING: Do NOT texture the ceiling - KEEP ORIGINAL
+   - ⛔ Windows, doors, and frames - KEEP ORIGINAL
+   - ⛔ All decorations, art, and accessories - KEEP ORIGINAL
+   - ⛔ Lighting fixtures - KEEP ORIGINAL
+   - ⛔ Architectural features (moldings, columns, etc.) - KEEP ORIGINAL
+
+4. TECHNICAL REQUIREMENTS:
+   - OUTPUT DIMENSIONS: Match FIRST IMAGE exactly (pixel-for-pixel)
+   - ASPECT RATIO: No cropping or letterboxing
+   - CAMERA ANGLE: Same viewing angle and perspective
+   - NO ZOOM: Show full room view identical to input
+   - PHOTOREALISM: Output must look like a real photograph
+
+🧱 TEXTURE APPLICATION GUIDELINES:
+- Scale: The texture should appear natural on walls (not tiled obviously)
+- Seamless: Ensure smooth transitions across the wall surface
+- Lighting: Room lighting should realistically affect texture appearance
+  (e.g., areas in shadow may show less texture detail)
+- Depth: {texture_type} textures should show realistic 3D depth
+
+⚠️ VERIFICATION CHECKLIST:
+Before outputting, verify:
+☐ ALL walls show the texture from the reference image
+☐ Texture pattern matches the reference EXACTLY
+☐ ALL furniture remains exactly as in the input
+☐ Floor and ceiling are unchanged
+☐ Image dimensions match input exactly
+☐ Camera angle and perspective unchanged
+☐ Lighting is realistic on textured walls
+
+OUTPUT: One photorealistic image showing THE ENTIRE ROOM with walls textured using the {texture_name} pattern.
+The room structure, furniture, and camera angle MUST be identical to the FIRST input image.
+The wall texture MUST match the SECOND reference image exactly.
+"""
+
 
 def generate_color_description(name: str, hex_value: str) -> str:
     """
@@ -6718,6 +6807,176 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
 
         except Exception as e:
             logger.error(f"[WallColor] Error: {e}", exc_info=True)
+            return None
+
+    async def change_wall_texture(
+        self,
+        room_image: str,
+        texture_image: str,
+        texture_name: str,
+        texture_type: str,
+        user_id: str = None,
+        session_id: str = None,
+    ) -> Optional[str]:
+        """
+        Change wall texture in a room visualization using Gemini with multi-image input.
+
+        Uses Gemini's native image editing capabilities to apply a texture pattern
+        to walls while preserving all furniture and other room elements.
+
+        The key insight is passing BOTH images to Gemini:
+        1. The room image (what to modify)
+        2. The texture swatch (the pattern reference)
+
+        Args:
+            room_image: Base64 encoded room visualization image
+            texture_image: Base64 encoded texture swatch image
+            texture_name: Name of the texture (e.g., "Basket")
+            texture_type: Type of texture finish (e.g., "marble")
+            user_id: Optional user ID for tracking
+            session_id: Optional session ID for tracking
+
+        Returns:
+            Base64 encoded result image with new wall texture, or None on failure
+        """
+        try:
+            logger.info(f"[WallTexture] Applying texture: {texture_name} ({texture_type})")
+
+            # Use editing preprocessor to preserve quality
+            processed_room = self._preprocess_image_for_editing(room_image)
+            processed_texture = self._preprocess_image_for_editing(texture_image)
+
+            # Build prompt
+            prompt = VisualizationPrompts.get_wall_texture_change_prompt(
+                texture_name=texture_name,
+                texture_type=texture_type,
+            )
+
+            # Build contents list with PIL Images
+            contents = [prompt]
+
+            # Add room image as PIL Image (first image)
+            room_image_bytes = base64.b64decode(processed_room)
+            room_pil_image = Image.open(io.BytesIO(room_image_bytes))
+            room_pil_image = ImageOps.exif_transpose(room_pil_image)
+            if room_pil_image.mode != "RGB":
+                room_pil_image = room_pil_image.convert("RGB")
+
+            input_width, input_height = room_pil_image.size
+            logger.info(f"[WallTexture] Room image dimensions: {input_width}x{input_height}")
+
+            contents.append(room_pil_image)
+
+            # Add texture swatch as PIL Image (second image)
+            texture_image_bytes = base64.b64decode(processed_texture)
+            texture_pil_image = Image.open(io.BytesIO(texture_image_bytes))
+            texture_pil_image = ImageOps.exif_transpose(texture_pil_image)
+            if texture_pil_image.mode != "RGB":
+                texture_pil_image = texture_pil_image.convert("RGB")
+
+            texture_width, texture_height = texture_pil_image.size
+            logger.info(f"[WallTexture] Texture swatch dimensions: {texture_width}x{texture_height}")
+
+            contents.append(texture_pil_image)
+
+            # Generate visualization with Gemini 3 Pro Image
+            generate_content_config = types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                temperature=0.3,
+            )
+
+            # Retry configuration
+            max_retries = 3
+            timeout_seconds = 90
+
+            def _run_wall_texture_change():
+                """Run the streaming generation in a thread for timeout support."""
+                result_image = None
+                final_chunk = None
+                for chunk in self.genai_client.models.generate_content_stream(
+                    model="gemini-3-pro-image-preview",
+                    contents=contents,
+                    config=generate_content_config,
+                ):
+                    final_chunk = chunk
+                    if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+                        for part in chunk.candidates[0].content.parts:
+                            if part.inline_data and part.inline_data.data:
+                                image_data = part.inline_data.data
+                                mime_type = part.inline_data.mime_type or "image/png"
+
+                                # Handle both raw bytes and base64 string bytes
+                                if isinstance(image_data, bytes):
+                                    first_hex = image_data[:4].hex()
+                                    logger.info(f"[WallTexture] First 4 bytes hex: {first_hex}")
+
+                                    # Check if raw image bytes
+                                    if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                        image_base64 = base64.b64encode(image_data).decode("utf-8")
+                                        logger.info("[WallTexture] Raw image bytes detected, encoded to base64")
+                                    else:
+                                        image_base64 = image_data.decode("utf-8")
+                                        logger.info("[WallTexture] Base64 string bytes detected")
+                                else:
+                                    image_base64 = image_data
+                                    logger.info("[WallTexture] String data received directly")
+
+                                result_image = f"data:{mime_type};base64,{image_base64}"
+                                logger.info("[WallTexture] Generated wall texture visualization")
+                return (result_image, final_chunk)
+
+            generated_image = None
+            final_chunk = None
+
+            for attempt in range(max_retries):
+                try:
+                    loop = asyncio.get_event_loop()
+                    result = await asyncio.wait_for(
+                        loop.run_in_executor(None, _run_wall_texture_change), timeout=timeout_seconds
+                    )
+                    if result:
+                        generated_image, final_chunk = result
+                    if generated_image:
+                        break
+                except asyncio.TimeoutError:
+                    logger.warning(f"[WallTexture] Attempt {attempt + 1} timed out after {timeout_seconds}s")
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** (attempt + 1)
+                        logger.info(f"[WallTexture] Retrying in {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                    continue
+                except Exception as e:
+                    error_str = str(e)
+                    if "503" in error_str or "overloaded" in error_str.lower() or "UNAVAILABLE" in error_str:
+                        if attempt < max_retries - 1:
+                            wait_time = 4 * (2**attempt)
+                            logger.warning(f"[WallTexture] Model overloaded, retrying in {wait_time}s...")
+                            await asyncio.sleep(wait_time)
+                            continue
+                    logger.error(f"[WallTexture] Attempt {attempt + 1} failed: {e}")
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** (attempt + 1)
+                        await asyncio.sleep(wait_time)
+                    continue
+
+            if not generated_image:
+                logger.error(f"[WallTexture] Failed to generate after {max_retries} attempts")
+                return None
+
+            # Log operation
+            self._log_streaming_operation(
+                "change_wall_texture",
+                "gemini-3-pro-image-preview",
+                final_chunk=final_chunk,
+                user_id=user_id,
+                session_id=session_id,
+            )
+
+            logger.info(f"[WallTexture] Successfully applied texture {texture_name}")
+            return generated_image
+
+        except Exception as e:
+            logger.error(f"[WallTexture] Error: {e}", exc_info=True)
             return None
 
     async def classify_product_style(self, image_url: str, product_name: str, product_description: str = "") -> Dict[str, Any]:

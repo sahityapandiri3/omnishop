@@ -52,14 +52,13 @@ function ProductCard({
 
   return (
     <div
-      className={`group border rounded-lg overflow-hidden transition-all duration-200 cursor-pointer ${sizeClasses[size]} ${
+      className={`group relative border rounded-lg overflow-hidden transition-all duration-200 cursor-pointer ${sizeClasses[size]} ${
         inCanvas
           ? 'bg-neutral-100 dark:bg-neutral-800/30 border-neutral-400 dark:border-neutral-600'
           : isBestMatch
             ? 'bg-neutral-100 dark:bg-neutral-800/10 border-neutral-300 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-600 hover:shadow-md'
             : 'bg-white dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 hover:shadow-md'
       }`}
-      onClick={() => onViewDetails?.(product)}
     >
       {/* Product Image */}
       <div className="relative aspect-square bg-neutral-100 dark:bg-neutral-700">
@@ -68,7 +67,7 @@ function ProductCard({
             src={imageUrl}
             alt={product.name}
             fill
-            className="object-cover group-hover:scale-105 transition-transform duration-300"
+            className="object-cover"
             sizes={size === 'small' ? '120px' : '(max-width: 768px) 50vw, 33vw'}
           />
         ) : (
@@ -81,21 +80,21 @@ function ProductCard({
 
         {/* Best Match Badge */}
         {isBestMatch && !inCanvas && (
-          <span className="absolute top-1 left-1 bg-neutral-800 text-white text-[8px] font-semibold px-1.5 py-0.5 rounded-full">
+          <span className="absolute top-1 left-1 bg-neutral-800 text-white text-[8px] font-semibold px-1.5 py-0.5 rounded-full z-10">
             Best Match
           </span>
         )}
 
         {/* Discount Badge */}
         {discountPercentage && !isBestMatch && (
-          <span className="absolute top-1 left-1 bg-red-500 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded-full">
+          <span className="absolute top-1 left-1 bg-red-500 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded-full z-10">
             -{discountPercentage}%
           </span>
         )}
 
         {/* In Canvas Badge */}
         {inCanvas && (
-          <span className="absolute top-1 right-1 bg-neutral-700 text-white text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+          <span className="absolute top-1 right-1 bg-neutral-700 text-white text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5 z-10">
             <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
             </svg>
@@ -105,10 +104,40 @@ function ProductCard({
 
         {/* Source Badge */}
         {product.source_website && (
-          <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[8px] px-1 py-0.5 rounded backdrop-blur-sm">
+          <span className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-black/70 text-white text-[8px] px-1.5 py-0.5 rounded backdrop-blur-sm z-10">
             {product.source_website}
           </span>
         )}
+
+        {/* Hover Overlay with action buttons */}
+        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center gap-1.5 z-20">
+          {onViewDetails && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewDetails(product);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/90 hover:bg-white text-neutral-800 text-[11px] font-medium rounded-lg shadow-sm transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              View Details
+            </button>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddProduct(product);
+            }}
+            className="flex items-center gap-1 px-3 py-1.5 bg-white/90 hover:bg-white text-neutral-800 text-[11px] font-medium rounded-lg shadow-sm transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            {inCanvas ? `Add +1 (${canvasQuantity})` : 'Add to Canvas'}
+          </button>
+        </div>
       </div>
 
       {/* Product Info */}
@@ -135,8 +164,8 @@ function ProductCard({
           }}
           className={`w-full font-medium rounded transition-colors ${textSizes[size].button} ${
             inCanvas
-              ? 'bg-neutral-700 hover:bg-neutral-800 text-white'
-              : 'bg-neutral-800 hover:bg-neutral-900 text-white'
+              ? 'bg-neutral-200 hover:bg-neutral-300 text-neutral-800 dark:bg-neutral-600 dark:hover:bg-neutral-500 dark:text-white'
+              : 'bg-white hover:bg-neutral-100 text-neutral-900 border border-neutral-300 dark:bg-neutral-100 dark:hover:bg-neutral-200 dark:text-neutral-900'
           }`}
         >
           {inCanvas ? `Add +1 (${canvasQuantity})` : size === 'small' ? 'Add' : 'Add to Canvas'}

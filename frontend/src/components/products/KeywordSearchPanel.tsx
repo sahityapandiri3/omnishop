@@ -160,7 +160,10 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
 
   // Search products
   const handleSearch = useCallback(async (resetPage: boolean = true) => {
-    if (!searchQuery.trim() && selectedStores.length === 0 && selectedStyles.length === 0) {
+    const hasAnyFilter = selectedStores.length > 0 || selectedStyles.length > 0 ||
+      selectedColors.length > 0 || selectedMaterials.length > 0 ||
+      priceMin > 0 || (priceMax < Infinity && priceMax !== 999999);
+    if (!searchQuery.trim() && !hasAnyFilter) {
       // Don't search if no query or filters
       return;
     }
@@ -194,7 +197,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
     } finally {
       setIsSearching(false);
     }
-  }, [searchQuery, buildSearchParams, currentPage, selectedStores, selectedStyles]);
+  }, [searchQuery, buildSearchParams, currentPage, selectedStores, selectedStyles, selectedColors, selectedMaterials, priceMin, priceMax]);
 
   // Load more products
   // IMPORTANT: Products from page 2+ are marked as non-primary to always append
@@ -636,7 +639,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
             <button
               type="button"
               onClick={() => handleSearch(true)}
-              disabled={isSearching || (!searchQuery.trim() && selectedStores.length === 0 && selectedStyles.length === 0)}
+              disabled={isSearching || (!searchQuery.trim() && !hasActiveFilters)}
               className="w-full py-2.5 bg-neutral-800 hover:bg-neutral-900 disabled:bg-neutral-300 dark:disabled:bg-neutral-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
             >
               {isSearching ? (

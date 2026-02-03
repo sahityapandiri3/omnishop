@@ -10,6 +10,7 @@
 
 import { ViewingAngle } from '@/components/AngleSelector';
 import { WallColor } from '@/types/wall-colors';
+import type { CanvasItem, SerializableCanvasItem } from '@/hooks/useCanvas';
 
 // ============================================================================
 // Product Types (for visualization context)
@@ -81,6 +82,7 @@ export interface VisualizationHistoryEntry {
   productIds: Set<string>;
   visualizedQuantities: Map<string, number>;  // CRITICAL: Must track quantities
   wallColor?: WallColor | null;  // Wall color applied in this visualization state
+  canvasItems?: CanvasItem[];  // Full canvas state for unified undo/redo
 }
 
 /**
@@ -92,6 +94,7 @@ export interface SerializableHistoryEntry {
   productIds: string[];  // Array instead of Set
   visualizedQuantities: Record<string, number>;  // Object instead of Map
   wallColor?: WallColor | null;  // Wall color applied in this visualization state
+  canvasItems?: SerializableCanvasItem[];  // Full canvas state for unified undo/redo
 }
 
 // ============================================================================
@@ -294,6 +297,13 @@ export function serializeHistoryEntry(entry: VisualizationHistoryEntry): Seriali
     productIds: Array.from(entry.productIds),
     visualizedQuantities: Object.fromEntries(entry.visualizedQuantities),
     wallColor: entry.wallColor,
+    canvasItems: entry.canvasItems ? entry.canvasItems.map(item => ({
+      id: item.id,
+      type: item.type,
+      quantity: item.quantity,
+      data: item.data,
+      addedAt: item.addedAt,
+    })) : undefined,
   };
 }
 
@@ -309,5 +319,12 @@ export function deserializeHistoryEntry(entry: SerializableHistoryEntry): Visual
       ([k, v]) => [k, typeof v === 'number' ? v : Number(v)]
     )),
     wallColor: entry.wallColor,
+    canvasItems: entry.canvasItems ? entry.canvasItems.map(item => ({
+      id: item.id,
+      type: item.type,
+      quantity: item.quantity,
+      data: item.data,
+      addedAt: item.addedAt,
+    })) : undefined,
   };
 }

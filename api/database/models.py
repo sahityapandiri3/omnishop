@@ -859,3 +859,95 @@ class WallColor(Base):
 
     def __repr__(self):
         return f"<WallColor(id={self.id}, code='{self.code}', name='{self.name}', hex='{self.hex_value}')>"
+
+
+class TextureType(enum.Enum):
+    """Texture finish types for wall textures (Asian Paints and others)"""
+
+    MARBLE = "marble"
+    VELVET = "velvet"
+    STONE = "stone"
+    CONCRETE = "concrete"
+    THREE_D = "3d"
+    WALL_TILE = "wall_tile"
+    STUCCO = "stucco"
+    RUST = "rust"
+    OTHER = "other"
+
+
+class WallTexture(Base):
+    """
+    Base wall texture with name and collection info.
+
+    Textures are grouped by name (e.g., "Basket", "Bandhej") and have
+    multiple color variants. Each texture belongs to a collection
+    (e.g., "Lux Imprints", "Royale Play") from a specific brand.
+    """
+
+    __tablename__ = "wall_textures"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, index=True)  # "Basket", "Bandhej"
+    collection = Column(String(100), nullable=True, index=True)  # "Lux Imprints", "Royale Play"
+    texture_type = Column(
+        Enum(TextureType, values_callable=lambda x: [e.value for e in x], name="texturetype"),
+        nullable=True,
+        index=True,
+    )
+    brand = Column(String(100), nullable=False, default="Asian Paints", index=True)  # Multi-vendor ready
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, index=True)
+    display_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationship to variants
+    variants = relationship("WallTextureVariant", back_populates="texture", cascade="all, delete-orphan")
+
+    # Indexes for efficient lookup
+    __table_args__ = (
+        Index("idx_wall_texture_brand_type", "brand", "texture_type"),
+        Index("idx_wall_texture_collection", "collection", "display_order"),
+    )
+
+    def __repr__(self):
+        return f"<WallTexture(id={self.id}, name='{self.name}', collection='{self.collection}', brand='{self.brand}')>"
+
+
+class WallTextureVariant(Base):
+    """
+    Individual texture variant with image stored in database.
+
+    Each texture can have multiple color variants, each with its own
+    image (stored as base64) and optional color family classification.
+    The image_data field stores the complete texture swatch which is
+    passed to Gemini for accurate texture visualization.
+    """
+
+    __tablename__ = "wall_texture_variants"
+
+    id = Column(Integer, primary_key=True, index=True)
+    texture_id = Column(Integer, ForeignKey("wall_textures.id"), nullable=False, index=True)
+    code = Column(String(50), unique=True, nullable=False, index=True)  # "TNB1003CMB1001"
+    name = Column(String(255), nullable=True)  # Variant name if different from parent
+    image_data = Column(Text, nullable=False)  # Base64 encoded image
+    image_url = Column(String(500), nullable=True)  # Original source URL (for reference)
+    color_family = Column(
+        Enum(WallColorFamily, values_callable=lambda x: [e.value for e in x], name="wallcolorfamily"),
+        nullable=True,
+        index=True,
+    )  # For color filtering
+    is_active = Column(Boolean, default=True, index=True)
+    display_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationship back to parent
+    texture = relationship("WallTexture", back_populates="variants")
+
+    # Indexes for efficient lookup
+    __table_args__ = (
+        Index("idx_wall_texture_variant_texture", "texture_id", "display_order"),
+        Index("idx_wall_texture_variant_color", "color_family", "is_active"),
+    )
+
+    def __repr__(self):
+        return f"<WallTextureVariant(id={self.id}, code='{self.code}', texture_id={self.texture_id})>"

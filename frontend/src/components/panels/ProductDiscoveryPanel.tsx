@@ -18,8 +18,13 @@ import {
 } from '@/utils/product-transforms';
 // Shared product search components
 import { ProductResultsGrid } from '../products/ProductResultsGrid';
+// Wall components
+import { WallColorGrid, WallTextureGrid, WallSelectionCard } from '@/components/walls';
+import { WallColor, WallColorFamily } from '@/types/wall-colors';
+import { WallTextureWithVariants, WallTextureVariant, WallType } from '@/types/wall-textures';
 
 type SearchMode = 'ai' | 'keyword';
+type SearchSubMode = 'furniture' | 'walls';
 
 // Keyword search results from Panel 1
 interface KeywordSearchResults {
@@ -51,6 +56,44 @@ interface ProductDiscoveryPanelProps {
   onLoadMoreKeywordResults?: () => void;
   // Whether we're currently in keyword search mode
   isKeywordSearchMode?: boolean;
+
+  // === WALLS MODE PROPS ===
+  /** Sub-mode: 'furniture' (default) or 'walls' */
+  searchSubMode?: SearchSubMode;
+  /** Wall type when in walls mode */
+  wallType?: WallType;
+  /** Filter: Selected color families */
+  colorFamilyFilter?: WallColorFamily[];
+  /** Filter: Selected texture brands */
+  textureBrandFilter?: string[];
+  /** Textures data (from useWallTextures hook) */
+  textures?: WallTextureWithVariants[];
+  /** Textures loading state */
+  texturesLoading?: boolean;
+  /** Textures error state */
+  texturesError?: string | null;
+  /** Currently selected wall color */
+  selectedWallColor?: WallColor | null;
+  /** Currently selected texture variant */
+  selectedTextureVariant?: WallTextureVariant | null;
+  /** Parent texture of selected variant */
+  selectedTexture?: WallTextureWithVariants | null;
+  /** Wall color on canvas */
+  canvasWallColor?: WallColor | null;
+  /** Texture variant on canvas */
+  canvasTextureVariant?: WallTextureVariant | null;
+  /** Parent texture on canvas */
+  canvasTexture?: WallTextureWithVariants | null;
+  /** Callback when wall color is selected */
+  onSelectWallColor?: (color: WallColor) => void;
+  /** Callback when texture variant is selected */
+  onSelectTextureVariant?: (variant: WallTextureVariant, texture: WallTextureWithVariants) => void;
+  /** Callback to add wall color to canvas */
+  onAddWallColorToCanvas?: (color: WallColor) => void;
+  /** Callback to add texture to canvas */
+  onAddTextureToCanvas?: (variant: WallTextureVariant, texture: WallTextureWithVariants) => void;
+  /** Callback to remove wall from canvas */
+  onRemoveWallFromCanvas?: () => void;
 }
 
 /**
@@ -70,7 +113,111 @@ export default function ProductDiscoveryPanel({
   keywordSearchResults,
   onLoadMoreKeywordResults,
   isKeywordSearchMode = false,
+  // Wall mode props
+  searchSubMode = 'furniture',
+  wallType = 'color',
+  colorFamilyFilter = [],
+  textureBrandFilter = [],
+  textures = [],
+  texturesLoading = false,
+  texturesError = null,
+  selectedWallColor = null,
+  selectedTextureVariant = null,
+  selectedTexture = null,
+  canvasWallColor = null,
+  canvasTextureVariant = null,
+  canvasTexture = null,
+  onSelectWallColor,
+  onSelectTextureVariant,
+  onAddWallColorToCanvas,
+  onAddTextureToCanvas,
+  onRemoveWallFromCanvas,
 }: ProductDiscoveryPanelProps) {
+  // ====================
+  // WALLS MODE
+  // ====================
+  if (searchSubMode === 'walls') {
+    // Check if selected wall is on canvas
+    const isColorOnCanvas = canvasWallColor && selectedWallColor && canvasWallColor.id === selectedWallColor.id;
+    const isTextureOnCanvas = canvasTextureVariant && selectedTextureVariant && canvasTextureVariant.id === selectedTextureVariant.id;
+
+    const handleAddColorToCanvas = () => {
+      if (selectedWallColor && onAddWallColorToCanvas) {
+        onAddWallColorToCanvas(selectedWallColor);
+      }
+    };
+
+    const handleAddTextureToCanvas = () => {
+      if (selectedTextureVariant && selectedTexture && onAddTextureToCanvas) {
+        onAddTextureToCanvas(selectedTextureVariant, selectedTexture);
+      }
+    };
+
+    // Toggle texture variant on/off canvas directly on click
+    const handleTextureVariantToggle = (variant: WallTextureVariant, texture: WallTextureWithVariants) => {
+      if (canvasTextureVariant?.id === variant.id) {
+        // Already on canvas - remove it (toggle off)
+        onRemoveWallFromCanvas?.();
+      } else {
+        // Add to canvas directly (select + add in one click)
+        onSelectTextureVariant?.(variant, texture);
+        onAddTextureToCanvas?.(variant, texture);
+      }
+    };
+
+    return (
+      <div className="flex flex-col h-full">
+        {/* Header */}
+        <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-700">
+          <h2 className="font-semibold text-neutral-900 dark:text-white">
+            {wallType === 'color' ? 'Wall Colors' : 'Wall Textures'}
+          </h2>
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            {wallType === 'color'
+              ? 'Asian Paints color collection'
+              : 'Textured wall finishes'}
+          </p>
+        </div>
+
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto">
+          {wallType === 'color' ? (
+            <WallColorGrid
+              familyFilter={colorFamilyFilter}
+              selectedColor={selectedWallColor}
+              onSelectColor={onSelectWallColor || (() => {})}
+              flatGrid={false}
+            />
+          ) : (
+            <WallTextureGrid
+              textures={textures}
+              brandFilter={textureBrandFilter}
+              selectedVariantId={canvasTextureVariant?.id ?? null}
+              onSelectVariant={handleTextureVariantToggle}
+              isLoading={texturesLoading}
+              error={texturesError}
+            />
+          )}
+        </div>
+
+        {/* Sticky Selection Card - only for colors (textures use direct toggle) */}
+        {wallType === 'color' && selectedWallColor && (
+          <div className="flex-shrink-0 border-t border-neutral-200 dark:border-neutral-700 p-3 bg-neutral-50 dark:bg-neutral-800/50">
+            <WallSelectionCard
+              selectedColor={selectedWallColor}
+              isOnCanvas={!!isColorOnCanvas}
+              onAddToCanvas={handleAddColorToCanvas}
+              onRemoveFromCanvas={onRemoveWallFromCanvas}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ====================
+  // FURNITURE MODE (original logic)
+  // ====================
   console.log('[ProductDiscoveryPanel] Received products:', products.length, 'products');
   console.log('[ProductDiscoveryPanel] Category mode:', selectedCategories ? 'YES' : 'NO');
   console.log('[ProductDiscoveryPanel] productsByCategory exists:', !!productsByCategory);
@@ -892,8 +1039,8 @@ export default function ProductDiscoveryPanel({
                       disabled={product.is_available === false}
                       className={`w-full py-1.5 px-2 rounded-lg text-xs font-medium transition-colors ${
                         productInCanvas
-                          ? 'bg-neutral-700 hover:bg-neutral-800 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 text-white'
-                          : 'bg-neutral-800 hover:bg-neutral-900 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 text-white'
+                          ? 'bg-neutral-200 hover:bg-neutral-300 text-neutral-800 dark:bg-neutral-600 dark:hover:bg-neutral-500 dark:text-white disabled:bg-neutral-300 dark:disabled:bg-neutral-700'
+                          : 'bg-white hover:bg-neutral-100 text-neutral-900 border border-neutral-300 dark:bg-neutral-100 dark:hover:bg-neutral-200 dark:text-neutral-900 disabled:bg-neutral-300 dark:disabled:bg-neutral-700'
                       } disabled:cursor-not-allowed`}
                     >
                       {product.is_available === false

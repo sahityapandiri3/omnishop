@@ -37,7 +37,7 @@ export function WallColorSwatch({
         relative rounded-md transition-all duration-150
         ${sizeClasses[size]}
         ${isSelected ? 'ring-2 ring-offset-2 ring-neutral-800 dark:ring-neutral-200' : ''}
-        ${needsBorder ? 'border border-neutral-200 dark:border-neutral-600' : ''}
+        ${needsBorder ? 'border-2 border-neutral-300 dark:border-neutral-500 shadow-sm' : ''}
         hover:scale-110 hover:shadow-lg
         focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neutral-500
         group

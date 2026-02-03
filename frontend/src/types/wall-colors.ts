@@ -104,8 +104,10 @@ export function isLightColor(hexColor: string): boolean {
   const r = parseInt(hex.substring(0, 2), 16);
   const g = parseInt(hex.substring(2, 4), 16);
   const b = parseInt(hex.substring(4, 6), 16);
-  const brightness = (r + g + b) / 3;
-  return brightness > 200;
+  // Use luminance formula for better light detection
+  // Threshold of 180 catches more off-whites and creams
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b);
+  return luminance > 180;
 }
 
 /**
