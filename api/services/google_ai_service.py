@@ -6000,9 +6000,9 @@ QUALITY REQUIREMENTS:
                         if image.width > max_size or image.height > max_size:
                             image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
 
-                        # Convert to base64
+                        # Convert to base64 (use high quality to preserve product details)
                         buffer = io.BytesIO()
-                        image.save(buffer, format="JPEG", quality=85, optimize=True)
+                        image.save(buffer, format="JPEG", quality=95, optimize=True)
                         return base64.b64encode(buffer.getvalue()).decode()
                     else:
                         logger.warning(f"Failed to download image from {image_url}: {response.status}")

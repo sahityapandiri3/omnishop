@@ -611,6 +611,58 @@ export function useVisualization({
         return;
       }
 
+      // Handle floor-tile-only change (products unchanged, just apply tile to existing visualization)
+      if (changeInfo.type === 'no_change' && floorTileChanged && !textureChanged && !wallColorChanged && !roomImageChanged && visualizationImage) {
+        console.log('[useVisualization] Floor-tile-only change on existing visualization');
+        let newImage = visualizationImage;
+
+        if (currentFloorTile && currentFloorTile.id) {
+          setVisualizationProgress('Applying floor tile...');
+          const tileResponse = await fetch(
+            `${getApiUrl()}/api/visualization/change-floor-tile`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                room_image: newImage,
+                tile_id: currentFloorTile.id,
+              }),
+            }
+          );
+          if (tileResponse.ok) {
+            const tileData = await tileResponse.json();
+            if (tileData.success && tileData.rendered_image) {
+              newImage = tileData.rendered_image;
+              console.log('[useVisualization] Floor tile applied to existing visualization successfully');
+            } else {
+              const errorMsg = tileData.error_message || 'Floor tile visualization returned no image';
+              console.error('[useVisualization] Floor tile API returned failure:', errorMsg);
+              throw new Error(errorMsg);
+            }
+          } else {
+            console.error('[useVisualization] Floor tile API HTTP error:', tileResponse.status);
+            throw new Error(`Floor tile API failed with status ${tileResponse.status}`);
+          }
+        }
+
+        setVisualizationImage(newImage);
+        setVisualizedFloorTile(currentFloorTile);
+        setNeedsRevisualization(false);
+
+        historyHook.pushState({
+          image: newImage,
+          products: [...products],
+          wallColor: wallColor || null,
+          canvasItems: canvasItemsProp ? [...canvasItemsProp] : undefined,
+        });
+
+        console.log('[useVisualization] Floor-tile-only visualization complete');
+        setIsVisualizing(false);
+        setVisualizationStartTime(null);
+        setVisualizationProgress('');
+        return;
+      }
+
       // Handle texture-only change (products unchanged, just apply texture to existing visualization)
       if (changeInfo.type === 'no_change' && textureChanged && !wallColorChanged && !roomImageChanged && visualizationImage) {
         console.log('[useVisualization] Texture-only change on existing visualization');
@@ -767,16 +819,17 @@ export function useVisualization({
             curated_look_id: config.curatedLookId,
             project_id: config.projectId,
             // Wall color to apply during visualization
-            // Skip for incremental adds — wall color already applied on base image
-            wall_color: (!isIncremental && wallColor) ? {
+            // For incremental adds, only send wall color if it actually changed
+            wall_color: ((!isIncremental || wallColorChanged) && wallColor) ? {
               name: wallColor.name,
               code: wallColor.code,
               hex_value: wallColor.hex_value,
             } : undefined,
             // Surface changes to apply in same Gemini call (unified visualization)
-            // Skip for incremental adds — surfaces already applied on base image
-            texture_variant_id: !isIncremental ? (textureVariant?.id || undefined) : undefined,
-            tile_id: !isIncremental ? (floorTile?.id || undefined) : undefined,
+            // For incremental adds, only send surface IDs if the surface actually changed
+            // (otherwise it's already applied on the base image)
+            texture_variant_id: (!isIncremental || textureChanged) ? (textureVariant?.id || undefined) : undefined,
+            tile_id: (!isIncremental || floorTileChanged) ? (floorTile?.id || undefined) : undefined,
           }),
         },
         { maxRetries: 2, timeoutMs: 300000, retryDelayMs: 3000 }
