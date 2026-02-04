@@ -186,16 +186,35 @@ async def search_products(
                 logger.warning(f"[SEARCH] Semantic search failed, using keyword only: {e}")
 
         # Step 2: Keyword search (ILIKE)
+        # Split query into words and match each word individually for better recall.
+        # Also generate singular/plural variants so "single seaters" matches "single seater".
         base_query = select(Product).options(selectinload(Product.category), selectinload(Product.images))
 
         if query:
-            base_query = base_query.where(
-                or_(
-                    Product.name.ilike(f"%{query}%"),
-                    Product.description.ilike(f"%{query}%"),
-                    Product.brand.ilike(f"%{query}%"),
-                )
-            )
+            query_words = [w.strip() for w in query.split() if w.strip()]
+            # Generate word variants (singular/plural)
+            word_variants = set()
+            for w in query_words:
+                word_variants.add(w)
+                if w.endswith("s") and len(w) > 3:
+                    word_variants.add(w[:-1])  # seaters -> seater
+                elif w.endswith("ies") and len(w) > 4:
+                    word_variants.add(w[:-3] + "y")  # categories -> category
+                else:
+                    word_variants.add(w + "s")  # seater -> seaters
+
+            # Each variant should match in name, description, or brand
+            word_conditions = []
+            for variant in word_variants:
+                word_conditions.append(Product.name.ilike(f"%{variant}%"))
+                word_conditions.append(Product.description.ilike(f"%{variant}%"))
+                word_conditions.append(Product.brand.ilike(f"%{variant}%"))
+            # Also match the full original query as a phrase
+            word_conditions.append(Product.name.ilike(f"%{query}%"))
+            word_conditions.append(Product.description.ilike(f"%{query}%"))
+            word_conditions.append(Product.brand.ilike(f"%{query}%"))
+
+            base_query = base_query.where(or_(*word_conditions))
 
         if category_id:
             base_query = base_query.where(Product.category_id == category_id)
@@ -235,7 +254,8 @@ async def search_products(
             semantic_only_products = list(sem_result.scalars().unique().all())
 
         # Combine and rank: keyword matches first (boosted if also semantic), then semantic-only
-        all_products = []
+        # Track which products are primary (keyword) matches for the frontend
+        all_products = []  # List of (product, is_primary) tuples
         seen_ids = set()
 
         # Primary: keyword matches, sorted by semantic score if available
@@ -246,7 +266,7 @@ async def search_products(
         )
         for p in keyword_list:
             if p.id not in seen_ids:
-                all_products.append(p)
+                all_products.append((p, True))
                 seen_ids.add(p.id)
 
         # Related: semantic-only matches, sorted by similarity
@@ -257,7 +277,7 @@ async def search_products(
         )
         for p in semantic_sorted:
             if p.id not in seen_ids:
-                all_products.append(p)
+                all_products.append((p, False))
                 seen_ids.add(p.id)
 
         total_primary = len(keyword_products)
@@ -268,7 +288,11 @@ async def search_products(
         offset = (page - 1) * page_size
         paginated = all_products[offset : offset + page_size]
 
-        formatted_products = [_format_product(p) for p in paginated]
+        formatted_products = []
+        for product, is_primary in paginated:
+            formatted = _format_product(product)
+            formatted["is_primary_match"] = is_primary
+            formatted_products.append(formatted)
         has_more = (offset + len(paginated)) < total
 
         return {
