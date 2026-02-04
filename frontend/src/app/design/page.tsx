@@ -162,6 +162,7 @@ function DesignPageContent() {
   // Refs for tracking what was last saved (used for optimized saves that only send changed fields)
   const lastSavedCanvasRef = useRef<string>('[]');
   const lastSavedRoomImageRef = useRef<string | null>(null);
+  const lastSavedCleanRoomImageRef = useRef<string | null>(null);
   const lastSavedVizImageRef = useRef<string | null>(null);
   const lastSavedChatSessionRef = useRef<string | null>(null);
   const [projectLoaded, setProjectLoaded] = useState(false); // Track when project data is loaded
@@ -931,6 +932,7 @@ function DesignPageContent() {
             chat_session_id: null,
           });
           lastSavedRoomImageRef.current = null;
+          lastSavedCleanRoomImageRef.current = null;
           lastSavedVizImageRef.current = null;
           lastSavedCanvasRef.current = '[]';
           lastSavedChatSessionRef.current = null;
@@ -958,6 +960,7 @@ function DesignPageContent() {
           // Set refs to null/empty so any data loaded later from sessionStorage
           // (e.g., room images from onboarding) is detected as "changed" for saving
           lastSavedRoomImageRef.current = null;
+          lastSavedCleanRoomImageRef.current = null;
           lastSavedVizImageRef.current = null;
           lastSavedCanvasRef.current = '[]';
           lastSavedChatSessionRef.current = null;
@@ -1126,6 +1129,7 @@ function DesignPageContent() {
             // This ensures that data loaded from sessionStorage (e.g., room images from onboarding)
             // that hasn't been saved yet will be detected as "changed" and included in the next save.
             lastSavedRoomImageRef.current = project.room_image || null;
+            lastSavedCleanRoomImageRef.current = project.clean_room_image || null;
             lastSavedVizImageRef.current = project.visualization_image || null;
             lastSavedCanvasRef.current = savedState.canvas_products || '[]';
             lastSavedChatSessionRef.current = project.chat_session_id || null;
@@ -1197,6 +1201,10 @@ function DesignPageContent() {
       updatePayload.room_image = currentData.room_image || undefined;
       updatePayload.clean_room_image = currentData.clean_room_image || undefined;
     }
+    // Also save clean_room_image independently (e.g., when furniture removal completes async)
+    if (cleanRoomImage !== lastSavedCleanRoomImageRef.current && !('clean_room_image' in updatePayload)) {
+      updatePayload.clean_room_image = currentData.clean_room_image || undefined;
+    }
     if (initialVisualizationImage !== lastSavedVizImageRef.current) {
       updatePayload.visualization_image = currentData.visualization_image || undefined;
     }
@@ -1235,6 +1243,7 @@ function DesignPageContent() {
       // This prevents the change tracking effect from immediately re-detecting changes
       lastSavedCanvasRef.current = canvasItemsForSave || '[]';
       lastSavedRoomImageRef.current = roomImage;
+      lastSavedCleanRoomImageRef.current = cleanRoomImage;
       lastSavedVizImageRef.current = initialVisualizationImage;
       lastSavedChatSessionRef.current = chatSessionId;
       console.log('[DesignPage] Updated saved refs synchronously in saveProject');
@@ -1369,14 +1378,16 @@ function DesignPageContent() {
     }) : (canvasProducts.length > 0 ? JSON.stringify(canvasProducts) : '[]');
     const canvasChanged = currentCanvasJSON !== lastSavedCanvasRef.current;
     const roomImageChanged = roomImage !== lastSavedRoomImageRef.current;
+    const cleanRoomImageChanged = cleanRoomImage !== lastSavedCleanRoomImageRef.current;
     const vizImageChanged = initialVisualizationImage !== lastSavedVizImageRef.current;
     const chatSessionChanged = chatSessionId !== lastSavedChatSessionRef.current;
 
-    const hasChanges = canvasChanged || roomImageChanged || vizImageChanged || chatSessionChanged;
+    const hasChanges = canvasChanged || roomImageChanged || cleanRoomImageChanged || vizImageChanged || chatSessionChanged;
 
     console.log('[DesignPage] Change tracking:', {
       canvasChanged,
       roomImageChanged: roomImageChanged ? 'YES' : 'no',
+      cleanRoomImageChanged: cleanRoomImageChanged ? 'YES' : 'no',
       vizImageChanged: vizImageChanged ? 'YES' : 'no',
       chatSessionChanged,
       hasChanges,
@@ -1387,7 +1398,7 @@ function DesignPageContent() {
       console.log('[DesignPage] >>> CHANGES DETECTED - Setting status to UNSAVED <<<');
       setSaveStatus('unsaved');
     }
-  }, [isAuthenticated, projectId, roomImage, initialVisualizationImage, canvasProducts, canvas.items, chatSessionId, saveStatus]);
+  }, [isAuthenticated, projectId, roomImage, cleanRoomImage, initialVisualizationImage, canvasProducts, canvas.items, chatSessionId, saveStatus]);
 
   // Enable change tracking after project loads
   // NOTE: "last saved" refs are set in the project load effect (to match DB values),
