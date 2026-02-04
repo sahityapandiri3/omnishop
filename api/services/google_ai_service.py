@@ -291,7 +291,7 @@ MUST NOT:
         return f"""{VisualizationPrompts.get_system_intro()}
 
 ═══════════════════════════════════════════════════════════════
-🎨 TASK: INITIAL ROOM VISUALIZATION
+ TASK: INITIAL ROOM VISUALIZATION
 ═══════════════════════════════════════════════════════════════
 
 You are placing {product_count} product(s) into this room for the FIRST TIME.
@@ -301,7 +301,7 @@ PRODUCTS TO PLACE (with physical dimensions for proper scaling):
 
 {VisualizationPrompts.get_room_preservation_rules()}
 
-📏 DIMENSION-BASED SCALING:
+ DIMENSION-BASED SCALING:
 - Use the provided dimensions (W x D x H in inches) to scale each product correctly
 - A 84" wide sofa should appear ~7 feet wide relative to room
 - A 28" wide chair should appear ~2.3 feet wide
@@ -336,7 +336,7 @@ YOUR TASK:
         return f"""{VisualizationPrompts.get_system_intro()}
 
 ═══════════════════════════════════════════════════════════════
-➕ TASK: ADD PRODUCTS TO EXISTING VISUALIZATION
+ TASK: ADD PRODUCTS TO EXISTING VISUALIZATION
 ═══════════════════════════════════════════════════════════════
 
 EXISTING PRODUCTS IN ROOM (DO NOT MODIFY - keep exact position/size):
@@ -347,12 +347,12 @@ NEW PRODUCTS TO ADD (with physical dimensions for proper scaling):
 
 {VisualizationPrompts.get_room_preservation_rules()}
 
-⚠️ CRITICAL PRESERVATION:
+ CRITICAL PRESERVATION:
 - ALL existing products must remain in EXACT same position, size, and appearance
 - You are ONLY adding the new products listed above
 - Do NOT move, resize, or alter ANY existing furniture
 
-📏 DIMENSION-BASED SCALING FOR NEW PRODUCTS:
+ DIMENSION-BASED SCALING FOR NEW PRODUCTS:
 - Use the provided dimensions (W x D x H in inches) to scale each new product correctly
 - New products should be proportionally correct relative to existing furniture
 - Example: If existing sofa is 84" wide and new chair is 28" wide, chair should be ~1/3 sofa width
@@ -536,7 +536,7 @@ MOVE OPERATION STEPS:
 """
         elif instruction_type == "brightness":
             type_specific = """
-💡 BRIGHTNESS/LIGHTING MODIFICATION:
+ BRIGHTNESS/LIGHTING MODIFICATION:
 - Adjust room brightness as instructed
 - Maintain consistent lighting across all surfaces
 - Keep product colors accurate (don't wash out or darken)
@@ -545,7 +545,7 @@ MOVE OPERATION STEPS:
 """
         elif instruction_type == "reference":
             type_specific = """
-🖼️ REFERENCE IMAGE MODIFICATION:
+ REFERENCE IMAGE MODIFICATION:
 - Use the provided reference image as style guide
 - Apply similar aesthetic, color palette, or arrangement
 - Maintain current product positions unless instructed otherwise
@@ -556,7 +556,7 @@ MOVE OPERATION STEPS:
         return f"""{VisualizationPrompts.get_system_intro()}
 
 ═══════════════════════════════════════════════════════════════
-✏️ TASK: MODIFY VISUALIZATION BY INSTRUCTION
+ TASK: MODIFY VISUALIZATION BY INSTRUCTION
 ═══════════════════════════════════════════════════════════════
 
 USER INSTRUCTION:
@@ -569,7 +569,7 @@ CURRENT PRODUCTS IN ROOM (with dimensions - preserve these sizes):
 
 {VisualizationPrompts.get_room_preservation_rules()}
 
-📏 DIMENSION PRESERVATION:
+ DIMENSION PRESERVATION:
 - When moving products, maintain their EXACT scale based on provided dimensions
 - A 84" wide sofa must remain 84" wide after repositioning
 - Product proportions relative to room must stay correct
@@ -584,7 +584,7 @@ MODIFICATION RULES:
 
 {VisualizationPrompts.get_product_accuracy_rules()}
 
-{"⚠️ REFERENCE IMAGE: A reference image is provided. Use it as a style guide." if reference_image_provided else ""}
+{" REFERENCE IMAGE: A reference image is provided. Use it as a style guide." if reference_image_provided else ""}
 
 YOUR TASK:
 1. Understand the user's instruction
@@ -613,17 +613,17 @@ YOUR TASK:
         return f"""{VisualizationPrompts.get_system_intro()}
 
 ═══════════════════════════════════════════════════════════════
-🎨 TASK: CHANGE WALL COLOR
+ TASK: CHANGE WALL COLOR
 ═══════════════════════════════════════════════════════════════
 
 Using the provided room image, change ONLY the wall color.
 
-🎨 NEW WALL COLOR:
+ NEW WALL COLOR:
 - Name: {color_name} (Asian Paints)
 - Hex Reference: {color_hex}
 - Description: {color_description}
 
-🚨🚨🚨 CRITICAL INSTRUCTIONS 🚨🚨🚨
+ CRITICAL INSTRUCTIONS
 ═══════════════════════════════════════════════════════════════
 
 1. PAINT ALL VISIBLE WALLS with this color:
@@ -633,13 +633,13 @@ Using the provided room image, change ONLY the wall color.
    - Keep natural wall texture (not perfectly flat)
 
 2. MUST KEEP UNCHANGED (MANDATORY):
-   - ⛔ ALL FURNITURE: Exact position, size, color, style - DO NOT MODIFY
-   - ⛔ FLOOR: Same material, color, texture - DO NOT MODIFY
-   - ⛔ CEILING: Do NOT paint the ceiling - KEEP ORIGINAL
-   - ⛔ Windows, doors, and frames - KEEP ORIGINAL
-   - ⛔ All decorations, art, and accessories - KEEP ORIGINAL
-   - ⛔ Lighting fixtures - KEEP ORIGINAL
-   - ⛔ Architectural features (moldings, columns, etc.) - KEEP ORIGINAL
+   -  ALL FURNITURE: Exact position, size, color, style - DO NOT MODIFY
+   -  FLOOR: Same material, color, texture - DO NOT MODIFY
+   -  CEILING: Do NOT paint the ceiling - KEEP ORIGINAL
+   -  Windows, doors, and frames - KEEP ORIGINAL
+   -  All decorations, art, and accessories - KEEP ORIGINAL
+   -  Lighting fixtures - KEEP ORIGINAL
+   -  Architectural features (moldings, columns, etc.) - KEEP ORIGINAL
 
 3. TECHNICAL REQUIREMENTS:
    - OUTPUT DIMENSIONS: Match input exactly (pixel-for-pixel)
@@ -648,7 +648,7 @@ Using the provided room image, change ONLY the wall color.
    - NO ZOOM: Show full room view identical to input
    - PHOTOREALISM: Output must look like a real photograph
 
-🎨 COLOR MATCHING GUIDELINES:
+ COLOR MATCHING GUIDELINES:
 - Match the hex color {color_hex} as closely as possible
 - For light colors: maintain brightness, add subtle warmth/coolness as described
 - For dark colors: ensure richness without appearing muddy
@@ -656,14 +656,14 @@ Using the provided room image, change ONLY the wall color.
 - Natural room lighting should affect how the paint appears realistically
   (e.g., walls in shadow may appear slightly darker/cooler)
 
-⚠️ VERIFICATION CHECKLIST:
+ VERIFICATION CHECKLIST:
 Before outputting, verify:
-☐ ALL walls are painted in the new color
-☐ ALL furniture remains exactly as in the input
-☐ Floor and ceiling are unchanged
-☐ Image dimensions match input exactly
-☐ Camera angle and perspective unchanged
-☐ Lighting is realistic for painted walls
+ ALL walls are painted in the new color
+ ALL furniture remains exactly as in the input
+ Floor and ceiling are unchanged
+ Image dimensions match input exactly
+ Camera angle and perspective unchanged
+ Lighting is realistic for painted walls
 
 OUTPUT: One photorealistic image showing THE ENTIRE ROOM with walls painted in {color_name} ({color_hex}).
 The room structure, furniture, and camera angle MUST be identical to the input image.
@@ -691,7 +691,7 @@ The room structure, furniture, and camera angle MUST be identical to the input i
         return f"""{VisualizationPrompts.get_system_intro()}
 
 ═══════════════════════════════════════════════════════════════
-🧱 TASK: APPLY WALL TEXTURE
+ TASK: APPLY WALL TEXTURE
 ═══════════════════════════════════════════════════════════════
 
 You are given TWO images:
@@ -702,7 +702,7 @@ TEXTURE INFO:
 - Name: {texture_name}
 - Type: {texture_type} finish
 
-🚨🚨🚨 CRITICAL INSTRUCTIONS 🚨🚨🚨
+ CRITICAL INSTRUCTIONS
 ═══════════════════════════════════════════════════════════════
 
 1. MATCH THE TEXTURE EXACTLY from the SECOND IMAGE:
@@ -721,13 +721,13 @@ TEXTURE INFO:
    - Add depth and realism to the textured surface
 
 3. MUST KEEP UNCHANGED (MANDATORY):
-   - ⛔ ALL FURNITURE: Exact position, size, color, style - DO NOT MODIFY
-   - ⛔ FLOOR: Same material, color, texture - DO NOT MODIFY
-   - ⛔ CEILING: Do NOT texture the ceiling - KEEP ORIGINAL
-   - ⛔ Windows, doors, and frames - KEEP ORIGINAL
-   - ⛔ All decorations, art, and accessories - KEEP ORIGINAL
-   - ⛔ Lighting fixtures - KEEP ORIGINAL
-   - ⛔ Architectural features (moldings, columns, etc.) - KEEP ORIGINAL
+   -  ALL FURNITURE: Exact position, size, color, style - DO NOT MODIFY
+   -  FLOOR: Same material, color, texture - DO NOT MODIFY
+   -  CEILING: Do NOT texture the ceiling - KEEP ORIGINAL
+   -  Windows, doors, and frames - KEEP ORIGINAL
+   -  All decorations, art, and accessories - KEEP ORIGINAL
+   -  Lighting fixtures - KEEP ORIGINAL
+   -  Architectural features (moldings, columns, etc.) - KEEP ORIGINAL
 
 4. TECHNICAL REQUIREMENTS:
    - OUTPUT DIMENSIONS: Match FIRST IMAGE exactly (pixel-for-pixel)
@@ -736,22 +736,22 @@ TEXTURE INFO:
    - NO ZOOM: Show full room view identical to input
    - PHOTOREALISM: Output must look like a real photograph
 
-🧱 TEXTURE APPLICATION GUIDELINES:
+ TEXTURE APPLICATION GUIDELINES:
 - Scale: The texture should appear natural on walls (not tiled obviously)
 - Seamless: Ensure smooth transitions across the wall surface
 - Lighting: Room lighting should realistically affect texture appearance
   (e.g., areas in shadow may show less texture detail)
 - Depth: {texture_type} textures should show realistic 3D depth
 
-⚠️ VERIFICATION CHECKLIST:
+ VERIFICATION CHECKLIST:
 Before outputting, verify:
-☐ ALL walls show the texture from the reference image
-☐ Texture pattern matches the reference EXACTLY
-☐ ALL furniture remains exactly as in the input
-☐ Floor and ceiling are unchanged
-☐ Image dimensions match input exactly
-☐ Camera angle and perspective unchanged
-☐ Lighting is realistic on textured walls
+ ALL walls show the texture from the reference image
+ Texture pattern matches the reference EXACTLY
+ ALL furniture remains exactly as in the input
+ Floor and ceiling are unchanged
+ Image dimensions match input exactly
+ Camera angle and perspective unchanged
+ Lighting is realistic on textured walls
 
 OUTPUT: One photorealistic image showing THE ENTIRE ROOM with walls textured using the {texture_name} pattern.
 The room structure, furniture, and camera angle MUST be identical to the FIRST input image.
@@ -786,7 +786,7 @@ The wall texture MUST match the SECOND reference image exactly.
         return f"""{VisualizationPrompts.get_system_intro()}
 
 ═══════════════════════════════════════════════════════════════
-🏗️ TASK: APPLY FLOOR TILE
+ TASK: APPLY FLOOR TILE
 ═══════════════════════════════════════════════════════════════
 
 You are given TWO images:
@@ -800,7 +800,7 @@ TILE INFO:
 
 {VisualizationPrompts.get_room_preservation_rules()}
 
-🚨 FLOOR-TILE-SPECIFIC INSTRUCTIONS:
+ FLOOR-TILE-SPECIFIC INSTRUCTIONS:
 
 1. MATCH THE TILE PATTERN EXACTLY from the SECOND IMAGE:
    - Study the pattern, colors, veining, and details in the tile swatch
@@ -828,19 +828,19 @@ TILE INFO:
    - NO ZOOM: Show full room view identical to input
    - PHOTOREALISM: Output must look like a real photograph
 
-🏗️ TILE APPLICATION GUIDELINES:
+ TILE APPLICATION GUIDELINES:
 - Grout: Thin, natural grout lines forming a regular grid
 - Reflectivity: {tile_finish} finish — adjust specular highlights accordingly
 - Edges: Tiles at walls should appear cut naturally (partial tiles at edges)
 - Shadows: Furniture and room shadows fall naturally on the tiled surface
 
-⚠️ VERIFICATION CHECKLIST:
-☐ ALL floor surfaces show the tile from the reference image
-☐ Tile pattern matches the reference EXACTLY
-☐ Tiles are at correct real-world scale ({tile_size})
-☐ Grout lines are visible and natural
-☐ ALL furniture, walls, and ceiling are unchanged
-☐ Image dimensions match input exactly
+ VERIFICATION CHECKLIST:
+ ALL floor surfaces show the tile from the reference image
+ Tile pattern matches the reference EXACTLY
+ Tiles are at correct real-world scale ({tile_size})
+ Grout lines are visible and natural
+ ALL furniture, walls, and ceiling are unchanged
+ Image dimensions match input exactly
 
 OUTPUT: One photorealistic image with floor tiled using the {tile_name} pattern.
 """
@@ -1652,13 +1652,13 @@ Return JSON in this EXACT format:
   ]
 }
 
-🚨 CRITICAL - VIEWING ANGLE DETECTION (camera_view_analysis.viewing_angle):
+ CRITICAL - VIEWING ANGLE DETECTION (camera_view_analysis.viewing_angle):
 - "corner" = TWO walls visible meeting at a corner
 - "diagonal_left" = Camera points toward left-back corner, RIGHT wall prominently visible
 - "diagonal_right" = Camera points toward right-back corner, LEFT wall prominently visible
 - "straight_on" = RARE - only if back wall is perfectly parallel and side walls barely visible
 
-📋 EXISTING FURNITURE - CRITICAL:
+ EXISTING FURNITURE - CRITICAL:
 List ALL furniture and decor objects visible in the room with detailed attributes:
 - Include sofas, chairs, tables, lamps, rugs, plants, shelves, beds, dressers, etc.
 - Include wall art, mirrors, curtains if visible
@@ -2081,18 +2081,18 @@ CRITICAL: Keep sofas, chairs, tables, and lamps SEPARATE:
 
             # Build prompt for space fitness validation
             # IMPORTANT: Product description contains actual dimensions - prioritize these over image estimation
-            prompt = f"""🔍 SPACE FITNESS ANALYSIS TASK 🔍
+            prompt = f""" SPACE FITNESS ANALYSIS TASK
 
 Analyze whether the following product can realistically fit in the available space shown in the room image.
 
 PRODUCT TO ANALYZE: {product_name}
 
 ═══════════════════════════════════════════════════════════════
-⚠️ CRITICAL: PRODUCT DIMENSIONS (FROM DESCRIPTION) ⚠️
+ CRITICAL: PRODUCT DIMENSIONS (FROM DESCRIPTION)
 ═══════════════════════════════════════════════════════════════
 {f"PRODUCT DESCRIPTION: {product_description}" if product_description else "No description available - estimate from product image"}
 
-🚨 IMPORTANT: Extract the ACTUAL dimensions from the product description above.
+ IMPORTANT: Extract the ACTUAL dimensions from the product description above.
 Look for measurements like:
 - Height, Width, Depth/Length (in inches, cm, feet, etc.)
 - Diameter (for round items)
@@ -2357,11 +2357,11 @@ Be VERY strict - if you see ANY furniture at all, set has_furniture to true."""
 
             logger.info(f"Straightening vertical lines for image ({pil_image.width}x{pil_image.height})")
 
-            prompt = """🔧 LENS DISTORTION CORRECTION TASK
+            prompt = """ LENS DISTORTION CORRECTION TASK
 
 Correct the perspective distortion in this room image to make it look like a professional architectural photograph.
 
-📐 WHAT TO FIX:
+ WHAT TO FIX:
 1. VERTICAL LINES: Make ALL vertical lines perfectly vertical (90° to the floor)
    - Wall edges should be straight up and down, not leaning inward or outward
    - Door frames, window frames should be perfectly vertical
@@ -2376,7 +2376,7 @@ Correct the perspective distortion in this room image to make it look like a pro
    - Straight lines in real life should appear straight in the image
    - Walls should not curve or bulge
 
-⚠️ IMPORTANT:
+ IMPORTANT:
 - Do NOT change the room contents - keep everything exactly as is
 - Do NOT change colors, lighting, or any visual elements
 - ONLY fix the geometric distortion
@@ -3092,11 +3092,11 @@ Everything outside this area must remain IDENTICAL to the input image."""
             # Build prompt for ADD action
             # Start with absolute critical instruction about camera/zoom
             zoom_warning = """
-🚨🚨🚨 CRITICAL INSTRUCTION - READ THIS FIRST 🚨🚨🚨
+ CRITICAL INSTRUCTION - READ THIS FIRST
 ═══════════════════════════════════════════════════════════════
-⛔ DO NOT ZOOM IN - THIS IS THE #1 PRIORITY ⛔
-⛔ DO NOT CHANGE THE CAMERA ANGLE OR PERSPECTIVE ⛔
-⛔ THE OUTPUT MUST SHOW THE EXACT SAME VIEW AS THE INPUT ⛔
+ DO NOT ZOOM IN - THIS IS THE #1 PRIORITY
+ DO NOT CHANGE THE CAMERA ANGLE OR PERSPECTIVE
+ THE OUTPUT MUST SHOW THE EXACT SAME VIEW AS THE INPUT
 
 The output image MUST be a WIDE SHOT showing the ENTIRE ROOM.
 The camera position, angle, and field of view MUST BE IDENTICAL to the input.
@@ -3104,22 +3104,22 @@ If the input shows the full room, the output MUST show the full room.
 Adding a small item does NOT mean zooming in on it.
 The item you add should be a SMALL part of the overall image.
 
-⛔ IF YOU ZOOM IN OR CROP THE IMAGE, YOU HAVE FAILED ⛔
+ IF YOU ZOOM IN OR CROP THE IMAGE, YOU HAVE FAILED
 ═══════════════════════════════════════════════════════════════
 
-🚫🚫🚫 CRITICAL: DO NOT ADD EXTRA FURNITURE 🚫🚫🚫
+ CRITICAL: DO NOT ADD EXTRA FURNITURE
 ═══════════════════════════════════════════════════════════════
-⛔ ADD ONLY THE ONE SPECIFIC PRODUCT LISTED BELOW ⛔
-⛔ DO NOT add sofas, chairs, tables, or any other furniture ⛔
-⛔ DO NOT "complete" or "design" the room ⛔
-⛔ DO NOT add items you think would look nice ⛔
-⛔ DO NOT add matching or complementary pieces ⛔
+ ADD ONLY THE ONE SPECIFIC PRODUCT LISTED BELOW
+ DO NOT add sofas, chairs, tables, or any other furniture
+ DO NOT "complete" or "design" the room
+ DO NOT add items you think would look nice
+ DO NOT add matching or complementary pieces
 
 YOUR ONLY TASK: Add the ONE product specified below.
 The room is ALREADY COMPLETE - it does NOT need more furniture.
 If I ask for 1 lamp, add ONLY 1 lamp - nothing else.
 
-⛔ ADDING ANY EXTRA FURNITURE = AUTOMATIC FAILURE ⛔
+ ADDING ANY EXTRA FURNITURE = AUTOMATIC FAILURE
 ═══════════════════════════════════════════════════════════════
 
 """
@@ -3128,7 +3128,7 @@ If I ask for 1 lamp, add ONLY 1 lamp - nothing else.
             small_item_warning = ""
             if is_small_item:
                 small_item_warning = f"""
-🚨🚨🚨 SPECIAL WARNING FOR {product_name.upper()} 🚨🚨🚨
+ SPECIAL WARNING FOR {product_name.upper()}
 ═══════════════════════════════════════════════════════════════
 This is an ACCENT ITEM. Critical rules:
 - KEEP THE EXACT SAME CAMERA ANGLE as the input image
@@ -3137,9 +3137,9 @@ This is an ACCENT ITEM. Critical rules:
 - Place naturally in the room at its appropriate real-world size
 - The room view must remain UNCHANGED - only ADD the item
 
-⛔ ZOOMING IN = AUTOMATIC FAILURE ⛔
-⛔ CHANGING CAMERA ANGLE = AUTOMATIC FAILURE ⛔
-⛔ THE FULL ROOM MUST BE VISIBLE IN THE OUTPUT ⛔
+ ZOOMING IN = AUTOMATIC FAILURE
+ CHANGING CAMERA ANGLE = AUTOMATIC FAILURE
+ THE FULL ROOM MUST BE VISIBLE IN THE OUTPUT
 ═══════════════════════════════════════════════════════════════
 
 """
@@ -3149,7 +3149,7 @@ This is an ACCENT ITEM. Critical rules:
             planter_placement_hint = ""
             if is_planter:
                 planter_placement_hint = """
-🌿 PLANTER PLACEMENT GUIDE:
+ PLANTER PLACEMENT GUIDE:
 - Place on the floor in an appropriate corner or beside existing furniture
 - The planter should be filled with appropriate green foliage
 - Add realistic shadows cast by the planter onto the floor
@@ -3161,7 +3161,7 @@ This is an ACCENT ITEM. Critical rules:
             color_emphasis = ""
             if product_color:
                 color_emphasis = f"""
-🎨🎨🎨 CRITICAL COLOR REQUIREMENT 🎨🎨🎨
+ CRITICAL COLOR REQUIREMENT
 ═══════════════════════════════════════════════════════════════
 THE PRODUCT COLOR IS: **{product_color.upper()}**
 - YOU MUST render this product in {product_color.upper()} color
@@ -3179,7 +3179,7 @@ THE PRODUCT COLOR IS: **{product_color.upper()}**
 
 Product to add: {product_name} (COLOR: {product_color if product_color else 'see reference image'})
 
-🚨🚨🚨 ABSOLUTE REQUIREMENT - ROOM DIMENSIONS 🚨🚨🚨
+ ABSOLUTE REQUIREMENT - ROOM DIMENSIONS
 ═══════════════════════════════════════════════════════════════
 THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 - If input is 1024x768 pixels → output MUST be 1024x768 pixels
@@ -3193,28 +3193,28 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 - The walls must be in the EXACT same positions
 - The floor area must appear the EXACT same size
 
-⚠️ IF THE OUTPUT IMAGE HAS DIFFERENT DIMENSIONS THAN THE INPUT, YOU HAVE FAILED THE TASK ⚠️
+ IF THE OUTPUT IMAGE HAS DIFFERENT DIMENSIONS THAN THE INPUT, YOU HAVE FAILED THE TASK
 ═══════════════════════════════════════════════════════════════
 
-🚨🚨🚨 ABSOLUTE REQUIREMENT - EXISTING FURNITURE SIZE PRESERVATION 🚨🚨🚨
+ ABSOLUTE REQUIREMENT - EXISTING FURNITURE SIZE PRESERVATION
 ═══════════════════════════════════════════════════════════════
 ALL EXISTING FURNITURE MUST REMAIN THE EXACT SAME SIZE AND SCALE:
-- ⚠️ NEVER make existing furniture (sofas, chairs, tables) appear larger or smaller
-- ⚠️ NEVER expand the room to accommodate new items
-- ⚠️ NEVER shrink existing furniture to make space for new items
-- ⚠️ NEVER change the perspective to make the room appear larger
-- ⚠️ The sofa that was 6 feet wide MUST still appear 6 feet wide
-- ⚠️ The coffee table that was 4 feet long MUST still appear 4 feet long
-- ⚠️ All proportions between existing objects MUST remain IDENTICAL
+-  NEVER make existing furniture (sofas, chairs, tables) appear larger or smaller
+-  NEVER expand the room to accommodate new items
+-  NEVER shrink existing furniture to make space for new items
+-  NEVER change the perspective to make the room appear larger
+-  The sofa that was 6 feet wide MUST still appear 6 feet wide
+-  The coffee table that was 4 feet long MUST still appear 4 feet long
+-  All proportions between existing objects MUST remain IDENTICAL
 
-📏 TRUE SIZE REPRESENTATION:
+ TRUE SIZE REPRESENTATION:
 - New furniture must be added at its REAL-WORLD proportional size
 - A new 3-seater sofa should look proportional to an existing 3-seater sofa
 - A new side table should look smaller than an existing dining table
 - Use the existing furniture as SIZE REFERENCE for new items
 - Do NOT artificially shrink new products to fit - if they don't fit, they don't fit
 
-🚫 ROOM EXPANSION IS FORBIDDEN:
+ ROOM EXPANSION IS FORBIDDEN:
 - The room boundaries (walls, floor, ceiling) are FIXED
 - Do NOT push walls back to create more space
 - Do NOT make the ceiling appear higher
@@ -3222,55 +3222,55 @@ ALL EXISTING FURNITURE MUST REMAIN THE EXACT SAME SIZE AND SCALE:
 - The room's cubic volume must remain IDENTICAL
 - If there's not enough space for the product, do NOT modify the room
 
-⚠️ IF EXISTING FURNITURE CHANGES SIZE OR ROOM EXPANDS, YOU HAVE FAILED THE TASK ⚠️
+ IF EXISTING FURNITURE CHANGES SIZE OR ROOM EXPANDS, YOU HAVE FAILED THE TASK
 ═══════════════════════════════════════════════════════════════
 
-🔒 CRITICAL PRESERVATION RULES:
+ CRITICAL PRESERVATION RULES:
 1. KEEP ALL EXISTING FURNITURE: Do NOT remove, move, or replace any furniture currently in the room
-2. ⚠️ ESPECIALLY PRESERVE SOFAS: If there is a sofa/couch in the room, it MUST remain in its EXACT position
-3. 🎨 PRESERVE EXISTING COLORS: Do NOT change the color of ANY existing furniture or decor in the room
+2.  ESPECIALLY PRESERVE SOFAS: If there is a sofa/couch in the room, it MUST remain in its EXACT position
+3.  PRESERVE EXISTING COLORS: Do NOT change the color of ANY existing furniture or decor in the room
 4. PRESERVE THE ROOM: Keep the same walls, windows, floors, ceiling, lighting, and camera angle
 5. ROOM SIZE UNCHANGED: The room must look the EXACT same size
 
-🚫🚫🚫 WALL & FLOOR COLOR PRESERVATION - ABSOLUTE REQUIREMENT 🚫🚫🚫
-⛔ DO NOT CHANGE THE WALL COLOR - walls must remain EXACTLY the same color as input
-⛔ DO NOT CHANGE THE FLOOR COLOR - flooring must remain EXACTLY the same color/material as input
-⛔ DO NOT add paint, wallpaper, or any wall treatment that wasn't there
-⛔ DO NOT change flooring material, color, or texture
+ WALL & FLOOR COLOR PRESERVATION - ABSOLUTE REQUIREMENT
+ DO NOT CHANGE THE WALL COLOR - walls must remain EXACTLY the same color as input
+ DO NOT CHANGE THE FLOOR COLOR - flooring must remain EXACTLY the same color/material as input
+ DO NOT add paint, wallpaper, or any wall treatment that wasn't there
+ DO NOT change flooring material, color, or texture
 - If walls are white → output walls MUST be white
 - If walls are grey → output walls MUST be grey
 - If floor is wooden → output floor MUST be the SAME wooden color
 - The room's color scheme is FIXED - you are ONLY adding furniture - not bigger, not smaller
 
-🔒🔒🔒 PIXEL-LEVEL POSITION PRESERVATION - CRITICAL 🔒🔒🔒
+ PIXEL-LEVEL POSITION PRESERVATION - CRITICAL
 - Every piece of existing furniture must be at the EXACT SAME PIXEL COORDINATES as in the input
 - If a sofa's left edge starts at pixel X=100 in the input, it MUST start at X=100 in the output
 - DO NOT shift, nudge, or adjust the position of ANY existing furniture - not even by a few pixels
 - The silhouette/outline of every existing furniture piece must PERFECTLY OVERLAY the input image
 - Think of it as: existing furniture is "locked in place" - you can only ADD new items around them
 
-🚫🚫🚫 PLACEMENT RESTRICTIONS - VERY IMPORTANT 🚫🚫🚫
-1. ⚠️ ONLY place new items in VISIBLE EMPTY SPACES - spaces that are clearly visible and unobstructed
-2. ⛔ NEVER place furniture BEHIND other furniture (e.g., NO bookshelf behind a sofa - it would be hidden!)
-3. ⛔ NEVER place items where they would be COVERED or BLOCKED by existing furniture
-4. ✅ Place items NEXT TO existing furniture (beside the sofa, not behind it)
-5. ✅ Place items in OPEN FLOOR AREAS visible to the camera
-6. ✅ Place items AGAINST VISIBLE WALLS (not walls blocked by sofas/beds)
+ PLACEMENT RESTRICTIONS - VERY IMPORTANT
+1.  ONLY place new items in VISIBLE EMPTY SPACES - spaces that are clearly visible and unobstructed
+2.  NEVER place furniture BEHIND other furniture (e.g., NO bookshelf behind a sofa - it would be hidden!)
+3.  NEVER place items where they would be COVERED or BLOCKED by existing furniture
+4.  Place items NEXT TO existing furniture (beside the sofa, not behind it)
+5.  Place items in OPEN FLOOR AREAS visible to the camera
+6.  Place items AGAINST VISIBLE WALLS (not walls blocked by sofas/beds)
 7. Bookshelves, cabinets, and tall furniture must be placed against OPEN walls where they are FULLY VISIBLE
 
-🖼️ WALL ART / PAINTINGS RULE:
+ WALL ART / PAINTINGS RULE:
 - If adding wall art and room ALREADY has paintings → Place new art on a DIFFERENT wall or different position
 - DO NOT replace existing paintings - ADD alongside them (gallery-style)
 - Existing artwork must REMAIN VISIBLE
 
-🚫 FURNITURE YOU MUST NEVER REMOVE:
+ FURNITURE YOU MUST NEVER REMOVE:
 - Sofas/couches (main seating)
 - Beds
 - Existing accent chairs
 - Existing wall art/paintings
 - Any furniture that was in the input image
 
-✅ YOUR TASK:
+ YOUR TASK:
 - Add the {product_name} to this room
 - Place it in an appropriate empty location
 - Do NOT remove or replace any existing furniture
@@ -3278,151 +3278,151 @@ ALL EXISTING FURNITURE MUST REMAIN THE EXACT SAME SIZE AND SCALE:
 - Keep the room DIMENSIONS 100% identical
 - Ensure the product looks naturally integrated with proper lighting and shadows
 
-🔴🔴🔴 EXACT PRODUCT REPLICATION - MANDATORY 🔴🔴🔴
+ EXACT PRODUCT REPLICATION - MANDATORY
 ═══════════════════════════════════════════════════════════════
 If a product reference image is provided, you MUST render the EXACT SAME product:
 
-1. 🎨 EXACT COLOR - The color in output MUST match the reference image precisely
+1.  EXACT COLOR - The color in output MUST match the reference image precisely
    - If reference shows light gray, render LIGHT GRAY (not dark gray, not beige)
    - If reference shows walnut wood, render WALNUT WOOD (not oak, not black)
 
-2. 🪵 EXACT MATERIAL & TEXTURE - Replicate the exact material appearance
+2.  EXACT MATERIAL & TEXTURE - Replicate the exact material appearance
    - Velvet → Velvet, Leather → Leather, Wood grain → Same wood grain
 
-3. 📐 EXACT SHAPE & DESIGN - Match the reference's silhouette and design
+3.  EXACT SHAPE & DESIGN - Match the reference's silhouette and design
    - Same arm style, same leg style, same proportions
 
-4. 🏷️ EXACT STYLE - Keep the same style character
+4.  EXACT STYLE - Keep the same style character
    - Modern → Modern, Traditional → Traditional, Mid-century → Mid-century
 
-⚠️ CRITICAL: The product in the output MUST look like the SAME EXACT product from the reference image.
-❌ DO NOT generate a "similar" or "inspired by" version
-❌ DO NOT change colors to "match the room better"
-✅ COPY the EXACT appearance from the product reference image
+ CRITICAL: The product in the output MUST look like the SAME EXACT product from the reference image.
+ DO NOT generate a "similar" or "inspired by" version
+ DO NOT change colors to "match the room better"
+ COPY the EXACT appearance from the product reference image
 ═══════════════════════════════════════════════════════════════
 
 PLACEMENT GUIDELINES:
 
-🪑 SOFAS:
+ SOFAS:
 - Place DIRECTLY AGAINST the wall with MINIMAL GAP (2-4 inches max)
-- ⚠️ DO NOT leave large empty space between sofa back and wall
+-  DO NOT leave large empty space between sofa back and wall
 - The sofa's back should be nearly touching the wall
 - Position as the main seating piece, centered on the wall or in the room
 - Real sofas sit flush against walls - replicate this realistic placement
 
-🪑 CHAIRS (accent chair, side chair, armchair, sofa chair, dining chair, recliner):
+ CHAIRS (accent chair, side chair, armchair, sofa chair, dining chair, recliner):
 - Position on ONE OF THE SIDES of the existing sofa (if sofa exists)
 - Angle the chair towards the sofa to create a conversation area
 - Maintain 18-30 inches spacing from the sofa
 - Style and orient the chair based on the sofa's position and facing direction
 - If no sofa exists, place along a wall or in a natural seating position
 
-🔲 CENTER TABLE / COFFEE TABLE:
+ CENTER TABLE / COFFEE TABLE:
 - Place DIRECTLY IN FRONT OF the sofa or seating area
 - Centered between the sofa and the opposite wall/furniture
 - Positioned in the "coffee table zone" (perpendicular to sofa's front face)
 
-🔲 OTTOMAN:
+ OTTOMAN:
 - Place DIRECTLY IN FRONT OF the sofa, similar to a coffee table
 - Can be centered or slightly offset based on room layout
 - Should be 14-18 inches from sofa's front edge
 - Ottomans are used as footrests or extra seating, NOT as sofa replacements
-- ⚠️ NEVER remove or replace the sofa when adding an ottoman
+-  NEVER remove or replace the sofa when adding an ottoman
 
-🔲 SIDE TABLE / END TABLE:
-- ⚠️ CRITICAL: Place DIRECTLY ADJACENT to the sofa's SIDE (at the armrest)
-- ⚠️ The table must be FLUSH with the sofa's side, not in front or behind
+ SIDE TABLE / END TABLE:
+-  CRITICAL: Place DIRECTLY ADJACENT to the sofa's SIDE (at the armrest)
+-  The table must be FLUSH with the sofa's side, not in front or behind
 - Position at the SAME DEPTH as the sofa (aligned with sofa's length, not width)
 - Should be at ARM'S REACH from someone sitting on the sofa
 - Think: "side by side" positioning, not "in front and to the side"
-- ❌ INCORRECT: Placing table in front of the sofa but shifted to the side
-- ✅ CORRECT: Placing table directly touching or very close to sofa's side panel/armrest
+-  INCORRECT: Placing table in front of the sofa but shifted to the side
+-  CORRECT: Placing table directly touching or very close to sofa's side panel/armrest
 
-🔲 CONSOLE TABLE / ENTRYWAY TABLE / FOYER TABLE:
-- ⚠️ ABSOLUTE RULE: Console tables are COMPLETELY DIFFERENT from sofas - NEVER remove a sofa when adding a console
+ CONSOLE TABLE / ENTRYWAY TABLE / FOYER TABLE:
+-  ABSOLUTE RULE: Console tables are COMPLETELY DIFFERENT from sofas - NEVER remove a sofa when adding a console
 - Console tables are NARROW, LONG tables that go AGAINST A WALL (not in front of seating)
 - Place against an empty wall space, NOT in the seating area
 - Typical placement: behind a sofa (against wall), in entryways, hallways, or against any bare wall
 - Console tables are ACCENT furniture - they do NOT replace ANY seating furniture
-- ⚠️ CRITICAL: If there is a sofa in the room, it MUST remain - console tables are ADDITIONAL furniture
+-  CRITICAL: If there is a sofa in the room, it MUST remain - console tables are ADDITIONAL furniture
 - Console tables are typically 28-32 inches tall and very narrow (12-18 inches deep)
 
-💡 LAMPS:
+ LAMPS:
 - Place on an existing table or directly on the floor (for floor lamps)
 
-🛏️ BEDS:
+ BEDS:
 - Place against a wall
 
-🪴 FLOOR PLANTERS / TALL PLANTS (floor-standing decorative items):
-🚨🚨🚨 CRITICAL FOR PLANTERS - DO NOT ZOOM 🚨🚨🚨
-- ⚠️ ABSOLUTE RULE: The output image MUST show THE ENTIRE ROOM - NOT a close-up of the planter
-- ⚠️ The planter is a TINY ACCENT piece - it should be BARELY NOTICEABLE in the image
-- ⚠️ The planter should appear SMALL in the corner or edge of the image, NOT in the center
-- ⚠️ NEVER zoom in, crop, or focus on the planter
-- ⚠️ The camera view MUST BE IDENTICAL to the input image - same angle, same distance, same field of view
+ FLOOR PLANTERS / TALL PLANTS (floor-standing decorative items):
+ CRITICAL FOR PLANTERS - DO NOT ZOOM
+-  ABSOLUTE RULE: The output image MUST show THE ENTIRE ROOM - NOT a close-up of the planter
+-  The planter is a TINY ACCENT piece - it should be BARELY NOTICEABLE in the image
+-  The planter should appear SMALL in the corner or edge of the image, NOT in the center
+-  NEVER zoom in, crop, or focus on the planter
+-  The camera view MUST BE IDENTICAL to the input image - same angle, same distance, same field of view
 - Place in a FAR CORNER, next to furniture (against a wall), or tucked beside existing items
 - The planter should occupy LESS than 5-10% of the visible image area
 - Keep planters proportionally SMALL relative to furniture (floor planters are typically 2-3 feet tall MAX)
 - Large/tall planters: place in a FAR CORNER of the room, NOT in the center or foreground
-- 🚫 WRONG: Zooming in to show planter details - this FAILS the task
-- 🚫 WRONG: Planter appearing large or prominent in the image
-- ✅ CORRECT: Full room view with tiny planter visible in corner/edge
+-  WRONG: Zooming in to show planter details - this FAILS the task
+-  WRONG: Planter appearing large or prominent in the image
+-  CORRECT: Full room view with tiny planter visible in corner/edge
 - The ENTIRE input room must be visible in the output - planter is just a small addition
 
-🛋️ CUSHIONS / PILLOWS / THROW PILLOWS / DECORATIVE PILLOWS:
-🚨🚨🚨 CRITICAL - CUSHIONS GO ON EXISTING FURNITURE, NOT BESIDE IT 🚨🚨🚨
-- ⚠️ Cushions and pillows must be placed DIRECTLY ON the sofa/couch/chair - sitting on the seat or leaning against the backrest
-- ⚠️ The sofa/furniture MUST REMAIN IN ITS EXACT POSITION - do NOT move the sofa to accommodate cushions
-- ⚠️ Cushions are SMALL accessories (typically 16-22 inches) that sit ON furniture
+ CUSHIONS / PILLOWS / THROW PILLOWS / DECORATIVE PILLOWS:
+ CRITICAL - CUSHIONS GO ON EXISTING FURNITURE, NOT BESIDE IT
+-  Cushions and pillows must be placed DIRECTLY ON the sofa/couch/chair - sitting on the seat or leaning against the backrest
+-  The sofa/furniture MUST REMAIN IN ITS EXACT POSITION - do NOT move the sofa to accommodate cushions
+-  Cushions are SMALL accessories (typically 16-22 inches) that sit ON furniture
 - Place cushions in corners of the sofa, against armrests, or centered on seat cushions
 - Arrange cushions naturally as if someone just placed them - slightly angled, varied positions
-- 🚫 ABSOLUTELY FORBIDDEN: Moving, shifting, or repositioning the sofa when adding cushions
-- 🚫 WRONG: Placing cushions on the floor next to the sofa
-- 🚫 WRONG: Moving the sofa to a different position to "make room" for cushions
-- ✅ CORRECT: Cushions placed directly on the existing sofa, sofa stays in EXACT same position
+-  ABSOLUTELY FORBIDDEN: Moving, shifting, or repositioning the sofa when adding cushions
+-  WRONG: Placing cushions on the floor next to the sofa
+-  WRONG: Moving the sofa to a different position to "make room" for cushions
+-  CORRECT: Cushions placed directly on the existing sofa, sofa stays in EXACT same position
 
-🧶 THROWS / BLANKETS / THROW BLANKETS:
+ THROWS / BLANKETS / THROW BLANKETS:
 - Place draped over the arm of a sofa/chair OR folded on the seat
 - The furniture underneath MUST NOT MOVE - the throw just sits on top of it
-- 🚫 WRONG: Moving furniture to accommodate a throw
+-  WRONG: Moving furniture to accommodate a throw
 
-💐 TABLETOP DECOR (vases, flower bunches, flower arrangements, decorative objects):
-🚨🚨🚨 CRITICAL - PLACE ON TABLE SURFACES, NOT ON FLOOR 🚨🚨🚨
-- ⚠️ These are SMALL tabletop items - they belong ON coffee tables, center tables, side tables, console tables, dining tables
-- ⚠️ NEVER replace furniture (sofas, chairs) with decor items - ADD decor ON existing table surfaces
-- ⚠️ Look for table surfaces in the room and place the decor item ON TOP of them
+ TABLETOP DECOR (vases, flower bunches, flower arrangements, decorative objects):
+ CRITICAL - PLACE ON TABLE SURFACES, NOT ON FLOOR
+-  These are SMALL tabletop items - they belong ON coffee tables, center tables, side tables, console tables, dining tables
+-  NEVER replace furniture (sofas, chairs) with decor items - ADD decor ON existing table surfaces
+-  Look for table surfaces in the room and place the decor item ON TOP of them
 - Preferred surfaces: 1) Coffee/center table 2) Side table 3) Console table 4) Dining table 5) Shelf/mantel
 - If no table exists: place on visible shelves, windowsills, or mantels
 - Keep proportions realistic - these items are typically 10-30cm tall
-- 🚫 WRONG: Replacing a sofa with a vase - this is COMPLETELY INCORRECT
-- 🚫 WRONG: Placing a flower bunch on the floor
-- ✅ CORRECT: A small vase sitting on the center coffee table
+-  WRONG: Replacing a sofa with a vase - this is COMPLETELY INCORRECT
+-  WRONG: Placing a flower bunch on the floor
+-  CORRECT: A small vase sitting on the center coffee table
 
-🗿 SCULPTURES / FIGURINES / DECORATIVE STATUES:
-🚨🚨🚨 CRITICAL - PLACEMENT PRIORITY FOR SCULPTURES 🚨🚨🚨
-- ⚠️ FIRST PRIORITY: Place on the CENTER TABLE / COFFEE TABLE (in front of sofa)
-- ⚠️ SECOND PRIORITY: If center table is full or doesn't exist, place on a SIDE TABLE
-- ⚠️ THIRD PRIORITY: If no tables available, place on console table, shelf, or mantel
+ SCULPTURES / FIGURINES / DECORATIVE STATUES:
+ CRITICAL - PLACEMENT PRIORITY FOR SCULPTURES
+-  FIRST PRIORITY: Place on the CENTER TABLE / COFFEE TABLE (in front of sofa)
+-  SECOND PRIORITY: If center table is full or doesn't exist, place on a SIDE TABLE
+-  THIRD PRIORITY: If no tables available, place on console table, shelf, or mantel
 - Sculptures are decorative accent pieces - they should be PROMINENTLY visible on table surfaces
 - Position the sculpture facing the camera/viewer for best visual impact
 - Keep proportions realistic - tabletop sculptures are typically 15-40cm tall
-- 🚫 WRONG: Placing sculpture on the floor
-- 🚫 WRONG: Hiding sculpture in a corner
-- ✅ CORRECT: Sculpture placed centrally on the coffee table as a focal point
+-  WRONG: Placing sculpture on the floor
+-  WRONG: Hiding sculpture in a corner
+-  CORRECT: Sculpture placed centrally on the coffee table as a focal point
 
-🖼️ WALL ART / MIRRORS / DECORATIVE ITEMS:
+ WALL ART / MIRRORS / DECORATIVE ITEMS:
 - Mount on walls at appropriate eye level
 - These are accent pieces - maintain the full room view
 - DO NOT zoom in on decorative items
 
-📏 SPACING:
+ SPACING:
 - Maintain realistic spacing and proportions
 - Side tables should be 0-6 inches from sofa's side
 - Center tables should be 14-18 inches from sofa's front
 
-🎯 MANDATORY FRONT ANGLE REQUIREMENT:
+ MANDATORY FRONT ANGLE REQUIREMENT:
 ═══════════════════════════════════════════════════════════════
-⚠️ THE PRODUCT MUST ALWAYS SHOW ITS FRONT FACE TOWARDS THE CAMERA ⚠️
+ THE PRODUCT MUST ALWAYS SHOW ITS FRONT FACE TOWARDS THE CAMERA
 - Sofas: Show the front cushions/seating area facing the camera, NOT the back
 - Tables: Show the front/main side facing the camera
 - Chairs: Show the front/seating side facing the camera, NOT the back
@@ -3430,20 +3430,20 @@ PLACEMENT GUIDELINES:
 - Lamps: Show the shade opening or decorative front facing the camera
 - All furniture: The primary viewing angle (how it appears in showrooms) must face the camera
 
-❌ INCORRECT ANGLES:
+ INCORRECT ANGLES:
 - Showing the back of a sofa (you should see cushions, not the sofa back panel)
 - Showing a chair from behind (you should see the seat, not the chair back)
 - Showing a table from a sharp side angle (you should see the full tabletop)
 - Placing furniture facing away from the camera view
 
-✅ CORRECT ANGLES:
+ CORRECT ANGLES:
 - Products oriented so their "front" (showroom display angle) faces the camera
 - User should clearly see what the product looks like from its best viewing angle
 - The product should appear as it would in a furniture catalog - front and center
 ═══════════════════════════════════════════════════════════════
 
-🔦 CRITICAL LIGHTING REQUIREMENTS:
-⚠️ THE PRODUCT MUST LOOK LIKE IT IS PART OF THE ROOM, NOT ADDED ON TOP OF IT ⚠️
+ CRITICAL LIGHTING REQUIREMENTS:
+ THE PRODUCT MUST LOOK LIKE IT IS PART OF THE ROOM, NOT ADDED ON TOP OF IT
 1. ANALYZE the room's lighting: identify light sources, direction, color temperature (warm/cool)
 2. MATCH lighting on the product: highlights must come from the same direction as room lighting
 3. MATCH shadow direction: product shadow must fall in the same direction as other shadows in room
@@ -3452,8 +3452,8 @@ PLACEMENT GUIDELINES:
 6. SEAMLESS BLEND: a viewer should NOT be able to tell the product was digitally added
 
 OUTPUT: One photorealistic image showing THE ENTIRE ROOM (same wide-angle view as input) with the {product_name} added naturally.
-🚨 FOR PLANTERS/PLANTS: The planter must appear SMALL (5-10% of image) in a FAR CORNER - DO NOT zoom in or make it prominent!
-🚨 SIZE PRESERVATION: All existing furniture MUST remain THE EXACT SAME SIZE - no enlarging, no shrinking. The room MUST NOT expand or change shape.
+ FOR PLANTERS/PLANTS: The planter must appear SMALL (5-10% of image) in a FAR CORNER - DO NOT zoom in or make it prominent!
+ SIZE PRESERVATION: All existing furniture MUST remain THE EXACT SAME SIZE - no enlarging, no shrinking. The room MUST NOT expand or change shape.
 The room structure, walls, and camera angle MUST be identical to the input image. DO NOT zoom in or crop - the output MUST show the exact same room view as the input. The product should be visible but NOT dominate the image - show the full room context."""
 
             # Build contents list with PIL Images (same approach as furniture removal)
@@ -3663,13 +3663,13 @@ The room structure, walls, and camera angle MUST be identical to the input image
         surface_log = f" + {', '.join(surface_desc)}" if surface_desc else ""
 
         if not products and (wall_color or has_surfaces):
-            logger.info(f"🎨 SURFACE ONLY: wall_color={wall_color.get('name') if wall_color else None}{surface_log}")
+            logger.info(f" SURFACE ONLY: wall_color={wall_color.get('name') if wall_color else None}{surface_log}")
         elif wall_color or has_surfaces:
             logger.info(
-                f"🛒 ADD MULTIPLE + SURFACES: {len(products)} products, {total_items} total items + wall_color={wall_color.get('name') if wall_color else None}{surface_log}"
+                f" ADD MULTIPLE + SURFACES: {len(products)} products, {total_items} total items + wall_color={wall_color.get('name') if wall_color else None}{surface_log}"
             )
         else:
-            logger.info(f"🛒 ADD MULTIPLE: {len(products)} products, {total_items} total items to place")
+            logger.info(f" ADD MULTIPLE: {len(products)} products, {total_items} total items to place")
 
         try:
             import time
@@ -3678,7 +3678,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
 
             # Use editing preprocessor to preserve quality for visualization output
             processed_room = self._preprocess_image_for_editing(room_image)
-            logger.info(f"⏱️ [TIMING] Image preprocessing took {time.time() - timing_start:.2f}s")
+            logger.info(f" [TIMING] Image preprocessing took {time.time() - timing_start:.2f}s")
 
             # Download all product images
             download_start = time.time()
@@ -3711,18 +3711,18 @@ The room structure, walls, and camera angle MUST be identical to the input image
                         image_data = await self._download_image(image_url)
                         if image_data:
                             logger.info(
-                                f"✅ Downloaded product image for '{name}': {len(image_data)} bytes from {image_url[:100]}..."
+                                f" Downloaded product image for '{name}': {len(image_data)} bytes from {image_url[:100]}..."
                             )
                         else:
-                            logger.warning(f"⚠️ No image data returned for '{name}' from {image_url[:100]}...")
+                            logger.warning(f" No image data returned for '{name}' from {image_url[:100]}...")
                     except Exception as e:
-                        logger.warning(f"❌ Failed to download product image for '{name}': {e}")
+                        logger.warning(f" Failed to download product image for '{name}': {e}")
                 else:
-                    logger.warning(f"⚠️ No image_url provided for product '{name}' - AI won't have visual reference!")
+                    logger.warning(f" No image_url provided for product '{name}' - AI won't have visual reference!")
                 product_images_data.append(image_data)
 
             logger.info(
-                f"⏱️ [TIMING] Product image downloads took {time.time() - download_start:.2f}s for {len(products)} products"
+                f" [TIMING] Product image downloads took {time.time() - download_start:.2f}s for {len(products)} products"
             )
 
             # Build product list for prompt with quantities and dimensions - VERY EXPLICIT about counts
@@ -3759,20 +3759,20 @@ The room structure, walls, and camera angle MUST be identical to the input image
                     existing_products_list.append(f"   • {ep_name}: {ep_qty} {'copies' if ep_qty > 1 else 'copy'}")
                 existing_products_str = "\n".join(existing_products_list)
                 existing_products_warning = f"""
-🔒🔒🔒 CRITICAL: PRODUCTS ALREADY IN THIS IMAGE - DO NOT REMOVE OR REPLACE 🔒🔒🔒
+ CRITICAL: PRODUCTS ALREADY IN THIS IMAGE - DO NOT REMOVE OR REPLACE
 ═══════════════════════════════════════════════════════════════════════════════
 
 The following products are ALREADY RENDERED in this image and MUST stay EXACTLY as they are:
 {existing_products_str}
 
-⛔⛔⛔ ABSOLUTE RULES FOR EXISTING PRODUCTS: ⛔⛔⛔
+ ABSOLUTE RULES FOR EXISTING PRODUCTS:
 1. DO NOT remove any of the above products
 2. DO NOT replace any of the above products with new products
 3. DO NOT move any of the above products to different locations
 4. DO NOT change the appearance, color, or style of existing products
 5. These products MUST remain EXACTLY where they are in the image
 
-🎯 YOUR TASK: Add NEW products while PRESERVING ALL existing products above.
+ YOUR TASK: Add NEW products while PRESERVING ALL existing products above.
 
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -3792,10 +3792,10 @@ The following products are ALREADY RENDERED in this image and MUST stay EXACTLY 
             # Build explicit list of product names for reference
             allowed_product_names = ", ".join([entry[0] for entry in product_entries])
             no_extra_furniture_warning = f"""
-🚫🚫🚫 ABSOLUTELY CRITICAL: DO NOT ADD ANY EXTRA FURNITURE 🚫🚫🚫
+ ABSOLUTELY CRITICAL: DO NOT ADD ANY EXTRA FURNITURE
 ═══════════════════════════════════════════════════════════════════════
 
-⛔⛔⛔ FORBIDDEN - DO NOT ADD ANY OF THESE: ⛔⛔⛔
+ FORBIDDEN - DO NOT ADD ANY OF THESE:
 - NO extra chairs (accent chairs, armchairs, dining chairs, single seaters)
 - NO extra cushions or pillows beyond what's listed
 - NO extra sofas or sectionals
@@ -3806,9 +3806,9 @@ The following products are ALREADY RENDERED in this image and MUST stay EXACTLY 
 - NO extra wall art or decorations beyond what's listed
 - NO extra stools, benches, or ottomans beyond what's listed
 
-🎯 ONLY THESE SPECIFIC PRODUCTS ARE ALLOWED: {allowed_product_names}
+ ONLY THESE SPECIFIC PRODUCTS ARE ALLOWED: {allowed_product_names}
 
-⚠️ CRITICAL RULES:
+ CRITICAL RULES:
 1. ADD ONLY the EXACT products listed below - NOTHING ELSE
 2. The room may ALREADY have furniture - DO NOT duplicate what you see
 3. DO NOT "complete" or "design" the room - it's already complete
@@ -3818,8 +3818,8 @@ The following products are ALREADY RENDERED in this image and MUST stay EXACTLY 
 YOUR ONLY TASK: Add EXACTLY the products listed below - NOTHING MORE.
 The room is ALREADY DESIGNED - it does NOT need additional furniture.
 
-⛔ ADDING ANY UNLISTED FURNITURE = AUTOMATIC FAILURE ⛔
-⛔ ADDING DUPLICATES OF EXISTING ITEMS = AUTOMATIC FAILURE ⛔
+ ADDING ANY UNLISTED FURNITURE = AUTOMATIC FAILURE
+ ADDING DUPLICATES OF EXISTING ITEMS = AUTOMATIC FAILURE
 ═══════════════════════════════════════════════════════════════════════
 
 """
@@ -3828,18 +3828,18 @@ The room is ALREADY DESIGNED - it does NOT need additional furniture.
             if total_items_to_add == 1 and not has_multiple_copies:
                 single_item_name = product_entries[0][0] if product_entries else "item"
                 multiple_instance_instruction = f"""{no_extra_furniture_warning}
-⚠️⚠️⚠️ CRITICAL: ADD EXACTLY 1 ITEM - NO MORE, NO LESS ⚠️⚠️⚠️
+ CRITICAL: ADD EXACTLY 1 ITEM - NO MORE, NO LESS
 ═══════════════════════════════════════════════════════════════════════
 
-🎯 YOU MUST ADD EXACTLY 1 (ONE) {single_item_name.upper()}
+ YOU MUST ADD EXACTLY 1 (ONE) {single_item_name.upper()}
 
-⛔ DO NOT:
+ DO NOT:
 - Add 2 or more of this item
 - Create duplicates or similar-looking items
 - Add any matching/complementary pieces
 - Add ANY other furniture (sofas, chairs, tables, etc.)
 
-✅ DO:
+ DO:
 - Add ONLY 1 (ONE) single item
 - Place it in ONE appropriate location
 - Keep ALL existing furniture EXACTLY as it is
@@ -3849,59 +3849,59 @@ COUNT CHECK: Your output should have exactly 1 new {single_item_name} added.
 
 """
             elif has_multiple_copies:
-                logger.info(f"🪑 MULTIPLE COPIES REQUESTED: {total_items_to_add} total items from {len(products)} products")
+                logger.info(f" MULTIPLE COPIES REQUESTED: {total_items_to_add} total items from {len(products)} products")
                 # Build instruction for multiple copies - use the summary we already built
                 multiple_instance_instruction = f"""{no_extra_furniture_warning}
-🚨🚨🚨 CRITICAL: YOU MUST ADD MULTIPLE COPIES OF SOME PRODUCTS 🚨🚨🚨
+ CRITICAL: YOU MUST ADD MULTIPLE COPIES OF SOME PRODUCTS
 ═══════════════════════════════════════════════════════════════════════
 
-⚠️ QUANTITY REQUIREMENTS - READ CAREFULLY:
+ QUANTITY REQUIREMENTS - READ CAREFULLY:
 {product_summary_str}
 
-🎯 TOTAL ITEMS YOU MUST PLACE: {total_items_to_add}
+ TOTAL ITEMS YOU MUST PLACE: {total_items_to_add}
 
-⛔ FAILURE CONDITIONS (DO NOT DO THIS):
+ FAILURE CONDITIONS (DO NOT DO THIS):
 - Adding only 1 item when 2+ copies are required
 - Ignoring the quantity requirements
 - Placing fewer items than specified
 - Adding ANY furniture not in the list above (sofas, chairs, tables, etc.)
 
-✅ SUCCESS CONDITIONS (DO THIS):
+ SUCCESS CONDITIONS (DO THIS):
 - Count EXACTLY {total_items_to_add} separate items in your output
 - For chairs with qty=2: Place BOTH chairs SIDE BY SIDE (next to each other, facing the same direction)
 - For cushions with qty=2+: Place ALL cushions on the sofa or seating
 - Each copy should be in a DIFFERENT location but same style/color
 - DO NOT add any furniture not specified in the list
 
-🪑 CHAIR PLACEMENT FOR MULTIPLE COPIES:
+ CHAIR PLACEMENT FOR MULTIPLE COPIES:
 - 2 accent chairs → Place SIDE BY SIDE (next to each other, facing the same direction)
 - 2+ dining chairs → Arrange evenly around the dining table
 
-🪑 BENCH PLACEMENT:
-- ⚠️ DO NOT REMOVE existing furniture - find available empty space first
-- 🛋️ LIVING ROOM: Place bench ACROSS from the sofa (on the OPPOSITE side, facing the sofa)
+ BENCH PLACEMENT:
+-  DO NOT REMOVE existing furniture - find available empty space first
+-  LIVING ROOM: Place bench ACROSS from the sofa (on the OPPOSITE side, facing the sofa)
   - Position bench so it faces the sofa, creating a conversation area
   - Maintain 3-4 feet distance from sofa
-- 🛏️ BEDROOM: Place bench at the FOOT OF THE BED (next to the footrest area)
+-  BEDROOM: Place bench at the FOOT OF THE BED (next to the footrest area)
   - Position parallel to the foot of the bed
   - Can also be placed at the end of the bed facing outward
-- 🚫 NEVER place directly in front of sofa blocking the coffee table area
-- 🚫 NEVER remove or replace existing chairs/furniture to make room for the bench
+-  NEVER place directly in front of sofa blocking the coffee table area
+-  NEVER remove or replace existing chairs/furniture to make room for the bench
 ═══════════════════════════════════════════════════════════════════════
 
 """
             else:
                 # Multiple different products without multiple copies of any single product
                 multiple_instance_instruction = f"""{no_extra_furniture_warning}
-🎯 ADD EXACTLY THESE {total_items_to_add} ITEMS - NO MORE, NO LESS 🎯
+ ADD EXACTLY THESE {total_items_to_add} ITEMS - NO MORE, NO LESS
 ═══════════════════════════════════════════════════════════════════════
 
 Items to add:
 {product_summary_str}
 
-⛔ DO NOT add any items not in this list
-⛔ DO NOT add sofas, chairs, tables, or furniture not specified
-⛔ The room is ALREADY COMPLETE
+ DO NOT add any items not in this list
+ DO NOT add sofas, chairs, tables, or furniture not specified
+ The room is ALREADY COMPLETE
 
 ═══════════════════════════════════════════════════════════════════════
 
@@ -3917,7 +3917,7 @@ Items to add:
             planter_instruction = ""
             if has_planter:
                 planter_instruction = """
-🌿🌿🌿 PLANTER-SPECIFIC INSTRUCTION 🌿🌿🌿
+ PLANTER-SPECIFIC INSTRUCTION
 ═══════════════════════════════════════════════════════════════
 For any planter being added:
 
@@ -3926,6 +3926,14 @@ THE EXISTING PRODUCTS IN THE ROOM SHOULD BE CLEARLY VISIBLE AND NOT CUT FROM VIE
 THE IMAGE SHOULD NOT BE ZOOMED IN.
 THE CAMERA ANGLE SHOULD BE THE SAME.
 DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
+
+ PLANTER PLACEMENT RULES:
+-  NEVER place a planter IN FRONT OF the sofa or any seating — it blocks the view
+-  NEVER place a planter in the CENTER of the room or in walkways
+-  Place planters in FAR CORNERS of the room
+-  Place planters BESIDE (to the LEFT or RIGHT of) sofas/chairs, NOT in front
+-  Place planters against walls in empty spaces
+- The planter is a SMALL accent piece — it should NOT block or obscure any furniture
 ═══════════════════════════════════════════════════════════════
 
 """
@@ -3939,29 +3947,29 @@ DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
                 color_name = wall_color.get("name", "Unknown")
                 color_code = wall_color.get("code", "")
                 color_hex = wall_color.get("hex_value", "")
-                logger.info(f"🎨 WALL COLOR REQUESTED: {color_name} ({color_code}) - {color_hex}")
-                wall_color_instruction = f"""🎨🎨🎨 WALL COLOR CHANGE - APPLY NEW WALL COLOR 🎨🎨🎨
+                logger.info(f" WALL COLOR REQUESTED: {color_name} ({color_code}) - {color_hex}")
+                wall_color_instruction = f""" WALL COLOR CHANGE - APPLY NEW WALL COLOR
 Paint ALL visible walls with the following color:
 
-🎯 WALL COLOR TO APPLY:
+ WALL COLOR TO APPLY:
 - Name: {color_name} (Asian Paints)
 - Code: {color_code}
 - Hex Reference: {color_hex}
 
-✅ WALL COLOR APPLICATION RULES:
+ WALL COLOR APPLICATION RULES:
 1. Paint ALL visible wall surfaces with this color
 2. Apply the color uniformly across all walls
 3. Maintain realistic matte/satin paint finish
 4. Preserve natural shadows and lighting on walls
 5. The color should be a close match to the hex value provided
 
-⛔ DO NOT change the ceiling color - ceiling remains as-is
-⛔ DO NOT change window frames, door frames, or trim
-⛔ DO NOT add textures, patterns, or wallpaper - just solid paint color"""
+ DO NOT change the ceiling color - ceiling remains as-is
+ DO NOT change window frames, door frames, or trim
+ DO NOT add textures, patterns, or wallpaper - just solid paint color"""
             else:
-                wall_color_instruction = """🚫🚫🚫 WALL COLOR PRESERVATION - ABSOLUTE REQUIREMENT 🚫🚫🚫
-⛔ DO NOT CHANGE THE WALL COLOR - walls must remain EXACTLY the same color as input
-⛔ DO NOT add paint, wallpaper, or any wall treatment that wasn't there
+                wall_color_instruction = """ WALL COLOR PRESERVATION - ABSOLUTE REQUIREMENT
+ DO NOT CHANGE THE WALL COLOR - walls must remain EXACTLY the same color as input
+ DO NOT add paint, wallpaper, or any wall treatment that wasn't there
 - If walls are white → output walls MUST be white
 - If walls are grey → output walls MUST be grey
 - The wall color scheme is FIXED - you are ONLY adding furniture"""
@@ -3971,7 +3979,7 @@ Paint ALL visible walls with the following color:
 
             if texture_image and texture_name:
                 surface_instructions += f"""
-🧱🧱🧱 WALL TEXTURE — APPLY TEXTURE PATTERN 🧱🧱🧱
+ WALL TEXTURE — APPLY TEXTURE PATTERN
 A wall texture swatch image is provided AFTER the product reference images.
 
 TEXTURE INFO:
@@ -3997,7 +4005,7 @@ WALL TEXTURE RULES:
                     tile_size_desc = tile_size or "standard size"
 
                 surface_instructions += f"""
-🏗️🏗️🏗️ FLOOR TILE — APPLY TILE PATTERN 🏗️🏗️🏗️
+ FLOOR TILE — APPLY TILE PATTERN
 A floor tile swatch image is provided AFTER the product reference images{' and wall texture swatch' if texture_image else ''}.
 
 TILE INFO:
@@ -4012,8 +4020,8 @@ FLOOR TILE RULES:
 4. Add thin, natural grout lines between tiles
 5. Tiles closer to camera appear larger (perspective foreshortening)
 6. Apply appropriate reflectivity for {tile_finish or 'standard'} finish
-7. ⛔ NEVER apply tile pattern to WALLS — tiles go ONLY on the FLOOR (horizontal ground surface)
-8. ⛔ NEVER apply tile to the ceiling or any vertical surface
+7.  NEVER apply tile pattern to WALLS — tiles go ONLY on the FLOOR (horizontal ground surface)
+8.  NEVER apply tile to the ceiling or any vertical surface
 9. The boundary between floor and wall must remain clear — tiles stop where the wall begins
 10. Furniture legs should rest naturally on the tiled surface
 """
@@ -4036,10 +4044,10 @@ FLOOR TILE RULES:
 
                 prompt = f"""{VisualizationPrompts.get_system_intro()}
 
-🎨 SURFACE CHANGES ONLY - NO OTHER CHANGES 🎨
+ SURFACE CHANGES ONLY - NO OTHER CHANGES
 Your ONLY task is to change: {changes_summary}. Do NOT make any other changes.
 
-🚨🚨🚨 ABSOLUTE REQUIREMENT - IMAGE DIMENSIONS & ROOM STRUCTURE 🚨🚨🚨
+ ABSOLUTE REQUIREMENT - IMAGE DIMENSIONS & ROOM STRUCTURE
 ═══════════════════════════════════════════════════════════════
 THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 - If input is 1024x768 pixels → output MUST be 1024x768 pixels
@@ -4048,7 +4056,7 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 - The camera angle, perspective, and field of view MUST remain UNCHANGED
 - DO NOT zoom in or out
 
-🏗️ ROOM STRUCTURE PRESERVATION - CRITICAL:
+ ROOM STRUCTURE PRESERVATION - CRITICAL:
 - DO NOT add new walls, partitions, columns, or any architectural elements
 - DO NOT remove or modify existing walls, doors, windows, or structural elements
 - The number of walls visible must remain EXACTLY the same
@@ -4061,29 +4069,29 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 
 {surface_instructions}
 
-⛔⛔⛔ ABSOLUTELY FORBIDDEN - DO NOT DO ANY OF THESE ⛔⛔⛔
+ ABSOLUTELY FORBIDDEN - DO NOT DO ANY OF THESE
 ═══════════════════════════════════════════════════════════════
-- ⛔ DO NOT add ANY new furniture (sofas, chairs, tables, etc.)
-- ⛔ DO NOT add ANY rugs or carpets
-- ⛔ DO NOT add ANY decor items (plants, lamps, artwork, cushions)
-- ⛔ DO NOT remove ANY existing furniture or objects
-- ⛔ DO NOT move or reposition ANY existing furniture
-- ⛔ DO NOT change ANY furniture colors or materials
-{'' if tile_swatch_image else '- ⛔ DO NOT change the floor color or material'}
-- ⛔ DO NOT paint the ceiling
-- ⛔ DO NOT change window frames, door frames, or trim
-- ⛔ DO NOT change the camera angle or zoom level
-- ⛔ DO NOT crop or resize the image
-- ⛔ DO NOT add new walls, partitions, or architectural structures
-- ⛔ DO NOT apply floor tiles to walls — tiles are ONLY for floor surfaces
-- ⛔ DO NOT apply wall texture to the floor — texture is ONLY for wall surfaces
+-  DO NOT add ANY new furniture (sofas, chairs, tables, etc.)
+-  DO NOT add ANY rugs or carpets
+-  DO NOT add ANY decor items (plants, lamps, artwork, cushions)
+-  DO NOT remove ANY existing furniture or objects
+-  DO NOT move or reposition ANY existing furniture
+-  DO NOT change ANY furniture colors or materials
+{'' if tile_swatch_image else '-  DO NOT change the floor color or material'}
+-  DO NOT paint the ceiling
+-  DO NOT change window frames, door frames, or trim
+-  DO NOT change the camera angle or zoom level
+-  DO NOT crop or resize the image
+-  DO NOT add new walls, partitions, or architectural structures
+-  DO NOT apply floor tiles to walls — tiles are ONLY for floor surfaces
+-  DO NOT apply wall texture to the floor — texture is ONLY for wall surfaces
 ═══════════════════════════════════════════════════════════════
 
-🚨 CRITICAL: THE ONLY CHANGES ALLOWED ARE: {changes_summary.upper()} 🚨
+ CRITICAL: THE ONLY CHANGES ALLOWED ARE: {changes_summary.upper()}
 Everything else in the room must remain EXACTLY as it appears in the input image.
 The furniture, decor, and all other elements must be IDENTICAL.
 
-🔒 PIXEL-PERFECT PRESERVATION:
+ PIXEL-PERFECT PRESERVATION:
 - All furniture must be at the EXACT same pixel positions
 - The room layout and composition must be IDENTICAL to input
 - Output dimensions must EXACTLY match input dimensions
@@ -4098,16 +4106,16 @@ No furniture, rugs, decor, or any other elements should be added, removed, or ch
 
 {existing_products_warning}{multiple_instance_instruction}{planter_instruction}ADD the following items to this room in appropriate locations WITHOUT removing any existing furniture.
 
-📦 ITEM COUNT SUMMARY (YOU MUST ADD EXACTLY THIS MANY):
+ ITEM COUNT SUMMARY (YOU MUST ADD EXACTLY THIS MANY):
 {product_summary_str}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 TOTAL ITEMS TO PLACE: {total_items_to_add}
+ TOTAL ITEMS TO PLACE: {total_items_to_add}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 DETAILED LIST - ADD EACH OF THESE {total_items_to_add} ITEMS:
 {product_list}
 
-🚨🚨🚨 ABSOLUTE REQUIREMENT - ROOM DIMENSIONS & STRUCTURE 🚨🚨🚨
+ ABSOLUTE REQUIREMENT - ROOM DIMENSIONS & STRUCTURE
 ═══════════════════════════════════════════════════════════════
 THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 - If input is 1024x768 pixels → output MUST be 1024x768 pixels
@@ -4118,52 +4126,52 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 - DO NOT zoom in or out
 - The walls must be in the EXACT same positions
 
-🏗️ ROOM STRUCTURE PRESERVATION - CRITICAL:
-- ⛔ DO NOT add new walls, partitions, columns, or any architectural elements
-- ⛔ DO NOT remove or modify existing walls, doors, windows, or structural elements
+ ROOM STRUCTURE PRESERVATION - CRITICAL:
+-  DO NOT add new walls, partitions, columns, or any architectural elements
+-  DO NOT remove or modify existing walls, doors, windows, or structural elements
 - The number of walls visible must remain EXACTLY the same as the input image
 - Wall positions, angles, and proportions must be IDENTICAL to input
 - Ceiling height and shape must remain UNCHANGED
 - The room's physical structure is LOCKED — you are ONLY adding furniture
 
-🔒 CRITICAL PRESERVATION RULES:
+ CRITICAL PRESERVATION RULES:
 1. KEEP ALL EXISTING FURNITURE: Do NOT remove, move, or replace any furniture currently in the room
-2. ⚠️ ESPECIALLY PRESERVE SOFAS: If there is a sofa/couch, it MUST remain in its EXACT position
-3. 🎨 PRESERVE EXISTING COLORS: Do NOT change the color of ANY existing furniture or decor in the room
+2.  ESPECIALLY PRESERVE SOFAS: If there is a sofa/couch, it MUST remain in its EXACT position
+3.  PRESERVE EXISTING COLORS: Do NOT change the color of ANY existing furniture or decor in the room
 4. PRESERVE THE ROOM: Keep the same walls, windows, floors, ceiling, lighting
 5. ROOM SIZE UNCHANGED: The room must look the EXACT same size
-6. ⛔ DO NOT ADD EXTRA ITEMS: Only add the items listed above. Do NOT add extra copies of items already in the room unless specifically requested
+6.  DO NOT ADD EXTRA ITEMS: Only add the items listed above. Do NOT add extra copies of items already in the room unless specifically requested
 
 {wall_color_instruction}
 
 {surface_instructions}
 
-{'🚫🚫🚫 FLOOR COLOR PRESERVATION - ABSOLUTE REQUIREMENT 🚫🚫🚫' + chr(10) + '⛔ DO NOT CHANGE THE FLOOR COLOR - flooring must remain EXACTLY the same color/material as input' + chr(10) + '⛔ DO NOT change flooring material, color, or texture' + chr(10) + '- If floor is wooden → output floor MUST be the SAME wooden color' + chr(10) + '- The floor color scheme is FIXED' if not tile_swatch_image else ''}
+{' FLOOR COLOR PRESERVATION - ABSOLUTE REQUIREMENT ' + chr(10) + ' DO NOT CHANGE THE FLOOR COLOR - flooring must remain EXACTLY the same color/material as input' + chr(10) + ' DO NOT change flooring material, color, or texture' + chr(10) + '- If floor is wooden → output floor MUST be the SAME wooden color' + chr(10) + '- The floor color scheme is FIXED' if not tile_swatch_image else ''}
 
-🔒🔒🔒 PIXEL-LEVEL POSITION PRESERVATION - CRITICAL 🔒🔒🔒
+ PIXEL-LEVEL POSITION PRESERVATION - CRITICAL
 - Every piece of existing furniture must be at the EXACT SAME PIXEL COORDINATES as in the input
 - If a sofa's left edge starts at pixel X=100 in the input, it MUST start at X=100 in the output
 - DO NOT shift, nudge, or adjust the position of ANY existing furniture - not even by a few pixels
 - The silhouette/outline of every existing furniture piece must PERFECTLY OVERLAY the input image
 - Think of it as: existing furniture is "locked in place" - you can only ADD new items around them
 
-🛋️ CUSHIONS / PILLOWS / THROWS - SPECIAL RULES:
+ CUSHIONS / PILLOWS / THROWS - SPECIAL RULES:
 - Cushions go DIRECTLY ON the existing sofa/chair - on the seat or against the backrest
 - The sofa MUST NOT MOVE when adding cushions - cushions sit ON the furniture
-- 🚫 ABSOLUTELY FORBIDDEN: Moving the sofa to accommodate cushions
-- ✅ CORRECT: Cushions placed on sofa, sofa stays in EXACT same position
+-  ABSOLUTELY FORBIDDEN: Moving the sofa to accommodate cushions
+-  CORRECT: Cushions placed on sofa, sofa stays in EXACT same position
 
-🚫🚫🚫 PLACEMENT RESTRICTIONS - VERY IMPORTANT 🚫🚫🚫
-1. ⚠️ ONLY place new items in VISIBLE EMPTY SPACES - spaces that are clearly visible and unobstructed
-2. ⛔ NEVER place furniture BEHIND other furniture (e.g., NO bookshelf behind a sofa - it would be hidden!)
-3. ⛔ NEVER place items where they would be COVERED or BLOCKED by existing furniture
-4. ✅ Place items NEXT TO existing furniture (beside the sofa, not behind it)
-5. ✅ Place items in OPEN FLOOR AREAS visible to the camera
-6. ✅ Place items AGAINST VISIBLE WALLS (not walls blocked by sofas/beds)
-7. 🚫 If a space is blocked by existing furniture, DO NOT use that space
+ PLACEMENT RESTRICTIONS - VERY IMPORTANT
+1.  ONLY place new items in VISIBLE EMPTY SPACES - spaces that are clearly visible and unobstructed
+2.  NEVER place furniture BEHIND other furniture (e.g., NO bookshelf behind a sofa - it would be hidden!)
+3.  NEVER place items where they would be COVERED or BLOCKED by existing furniture
+4.  Place items NEXT TO existing furniture (beside the sofa, not behind it)
+5.  Place items in OPEN FLOOR AREAS visible to the camera
+6.  Place items AGAINST VISIBLE WALLS (not walls blocked by sofas/beds)
+7.  If a space is blocked by existing furniture, DO NOT use that space
 8. Bookshelves, cabinets, and tall furniture must be placed against OPEN walls where they are FULLY VISIBLE
 
-🖼️ WALL ART / PAINTINGS - CRITICAL:
+ WALL ART / PAINTINGS - CRITICAL:
 - If the room ALREADY has wall art/paintings hanging → DO NOT REPLACE them
 - ADD new wall art on a DIFFERENT wall or DIFFERENT position on the same wall
 - Multiple paintings CAN and SHOULD coexist - this is a GALLERY-style arrangement
@@ -4171,34 +4179,34 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 - New artwork should be placed on empty wall space AWAY from existing art
 - Result: Room has MULTIPLE artworks visible (not one replacing another)
 
-⚠️ ADDING MORE OF THE SAME PRODUCT:
+ ADDING MORE OF THE SAME PRODUCT:
 If the room ALREADY has a chair/cushion/table and you're asked to add ANOTHER one:
 - The original item MUST REMAIN in its current position
 - ADD the new item in a DIFFERENT location (next to it, across from it, etc.)
 - Result: 2 items of the same type in the room (NOT replacing the original)
 - Example: If there's already 1 accent chair and you add 1 more → room should have 2 chairs
 
-🔴🔴🔴 EXACT PRODUCT REPLICATION - THIS IS THE MOST CRITICAL REQUIREMENT 🔴🔴🔴
+ EXACT PRODUCT REPLICATION - THIS IS THE MOST CRITICAL REQUIREMENT
 ═══════════════════════════════════════════════════════════════════════════════
 
-⚠️⚠️⚠️ YOU MUST COPY THE EXACT PRODUCT FROM THE REFERENCE IMAGE ⚠️⚠️⚠️
+ YOU MUST COPY THE EXACT PRODUCT FROM THE REFERENCE IMAGE
 
 For each product with a reference image provided:
-1. 🎯 EXACT SHAPE/SILHOUETTE - Copy the PRECISE shape from the reference
+1.  EXACT SHAPE/SILHOUETTE - Copy the PRECISE shape from the reference
    - If reference shows a pedestal table with teardrop glass base → output MUST have pedestal with teardrop glass base
    - If reference shows nesting tables → output MUST be nesting tables
    - DO NOT substitute with a similar-but-different furniture style!
 
-2. 🎨 EXACT COLOR - Match the precise color/finish
+2.  EXACT COLOR - Match the precise color/finish
    - If reference shows gold/brass metal → output MUST be gold/brass metal
    - If reference shows smoky glass → output MUST be smoky glass
 
-3. 🔧 EXACT DESIGN DETAILS - Copy all distinctive features
+3.  EXACT DESIGN DETAILS - Copy all distinctive features
    - Base style (pedestal vs legs vs frame)
    - Top shape (round vs rectangular vs oval)
    - Material combinations (metal + glass, wood + marble, etc.)
 
-4. ⛔ ABSOLUTELY FORBIDDEN:
+4.  ABSOLUTELY FORBIDDEN:
    - DO NOT render a "generic" version of the furniture type
    - DO NOT substitute with a different table/chair/sofa style
    - DO NOT improvise or "interpret" the design
@@ -4206,7 +4214,7 @@ For each product with a reference image provided:
 
 Think of it this way: If a customer ordered THIS SPECIFIC product and you deliver something different, they will return it. The reference image IS the product - copy it EXACTLY.
 
-⚠️ COLOR MATCHING IS MANDATORY:
+ COLOR MATCHING IS MANDATORY:
 - If you're adding 2 copies of "Orange Cushion", BOTH must be ORANGE (same as reference)
 - If you're adding 2 copies of "Red Cushion", BOTH must be RED (same as reference)
 - DO NOT substitute colors or mix up which product gets which color
@@ -4221,7 +4229,7 @@ PLACEMENT GUIDELINES:
 - Lamps go on tables or as floor lamps
 - Decor items go on table surfaces
 
-🛋️🛋️🛋️ REALISTIC FURNITURE PLACEMENT — CRITICAL 🛋️🛋️🛋️
+ REALISTIC FURNITURE PLACEMENT — CRITICAL
 ═══════════════════════════════════════════════════════════════
 Place furniture where a REAL INTERIOR DESIGNER would place it:
 
@@ -4253,31 +4261,31 @@ Place furniture where a REAL INTERIOR DESIGNER would place it:
    - The sofa placed against the far wall should NOT dominate the foreground
    - Respect the room's depth — back wall furniture is in the background
 
-🚫 FORBIDDEN PLACEMENTS:
+ FORBIDDEN PLACEMENTS:
 - Floating sofas/beds with visible floor behind them
 - Furniture blocking walkways or doorways
 - Large furniture against windows or glass doors
 - Sofa placed dead-center of the image with wall gap behind
 ═══════════════════════════════════════════════════════════════
 
-🗿 SCULPTURES / FIGURINES / DECORATIVE STATUES:
-- ⚠️ FIRST PRIORITY: Place on the CENTER TABLE / COFFEE TABLE (in front of sofa)
-- ⚠️ SECOND PRIORITY: If center table is full or doesn't exist, place on a SIDE TABLE
-- ⚠️ THIRD PRIORITY: If no tables available, place on console table, shelf, or mantel
+ SCULPTURES / FIGURINES / DECORATIVE STATUES:
+-  FIRST PRIORITY: Place on the CENTER TABLE / COFFEE TABLE (in front of sofa)
+-  SECOND PRIORITY: If center table is full or doesn't exist, place on a SIDE TABLE
+-  THIRD PRIORITY: If no tables available, place on console table, shelf, or mantel
 - Sculptures should be PROMINENTLY visible on table surfaces, NOT on the floor
 - Position facing the camera for best visual impact
 
-🎯 MANDATORY FRONT ANGLE REQUIREMENT:
-⚠️ ALL PRODUCTS MUST SHOW THEIR FRONT FACE TOWARDS THE CAMERA ⚠️
+ MANDATORY FRONT ANGLE REQUIREMENT:
+ ALL PRODUCTS MUST SHOW THEIR FRONT FACE TOWARDS THE CAMERA
 - Sofas: Front cushions/seating area facing camera, NOT the back
 - Tables: Front/main side facing camera
 - Chairs: Front/seating side facing camera, NOT the back
 - Cabinets: Doors/drawers facing camera
 - All furniture: Show the primary viewing angle (showroom display angle) facing the camera
-❌ WRONG: Showing furniture backs or sharp side angles
-✅ CORRECT: Products oriented with their "front" facing the camera view
+ WRONG: Showing furniture backs or sharp side angles
+ CORRECT: Products oriented with their "front" facing the camera view
 
-🔄 BALANCED DISTRIBUTION - VERY IMPORTANT:
+ BALANCED DISTRIBUTION - VERY IMPORTANT:
 - Distribute items on BOTH SIDES of the sofa for visual balance
 - If adding a floor lamp AND a planter: put one on each side of the sofa
 - If adding 2 side tables: put one on each end of the sofa
@@ -4285,12 +4293,12 @@ Place furniture where a REAL INTERIOR DESIGNER would place it:
 - DON'T cluster all floor items on one side - this looks cramped and unbalanced
 - Example: Floor lamp on LEFT side of sofa, planter on RIGHT side of sofa
 
-🔦 LIGHTING:
+ LIGHTING:
 - All products must match the room's lighting direction and color temperature
 - Products must look naturally integrated, not "pasted on"
 
 OUTPUT: One photorealistic image showing THE ENTIRE ROOM with ALL {total_items_to_add} ITEMS added naturally.
-⚠️ You MUST place EXACTLY {total_items_to_add} new items in the room (some products have multiple copies).
+ You MUST place EXACTLY {total_items_to_add} new items in the room (some products have multiple copies).
 The room structure, walls, and camera angle MUST be identical to the input image."""
 
             # Build contents list with PIL Images (same approach as furniture removal)
@@ -4317,13 +4325,13 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 if image_data:
                     if qty_for_product > 1:
                         contents.append(
-                            f"\n🎯 Product {i+1} REFERENCE IMAGE ({name}) - COPY THIS EXACT PRODUCT {qty_for_product} TIMES:\n"
-                            f"⚠️ CRITICAL: Match the EXACT shape, design, color, material, and all visual details. DO NOT substitute with a different style!"
+                            f"\n Product {i+1} REFERENCE IMAGE ({name}) - COPY THIS EXACT PRODUCT {qty_for_product} TIMES:\n"
+                            f" CRITICAL: Match the EXACT shape, design, color, material, and all visual details. DO NOT substitute with a different style!"
                         )
                     else:
                         contents.append(
-                            f"\n🎯 Product {i+1} REFERENCE IMAGE ({name}) - COPY THIS EXACT PRODUCT:\n"
-                            f"⚠️ CRITICAL: Match the EXACT shape, design, color, material, and all visual details. DO NOT substitute with a different style!"
+                            f"\n Product {i+1} REFERENCE IMAGE ({name}) - COPY THIS EXACT PRODUCT:\n"
+                            f" CRITICAL: Match the EXACT shape, design, color, material, and all visual details. DO NOT substitute with a different style!"
                         )
                     prod_image_bytes = base64.b64decode(image_data)
                     prod_pil_image = Image.open(io.BytesIO(prod_image_bytes))
@@ -4333,7 +4341,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
 
             # Add wall texture swatch if provided
             if texture_image:
-                contents.append("\n🧱 WALL TEXTURE REFERENCE SWATCH — Apply this pattern to ALL visible walls:")
+                contents.append("\n WALL TEXTURE REFERENCE SWATCH — Apply this pattern to ALL visible walls:")
                 tex_bytes = base64.b64decode(self._preprocess_image_for_editing(texture_image))
                 tex_pil = Image.open(io.BytesIO(tex_bytes)).convert("RGB")
                 contents.append(tex_pil)
@@ -4341,7 +4349,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
 
             # Add floor tile swatch if provided
             if tile_swatch_image:
-                contents.append("\n🏗️ FLOOR TILE REFERENCE SWATCH — Apply this tile pattern to ALL visible floor surfaces:")
+                contents.append("\n FLOOR TILE REFERENCE SWATCH — Apply this tile pattern to ALL visible floor surfaces:")
                 tile_bytes = base64.b64decode(self._preprocess_image_for_editing(tile_swatch_image))
                 tile_pil = Image.open(io.BytesIO(tile_bytes)).convert("RGB")
                 contents.append(tile_pil)
@@ -4402,7 +4410,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
             generated_image = None
             final_chunk = None
             gemini_start = time.time()
-            logger.info(f"⏱️ [TIMING] Starting Gemini API call...")
+            logger.info(f" [TIMING] Starting Gemini API call...")
             for attempt in range(max_retries):
                 try:
                     loop = asyncio.get_event_loop()
@@ -4441,8 +4449,8 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 logger.error(f"AI failed to generate ADD MULTIPLE visualization after {max_retries} attempts")
                 raise ValueError("AI failed to generate visualization image")
 
-            logger.info(f"⏱️ [TIMING] Gemini API call completed in {time.time() - gemini_start:.2f}s")
-            logger.info(f"⏱️ [TIMING] TOTAL visualization time: {time.time() - timing_start:.2f}s")
+            logger.info(f" [TIMING] Gemini API call completed in {time.time() - gemini_start:.2f}s")
+            logger.info(f" [TIMING] TOTAL visualization time: {time.time() - timing_start:.2f}s")
 
             # Log visualization operation with token tracking from final chunk
             self._log_streaming_operation(
@@ -4527,7 +4535,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
             color_emphasis = ""
             if product_color:
                 color_emphasis = f"""
-🎨🎨🎨 CRITICAL COLOR REQUIREMENT 🎨🎨🎨
+ CRITICAL COLOR REQUIREMENT
 ═══════════════════════════════════════════════════════════════
 THE PRODUCT COLOR IS: **{product_color.upper()}**
 - YOU MUST render this product in {product_color.upper()} color
@@ -4542,7 +4550,7 @@ THE PRODUCT COLOR IS: **{product_color.upper()}**
             # Build prompt for REPLACE action - simple and direct like Google AI Studio
             prompt = f"""{color_emphasis}Replace the {furniture_type} in the first image with the {product_name} (COLOR: {product_color if product_color else 'see reference image'}) shown in the second image.
 
-🚨🚨🚨 ABSOLUTE REQUIREMENT - ROOM DIMENSIONS 🚨🚨🚨
+ ABSOLUTE REQUIREMENT - ROOM DIMENSIONS
 ═══════════════════════════════════════════════════════════════
 THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 - If input is 1024x768 pixels → output MUST be 1024x768 pixels
@@ -4556,40 +4564,40 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 - The walls must be in the EXACT same positions
 - The floor area must appear the EXACT same size
 
-⚠️ IF THE OUTPUT IMAGE HAS DIFFERENT DIMENSIONS THAN THE INPUT, YOU HAVE FAILED THE TASK ⚠️
+ IF THE OUTPUT IMAGE HAS DIFFERENT DIMENSIONS THAN THE INPUT, YOU HAVE FAILED THE TASK
 ═══════════════════════════════════════════════════════════════
 
-🚨🚨🚨 ABSOLUTE REQUIREMENT - SIZE PRESERVATION 🚨🚨🚨
+ ABSOLUTE REQUIREMENT - SIZE PRESERVATION
 ═══════════════════════════════════════════════════════════════
 ALL OTHER FURNITURE MUST REMAIN THE EXACT SAME SIZE AND SCALE:
-- ⚠️ NEVER make remaining furniture appear larger or smaller
-- ⚠️ NEVER expand the room to accommodate the new item
-- ⚠️ NEVER change the perspective to make the room appear larger
-- ⚠️ All proportions between remaining objects MUST remain IDENTICAL
+-  NEVER make remaining furniture appear larger or smaller
+-  NEVER expand the room to accommodate the new item
+-  NEVER change the perspective to make the room appear larger
+-  All proportions between remaining objects MUST remain IDENTICAL
 
-🚫 ROOM EXPANSION IS FORBIDDEN:
+ ROOM EXPANSION IS FORBIDDEN:
 - The room boundaries (walls, floor, ceiling) are FIXED
 - Do NOT push walls back to create more space
 - Do NOT make the ceiling appear higher
 - Do NOT extend the floor area
 - The room's cubic volume must remain IDENTICAL
 
-⚠️ IF REMAINING FURNITURE CHANGES SIZE OR ROOM EXPANDS, YOU HAVE FAILED THE TASK ⚠️
+ IF REMAINING FURNITURE CHANGES SIZE OR ROOM EXPANDS, YOU HAVE FAILED THE TASK
 ═══════════════════════════════════════════════════════════════
 
 Keep everything else in the room exactly the same - the walls, floor, windows, curtains, and all other furniture and decor should remain unchanged. The room must look the EXACT same size - not bigger, not smaller.
 
-🎯 MANDATORY FRONT ANGLE REQUIREMENT:
-⚠️ THE REPLACEMENT PRODUCT MUST SHOW ITS FRONT FACE TOWARDS THE CAMERA ⚠️
+ MANDATORY FRONT ANGLE REQUIREMENT:
+ THE REPLACEMENT PRODUCT MUST SHOW ITS FRONT FACE TOWARDS THE CAMERA
 - Sofas: Show front cushions/seating area facing camera, NOT the back
 - Tables: Show front/main side facing camera
 - Chairs: Show front/seating side facing camera, NOT the back
 - The product must be oriented so its "showroom display angle" faces the camera
-❌ WRONG: Replacement showing its back or side to the camera
-✅ CORRECT: Replacement oriented with front facing the camera view
+ WRONG: Replacement showing its back or side to the camera
+ CORRECT: Replacement oriented with front facing the camera view
 
-🔦 CRITICAL LIGHTING REQUIREMENTS:
-⚠️ THE REPLACEMENT PRODUCT MUST LOOK LIKE IT IS PART OF THE ROOM, NOT ADDED ON TOP OF IT ⚠️
+ CRITICAL LIGHTING REQUIREMENTS:
+ THE REPLACEMENT PRODUCT MUST LOOK LIKE IT IS PART OF THE ROOM, NOT ADDED ON TOP OF IT
 1. ANALYZE the room's lighting: identify light sources, direction, color temperature (warm/cool)
 2. MATCH lighting on the new product: highlights must come from the same direction as room lighting
 3. MATCH shadow direction: product shadow must fall in the same direction as other shadows in room
@@ -4835,7 +4843,7 @@ Product {idx + 1}:
                 planter_instruction = ""
                 if has_planter:
                     planter_instruction = """
-🌿🌿🌿 PLANTER-SPECIFIC INSTRUCTION 🌿🌿🌿
+ PLANTER-SPECIFIC INSTRUCTION
 ═══════════════════════════════════════════════════════════════
 For any planter being added:
 
@@ -4844,6 +4852,14 @@ THE EXISTING PRODUCTS IN THE ROOM SHOULD BE CLEARLY VISIBLE AND NOT CUT FROM VIE
 THE IMAGE SHOULD NOT BE ZOOMED IN.
 THE CAMERA ANGLE SHOULD BE THE SAME.
 DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
+
+ PLANTER PLACEMENT RULES:
+-  NEVER place a planter IN FRONT OF the sofa or any seating — it blocks the view
+-  NEVER place a planter in the CENTER of the room or in walkways
+-  Place planters in FAR CORNERS of the room
+-  Place planters BESIDE (to the LEFT or RIGHT of) sofas/chairs, NOT in front
+-  Place planters against walls in empty spaces
+- The planter is a SMALL accent piece — it should NOT block or obscure any furniture
 ═══════════════════════════════════════════════════════════════
 
 """
@@ -4869,10 +4885,10 @@ DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
                     # Build explicit list of allowed product names
                     allowed_names_list = ", ".join(product_names)
                     multiple_instance_instruction = f"""
-🚫🚫🚫 ABSOLUTELY CRITICAL: DO NOT ADD ANY EXTRA FURNITURE 🚫🚫🚫
+ ABSOLUTELY CRITICAL: DO NOT ADD ANY EXTRA FURNITURE
 ═══════════════════════════════════════════════════════════════════════
 
-⛔⛔⛔ FORBIDDEN - DO NOT ADD ANY OF THESE: ⛔⛔⛔
+ FORBIDDEN - DO NOT ADD ANY OF THESE:
 - NO extra chairs (accent chairs, armchairs, dining chairs, single seaters)
 - NO extra cushions or pillows beyond what's listed below
 - NO extra sofas or sectionals
@@ -4881,21 +4897,21 @@ DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
 - NO extra plants or planters beyond what's listed
 - NO extra rugs, wall art, or decorations beyond what's listed
 
-🎯 ONLY THESE SPECIFIC PRODUCTS ARE ALLOWED: {allowed_names_list}
+ ONLY THESE SPECIFIC PRODUCTS ARE ALLOWED: {allowed_names_list}
 
-⛔ ADDING ANY UNLISTED FURNITURE = AUTOMATIC FAILURE ⛔
-⛔ ADDING DUPLICATES OF EXISTING ITEMS = AUTOMATIC FAILURE ⛔
+ ADDING ANY UNLISTED FURNITURE = AUTOMATIC FAILURE
+ ADDING DUPLICATES OF EXISTING ITEMS = AUTOMATIC FAILURE
 ═══════════════════════════════════════════════════════════════════════
 
-🪑🪑🪑 CRITICAL: MULTIPLE INSTANCES OF SAME PRODUCT 🪑🪑🪑
+ CRITICAL: MULTIPLE INSTANCES OF SAME PRODUCT
 ═══════════════════════════════════════════════════════════════
-⚠️⚠️⚠️ YOU MUST PLACE ALL NUMBERED INSTANCES - DO NOT SKIP ANY ⚠️⚠️⚠️
+ YOU MUST PLACE ALL NUMBERED INSTANCES - DO NOT SKIP ANY
 
 Products with numbered names (e.g., "Cushion Cover #1", "Cushion Cover #2", "Cushion Cover #3") are MULTIPLE COPIES of the SAME item that ALL must be placed:
 
 {instance_details}
 
-🚨 PLACEMENT RULES FOR MULTIPLE INSTANCES:
+ PLACEMENT RULES FOR MULTIPLE INSTANCES:
 - EVERY numbered instance (#1, #2, #3, etc.) MUST appear in the final image
 - Place each instance in a DIFFERENT but RELATED position
 - For cushions/pillows: arrange on the sofa - one on each seat, or clustered decoratively
@@ -4906,10 +4922,10 @@ Products with numbered names (e.g., "Cushion Cover #1", "Cushion Cover #2", "Cus
 - Maintain consistent spacing and alignment between instances
 - All instances should face logical directions (not backs to the room)
 
-❌ WRONG: Placing only 1 cushion when 3 are requested
-✅ CORRECT: Placing all 3 cushions (#1, #2, #3) on the sofa
+ WRONG: Placing only 1 cushion when 3 are requested
+ CORRECT: Placing all 3 cushions (#1, #2, #3) on the sofa
 
-⛔ DO NOT add ANY furniture not in the list above ⛔
+ DO NOT add ANY furniture not in the list above
 ═══════════════════════════════════════════════════════════════
 
 """
@@ -4918,18 +4934,18 @@ Products with numbered names (e.g., "Cushion Cover #1", "Cushion Cover #2", "Cus
                 product_count_instruction = ""
                 if has_multiple_instances:
                     # When we have multiple instances (e.g., Cushion Cover #1, #2, #3), we need ALL of them
-                    product_count_instruction = f"⚠️ PLACE EXACTLY {product_count} ITEMS TOTAL - This includes multiple copies of some products (numbered #1, #2, #3, etc.). Each numbered item MUST appear in the image."
+                    product_count_instruction = f" PLACE EXACTLY {product_count} ITEMS TOTAL - This includes multiple copies of some products (numbered #1, #2, #3, etc.). Each numbered item MUST appear in the image."
                 elif product_count == 1:
-                    product_count_instruction = "⚠️ PLACE EXACTLY 1 (ONE) PRODUCT - Do NOT place multiple copies. Place only ONE instance of the product."
+                    product_count_instruction = " PLACE EXACTLY 1 (ONE) PRODUCT - Do NOT place multiple copies. Place only ONE instance of the product."
                 elif product_count == 2:
-                    product_count_instruction = "⚠️ PLACE EXACTLY 2 (TWO) DIFFERENT PRODUCTS - One of each product provided."
+                    product_count_instruction = " PLACE EXACTLY 2 (TWO) DIFFERENT PRODUCTS - One of each product provided."
                 else:
-                    product_count_instruction = f"⚠️ PLACE EXACTLY {product_count} ITEMS - One of each product listed below."
+                    product_count_instruction = f" PLACE EXACTLY {product_count} ITEMS - One of each product listed below."
 
                 # Create existing furniture instruction - conditional on exclusive_products mode
                 # When exclusive_products=True, we ONLY want the specified products, remove any others
                 if visualization_request.exclusive_products:
-                    existing_furniture_instruction = f"""11. 🛋️ EXCLUSIVE PRODUCTS MODE (CRITICAL) - The output should contain ONLY the {product_count} specified product(s) listed below:
+                    existing_furniture_instruction = f"""11.  EXCLUSIVE PRODUCTS MODE (CRITICAL) - The output should contain ONLY the {product_count} specified product(s) listed below:
    - IGNORE any furniture visible in the input image that is NOT in the specified product list
    - REMOVE/DO NOT RENDER any existing furniture, decor, or products from the input image
    - The ONLY furniture in the output should be the {product_count} product(s) specified below
@@ -4937,7 +4953,7 @@ Products with numbered names (e.g., "Cushion Cover #1", "Cushion Cover #2", "Cus
    - This is a FRESH START - show the empty room with ONLY the specified products
    - Example: If input has a vase but the vase is NOT in the specified products, DO NOT show the vase in output"""
                 else:
-                    existing_furniture_instruction = """11. 🛋️ EXISTING FURNITURE (CRITICAL FOR CONSISTENCY) - If the input image already contains furniture (sofa, table, chair, decor, etc.), you MUST preserve the EXACT appearance AND position of that furniture:
+                    existing_furniture_instruction = """11.  EXISTING FURNITURE (CRITICAL FOR CONSISTENCY) - If the input image already contains furniture (sofa, table, chair, decor, etc.), you MUST preserve the EXACT appearance AND position of that furniture:
    - DO NOT change the COLOR of existing furniture (e.g., if sofa is blue, keep it blue)
    - DO NOT change the MATERIAL or TEXTURE of existing furniture
    - DO NOT change the STYLE or DESIGN of existing furniture
@@ -4947,26 +4963,26 @@ Products with numbered names (e.g., "Cushion Cover #1", "Cushion Cover #2", "Cus
    - You are ONLY adding NEW products, NOT modifying existing ones
    - Example: If input has a blue velvet sofa, the output MUST show the same blue velvet sofa in the SAME position + your new products
 
-🔒🔒🔒 PIXEL-LEVEL POSITION LOCK - MANDATORY 🔒🔒🔒
+ PIXEL-LEVEL POSITION LOCK - MANDATORY
    - Every existing furniture piece must remain at EXACTLY THE SAME PIXEL COORDINATES
    - If a sofa's edge is at pixel X=100 in input, it MUST be at X=100 in output
    - DO NOT shift, nudge, or adjust positions - not even by a few pixels
    - The outline of existing furniture must PERFECTLY OVERLAY the input image
    - Existing furniture is "LOCKED IN PLACE" - only ADD new items around them
 
-🛋️ CUSHIONS / PILLOWS / THROWS - SPECIAL RULES:
+ CUSHIONS / PILLOWS / THROWS - SPECIAL RULES:
    - Cushions go DIRECTLY ON the sofa/chair surface - on seats or against backrests
    - The sofa MUST NOT MOVE when adding cushions - cushions sit ON the furniture
-   - 🚫 ABSOLUTELY FORBIDDEN: Moving/shifting sofa to accommodate cushions
-   - ✅ CORRECT: Cushions on sofa, sofa stays in EXACT same pixel position
+   -  ABSOLUTELY FORBIDDEN: Moving/shifting sofa to accommodate cushions
+   -  CORRECT: Cushions on sofa, sofa stays in EXACT same pixel position
 
-12. 🚫 NEW PRODUCT PLACEMENT RESTRICTIONS:
-   - ⚠️ ONLY place new items in VISIBLE EMPTY SPACES - spaces that are clearly visible and unobstructed
-   - ⛔ NEVER place furniture BEHIND other furniture (e.g., NO bookshelf behind a sofa - it would be hidden!)
-   - ⛔ NEVER place items where they would be COVERED or BLOCKED by existing furniture
-   - ✅ Place items NEXT TO existing furniture (beside the sofa, not behind it)
-   - ✅ Place items in OPEN FLOOR AREAS visible to the camera
-   - ✅ Place items AGAINST VISIBLE WALLS (not walls blocked by sofas/beds)
+12.  NEW PRODUCT PLACEMENT RESTRICTIONS:
+   -  ONLY place new items in VISIBLE EMPTY SPACES - spaces that are clearly visible and unobstructed
+   -  NEVER place furniture BEHIND other furniture (e.g., NO bookshelf behind a sofa - it would be hidden!)
+   -  NEVER place items where they would be COVERED or BLOCKED by existing furniture
+   -  Place items NEXT TO existing furniture (beside the sofa, not behind it)
+   -  Place items in OPEN FLOOR AREAS visible to the camera
+   -  Place items AGAINST VISIBLE WALLS (not walls blocked by sofas/beds)
    - Bookshelves, cabinets, and tall furniture must be placed against OPEN walls where they are FULLY VISIBLE"""
 
                 visualization_prompt = f"""{VisualizationPrompts.get_system_intro()}
@@ -5008,9 +5024,9 @@ YOU ARE ADDING PRODUCTS TO THEIR REAL SPACE.
 TREAT THE INPUT IMAGE AS SACRED - IT CANNOT BE MODIFIED.
 
 ═══════════════════════════════════════════════════════════════
-⚠️ WHAT MUST STAY IDENTICAL (100% PRESERVATION REQUIRED) ⚠️
+ WHAT MUST STAY IDENTICAL (100% PRESERVATION REQUIRED)
 ═══════════════════════════════════════════════════════════════
-{'🚨 CRITICAL: FLOOR MUST NOT CHANGE - If the input shows solid flooring, output MUST show solid flooring. If input shows checkered floor, output MUST show checkered floor. NEVER change floor patterns or materials.' if not visualization_request.tile_swatch_image else ''}
+{' CRITICAL: FLOOR MUST NOT CHANGE - If the input shows solid flooring, output MUST show solid flooring. If input shows checkered floor, output MUST show checkered floor. NEVER change floor patterns or materials.' if not visualization_request.tile_swatch_image else ''}
 
 1. {'FLOOR (MOST CRITICAL) - EXACT SAME material, color, pattern, texture, reflections, grain - DO NOT CHANGE under any circumstances' if not visualization_request.tile_swatch_image else 'FLOOR - Apply the provided floor tile swatch pattern (see FLOOR TILE instructions below)'}
 2. {'WALLS - Same position, color, texture, material - walls cannot move or change' if not visualization_request.texture_image else 'WALLS - Apply the provided wall texture pattern (see WALL TEXTURE instructions below). Wall positions and structure must stay the same.'}
@@ -5100,8 +5116,12 @@ BEDS:
 - Headboard against wall, leave walkway space on at least one side
 
 PLANTERS:
-- Place on floor next to sofa, chair, or in corners
+-  NEVER place in front of the sofa or any seating — planters must NOT block furniture
+-  NEVER place in the center of the room or in walkways
+-  Place in FAR CORNERS of the room or BESIDE (left/right of) sofas/chairs
+-  Place against walls in empty spaces
 - Balance with other items on opposite side
+- Planters are small accent pieces — they should not be prominent
 
 WALL ART / PAINTINGS:
 - Mount ON THE WALL, not on floor
@@ -5134,33 +5154,33 @@ Generate ONE image that shows:
 - Products appropriately spaced and arranged
 - Everything else IDENTICAL to input image
 
-🚨🚨🚨 CRITICAL: FULL ROOM VIEW - NO ZOOM 🚨🚨🚨
+ CRITICAL: FULL ROOM VIEW - NO ZOOM
 ═══════════════════════════════════════════════════════════════
-⚠️ DO NOT zoom in on the new product(s)
-⚠️ DO NOT crop or focus on the area where products are placed
-⚠️ DO NOT highlight or emphasize the new product(s)
-⚠️ SHOW THE ENTIRE ROOM exactly as it appears in the input image
-⚠️ The new product should be visible BUT the image should show the FULL ROOM context
-⚠️ Camera position, angle, and field of view MUST be IDENTICAL to input
-⚠️ If input shows a wide room view, output MUST show the same wide room view
-⚠️ The product is just ONE element in the scene - NOT the focal point
+ DO NOT zoom in on the new product(s)
+ DO NOT crop or focus on the area where products are placed
+ DO NOT highlight or emphasize the new product(s)
+ SHOW THE ENTIRE ROOM exactly as it appears in the input image
+ The new product should be visible BUT the image should show the FULL ROOM context
+ Camera position, angle, and field of view MUST be IDENTICAL to input
+ If input shows a wide room view, output MUST show the same wide room view
+ The product is just ONE element in the scene - NOT the focal point
 ═══════════════════════════════════════════════════════════════
 
 QUALITY CHECKS:
-{'✓ Can you overlay the input and output and see the same walls? YES' if not visualization_request.texture_image else '✓ Did you apply the wall texture from the swatch? YES'}
-✓ Are windows in the same position? YES
-{'✓ Is the floor the same material? YES' if not visualization_request.tile_swatch_image else '✓ Did you apply the floor tile from the swatch? YES'}
-✓ Is the camera angle identical? YES
-✓ Did you only add products{'and apply surface changes' if visualization_request.texture_image or visualization_request.tile_swatch_image else ''}? YES
-✓ Is the room structure unchanged? YES
-✓ Does the output show the FULL ROOM (not zoomed in on product)? YES
-✓ Are ALL products showing their FRONT FACE to the camera? YES
+{' Can you overlay the input and output and see the same walls? YES' if not visualization_request.texture_image else ' Did you apply the wall texture from the swatch? YES'}
+ Are windows in the same position? YES
+{' Is the floor the same material? YES' if not visualization_request.tile_swatch_image else ' Did you apply the floor tile from the swatch? YES'}
+ Is the camera angle identical? YES
+ Did you only add products{'and apply surface changes' if visualization_request.texture_image or visualization_request.tile_swatch_image else ''}? YES
+ Is the room structure unchanged? YES
+ Does the output show the FULL ROOM (not zoomed in on product)? YES
+ Are ALL products showing their FRONT FACE to the camera? YES
 
 If ANY answer is NO, you've failed the task.
 
-🎯 MANDATORY FRONT ANGLE REQUIREMENT 🎯
+ MANDATORY FRONT ANGLE REQUIREMENT
 ═══════════════════════════════════════════════════════════════
-⚠️ ALL PRODUCTS MUST SHOW THEIR FRONT FACE TOWARDS THE CAMERA ⚠️
+ ALL PRODUCTS MUST SHOW THEIR FRONT FACE TOWARDS THE CAMERA
 
 This is MANDATORY - products must be oriented correctly:
 - Sofas: Show front cushions/seating area facing camera, NOT the back panel
@@ -5170,37 +5190,37 @@ This is MANDATORY - products must be oriented correctly:
 - Lamps: Show the decorative front/shade facing camera
 - Beds: Show the headboard and side where you'd get in, NOT just the footboard
 
-❌ INCORRECT ORIENTATIONS (FAILURES):
+ INCORRECT ORIENTATIONS (FAILURES):
 - Sofa showing its back (you see the back panel, not cushions)
 - Chair showing its back (you see the chair back, not the seat)
 - Table at a sharp side angle (can't see the tabletop properly)
 - Any furniture "facing away" from the camera
 
-✅ CORRECT ORIENTATIONS (REQUIRED):
+ CORRECT ORIENTATIONS (REQUIRED):
 - All products oriented with their "showroom display angle" facing camera
 - User can clearly see what each product looks like from its primary view
 - Products appear as they would in a furniture catalog - front and center
 ═══════════════════════════════════════════════════════════════
 
-🔦 LIGHTING & REALISM - MOST CRITICAL FOR NATURAL APPEARANCE 🔦
+ LIGHTING & REALISM - MOST CRITICAL FOR NATURAL APPEARANCE
 ═══════════════════════════════════════════════════════════════
-⚠️ THE PRODUCTS MUST LOOK LIKE THEY ARE PART OF THE ROOM, NOT ADDED ON TOP OF IT ⚠️
+ THE PRODUCTS MUST LOOK LIKE THEY ARE PART OF THE ROOM, NOT ADDED ON TOP OF IT
 
 LIGHTING ANALYSIS (DO THIS FIRST):
-1. 🔍 IDENTIFY LIGHT SOURCES: Look at the input image and identify ALL light sources:
+1.  IDENTIFY LIGHT SOURCES: Look at the input image and identify ALL light sources:
    - Windows (natural daylight direction, intensity, color temperature)
    - Artificial lights (lamps, ceiling lights, their warm/cool tone)
    - Ambient light (reflected light from walls, floor)
-2. 🌡️ DETERMINE COLOR TEMPERATURE: Is the room warm (yellowish), cool (bluish), or neutral?
-3. 💡 NOTE LIGHT DIRECTION: Where are shadows falling? This tells you the primary light direction.
-4. 🌫️ ASSESS AMBIENT LIGHTING: How much fill light is in the shadows?
+2.  DETERMINE COLOR TEMPERATURE: Is the room warm (yellowish), cool (bluish), or neutral?
+3.  NOTE LIGHT DIRECTION: Where are shadows falling? This tells you the primary light direction.
+4.  ASSESS AMBIENT LIGHTING: How much fill light is in the shadows?
 
 APPLY MATCHING LIGHTING TO PRODUCTS:
-1. ☀️ SAME LIGHT DIRECTION: Product highlights MUST come from the same direction as room highlights
-2. 🎨 SAME COLOR TEMPERATURE: If room has warm lighting, products must have warm highlights
-3. 🌑 MATCHING SHADOWS: Product shadows must fall in the SAME DIRECTION as existing shadows in room
-4. 💫 CONSISTENT EXPOSURE: Products should NOT be brighter or darker than similar surfaces in the room
-5. 🪞 APPROPRIATE REFLECTIONS: Glossy products should reflect the room's lighting, not different lighting
+1.  SAME LIGHT DIRECTION: Product highlights MUST come from the same direction as room highlights
+2.  SAME COLOR TEMPERATURE: If room has warm lighting, products must have warm highlights
+3.  MATCHING SHADOWS: Product shadows must fall in the SAME DIRECTION as existing shadows in room
+4.  CONSISTENT EXPOSURE: Products should NOT be brighter or darker than similar surfaces in the room
+5.  APPROPRIATE REFLECTIONS: Glossy products should reflect the room's lighting, not different lighting
 
 SHADOW REQUIREMENTS:
 - Products MUST cast shadows that match the room's shadow direction and softness
@@ -5208,13 +5228,13 @@ SHADOW REQUIREMENTS:
 - Shadow length and angle must be consistent with other objects in the room
 - Contact shadows (where product meets floor) must be present and realistic
 
-⚠️ CRITICAL: PRODUCTS MUST NOT LOOK "HIGHLIGHTED" OR "SPOTLIT"
+ CRITICAL: PRODUCTS MUST NOT LOOK "HIGHLIGHTED" OR "SPOTLIT"
 - Do NOT render products with studio lighting if the room has natural daylight
 - Do NOT make products appear brighter than their surroundings
 - Do NOT add artificial highlights that don't match the room's light sources
 - Products should blend seamlessly - a viewer should NOT be able to tell they were added
 
-🎨 PHOTOREALISTIC BLENDING REQUIREMENTS:
+ PHOTOREALISTIC BLENDING REQUIREMENTS:
 1. NATURAL INTEGRATION: Products must look like real physical objects photographed IN THIS ROOM, NOT pasted cutouts or digitally added
 2. LIGHTING CONSISTENCY: Product highlights and shadows MUST match the room's lighting direction, intensity, and color exactly
 3. FLOOR CONTACT: Products must have realistic contact shadows and ground connection - NO floating
@@ -5225,16 +5245,16 @@ SHADOW REQUIREMENTS:
 8. ATMOSPHERE MATCHING: Products should have the same depth-of-field, focus, grain, and atmospheric effects as the room
 9. EXPOSURE MATCHING: Products should have the same exposure level as the rest of the room - not brighter, not darker
 
-⚠️ AVOID THESE COMMON MISTAKES (WILL MAKE PRODUCTS LOOK FAKE):
-- ❌ Do NOT make products look like flat cutouts or stickers
-- ❌ Do NOT place products floating above the floor
-- ❌ Do NOT ignore the room's lighting when rendering products
-- ❌ Do NOT use different lighting conditions for products vs. room (THIS IS THE MAIN ISSUE TO AVOID)
-- ❌ Do NOT create harsh, unrealistic edges around products
-- ❌ Do NOT forget shadows and reflections
-- ❌ Do NOT make products appear "highlighted" or "spotlit" compared to the room
-- ❌ Do NOT render products with neutral/studio lighting if room has warm/cool lighting
-- ❌ Do NOT make product shadows go in a different direction than room shadows
+ AVOID THESE COMMON MISTAKES (WILL MAKE PRODUCTS LOOK FAKE):
+-  Do NOT make products look like flat cutouts or stickers
+-  Do NOT place products floating above the floor
+-  Do NOT ignore the room's lighting when rendering products
+-  Do NOT use different lighting conditions for products vs. room (THIS IS THE MAIN ISSUE TO AVOID)
+-  Do NOT create harsh, unrealistic edges around products
+-  Do NOT forget shadows and reflections
+-  Do NOT make products appear "highlighted" or "spotlit" compared to the room
+-  Do NOT render products with neutral/studio lighting if room has warm/cool lighting
+-  Do NOT make product shadows go in a different direction than room shadows
 
 {self._build_wall_color_instruction(visualization_request.wall_color, visualization_request.texture_image)}
 
@@ -5300,7 +5320,7 @@ Create a photorealistic interior design visualization that addresses the user's 
 
                     # Add wall texture swatch if provided
                     if visualization_request.texture_image:
-                        contents.append("\n🧱 WALL TEXTURE REFERENCE SWATCH — Apply this pattern to ALL visible walls:")
+                        contents.append("\n WALL TEXTURE REFERENCE SWATCH — Apply this pattern to ALL visible walls:")
                         tex_bytes = base64.b64decode(self._preprocess_image_for_editing(visualization_request.texture_image))
                         tex_pil = Image.open(io.BytesIO(tex_bytes)).convert("RGB")
                         contents.append(tex_pil)
@@ -5309,7 +5329,7 @@ Create a photorealistic interior design visualization that addresses the user's 
                     # Add floor tile swatch if provided
                     if visualization_request.tile_swatch_image:
                         contents.append(
-                            "\n🏗️ FLOOR TILE REFERENCE SWATCH — Apply this tile pattern to ALL visible floor surfaces:"
+                            "\n FLOOR TILE REFERENCE SWATCH — Apply this tile pattern to ALL visible floor surfaces:"
                         )
                         tile_bytes = base64.b64decode(
                             self._preprocess_image_for_editing(visualization_request.tile_swatch_image)
@@ -5321,10 +5341,10 @@ Create a photorealistic interior design visualization that addresses the user's 
                     # Add explicit dimension requirements now that we know the input size
                     dimension_instruction = f"""
 
-🚨🚨🚨 MANDATORY OUTPUT RESOLUTION 🚨🚨🚨
+ MANDATORY OUTPUT RESOLUTION
 ═══════════════════════════════════════════════════════════════
-⚠️ INPUT IMAGE: {input_width}x{input_height} pixels
-⚠️ OUTPUT MUST BE: {input_width}x{input_height} pixels (EXACT SAME RESOLUTION)
+ INPUT IMAGE: {input_width}x{input_height} pixels
+ OUTPUT MUST BE: {input_width}x{input_height} pixels (EXACT SAME RESOLUTION)
 
 - Generate output at EXACTLY {input_width} pixels wide and {input_height} pixels tall
 - DO NOT output at a lower resolution than {input_width}x{input_height}
@@ -5532,7 +5552,7 @@ Create a photorealistic interior design visualization that addresses the user's 
 
 USER'S DESIGN REQUEST: {user_request}
 
-🚨 CRITICAL DIMENSIONAL REQUIREMENTS 🚨
+ CRITICAL DIMENSIONAL REQUIREMENTS
 ═══════════════════════════════════════════════════════════════
 1. OUTPUT IMAGE DIMENSIONS: The output image MUST have the EXACT SAME width and height (in pixels) as the input image
 2. ASPECT RATIO: The aspect ratio of the output MUST be IDENTICAL to the input image
@@ -5540,13 +5560,13 @@ USER'S DESIGN REQUEST: {user_request}
 4. IMAGE RESOLUTION: Match the exact resolution of the input - do NOT resize or crop
 5. NO DIMENSIONAL CHANGES: The room's physical dimensions (length, width, height) MUST stay the same
 
-🔒 CRITICAL PRESERVATION RULES:
+ CRITICAL PRESERVATION RULES:
 1. USE THIS EXACT ROOM: Keep the same walls, windows, doors, flooring, ceiling, and architectural features shown in the image
 2. PRESERVE THE SPACE: Maintain the exact room dimensions, layout, and perspective
 3. KEEP EXISTING STRUCTURE: Do not change wall colors, window positions, door locations, or ceiling design unless specifically requested
 4. SAME LIGHTING SETUP: Preserve existing light sources and natural lighting from windows
 
-✨ WHAT YOU CAN DO:
+ WHAT YOU CAN DO:
 1. Add furniture and decor items as requested: {user_request}
 2. Style the space according to user preferences while keeping the room structure
 3. Place items naturally within THIS specific room layout
@@ -5557,7 +5577,7 @@ QUALITY REQUIREMENTS:
 - Rendering: {render_quality} quality photorealism
 - Perspective: Maintain the exact camera angle and viewpoint from the input image
 
-🎯 RESULT: The output must show THE SAME ROOM from the input image, just with design changes applied to furniture/decor."""
+ RESULT: The output must show THE SAME ROOM from the input image, just with design changes applied to furniture/decor."""
 
             # Use Gemini 3 Pro Image (Nano Banana Pro) for generation
             model = "gemini-3-pro-image-preview"
@@ -5696,8 +5716,8 @@ QUALITY REQUIREMENTS:
 - Rendering: {render_quality} quality photorealism
 - Consistency: The room must look like the SAME physical space with the SAME products
 
-🔦 CRITICAL LIGHTING REQUIREMENTS:
-⚠️ ALL PRODUCTS MUST LOOK LIKE THEY ARE PART OF THE ROOM, NOT ADDED ON TOP OF IT ⚠️
+ CRITICAL LIGHTING REQUIREMENTS:
+ ALL PRODUCTS MUST LOOK LIKE THEY ARE PART OF THE ROOM, NOT ADDED ON TOP OF IT
 1. ANALYZE the room's lighting: identify light sources, direction, color temperature (warm/cool)
 2. MATCH lighting on products: highlights must come from the same direction as room lighting
 3. MATCH shadow direction: product shadows must fall in the same direction as other shadows in room
@@ -5867,10 +5887,10 @@ QUALITY REQUIREMENTS:
         """Build instructions for MOVING existing items in the scene."""
         instructions = []
         instructions.append("=" * 70)
-        instructions.append("🚚 MOVE OPERATION - RELOCATE EXISTING ITEMS IN THE SCENE")
+        instructions.append(" MOVE OPERATION - RELOCATE EXISTING ITEMS IN THE SCENE")
         instructions.append("=" * 70)
         instructions.append("")
-        instructions.append("⚠️ CRITICAL RULES FOR THIS MOVE OPERATION:")
+        instructions.append(" CRITICAL RULES FOR THIS MOVE OPERATION:")
         instructions.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         instructions.append("1. DO NOT add any new furniture or products to the scene")
         instructions.append("2. DO NOT remove any existing items (except moving them)")
@@ -5893,20 +5913,20 @@ QUALITY REQUIREMENTS:
                 from_grid, from_h, from_v = self._get_grid_position(from_x, from_y)
                 to_grid, to_h, to_v = self._get_grid_position(to_x, to_y)
 
-                instructions.append(f"📦 MOVE: {item_label}")
+                instructions.append(f" MOVE: {item_label}")
                 instructions.append(
                     f"   FROM: {from_v}, {from_h} (coordinates: X={int(from_x * 100)}%, Y={int(from_y * 100)}%)"
                 )
                 instructions.append(f"   TO:   {to_v}, {to_h} (coordinates: X={int(to_x * 100)}%, Y={int(to_y * 100)}%)")
                 instructions.append("")
-                instructions.append(f"   🔍 FIND the {item_label} at the FROM location")
-                instructions.append(f"   🚫 REMOVE it from that location")
-                instructions.append(f"   ✅ PLACE it at the TO location")
-                instructions.append(f"   ⚠️  Keep the item's appearance EXACTLY the same")
+                instructions.append(f"    FIND the {item_label} at the FROM location")
+                instructions.append(f"    REMOVE it from that location")
+                instructions.append(f"    PLACE it at the TO location")
+                instructions.append(f"     Keep the item's appearance EXACTLY the same")
                 instructions.append("")
 
         instructions.append("=" * 70)
-        instructions.append("🛑 ABSOLUTE RESTRICTIONS:")
+        instructions.append(" ABSOLUTE RESTRICTIONS:")
         instructions.append("   - NO new furniture, decor, or products may appear")
         instructions.append("   - NO existing items may disappear (except being moved)")
         instructions.append("   - NO changes to items that are NOT being moved")
@@ -5919,7 +5939,7 @@ QUALITY REQUIREMENTS:
         """Build instructions for PLACING products at specific locations."""
         instructions = []
         instructions.append("=" * 60)
-        instructions.append("🎯 USER-SPECIFIED CUSTOM POSITIONS - OVERRIDE DEFAULT PLACEMENT")
+        instructions.append(" USER-SPECIFIED CUSTOM POSITIONS - OVERRIDE DEFAULT PLACEMENT")
         instructions.append("=" * 60)
         instructions.append("")
         instructions.append("Think of the room as a 3x3 grid (like tic-tac-toe):")
@@ -5963,14 +5983,14 @@ QUALITY REQUIREMENTS:
 
                 grid_cell, h_desc, v_desc = self._get_grid_position(x, y)
 
-                instructions.append(f"📍 Product {product_num}: {product_name}")
+                instructions.append(f" Product {product_num}: {product_name}")
                 instructions.append(f"   → GRID CELL: {grid_cell}")
                 instructions.append(f"   → Horizontal: {h_desc} (X={int(x * 100)}%)")
                 instructions.append(f"   → Depth: {v_desc} (Y={int(y * 100)}%)")
                 instructions.append("")
 
         instructions.append("=" * 60)
-        instructions.append("⚠️ IMPORTANT: These positions are USER-SPECIFIED overrides!")
+        instructions.append(" IMPORTANT: These positions are USER-SPECIFIED overrides!")
         instructions.append("   - Place products in the EXACT grid cells shown above")
         instructions.append("   - DO NOT reposition based on aesthetics")
         instructions.append("   - The user has intentionally chosen these positions")
@@ -6310,7 +6330,7 @@ MAINTAIN: Same room dimensions, wall colors, floor, ceiling, lighting style. Pho
             if target_angle not in angle_prompts:
                 raise ValueError(f"Invalid target angle: {target_angle}. Must be 'left', 'right', or 'back'")
 
-            products_info = f"\n\n📦 PRODUCTS IN ROOM: {products_description}" if products_description else ""
+            products_info = f"\n\n PRODUCTS IN ROOM: {products_description}" if products_description else ""
 
             prompt = f"""{angle_prompts[target_angle]}
 {products_info}
@@ -6456,29 +6476,29 @@ DO NOT:
             color_name = wall_color.get("name", "Unknown")
             color_code = wall_color.get("code", "")
             color_hex = wall_color.get("hex_value", "")
-            logger.info(f"🎨 WALL COLOR REQUESTED: {color_name} ({color_code}) - {color_hex}")
-            return f"""🎨🎨🎨 WALL COLOR CHANGE - APPLY NEW WALL COLOR 🎨🎨🎨
+            logger.info(f" WALL COLOR REQUESTED: {color_name} ({color_code}) - {color_hex}")
+            return f""" WALL COLOR CHANGE - APPLY NEW WALL COLOR
 Paint ALL visible walls with the following color:
 
-🎯 WALL COLOR TO APPLY:
+ WALL COLOR TO APPLY:
 - Name: {color_name} (Asian Paints)
 - Code: {color_code}
 - Hex: {color_hex}
 
-⚠️ WALL COLOR RULES:
+ WALL COLOR RULES:
 - Apply this EXACT color to ALL visible walls
 - Match the hex value {color_hex} as closely as possible
 - Maintain the wall's existing texture and lighting conditions
 - Shadows and highlights on walls should still be visible (don't make walls flat)
 - The color should look like professionally painted walls
 
-⛔ DO NOT change the ceiling color - ceiling remains as-is
-⛔ DO NOT change window frames, door frames, or trim
-⛔ DO NOT add textures, patterns, or wallpaper - just solid paint color"""
+ DO NOT change the ceiling color - ceiling remains as-is
+ DO NOT change window frames, door frames, or trim
+ DO NOT add textures, patterns, or wallpaper - just solid paint color"""
         else:
-            return """🚫🚫🚫 WALL COLOR PRESERVATION - ABSOLUTE REQUIREMENT 🚫🚫🚫
-⛔ DO NOT CHANGE THE WALL COLOR - walls must remain EXACTLY the same color as input
-⛔ DO NOT add paint, wallpaper, or any wall treatment that wasn't there
+            return """ WALL COLOR PRESERVATION - ABSOLUTE REQUIREMENT
+ DO NOT CHANGE THE WALL COLOR - walls must remain EXACTLY the same color as input
+ DO NOT add paint, wallpaper, or any wall treatment that wasn't there
 - If walls are white → output walls MUST be white
 - If walls are grey → output walls MUST be grey
 - The wall color scheme is FIXED - you are ONLY adding furniture"""
@@ -6488,7 +6508,7 @@ Paint ALL visible walls with the following color:
         instructions = ""
         if viz_request.texture_image and viz_request.texture_name:
             instructions += f"""
-🧱🧱🧱 WALL TEXTURE — APPLY TEXTURE PATTERN 🧱🧱🧱
+ WALL TEXTURE — APPLY TEXTURE PATTERN
 A wall texture swatch image is provided AFTER the product reference images.
 TEXTURE INFO: {viz_request.texture_name} ({viz_request.texture_type or 'textured'} finish)
 WALL TEXTURE RULES:
@@ -6505,7 +6525,7 @@ WALL TEXTURE RULES:
             else:
                 tile_size_desc = viz_request.tile_size or "standard size"
             instructions += f"""
-🏗️🏗️🏗️ FLOOR TILE — APPLY TILE PATTERN 🏗️🏗️🏗️
+ FLOOR TILE — APPLY TILE PATTERN
 A floor tile swatch image is provided AFTER the product reference images.
 TILE INFO: {viz_request.tile_name} ({tile_size_desc}, {viz_request.tile_finish or 'standard'})
 FLOOR TILE RULES:
@@ -6513,8 +6533,8 @@ FLOOR TILE RULES:
 2. Each tile is {tile_size_desc} — scale correctly using door height (~2000mm) as reference
 3. Add thin, natural grout lines between tiles
 4. Apply perspective foreshortening and appropriate reflectivity
-5. ⛔ NEVER apply tile to WALLS — tiles go ONLY on the FLOOR (horizontal ground surface)
-6. ⛔ NEVER apply tile to the ceiling or any vertical surface
+5.  NEVER apply tile to WALLS — tiles go ONLY on the FLOOR (horizontal ground surface)
+6.  NEVER apply tile to the ceiling or any vertical surface
 7. The boundary between floor and wall must remain clear
 """
         return instructions
@@ -6799,7 +6819,7 @@ SCALING CHECKS:
         # Build walls to avoid warning
         if walls_to_avoid:
             walls_avoid_warning = f"""
-🚨🚨🚨 CRITICAL - WALLS TO AVOID (WINDOWS/GLASS DOORS) 🚨🚨🚨
+ CRITICAL - WALLS TO AVOID (WINDOWS/GLASS DOORS)
 DO NOT place large furniture (sofas, beds, consoles) against these walls:
 {', '.join(walls_to_avoid).upper()}
 
@@ -6856,21 +6876,21 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
         products_section = "\n".join(product_instructions) if product_instructions else "   (Follow general placement rules)"
 
         return f"""
-📐 ROOM GEOMETRY AWARENESS (CRITICAL FOR SIDE-ANGLE PHOTOS)
+ ROOM GEOMETRY AWARENESS (CRITICAL FOR SIDE-ANGLE PHOTOS)
 ═══════════════════════════════════════════════════════════════
 {walls_avoid_warning}
-🎥 CAMERA VIEWING ANGLE: {viewing_angle.upper().replace('_', ' ')}
+ CAMERA VIEWING ANGLE: {viewing_angle.upper().replace('_', ' ')}
 {angle_explanation}
 
-🏠 ROOM LAYOUT:
+ ROOM LAYOUT:
 - Primary Wall (best for large furniture): {primary_wall.upper()} wall
 - Actual Floor Center: {floor_center.replace('_', ' ')}
 - Recommended Furniture Zone: {recommended_zone.replace('_', ' ')}
 
-📍 ROOM-AWARE PLACEMENT FOR EACH PRODUCT:
+ ROOM-AWARE PLACEMENT FOR EACH PRODUCT:
 {products_section}
 
-⚠️ CRITICAL RULES FOR DIAGONAL/CORNER CAMERA VIEWS:
+ CRITICAL RULES FOR DIAGONAL/CORNER CAMERA VIEWS:
 1. SOFAS & LARGE SEATING: Place FLUSH AGAINST SOLID walls (2-4 inch gap max), NOT floating in image center
 2. The "center" of the IMAGE may NOT be the "center" of the ROOM floor
 3. For diagonal views, one wall is more prominent - that's where sofas go (if it's a solid wall)
@@ -6878,7 +6898,7 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
 5. Coffee tables go in front of seating, relative to where the seating actually is
 6. NEVER place furniture against floor-to-ceiling windows or glass doors
 
-🚫 DO NOT:
+ DO NOT:
 - Leave large gaps between sofa back and wall - sofas should be TOUCHING or nearly touching the wall
 - Place a sofa in the geometric center of the image if this is a diagonal shot
 - Float large furniture in what appears to be a corner in the room
@@ -6886,7 +6906,7 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
 - Block natural light by putting furniture in front of windows
 - Ignore the room's actual layout in favor of image pixel coordinates
 
-✅ DO:
+ DO:
 - Place furniture where a real interior designer would place it
 - Put sofas FLUSH against the primary SOLID wall ({primary_wall}) with minimal gap - never against windows
 - Center coffee tables relative to the seating arrangement
