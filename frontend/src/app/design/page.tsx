@@ -906,6 +906,7 @@ function DesignPageContent() {
           sessionStorage.removeItem('newlyCreatedProjectId');
 
           // Set initial state for change detection (starts as "unsaved" so first save works)
+          // CRITICAL: Set refs to null so any data from sessionStorage is detected as "changed"
           lastSaveDataRef.current = JSON.stringify({
             room_image: null,
             clean_room_image: null,
@@ -914,6 +915,10 @@ function DesignPageContent() {
             visualization_history: null,
             chat_session_id: null,
           });
+          lastSavedRoomImageRef.current = null;
+          lastSavedVizImageRef.current = null;
+          lastSavedCanvasRef.current = '[]';
+          lastSavedChatSessionRef.current = null;
         } else if (hasNoSavedData) {
           // Existing empty project (not newly created) - show empty state
           // IMPORTANT: Clear stale sessionStorage to prevent old data from bleeding in
@@ -935,6 +940,12 @@ function DesignPageContent() {
           canvas.setProducts([]);
           setVisualizationHistory([]);
           setChatSessionId(null);
+          // Set refs to null/empty so any data loaded later from sessionStorage
+          // (e.g., room images from onboarding) is detected as "changed" for saving
+          lastSavedRoomImageRef.current = null;
+          lastSavedVizImageRef.current = null;
+          lastSavedCanvasRef.current = '[]';
+          lastSavedChatSessionRef.current = null;
           setProjectLoaded(true);
         } else {
           // Load existing project data (project has saved data)
@@ -1021,13 +1032,38 @@ function DesignPageContent() {
               }
             }
 
-            // Load canvas products (or clear if none)
+            // Load canvas products and surface items (or clear if none)
             if (project.canvas_products) {
               try {
-                const products = JSON.parse(project.canvas_products);
-                setCanvasProducts(products);
-                canvas.setProducts(products);
-                console.log('[DesignPage] Loaded', products.length, 'products from project');
+                const parsed = JSON.parse(project.canvas_products);
+                if (parsed && parsed._version === 2) {
+                  // New format: full canvas state with products + wall colors + textures + floor tiles
+                  const items = parsed.items || [];
+                  const products = parsed.products || [];
+                  setCanvasProducts(products);
+                  canvas.setItems(items);
+
+                  // Sync legacy hooks with restored canvas items
+                  const wallColorItem = items.find((i: any) => i.type === 'wall_color');
+                  if (wallColorItem?.data?.wallColor) {
+                    setCanvasWallColor(wallColorItem.data.wallColor);
+                  }
+                  const textureItem = items.find((i: any) => i.type === 'wall_texture');
+                  if (textureItem?.data?.textureVariant) {
+                    setCanvasTextureVariant(textureItem.data.textureVariant, textureItem.data.texture || null);
+                  }
+                  const floorTileItem = items.find((i: any) => i.type === 'floor_tile');
+                  if (floorTileItem?.data?.floorTile) {
+                    setCanvasFloorTile(floorTileItem.data.floorTile);
+                  }
+                  console.log('[DesignPage] Loaded full canvas state:', items.length, 'items,', products.length, 'products');
+                } else {
+                  // Legacy format: just products array
+                  const products = Array.isArray(parsed) ? parsed : [];
+                  setCanvasProducts(products);
+                  canvas.setProducts(products);
+                  console.log('[DesignPage] Loaded', products.length, 'products from project (legacy format)');
+                }
               } catch (e) {
                 console.error('[DesignPage] Failed to parse project canvas_products:', e);
                 setCanvasProducts([]);
@@ -1070,6 +1106,15 @@ function DesignPageContent() {
               chat_session_id: project.chat_session_id,
             };
             lastSaveDataRef.current = JSON.stringify(savedState);
+
+            // CRITICAL: Set "last saved" refs to what's ACTUALLY in the database, not current React state.
+            // This ensures that data loaded from sessionStorage (e.g., room images from onboarding)
+            // that hasn't been saved yet will be detected as "changed" and included in the next save.
+            lastSavedRoomImageRef.current = project.room_image || null;
+            lastSavedVizImageRef.current = project.visualization_image || null;
+            lastSavedCanvasRef.current = savedState.canvas_products || '[]';
+            lastSavedChatSessionRef.current = project.chat_session_id || null;
+
             console.log('[DesignPage] Set lastSaveDataRef for existing project:', {
               roomImageLength: savedState.room_image?.length || 0,
               vizImageLength: savedState.visualization_image?.length || 0,
@@ -1109,11 +1154,19 @@ function DesignPageContent() {
     }
 
     // Get current state
+    // Save full canvas state (products + wall colors + textures + floor tiles)
+    // Wrap in { _version: 2, items: [...], products: [...] } to distinguish from legacy format
+    const canvasItemsForSave = canvas.items.length > 0 ? JSON.stringify({
+      _version: 2,
+      items: canvas.items,
+      products: canvasProducts,  // Keep products separately for backward compatibility
+    }) : (canvasProducts.length > 0 ? JSON.stringify(canvasProducts) : null);
+
     const currentData = {
       room_image: roomImage,
       clean_room_image: cleanRoomImage,
       visualization_image: initialVisualizationImage,
-      canvas_products: canvasProducts.length > 0 ? JSON.stringify(canvasProducts) : null,
+      canvas_products: canvasItemsForSave,
       visualization_history: visualizationHistory.length > 0 ? JSON.stringify(visualizationHistory) : null,
       chat_session_id: chatSessionId,
     };
@@ -1132,7 +1185,7 @@ function DesignPageContent() {
     if (initialVisualizationImage !== lastSavedVizImageRef.current) {
       updatePayload.visualization_image = currentData.visualization_image || undefined;
     }
-    if (JSON.stringify(canvasProducts) !== lastSavedCanvasRef.current) {
+    if (canvasItemsForSave !== lastSavedCanvasRef.current) {
       updatePayload.canvas_products = currentData.canvas_products || undefined;
     }
     if (visualizationHistory.length > 0) {
@@ -1165,8 +1218,7 @@ function DesignPageContent() {
 
       // CRITICAL: Update "last saved" refs SYNCHRONOUSLY before setting status to 'saved'
       // This prevents the change tracking effect from immediately re-detecting changes
-      // Note: Use JSON.stringify(canvasProducts) to match the format used in change detection
-      lastSavedCanvasRef.current = JSON.stringify(canvasProducts);
+      lastSavedCanvasRef.current = canvasItemsForSave || '[]';
       lastSavedRoomImageRef.current = roomImage;
       lastSavedVizImageRef.current = initialVisualizationImage;
       lastSavedChatSessionRef.current = chatSessionId;
@@ -1190,7 +1242,7 @@ function DesignPageContent() {
       });
       setSaveStatus('unsaved');
     }
-  }, [isAuthenticated, projectId, projectName, roomImage, cleanRoomImage, initialVisualizationImage, canvasProducts, visualizationHistory, chatSessionId, saveStatus]);
+  }, [isAuthenticated, projectId, projectName, roomImage, cleanRoomImage, initialVisualizationImage, canvasProducts, canvas.items, visualizationHistory, chatSessionId, saveStatus]);
 
   // Publish look function (for Curator tier users)
   const handlePublishLook = useCallback(async () => {
@@ -1294,8 +1346,12 @@ function DesignPageContent() {
       return;
     }
 
-    // Compare current state against last saved state
-    const currentCanvasJSON = JSON.stringify(canvasProducts);
+    // Compare current state against last saved state (use full canvas items for change detection)
+    const currentCanvasJSON = canvas.items.length > 0 ? JSON.stringify({
+      _version: 2,
+      items: canvas.items,
+      products: canvasProducts,
+    }) : (canvasProducts.length > 0 ? JSON.stringify(canvasProducts) : '[]');
     const canvasChanged = currentCanvasJSON !== lastSavedCanvasRef.current;
     const roomImageChanged = roomImage !== lastSavedRoomImageRef.current;
     const vizImageChanged = initialVisualizationImage !== lastSavedVizImageRef.current;
@@ -1316,17 +1372,15 @@ function DesignPageContent() {
       console.log('[DesignPage] >>> CHANGES DETECTED - Setting status to UNSAVED <<<');
       setSaveStatus('unsaved');
     }
-  }, [isAuthenticated, projectId, roomImage, initialVisualizationImage, canvasProducts, chatSessionId, saveStatus]);
+  }, [isAuthenticated, projectId, roomImage, initialVisualizationImage, canvasProducts, canvas.items, chatSessionId, saveStatus]);
 
-  // Update "last saved" refs when project loads or saves successfully
+  // Enable change tracking after project loads
+  // NOTE: "last saved" refs are set in the project load effect (to match DB values),
+  // NOT here. Setting them to current React state here would incorrectly mark
+  // sessionStorage data (e.g., room images from onboarding) as "already saved".
   useEffect(() => {
     if (projectLoaded && isInitialLoadRef.current) {
-      // Project just loaded - set the "last saved" state to current state
-      console.log('[DesignPage] Setting initial saved state refs');
-      lastSavedCanvasRef.current = JSON.stringify(canvasProducts);
-      lastSavedRoomImageRef.current = roomImage;
-      lastSavedVizImageRef.current = initialVisualizationImage;
-      lastSavedChatSessionRef.current = chatSessionId;
+      console.log('[DesignPage] Project loaded - enabling change tracking after delay');
 
       // Enable change tracking after a short delay to let React settle
       const timer = setTimeout(() => {
