@@ -1920,6 +1920,23 @@ export const projectsAPI = {
   /**
    * Use a previously uploaded room image in the current project
    */
+  /**
+   * Save a clean room image immediately after furniture removal.
+   * Fire-and-forget -- doesn't block UI.
+   */
+  saveRoomImage: async (
+    originalImage: string,
+    cleanImage: string,
+    roomAnalysis?: Record<string, unknown>
+  ): Promise<{ status: string; session_id: string }> => {
+    const response = await api.post('/api/projects/save-room-image', {
+      original_room_image: originalImage,
+      clean_room_image: cleanImage,
+      room_analysis: roomAnalysis || undefined,
+    });
+    return response.data;
+  },
+
   usePreviousRoom: async (
     projectId: string,
     previousRoomId: string,

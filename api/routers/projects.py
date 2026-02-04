@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user, get_optional_user
 from core.database import get_db
-from database.models import HomeStylingSession, Project, ProjectStatus, User
+from database.models import HomeStylingSession, HomeStylingSessionStatus, Project, ProjectStatus, User
 
 
 # Schema for previous room images
@@ -243,6 +243,67 @@ async def get_previous_room_full_image(
         raise HTTPException(status_code=404, detail="Previous room not found")
 
     return {"clean_room_image": clean_room_image}
+
+
+class SaveRoomImageRequest(BaseModel):
+    """Save a clean room image immediately after furniture removal."""
+
+    original_room_image: str  # base64 original image
+    clean_room_image: str  # base64 furniture-removed image
+    room_analysis: Optional[dict] = None  # Room analysis JSON from Gemini
+
+
+@router.post("/save-room-image")
+async def save_room_image(
+    request: SaveRoomImageRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Save a clean room image to DB immediately after furniture removal.
+    Creates a minimal HomeStylingSession record so the image appears
+    in "Previously Uploaded" rooms.
+
+    This is called fire-and-forget by the frontend -- it doesn't block the UI.
+    """
+    # Check if this clean image is already saved (avoid duplicates)
+    existing_query = (
+        select(HomeStylingSession)
+        .where(
+            HomeStylingSession.user_id == current_user.id,
+            HomeStylingSession.clean_room_image.isnot(None),
+        )
+        .order_by(HomeStylingSession.created_at.desc())
+        .limit(5)
+    )
+    result = await db.execute(existing_query)
+    existing_sessions = result.scalars().all()
+
+    for session in existing_sessions:
+        if session.clean_room_image == request.clean_room_image:
+            return {"status": "already_saved", "session_id": session.id}
+
+    # Extract room type from room_analysis if available
+    room_type = None
+    style = None
+    if request.room_analysis:
+        room_type = request.room_analysis.get("room_type")
+        style = request.room_analysis.get("style_assessment")
+
+    # Create minimal HomeStylingSession
+    session = HomeStylingSession(
+        user_id=current_user.id,
+        original_room_image=request.original_room_image,
+        clean_room_image=request.clean_room_image,
+        room_type=room_type,
+        style=style,
+        status=HomeStylingSessionStatus.UPLOAD,
+    )
+    db.add(session)
+    await db.commit()
+
+    logger.info(f"Saved room image for user {current_user.id}, session {session.id}")
+    return {"status": "saved", "session_id": session.id}
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)

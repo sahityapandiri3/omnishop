@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { startFurnitureRemoval, checkFurnitureRemovalStatus, projectsAPI, PreviousRoomImage } from '@/utils/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface PhotoUploadStepProps {
   image: string | null;
@@ -24,11 +25,14 @@ export function PhotoUploadStep({
   onProcessingComplete,
   onProcessingError,
 }: PhotoUploadStepProps) {
+  const { isAuthenticated, user } = useAuth();
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Track original image for save-to-DB after furniture removal
+  const originalImageRef = useRef<string | null>(null);
 
   // Tab state for upload vs previously uploaded
   const [uploadTab, setUploadTab] = useState<'upload' | 'previous'>('upload');
@@ -72,6 +76,7 @@ export function PhotoUploadStep({
   }, [uploadTab, previousRoomsFetched]);
 
   const startProcessing = async (imageData: string) => {
+    originalImageRef.current = imageData;
     onProcessingStart();
 
     try {
@@ -100,6 +105,12 @@ export function PhotoUploadStep({
               : `data:image/png;base64,${status.image}`;
             console.log('[PhotoUploadStep] Furniture removal completed, image length:', processedImg.length);
             onProcessingComplete(processedImg);
+            // Fire-and-forget save to DB (so it appears in "Previously Uploaded")
+            if (isAuthenticated && user && originalImageRef.current) {
+              const rawOrig = originalImageRef.current.startsWith('data:') ? originalImageRef.current.split(',')[1] : originalImageRef.current;
+              const rawClean = status.image.startsWith('data:') ? status.image.split(',')[1] : status.image;
+              projectsAPI.saveRoomImage(rawOrig, rawClean).catch(err => console.warn('Failed to save room image to DB:', err));
+            }
             if (pollIntervalRef.current) {
               clearInterval(pollIntervalRef.current);
               pollIntervalRef.current = null;

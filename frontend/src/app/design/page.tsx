@@ -481,6 +481,15 @@ function DesignPageContent() {
                     sessionStorage.setItem('cleanRoomImage', imageToSet);
                     sessionStorage.setItem('roomImage', imageToSet);
                   } catch (e) { /* quota exceeded */ }
+                  // Fire-and-forget save to DB (so it appears in "Previously Uploaded")
+                  if (isAuthenticated && user) {
+                    const origImg = sessionStorage.getItem('userUploadedImage') || userUploadedImage;
+                    if (origImg) {
+                      const rawOrig = origImg.startsWith('data:') ? origImg.split(',')[1] : origImg;
+                      const rawClean = status.image.startsWith('data:') ? status.image.split(',')[1] : status.image;
+                      projectsAPI.saveRoomImage(rawOrig, rawClean).catch(err => console.warn('Failed to save room image to DB:', err));
+                    }
+                  }
                   setIsProcessingFurniture(false);
                   setProcessingStatus('');
                   sessionStorage.removeItem('furnitureRemovalJobId');
@@ -821,6 +830,15 @@ function DesignPageContent() {
                           sessionStorage.setItem('cleanRoomImage', imageToSet);
                           sessionStorage.setItem('roomImage', imageToSet);
                         } catch (e) { /* quota exceeded */ }
+                        // Fire-and-forget save to DB (so it appears in "Previously Uploaded")
+                        if (isAuthenticated && user) {
+                          const origImg = sessionStorage.getItem('userUploadedImage') || userUploadedImage;
+                          if (origImg) {
+                            const rawOrig = origImg.startsWith('data:') ? origImg.split(',')[1] : origImg;
+                            const rawClean = status.image.startsWith('data:') ? status.image.split(',')[1] : status.image;
+                            projectsAPI.saveRoomImage(rawOrig, rawClean).catch(err => console.warn('Failed to save room image to DB:', err));
+                          }
+                        }
                         setIsProcessingFurniture(false);
                         setProcessingStatus('');
                         sessionStorage.removeItem('furnitureRemovalJobId');
@@ -1488,6 +1506,15 @@ function DesignPageContent() {
               console.warn('[DesignPage] SessionStorage quota exceeded, image stored in memory only:', storageError);
               // Image is still in React state, just won't persist across reloads
             }
+            // Fire-and-forget save to DB (so it appears in "Previously Uploaded")
+            if (isAuthenticated && user) {
+              const origImg = sessionStorage.getItem('userUploadedImage') || roomImage;
+              if (origImg) {
+                const rawOrig = origImg.startsWith('data:') ? origImg.split(',')[1] : origImg;
+                const rawClean = status.image.startsWith('data:') ? status.image.split(',')[1] : status.image;
+                projectsAPI.saveRoomImage(rawOrig, rawClean).catch(err => console.warn('Failed to save room image to DB:', err));
+              }
+            }
           }
           sessionStorage.removeItem('furnitureRemovalJobId');
           setIsProcessingFurniture(false);
@@ -1859,6 +1886,12 @@ function DesignPageContent() {
                 console.log('[DesignPage] Image saved to sessionStorage, length:', imageToSet.length);
               } catch (storageError) {
                 console.warn('[DesignPage] SessionStorage quota exceeded, image stored in memory only:', storageError);
+              }
+              // Fire-and-forget save to DB (so it appears in "Previously Uploaded")
+              if (isAuthenticated && user) {
+                const rawOrig = imageData.startsWith('data:') ? imageData.split(',')[1] : imageData;
+                const rawClean = status.image.startsWith('data:') ? status.image.split(',')[1] : status.image;
+                projectsAPI.saveRoomImage(rawOrig, rawClean).catch(err => console.warn('Failed to save room image to DB:', err));
               }
               setIsProcessingFurniture(false);
               setProcessingStatus('');
