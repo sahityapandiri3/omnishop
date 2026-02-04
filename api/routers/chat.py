@@ -2772,6 +2772,8 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         project_id = request.get("project_id")  # For design page project editing
         visualized_products = request.get("visualized_products", [])  # Products already in base image (for incremental)
         wall_color = request.get("wall_color")  # Wall color to apply: {name, code, hex_value}
+        texture_variant_id = request.get("texture_variant_id")  # Wall texture variant to apply
+        tile_id = request.get("tile_id")  # Floor tile to apply
         logger.info(
             f"[Visualize] Received request with curated_look_id={curated_look_id}, project_id={project_id}, session_id={session_id}, removal_mode={removal_mode}, visualized_products={len(visualized_products)}, wall_color={wall_color.get('name') if wall_color else None}"
         )
@@ -2786,6 +2788,58 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 logger.info(
                     f"[Visualize] products_to_add[{idx}]: name='{p.get('name')}', id={p.get('id')}, quantity={p.get('quantity', 1)}"
                 )
+
+        # Fetch wall texture swatch data if texture_variant_id is provided
+        texture_image = None
+        texture_name = None
+        texture_type = None
+        if texture_variant_id:
+            from database.models import WallTexture, WallTextureVariant
+
+            variant_query = select(WallTextureVariant).where(WallTextureVariant.id == texture_variant_id)
+            variant_result = await db.execute(variant_query)
+            variant = variant_result.scalar_one_or_none()
+            if variant:
+                texture_image = variant.swatch_data or variant.image_data
+                if texture_image and texture_image.startswith("data:"):
+                    texture_image = texture_image.split(",", 1)[1]
+                parent_query = select(WallTexture).where(WallTexture.id == variant.texture_id)
+                parent_result = await db.execute(parent_query)
+                parent = parent_result.scalar_one_or_none()
+                texture_name = parent.name if parent else "texture"
+                texture_type = parent.texture_type if parent else "textured"
+                logger.info(f"[Visualize] Loaded texture swatch: {texture_name} (variant {texture_variant_id})")
+            else:
+                logger.warning(f"[Visualize] Texture variant {texture_variant_id} not found in DB")
+
+        # Fetch floor tile swatch data if tile_id is provided
+        tile_swatch_image = None
+        tile_name = None
+        tile_size = None
+        tile_finish = None
+        tile_width_mm = None
+        tile_height_mm = None
+        if tile_id:
+            from database.models import FloorTile
+
+            tile_query = select(FloorTile).where(FloorTile.id == tile_id)
+            tile_result = await db.execute(tile_query)
+            tile = tile_result.scalar_one_or_none()
+            if tile:
+                tile_swatch_image = tile.swatch_data or tile.image_data
+                if tile_swatch_image and tile_swatch_image.startswith("data:"):
+                    tile_swatch_image = tile_swatch_image.split(",", 1)[1]
+                tile_name = tile.name
+                tile_finish = tile.finish or "standard"
+                tile_width_mm = tile.size_width_mm
+                tile_height_mm = tile.size_height_mm
+                if tile_width_mm and tile_height_mm:
+                    tile_size = f"{tile_width_mm}x{tile_height_mm} mm"
+                else:
+                    tile_size = tile.size
+                logger.info(f"[Visualize] Loaded tile swatch: {tile_name} (tile {tile_id})")
+            else:
+                logger.warning(f"[Visualize] Floor tile {tile_id} not found in DB")
 
         # Workflow detection for centralized prompts
         def detect_workflow_type() -> str:
@@ -3078,6 +3132,15 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                         workflow_id=workflow_id,
                         session_id=session_id,
                         wall_color=wall_color,  # Optional wall color to apply
+                        texture_image=texture_image,
+                        texture_name=texture_name,
+                        texture_type=texture_type,
+                        tile_swatch_image=tile_swatch_image,
+                        tile_name=tile_name,
+                        tile_size=tile_size,
+                        tile_finish=tile_finish,
+                        tile_width_mm=tile_width_mm,
+                        tile_height_mm=tile_height_mm,
                     )
 
                     if visualization_result:
@@ -3134,6 +3197,14 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         # The Gemini API has input size limitations and fails with 500 errors when
         # processing 5+ products simultaneously. Use incremental mode as workaround.
         MAX_PRODUCTS_BATCH = 4
+        # Reduce batch size when surface swatch images are also being sent
+        # to keep total image count manageable for Gemini (room + products + swatches ≤ ~6 images)
+        swatch_count = (1 if texture_image else 0) + (1 if tile_swatch_image else 0)
+        if swatch_count > 0:
+            MAX_PRODUCTS_BATCH = max(2, 4 - swatch_count)  # 3 if 1 swatch, 2 if both swatches
+            logger.info(
+                f"[Visualize] Reduced MAX_PRODUCTS_BATCH to {MAX_PRODUCTS_BATCH} due to {swatch_count} surface swatch(es)"
+            )
         forced_incremental = False
 
         # Check expanded product count (after quantity expansion) for batch limit
@@ -3567,6 +3638,15 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     workflow_id=workflow_id,
                     session_id=session_id,
                     wall_color=wall_color,  # Optional wall color to apply
+                    texture_image=texture_image,
+                    texture_name=texture_name,
+                    texture_type=texture_type,
+                    tile_swatch_image=tile_swatch_image,
+                    tile_name=tile_name,
+                    tile_size=tile_size,
+                    tile_finish=tile_finish,
+                    tile_width_mm=tile_width_mm,
+                    tile_height_mm=tile_height_mm,
                 )
             except ValueError as e:
                 logger.error(f"Batch visualization error: {e}")
@@ -3604,6 +3684,15 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     user_style_description=user_style_description,
                     exclusive_products=True,
                     wall_color=wall_color,  # Apply wall color during visualization
+                    texture_image=texture_image,
+                    texture_name=texture_name,
+                    texture_type=texture_type,
+                    tile_swatch_image=tile_swatch_image,
+                    tile_name=tile_name,
+                    tile_size=tile_size,
+                    tile_finish=tile_finish,
+                    tile_width_mm=tile_width_mm,
+                    tile_height_mm=tile_height_mm,
                 )
                 viz_result = await google_ai_service.generate_room_visualization(viz_request)
                 current_image = viz_result.rendered_image
@@ -3634,18 +3723,29 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     lighting_realism=0.85,
                     confidence_score=0.87,
                 )
-            elif wall_color and not expanded_products:
-                # WALL COLOR ONLY - No products to add, just change wall color
-                # Use generate_add_multiple_visualization which has proper wall-color-only handling
-                logger.info(f"🎨 WALL COLOR ONLY MODE: Applying {wall_color.get('name')} ({wall_color.get('hex_value')})")
+            elif (wall_color or texture_image or tile_swatch_image) and not expanded_products:
+                # SURFACE ONLY - No products to add, just apply wall color/texture/floor tile
+                logger.info(
+                    f"🎨 SURFACE ONLY MODE: wall_color={wall_color.get('name') if wall_color else None}, "
+                    f"texture={texture_name}, tile={tile_name}"
+                )
 
                 current_image = await google_ai_service.generate_add_multiple_visualization(
                     room_image=base_image,
-                    products=[],  # No products, wall color only
+                    products=[],  # No products, surface changes only
                     existing_products=[],
                     workflow_id=workflow_id,
                     session_id=session_id,
                     wall_color=wall_color,
+                    texture_image=texture_image,
+                    texture_name=texture_name,
+                    texture_type=texture_type,
+                    tile_swatch_image=tile_swatch_image,
+                    tile_name=tile_name,
+                    tile_size=tile_size,
+                    tile_finish=tile_finish,
+                    tile_width_mm=tile_width_mm,
+                    tile_height_mm=tile_height_mm,
                 )
 
                 # Create a VisualizationResult to match expected return type
@@ -3672,6 +3772,15 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     user_style_description=user_style_description,
                     exclusive_products=force_reset,  # When True, ONLY show specified products
                     wall_color=wall_color,  # Apply wall color during visualization
+                    texture_image=texture_image,
+                    texture_name=texture_name,
+                    texture_type=texture_type,
+                    tile_swatch_image=tile_swatch_image,
+                    tile_name=tile_name,
+                    tile_size=tile_size,
+                    tile_finish=tile_finish,
+                    tile_width_mm=tile_width_mm,
+                    tile_height_mm=tile_height_mm,
                 )
 
                 # Log if using custom positions

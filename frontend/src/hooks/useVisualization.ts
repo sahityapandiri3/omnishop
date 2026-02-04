@@ -393,113 +393,140 @@ export function useVisualization({
     try {
       // ================================================================
       // Wall-only / Texture-only / Floor-tile-only visualization (no furniture products)
-      // Apply wall color, texture, and/or floor tile directly to the room image
+      // Apply all surface changes in a single combined Gemini call
       // ================================================================
       if (!hasProducts) {
         // Use existing visualization image if available (preserves previously rendered furniture)
         // Fall back to baseImage only if there's no existing visualization
         const startImage = visualizationImage || baseImage;
-        console.log('[useVisualization] No products in canvas - applying wall/floor changes only', {
+        console.log('[useVisualization] No products in canvas - applying surface changes via combined call', {
           usingExistingVisualization: !!visualizationImage,
+          hasWallColor, hasTexture, hasFloorTile,
         });
-        let newImage = startImage;
 
-        // Apply wall color
+        const sessionId = await getOrCreateSession();
+        setVisualizationProgress('Applying surface changes...');
+
+        // Build combined surface request
+        const surfaceRequest: Record<string, unknown> = {
+          room_image: startImage,
+          session_id: sessionId,
+        };
         if (hasWallColor && wallColor) {
-          setVisualizationProgress('Applying wall color...');
-          const sessionId = await getOrCreateSession();
-          const colorResponse = await fetch(
-            `${getApiUrl()}/api/visualization/change-wall-color`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                room_image: newImage,
-                color_name: wallColor.name,
-                color_code: wallColor.code,
-                color_hex: wallColor.hex_value,
-                session_id: sessionId,
-              }),
-            }
-          );
-          if (colorResponse.ok) {
-            const colorData = await colorResponse.json();
-            if (colorData.success && colorData.rendered_image) {
-              newImage = colorData.rendered_image;
-              console.log('[useVisualization] Wall color applied successfully');
-            } else {
-              const errorMsg = colorData.error_message || 'Wall color visualization returned no image';
-              console.error('[useVisualization] Wall color API returned failure:', errorMsg);
-              throw new Error(errorMsg);
-            }
-          } else {
-            console.error('[useVisualization] Wall color API HTTP error:', colorResponse.status);
-            throw new Error(`Wall color API failed with status ${colorResponse.status}`);
-          }
+          surfaceRequest.wall_color_name = wallColor.name;
+          surfaceRequest.wall_color_code = wallColor.code;
+          surfaceRequest.wall_color_hex = wallColor.hex_value;
         }
-
-        // Apply texture
         if (hasTexture && textureVariant) {
-          setVisualizationProgress('Applying wall texture...');
-          const textureResponse = await fetch(
-            `${getApiUrl()}/api/visualization/change-wall-texture`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                room_image: newImage,
-                texture_variant_id: textureVariant.id,
-              }),
-            }
-          );
-          if (textureResponse.ok) {
-            const textureData = await textureResponse.json();
-            if (textureData.success && textureData.rendered_image) {
-              newImage = textureData.rendered_image;
-              console.log('[useVisualization] Texture applied successfully');
-            } else {
-              const errorMsg = textureData.error_message || 'Texture visualization returned no image';
-              console.error('[useVisualization] Texture API returned failure:', errorMsg);
-              throw new Error(errorMsg);
-            }
-          } else {
-            console.error('[useVisualization] Texture API HTTP error:', textureResponse.status);
-            throw new Error(`Texture API failed with status ${textureResponse.status}`);
-          }
+          surfaceRequest.texture_variant_id = textureVariant.id;
+        }
+        if (hasFloorTile && floorTile) {
+          surfaceRequest.tile_id = floorTile.id;
         }
 
-        // Apply floor tile
-        if (hasFloorTile && floorTile) {
-          setVisualizationProgress('Applying floor tile...');
-          const floorTileResponse = await fetch(
-            `${getApiUrl()}/api/visualization/change-floor-tile`,
+        let newImage: string | null = null;
+
+        try {
+          // Combined surface call — single Gemini API call for all surface changes
+          const response = await fetchWithRetry(
+            `${getApiUrl()}/api/visualization/apply-surfaces`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                room_image: newImage,
-                tile_id: floorTile.id,
-              }),
-            }
+              body: JSON.stringify(surfaceRequest),
+            },
+            { maxRetries: 2, retryDelayMs: 3000, timeoutMs: 300000 }
           );
-          if (floorTileResponse.ok) {
-            const floorTileData = await floorTileResponse.json();
-            if (floorTileData.success && floorTileData.rendered_image) {
-              newImage = floorTileData.rendered_image;
-              console.log('[useVisualization] Floor tile applied successfully');
+
+          if (response.ok) {
+            const surfaceData = await response.json();
+            if (surfaceData.success && surfaceData.rendered_image) {
+              newImage = surfaceData.rendered_image;
+              console.log('[useVisualization] Combined surface call succeeded:', surfaceData.surfaces_applied);
             } else {
-              const errorMsg = floorTileData.error_message || 'Floor tile visualization returned no image';
-              console.error('[useVisualization] Floor tile API returned failure:', errorMsg);
-              throw new Error(errorMsg);
+              console.warn('[useVisualization] Combined surface call returned failure:', surfaceData.error_message);
             }
           } else {
-            console.error('[useVisualization] Floor tile API HTTP error:', floorTileResponse.status);
-            throw new Error(`Floor tile API failed with status ${floorTileResponse.status}`);
+            console.warn('[useVisualization] Combined surface call HTTP error:', response.status);
+          }
+        } catch (combinedError) {
+          console.warn('[useVisualization] Combined surface call failed, falling back to sequential:', combinedError);
+        }
+
+        // Fallback: sequential calls if combined call failed
+        if (!newImage) {
+          console.log('[useVisualization] Falling back to sequential surface calls');
+          newImage = startImage;
+
+          if (hasWallColor && wallColor) {
+            setVisualizationProgress('Applying wall color...');
+            const colorResponse = await fetch(
+              `${getApiUrl()}/api/visualization/change-wall-color`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  room_image: newImage,
+                  color_name: wallColor.name,
+                  color_code: wallColor.code,
+                  color_hex: wallColor.hex_value,
+                  session_id: sessionId,
+                }),
+              }
+            );
+            if (colorResponse.ok) {
+              const colorData = await colorResponse.json();
+              if (colorData.success && colorData.rendered_image) {
+                newImage = colorData.rendered_image;
+              }
+            }
+          }
+
+          if (hasTexture && textureVariant) {
+            setVisualizationProgress('Applying wall texture...');
+            const textureResponse = await fetch(
+              `${getApiUrl()}/api/visualization/change-wall-texture`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  room_image: newImage,
+                  texture_variant_id: textureVariant.id,
+                }),
+              }
+            );
+            if (textureResponse.ok) {
+              const textureData = await textureResponse.json();
+              if (textureData.success && textureData.rendered_image) {
+                newImage = textureData.rendered_image;
+              }
+            }
+          }
+
+          if (hasFloorTile && floorTile) {
+            setVisualizationProgress('Applying floor tile...');
+            const floorTileResponse = await fetch(
+              `${getApiUrl()}/api/visualization/change-floor-tile`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  room_image: newImage,
+                  tile_id: floorTile.id,
+                }),
+              }
+            );
+            if (floorTileResponse.ok) {
+              const floorTileData = await floorTileResponse.json();
+              if (floorTileData.success && floorTileData.rendered_image) {
+                newImage = floorTileData.rendered_image;
+              }
+            }
           }
         }
 
         // Only update visualization if we actually got a new image
-        if (newImage === startImage) {
+        if (!newImage || newImage === startImage) {
           throw new Error('Visualization produced no changes. Please try again.');
         }
 
@@ -524,7 +551,7 @@ export function useVisualization({
           canvasItems: canvasItemsProp ? [...canvasItemsProp] : undefined,
         });
 
-        console.log('[useVisualization] Wall/texture-only visualization complete');
+        console.log('[useVisualization] Surface-only visualization complete');
         return;
       }
 
@@ -548,6 +575,14 @@ export function useVisualization({
         (currentTexture !== null && visualizedTextureVariant !== null && currentTexture.id !== visualizedTextureVariant.id)
       );
 
+      // Check for floor tile changes
+      const currentFloorTile = floorTile ?? null;
+      const floorTileChanged = (
+        (currentFloorTile === null && visualizedFloorTile !== null) ||
+        (currentFloorTile !== null && visualizedFloorTile === null) ||
+        (currentFloorTile !== null && visualizedFloorTile !== null && currentFloorTile.id !== visualizedFloorTile.id)
+      );
+
       // Check for room image changes - compare current base image with the one used in last visualization
       const roomImageChanged = visualizedRoomImage !== null && baseImage !== visualizedRoomImage;
       if (roomImageChanged) {
@@ -563,9 +598,9 @@ export function useVisualization({
         visualizationResult: visualizationImage,
       });
 
-      console.log('[useVisualization] Change detection result:', changeInfo.type, changeInfo.reason, 'wallColorChanged:', wallColorChanged, 'textureChanged:', textureChanged, 'roomImageChanged:', roomImageChanged);
+      console.log('[useVisualization] Change detection result:', changeInfo.type, changeInfo.reason, 'wallColorChanged:', wallColorChanged, 'textureChanged:', textureChanged, 'floorTileChanged:', floorTileChanged, 'roomImageChanged:', roomImageChanged);
 
-      if (changeInfo.type === 'no_change' && !wallColorChanged && !textureChanged && !roomImageChanged) {
+      if (changeInfo.type === 'no_change' && !wallColorChanged && !textureChanged && !floorTileChanged && !roomImageChanged) {
         console.log('[useVisualization] No changes detected, skipping');
         setIsVisualizing(false);
         setVisualizationStartTime(null);
@@ -675,11 +710,11 @@ export function useVisualization({
         productsToVisualize = products;
         forceReset = true;
         console.log('[useVisualization] Reset: re-visualizing all products');
-      } else if (changeInfo.type === 'no_change' && (wallColorChanged || textureChanged)) {
-        // Wall color and/or texture changed but products didn't - apply changes to existing visualization
+      } else if (changeInfo.type === 'no_change' && (wallColorChanged || textureChanged || floorTileChanged)) {
+        // Wall color, texture, and/or floor tile changed but products didn't - apply changes to existing visualization
         imageToUse = visualizationImage!;
-        productsToVisualize = [];  // No products to add, just wall/texture change
-        console.log('[useVisualization] Wall color/texture change only');
+        productsToVisualize = [];  // No products to add, just surface changes
+        console.log('[useVisualization] Surface change only (wall color/texture/tile)');
       } else {
         // Initial
         imageToUse = cleanRoomImage || roomImage!;
@@ -729,11 +764,16 @@ export function useVisualization({
             curated_look_id: config.curatedLookId,
             project_id: config.projectId,
             // Wall color to apply during visualization
-            wall_color: wallColor ? {
+            // Skip for incremental adds — wall color already applied on base image
+            wall_color: (!isIncremental && wallColor) ? {
               name: wallColor.name,
               code: wallColor.code,
               hex_value: wallColor.hex_value,
             } : undefined,
+            // Surface changes to apply in same Gemini call (unified visualization)
+            // Skip for incremental adds — surfaces already applied on base image
+            texture_variant_id: !isIncremental ? (textureVariant?.id || undefined) : undefined,
+            tile_id: !isIncremental ? (floorTile?.id || undefined) : undefined,
           }),
         },
         { maxRetries: 2, timeoutMs: 300000, retryDelayMs: 3000 }
@@ -751,75 +791,10 @@ export function useVisualization({
       }
 
       // Update state with new visualization
-      let newImage = data.visualization.rendered_image;
+      // Texture and floor tile are now handled in the same Gemini call (unified visualization)
+      const newImage = data.visualization.rendered_image;
       const newProductIds = buildProductIdSet(products);
       const newQuantities = buildQuantityMap(products);
-
-      // If texture variant is selected, apply it after the main visualization
-      if (textureVariant && textureVariant.id) {
-        console.log('[useVisualization] Applying texture:', textureVariant.code);
-        setVisualizationProgress('Applying wall texture...');
-
-        try {
-          const textureResponse = await fetch(
-            `${getApiUrl()}/api/visualization/change-wall-texture`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                room_image: newImage,
-                texture_variant_id: textureVariant.id,
-              }),
-            }
-          );
-
-          if (textureResponse.ok) {
-            const textureData = await textureResponse.json();
-            if (textureData.success && textureData.rendered_image) {
-              newImage = textureData.rendered_image;
-              console.log('[useVisualization] Texture applied successfully');
-            }
-          } else {
-            console.warn('[useVisualization] Texture application failed, using base visualization');
-          }
-        } catch (textureError) {
-          console.warn('[useVisualization] Texture application error:', textureError);
-          // Continue with base visualization if texture fails
-        }
-      }
-
-      // If floor tile is selected, apply it after texture
-      if (floorTile && floorTile.id) {
-        console.log('[useVisualization] Applying floor tile:', floorTile.name);
-        setVisualizationProgress('Applying floor tile...');
-
-        try {
-          const floorTileResponse = await fetch(
-            `${getApiUrl()}/api/visualization/change-floor-tile`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                room_image: newImage,
-                tile_id: floorTile.id,
-              }),
-            }
-          );
-
-          if (floorTileResponse.ok) {
-            const floorTileData = await floorTileResponse.json();
-            if (floorTileData.success && floorTileData.rendered_image) {
-              newImage = floorTileData.rendered_image;
-              console.log('[useVisualization] Floor tile applied successfully');
-            }
-          } else {
-            console.warn('[useVisualization] Floor tile application failed, using base visualization');
-          }
-        } catch (floorTileError) {
-          console.warn('[useVisualization] Floor tile application error:', floorTileError);
-          // Continue with base visualization if floor tile fails
-        }
-      }
 
       setVisualizationImage(newImage);
       setVisualizedProductIds(newProductIds);
@@ -1017,6 +992,9 @@ export function useVisualization({
               code: wallColor.code,
               hex_value: wallColor.hex_value,
             } : undefined,
+            // Surface changes to apply in same Gemini call (unified visualization)
+            texture_variant_id: textureVariant?.id || undefined,
+            tile_id: floorTile?.id || undefined,
           }),
         }
       );
@@ -1032,72 +1010,9 @@ export function useVisualization({
         throw new Error('No visualization image was generated');
       }
 
-      let newImage = data.visualization.rendered_image;
-      console.log('[useVisualization] Quality improvement success');
-
-      // Apply texture if present (same post-processing as handleVisualize)
-      if (textureVariant && textureVariant.id) {
-        console.log('[useVisualization] Applying texture after quality improvement:', textureVariant.code);
-        try {
-          const textureResponse = await fetch(
-            `${getApiUrl()}/api/visualization/change-wall-texture`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                room_image: newImage,
-                texture_variant_id: textureVariant.id,
-              }),
-            }
-          );
-
-          if (textureResponse.ok) {
-            const textureData = await textureResponse.json();
-            if (textureData.success && textureData.rendered_image) {
-              newImage = textureData.rendered_image;
-              console.log('[useVisualization] Texture applied successfully after quality improvement');
-            } else {
-              console.warn('[useVisualization] Texture application failed during quality improvement');
-            }
-          } else {
-            console.warn('[useVisualization] Texture API failed during quality improvement, using base visualization');
-          }
-        } catch (textureError) {
-          console.warn('[useVisualization] Texture application error during quality improvement:', textureError);
-        }
-      }
-
-      // Apply floor tile if present (same post-processing as handleVisualize)
-      if (floorTile && floorTile.id) {
-        console.log('[useVisualization] Applying floor tile after quality improvement:', floorTile.name);
-        try {
-          const floorTileResponse = await fetch(
-            `${getApiUrl()}/api/visualization/change-floor-tile`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                room_image: newImage,
-                tile_id: floorTile.id,
-              }),
-            }
-          );
-
-          if (floorTileResponse.ok) {
-            const floorTileData = await floorTileResponse.json();
-            if (floorTileData.success && floorTileData.rendered_image) {
-              newImage = floorTileData.rendered_image;
-              console.log('[useVisualization] Floor tile applied successfully after quality improvement');
-            } else {
-              console.warn('[useVisualization] Floor tile application failed during quality improvement');
-            }
-          } else {
-            console.warn('[useVisualization] Floor tile API failed during quality improvement, using base visualization');
-          }
-        } catch (floorTileError) {
-          console.warn('[useVisualization] Floor tile application error during quality improvement:', floorTileError);
-        }
-      }
+      // Texture and floor tile are now handled in the same Gemini call (unified visualization)
+      const newImage = data.visualization.rendered_image;
+      console.log('[useVisualization] Quality improvement success (unified call)');
 
       // Update visualization
       setVisualizationImage(newImage);

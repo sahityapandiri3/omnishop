@@ -140,13 +140,10 @@ export function detectChangeType({
       effectiveVisualizedIds = new Set(visualizedProducts.map(p => normalizeProductId(p.id)));
       console.log('[detectChangeType] Using visualizedProducts as fallback:', effectiveVisualizedIds.size, 'products');
     } else {
-      // Last resort: check if there are more products now than were visualized
-      console.warn('[detectChangeType] visualizedProducts also empty - cannot detect removals');
-      if (currentIds.size === 0) {
-        return { type: 'no_change', reason: 'no_products' };
-      }
-      // Use current products as the baseline
-      effectiveVisualizedIds = currentIds;
+      // No products were previously visualized (e.g., surface-only visualization).
+      // These are genuinely new products to add — use empty set as baseline.
+      console.log('[detectChangeType] No products previously visualized (surface-only visualization) - treating all as new');
+      effectiveVisualizedIds = new Set<string>();
     }
   }
 
@@ -270,6 +267,12 @@ export function detectChangeType({
     if (newProducts.length > 0) reasons.push(`${newProducts.length} new products`);
     console.log('[detectChangeType] Detected additions, will use incremental visualization');
     return { type: 'additive', newProducts: allProductsToAdd, reason: reasons.join('_and_') };
+  }
+
+  // Adding products to an existing surface-only visualization (surfaces applied, no products yet)
+  if (allProductsToAdd.length > 0 && effectiveVisualizedIds.size === 0 && visualizationResult) {
+    console.log('[detectChangeType] Adding products to existing surface-only visualization');
+    return { type: 'additive', newProducts: allProductsToAdd, reason: 'first_products_after_surfaces' };
   }
 
   // Initial visualization (nothing visualized yet AND no existing visualization)

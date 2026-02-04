@@ -21,7 +21,7 @@ from sqlalchemy.orm import selectinload
 
 from core.config import settings
 from core.database import get_db
-from database.models import CuratedLook, FloorTile, Product, Project
+from database.models import CuratedLook, FloorTile, Product, Project, WallTexture, WallTextureVariant
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/visualization", tags=["visualization"])
@@ -3589,5 +3589,170 @@ async def change_floor_tile(request: ChangeFloorTileRequest, db: AsyncSession = 
         return ChangeFloorTileResponse(
             success=False,
             error_message=f"Error applying floor tile: {str(e)}",
+            processing_time=processing_time,
+        )
+
+
+# =============================================================================
+# Combined Surface Visualization (wall color/texture + floor tile in one call)
+# =============================================================================
+
+
+class ApplySurfacesRequest(BaseModel):
+    """Request to apply multiple surface changes in a single Gemini call."""
+
+    room_image: str
+    wall_color_name: Optional[str] = None
+    wall_color_code: Optional[str] = None
+    wall_color_hex: Optional[str] = None
+    texture_variant_id: Optional[int] = None
+    tile_id: Optional[int] = None
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
+
+
+class ApplySurfacesResponse(BaseModel):
+    success: bool
+    rendered_image: Optional[str] = None
+    error_message: Optional[str] = None
+    processing_time: float = 0.0
+    surfaces_applied: List[str] = []
+
+
+@router.post("/apply-surfaces", response_model=ApplySurfacesResponse)
+async def apply_surfaces(request: ApplySurfacesRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Apply wall color/texture and/or floor tile in a single Gemini API call.
+    Used for surface-only changes (no furniture products).
+    """
+    import time
+
+    start_time = time.time()
+    surfaces_applied = []
+
+    try:
+        has_wall_color = bool(request.wall_color_name or request.wall_color_hex)
+        has_texture = bool(request.texture_variant_id)
+        has_tile = bool(request.tile_id)
+
+        if not has_wall_color and not has_texture and not has_tile:
+            return ApplySurfacesResponse(
+                success=False,
+                error_message="At least one surface change (wall color, texture, or tile) must be specified.",
+                processing_time=time.time() - start_time,
+            )
+
+        logger.info(
+            f"[ApplySurfaces] Combined surface call: wall_color={has_wall_color}, "
+            f"texture_variant_id={request.texture_variant_id}, tile_id={request.tile_id}"
+        )
+
+        # Strip data URL prefix if present
+        room_image = request.room_image
+        if room_image.startswith("data:"):
+            room_image = room_image.split(",", 1)[1]
+
+        # Build wall color dict
+        wall_color = None
+        if has_wall_color and not has_texture:  # Texture overrides wall color
+            wall_color = {
+                "name": request.wall_color_name or "Custom",
+                "code": request.wall_color_code or "",
+                "hex_value": request.wall_color_hex or "",
+            }
+            surfaces_applied.append(f"wall_color:{request.wall_color_name}")
+
+        # Fetch texture swatch from DB
+        texture_image = None
+        texture_name = None
+        texture_type = None
+        if has_texture:
+            from database.models import WallTexture, WallTextureVariant
+
+            variant_query = select(WallTextureVariant).where(WallTextureVariant.id == request.texture_variant_id)
+            variant_result = await db.execute(variant_query)
+            variant = variant_result.scalar_one_or_none()
+            if variant:
+                texture_image = variant.swatch_data or variant.image_data
+                if texture_image and texture_image.startswith("data:"):
+                    texture_image = texture_image.split(",", 1)[1]
+                parent_query = select(WallTexture).where(WallTexture.id == variant.texture_id)
+                parent_result = await db.execute(parent_query)
+                parent = parent_result.scalar_one_or_none()
+                texture_name = parent.name if parent else "texture"
+                texture_type = parent.texture_type if parent else "textured"
+                surfaces_applied.append(f"texture:{texture_name}")
+            else:
+                logger.warning(f"[ApplySurfaces] Texture variant {request.texture_variant_id} not found")
+
+        # Fetch floor tile swatch from DB
+        tile_swatch_image = None
+        tile_name = None
+        tile_size = None
+        tile_finish = None
+        tile_width_mm = None
+        tile_height_mm = None
+        if has_tile:
+            tile_query = select(FloorTile).where(FloorTile.id == request.tile_id)
+            tile_result = await db.execute(tile_query)
+            tile = tile_result.scalar_one_or_none()
+            if tile:
+                tile_swatch_image = tile.swatch_data or tile.image_data
+                if tile_swatch_image and tile_swatch_image.startswith("data:"):
+                    tile_swatch_image = tile_swatch_image.split(",", 1)[1]
+                tile_name = tile.name
+                tile_finish = tile.finish or "standard"
+                tile_width_mm = tile.size_width_mm
+                tile_height_mm = tile.size_height_mm
+                if tile_width_mm and tile_height_mm:
+                    tile_size = f"{tile_width_mm}x{tile_height_mm} mm"
+                else:
+                    tile_size = tile.size
+                surfaces_applied.append(f"tile:{tile_name}")
+            else:
+                logger.warning(f"[ApplySurfaces] Floor tile {request.tile_id} not found")
+
+        # Call the combined surface method
+        result_image = await google_ai_service.apply_room_surfaces(
+            room_image=room_image,
+            wall_color=wall_color,
+            texture_image=texture_image,
+            texture_name=texture_name,
+            texture_type=texture_type,
+            tile_swatch_image=tile_swatch_image,
+            tile_name=tile_name,
+            tile_size=tile_size,
+            tile_finish=tile_finish,
+            tile_width_mm=tile_width_mm,
+            tile_height_mm=tile_height_mm,
+            user_id=request.user_id,
+            session_id=request.session_id,
+        )
+
+        processing_time = time.time() - start_time
+
+        if result_image:
+            logger.info(f"[ApplySurfaces] Success in {processing_time:.2f}s, surfaces: {surfaces_applied}")
+            return ApplySurfacesResponse(
+                success=True,
+                rendered_image=result_image,
+                processing_time=processing_time,
+                surfaces_applied=surfaces_applied,
+            )
+        else:
+            logger.error("[ApplySurfaces] Failed to generate combined surface visualization")
+            return ApplySurfacesResponse(
+                success=False,
+                error_message="Failed to apply surface changes. Please try again.",
+                processing_time=processing_time,
+                surfaces_applied=surfaces_applied,
+            )
+
+    except Exception as e:
+        processing_time = time.time() - start_time
+        logger.error(f"[ApplySurfaces] Error: {e}", exc_info=True)
+        return ApplySurfacesResponse(
+            success=False,
+            error_message=f"Error applying surfaces: {str(e)}",
             processing_time=processing_time,
         )

@@ -111,6 +111,15 @@ class VisualizationRequest:
     user_style_description: str = ""  # User's actual text request
     exclusive_products: bool = False  # When True, ONLY show specified products, remove any existing furniture from base image
     wall_color: Optional[Dict[str, Any]] = None  # Wall color to apply: {name, code, hex_value}
+    texture_image: Optional[str] = None  # Base64 swatch image for wall texture
+    texture_name: Optional[str] = None
+    texture_type: Optional[str] = None
+    tile_swatch_image: Optional[str] = None  # Base64 swatch image for floor tile
+    tile_name: Optional[str] = None
+    tile_size: Optional[str] = None
+    tile_finish: Optional[str] = None
+    tile_width_mm: Optional[int] = None
+    tile_height_mm: Optional[int] = None
 
 
 @dataclass
@@ -3589,10 +3598,20 @@ The room structure, walls, and camera angle MUST be identical to the input image
         user_id: str = None,
         session_id: str = None,
         wall_color: Optional[dict] = None,
+        texture_image: str = None,
+        texture_name: str = None,
+        texture_type: str = None,
+        tile_swatch_image: str = None,
+        tile_name: str = None,
+        tile_size: str = None,
+        tile_finish: str = None,
+        tile_width_mm: int = None,
+        tile_height_mm: int = None,
     ) -> str:
         """
         Generate visualization with MULTIPLE products added to room in a SINGLE API call.
         This is more efficient than calling generate_add_visualization multiple times.
+        Can also apply wall texture and floor tile in the same call.
 
         Args:
             room_image: Base64 encoded room image
@@ -3602,11 +3621,21 @@ The room structure, walls, and camera angle MUST be identical to the input image
             user_id: Optional user ID for tracking
             session_id: Optional session ID for tracking
             wall_color: Optional dict with 'name', 'code', 'hex_value' for wall color to apply
+            texture_image: Base64 swatch image for wall texture
+            texture_name: Name of the texture (e.g. "Basket")
+            texture_type: Type of texture (e.g. "marble")
+            tile_swatch_image: Base64 swatch image for floor tile
+            tile_name: Name of the floor tile (e.g. "Carrara Marble")
+            tile_size: Size description (e.g. "1200x1800 mm")
+            tile_finish: Finish type (e.g. "Glossy")
+            tile_width_mm: Tile width in millimeters
+            tile_height_mm: Tile height in millimeters
 
         Returns: base64 image data
         """
-        # Allow wall-color-only visualization (no products)
-        if not products and not wall_color:
+        # Allow wall-color-only or surface-only visualization (no products)
+        has_surfaces = texture_image or tile_swatch_image
+        if not products and not wall_color and not has_surfaces:
             return room_image
 
         existing_products = existing_products or []
@@ -3618,7 +3647,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
         # If only one item total (single product with quantity=1) AND no existing products to preserve,
         # AND no wall color to apply, use the simpler single product method.
         # If there are existing products or wall color, we need the full multi-product method.
-        if len(products) == 1 and total_items == 1 and not existing_products and not wall_color:
+        if len(products) == 1 and total_items == 1 and not existing_products and not wall_color and not has_surfaces:
             return await self.generate_add_visualization(
                 room_image=room_image,
                 product_name=products[0].get("full_name") or products[0].get("name"),
@@ -3626,11 +3655,18 @@ The room structure, walls, and camera angle MUST be identical to the input image
             )
 
         # Log what we're doing
-        if wall_color and not products:
-            logger.info(f"🎨 WALL COLOR ONLY: Applying {wall_color.get('name')} ({wall_color.get('hex_value')})")
-        elif wall_color:
+        surface_desc = []
+        if texture_image:
+            surface_desc.append(f"texture={texture_name}")
+        if tile_swatch_image:
+            surface_desc.append(f"tile={tile_name}")
+        surface_log = f" + {', '.join(surface_desc)}" if surface_desc else ""
+
+        if not products and (wall_color or has_surfaces):
+            logger.info(f"🎨 SURFACE ONLY: wall_color={wall_color.get('name') if wall_color else None}{surface_log}")
+        elif wall_color or has_surfaces:
             logger.info(
-                f"🛒 ADD MULTIPLE + WALL COLOR: {len(products)} products, {total_items} total items + wall color {wall_color.get('name')}"
+                f"🛒 ADD MULTIPLE + SURFACES: {len(products)} products, {total_items} total items + wall_color={wall_color.get('name') if wall_color else None}{surface_log}"
             )
         else:
             logger.info(f"🛒 ADD MULTIPLE: {len(products)} products, {total_items} total items to place")
@@ -3895,7 +3931,11 @@ DO NOT CROP OR CUT ANY EXISTING FURNITURE FROM THE IMAGE.
 """
 
             # Build wall color instruction based on whether wall_color is provided
-            if wall_color:
+            # Texture overrides wall color (they are mutually exclusive for walls)
+            if texture_image and texture_name:
+                # Texture is being applied — skip wall color instruction, texture handles walls
+                wall_color_instruction = ""
+            elif wall_color:
                 color_name = wall_color.get("name", "Unknown")
                 color_code = wall_color.get("code", "")
                 color_hex = wall_color.get("hex_value", "")
@@ -3926,27 +3966,100 @@ Paint ALL visible walls with the following color:
 - If walls are grey → output walls MUST be grey
 - The wall color scheme is FIXED - you are ONLY adding furniture"""
 
+            # Build surface instructions for texture and/or floor tile
+            surface_instructions = ""
+
+            if texture_image and texture_name:
+                surface_instructions += f"""
+🧱🧱🧱 WALL TEXTURE — APPLY TEXTURE PATTERN 🧱🧱🧱
+A wall texture swatch image is provided AFTER the product reference images.
+
+TEXTURE INFO:
+- Name: {texture_name}
+- Type: {texture_type or 'textured'} finish
+
+WALL TEXTURE RULES:
+1. Study the texture swatch pattern, colors, and details
+2. Apply this EXACT pattern to ALL visible wall surfaces
+3. Maintain natural scale (not too small or large)
+4. Blend naturally at wall corners and edges
+5. Preserve natural shadows and lighting ON the texture
+6. DO NOT apply texture to ceiling, floor, or furniture
+"""
+
+            if tile_swatch_image and tile_name:
+                tile_size_desc = ""
+                if tile_width_mm and tile_height_mm:
+                    tile_size_desc = (
+                        f"{tile_width_mm} mm × {tile_height_mm} mm ({tile_width_mm/10:.0f} cm × {tile_height_mm/10:.0f} cm)"
+                    )
+                else:
+                    tile_size_desc = tile_size or "standard size"
+
+                surface_instructions += f"""
+🏗️🏗️🏗️ FLOOR TILE — APPLY TILE PATTERN 🏗️🏗️🏗️
+A floor tile swatch image is provided AFTER the product reference images{' and wall texture swatch' if texture_image else ''}.
+
+TILE INFO:
+- Name: {tile_name}
+- Size: {tile_size_desc}
+- Finish: {tile_finish or 'standard'}
+
+FLOOR TILE RULES:
+1. Study the tile swatch pattern, colors, veining, and details
+2. Apply this EXACT pattern to ALL visible FLOOR surfaces ONLY
+3. Each tile is {tile_size_desc} — scale tiles correctly using door height (~2000mm) as reference
+4. Add thin, natural grout lines between tiles
+5. Tiles closer to camera appear larger (perspective foreshortening)
+6. Apply appropriate reflectivity for {tile_finish or 'standard'} finish
+7. ⛔ NEVER apply tile pattern to WALLS — tiles go ONLY on the FLOOR (horizontal ground surface)
+8. ⛔ NEVER apply tile to the ceiling or any vertical surface
+9. The boundary between floor and wall must remain clear — tiles stop where the wall begins
+10. Furniture legs should rest naturally on the tiled surface
+"""
+
             # Build prompt based on what we're doing
-            # Wall-color-only case: different prompt focused just on wall color change
-            if wall_color and not products:
-                color_name = wall_color.get("name", "Unknown")
-                color_code = wall_color.get("code", "")
-                color_hex = wall_color.get("hex_value", "")
+            # Surface-only case (no products): wall color, texture, and/or floor tile
+            if not products and (wall_color or has_surfaces):
+                # Build a combined surface-only prompt
+                surface_changes_desc = []
+                if wall_color and not texture_image:
+                    color_name = wall_color.get("name", "Unknown")
+                    color_code = wall_color.get("code", "")
+                    color_hex = wall_color.get("hex_value", "")
+                    surface_changes_desc.append(f"wall color to {color_name} ({color_hex})")
+                if texture_image and texture_name:
+                    surface_changes_desc.append(f"wall texture to {texture_name}")
+                if tile_swatch_image and tile_name:
+                    surface_changes_desc.append(f"floor tile to {tile_name}")
+                changes_summary = " and ".join(surface_changes_desc)
+
                 prompt = f"""{VisualizationPrompts.get_system_intro()}
 
-🎨🎨🎨 WALL COLOR CHANGE ONLY - NO OTHER CHANGES 🎨🎨🎨
-Your ONLY task is to change the wall color. Do NOT make any other changes.
+🎨 SURFACE CHANGES ONLY - NO OTHER CHANGES 🎨
+Your ONLY task is to change: {changes_summary}. Do NOT make any other changes.
 
-🎯 WALL COLOR TO APPLY:
-- Name: {color_name} (Asian Paints)
-- Code: {color_code}
-- Hex Reference: {color_hex}
+🚨🚨🚨 ABSOLUTE REQUIREMENT - IMAGE DIMENSIONS & ROOM STRUCTURE 🚨🚨🚨
+═══════════════════════════════════════════════════════════════
+THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
+- If input is 1024x768 pixels → output MUST be 1024x768 pixels
+- NEVER change the aspect ratio
+- NEVER crop, resize, or alter the image dimensions in ANY way
+- The camera angle, perspective, and field of view MUST remain UNCHANGED
+- DO NOT zoom in or out
 
-✅ WHAT TO DO:
-1. Paint ALL visible wall surfaces with this exact color ({color_hex})
-2. Apply the color uniformly across all walls
-3. Maintain realistic matte/satin paint finish
-4. Preserve natural shadows and lighting on walls
+🏗️ ROOM STRUCTURE PRESERVATION - CRITICAL:
+- DO NOT add new walls, partitions, columns, or any architectural elements
+- DO NOT remove or modify existing walls, doors, windows, or structural elements
+- The number of walls visible must remain EXACTLY the same
+- Wall positions, angles, and proportions must be IDENTICAL to input
+- Ceiling height and shape must remain UNCHANGED
+- The room's physical structure is LOCKED — only surface finishes change
+═══════════════════════════════════════════════════════════════
+
+{wall_color_instruction}
+
+{surface_instructions}
 
 ⛔⛔⛔ ABSOLUTELY FORBIDDEN - DO NOT DO ANY OF THESE ⛔⛔⛔
 ═══════════════════════════════════════════════════════════════
@@ -3956,23 +4069,27 @@ Your ONLY task is to change the wall color. Do NOT make any other changes.
 - ⛔ DO NOT remove ANY existing furniture or objects
 - ⛔ DO NOT move or reposition ANY existing furniture
 - ⛔ DO NOT change ANY furniture colors or materials
-- ⛔ DO NOT change the floor color or material
-- ⛔ DO NOT paint the ceiling - ONLY walls
+{'' if tile_swatch_image else '- ⛔ DO NOT change the floor color or material'}
+- ⛔ DO NOT paint the ceiling
 - ⛔ DO NOT change window frames, door frames, or trim
 - ⛔ DO NOT change the camera angle or zoom level
 - ⛔ DO NOT crop or resize the image
+- ⛔ DO NOT add new walls, partitions, or architectural structures
+- ⛔ DO NOT apply floor tiles to walls — tiles are ONLY for floor surfaces
+- ⛔ DO NOT apply wall texture to the floor — texture is ONLY for wall surfaces
 ═══════════════════════════════════════════════════════════════
 
-🚨 CRITICAL: THE ONLY CHANGE ALLOWED IS THE WALL COLOR 🚨
+🚨 CRITICAL: THE ONLY CHANGES ALLOWED ARE: {changes_summary.upper()} 🚨
 Everything else in the room must remain EXACTLY as it appears in the input image.
-The furniture, floor, decor, and all other elements must be IDENTICAL.
+The furniture, decor, and all other elements must be IDENTICAL.
 
 🔒 PIXEL-PERFECT PRESERVATION:
 - All furniture must be at the EXACT same pixel positions
 - The room layout and composition must be IDENTICAL to input
 - Output dimensions must EXACTLY match input dimensions
+- The room structure (walls, ceiling, floor boundaries) must be IDENTICAL
 
-OUTPUT: The EXACT same room with ONLY the wall color changed to {color_name} ({color_hex}).
+OUTPUT: The EXACT same room with ONLY the surface changes applied.
 No furniture, rugs, decor, or any other elements should be added, removed, or changed."""
             else:
                 # Build prompt for ADD MULTIPLE action (with or without wall color)
@@ -4011,11 +4128,9 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 
 {wall_color_instruction}
 
-🚫🚫🚫 FLOOR COLOR PRESERVATION - ABSOLUTE REQUIREMENT 🚫🚫🚫
-⛔ DO NOT CHANGE THE FLOOR COLOR - flooring must remain EXACTLY the same color/material as input
-⛔ DO NOT change flooring material, color, or texture
-- If floor is wooden → output floor MUST be the SAME wooden color
-- The floor color scheme is FIXED
+{surface_instructions}
+
+{'🚫🚫🚫 FLOOR COLOR PRESERVATION - ABSOLUTE REQUIREMENT 🚫🚫🚫' + chr(10) + '⛔ DO NOT CHANGE THE FLOOR COLOR - flooring must remain EXACTLY the same color/material as input' + chr(10) + '⛔ DO NOT change flooring material, color, or texture' + chr(10) + '- If floor is wooden → output floor MUST be the SAME wooden color' + chr(10) + '- The floor color scheme is FIXED' if not tile_swatch_image else ''}
 
 🔒🔒🔒 PIXEL-LEVEL POSITION PRESERVATION - CRITICAL 🔒🔒🔒
 - Every piece of existing furniture must be at the EXACT SAME PIXEL COORDINATES as in the input
@@ -4169,6 +4284,22 @@ The room structure, walls, and camera angle MUST be identical to the input image
                         prod_pil_image = prod_pil_image.convert("RGB")
                     contents.append(prod_pil_image)
 
+            # Add wall texture swatch if provided
+            if texture_image:
+                contents.append("\n🧱 WALL TEXTURE REFERENCE SWATCH — Apply this pattern to ALL visible walls:")
+                tex_bytes = base64.b64decode(self._preprocess_image_for_editing(texture_image))
+                tex_pil = Image.open(io.BytesIO(tex_bytes)).convert("RGB")
+                contents.append(tex_pil)
+                logger.info("Added wall texture swatch to contents array")
+
+            # Add floor tile swatch if provided
+            if tile_swatch_image:
+                contents.append("\n🏗️ FLOOR TILE REFERENCE SWATCH — Apply this tile pattern to ALL visible floor surfaces:")
+                tile_bytes = base64.b64decode(self._preprocess_image_for_editing(tile_swatch_image))
+                tile_pil = Image.open(io.BytesIO(tile_bytes)).convert("RGB")
+                contents.append(tile_pil)
+                logger.info("Added floor tile swatch to contents array")
+
             # Generate visualization with Gemini 3 Pro Image
             # Use HIGH media resolution for better quality output
             generate_content_config = types.GenerateContentConfig(
@@ -4275,6 +4406,36 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 user_id=user_id,
                 session_id=session_id,
             )
+
+            # Resize output to match input dimensions if they differ
+            try:
+                output_b64 = generated_image
+                if output_b64.startswith("data:"):
+                    output_b64 = output_b64.split(",", 1)[1]
+
+                output_bytes = base64.b64decode(output_b64)
+                output_img = Image.open(io.BytesIO(output_bytes))
+                output_width, output_height = output_img.size
+                logger.info(
+                    f"[AddMultiple] Output resolution: {output_width}x{output_height}, Input was: {input_width}x{input_height}"
+                )
+
+                if output_width != input_width or output_height != input_height:
+                    logger.warning(
+                        f"[AddMultiple] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
+                    )
+                    if output_img.mode != "RGB":
+                        output_img = output_img.convert("RGB")
+                    output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
+
+                    buffer = io.BytesIO()
+                    output_img.save(buffer, format="PNG", optimize=False)
+                    buffer.seek(0)
+                    resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                    generated_image = f"data:image/png;base64,{resized_b64}"
+                    logger.info(f"[AddMultiple] Resized output to match input: {input_width}x{input_height}")
+            except Exception as resize_err:
+                logger.warning(f"[AddMultiple] Could not verify/fix output resolution: {resize_err}")
 
             return generated_image
 
@@ -5028,7 +5189,9 @@ SHADOW REQUIREMENTS:
 - ❌ Do NOT render products with neutral/studio lighting if room has warm/cool lighting
 - ❌ Do NOT make product shadows go in a different direction than room shadows
 
-{self._build_wall_color_instruction(visualization_request.wall_color)}
+{self._build_wall_color_instruction(visualization_request.wall_color, visualization_request.texture_image)}
+
+{self._build_surface_instructions(visualization_request)}
 
 OUTPUT: One photorealistic image of THE SAME ROOM with {product_count} product(s) naturally integrated, where products look like they physically exist in the space with proper lighting, shadows, and material interactions."""
 
@@ -5087,6 +5250,26 @@ Create a photorealistic interior design visualization that addresses the user's 
                         contents.append(prod_pil_image)
 
                     logger.info(f"[VIZ] Passing {len(product_images)} total reference images to model")
+
+                    # Add wall texture swatch if provided
+                    if visualization_request.texture_image:
+                        contents.append("\n🧱 WALL TEXTURE REFERENCE SWATCH — Apply this pattern to ALL visible walls:")
+                        tex_bytes = base64.b64decode(self._preprocess_image_for_editing(visualization_request.texture_image))
+                        tex_pil = Image.open(io.BytesIO(tex_bytes)).convert("RGB")
+                        contents.append(tex_pil)
+                        logger.info("[VIZ] Added wall texture swatch to contents array")
+
+                    # Add floor tile swatch if provided
+                    if visualization_request.tile_swatch_image:
+                        contents.append(
+                            "\n🏗️ FLOOR TILE REFERENCE SWATCH — Apply this tile pattern to ALL visible floor surfaces:"
+                        )
+                        tile_bytes = base64.b64decode(
+                            self._preprocess_image_for_editing(visualization_request.tile_swatch_image)
+                        )
+                        tile_pil = Image.open(io.BytesIO(tile_bytes)).convert("RGB")
+                        contents.append(tile_pil)
+                        logger.info("[VIZ] Added floor tile swatch to contents array")
 
                     # Add explicit dimension requirements now that we know the input size
                     dimension_instruction = f"""
@@ -6208,16 +6391,20 @@ DO NOT:
             "raw_dimensions": {"width": product_width, "depth": product_depth, "height": product_height},
         }
 
-    def _build_wall_color_instruction(self, wall_color: Optional[Dict[str, Any]]) -> str:
+    def _build_wall_color_instruction(self, wall_color: Optional[Dict[str, Any]], texture_image: Optional[str] = None) -> str:
         """
         Build wall color instruction for visualization prompts.
 
         Args:
             wall_color: Optional dict with 'name', 'code', 'hex_value' for wall color to apply
+            texture_image: If provided, texture overrides wall color (they are mutually exclusive)
 
         Returns:
             Formatted wall color instruction string
         """
+        # Texture overrides wall color for walls
+        if texture_image:
+            return ""
         if wall_color:
             color_name = wall_color.get("name", "Unknown")
             color_code = wall_color.get("code", "")
@@ -6248,6 +6435,42 @@ Paint ALL visible walls with the following color:
 - If walls are white → output walls MUST be white
 - If walls are grey → output walls MUST be grey
 - The wall color scheme is FIXED - you are ONLY adding furniture"""
+
+    def _build_surface_instructions(self, viz_request) -> str:
+        """Build surface instructions (texture + tile) for generate_room_visualization prompts."""
+        instructions = ""
+        if viz_request.texture_image and viz_request.texture_name:
+            instructions += f"""
+🧱🧱🧱 WALL TEXTURE — APPLY TEXTURE PATTERN 🧱🧱🧱
+A wall texture swatch image is provided AFTER the product reference images.
+TEXTURE INFO: {viz_request.texture_name} ({viz_request.texture_type or 'textured'} finish)
+WALL TEXTURE RULES:
+1. Study the texture swatch pattern, colors, and details
+2. Apply this EXACT pattern to ALL visible wall surfaces
+3. Maintain natural scale and blend at corners
+4. Preserve natural shadows and lighting ON the texture
+5. DO NOT apply texture to ceiling, floor, or furniture
+"""
+        if viz_request.tile_swatch_image and viz_request.tile_name:
+            tile_size_desc = ""
+            if viz_request.tile_width_mm and viz_request.tile_height_mm:
+                tile_size_desc = f"{viz_request.tile_width_mm} mm × {viz_request.tile_height_mm} mm"
+            else:
+                tile_size_desc = viz_request.tile_size or "standard size"
+            instructions += f"""
+🏗️🏗️🏗️ FLOOR TILE — APPLY TILE PATTERN 🏗️🏗️🏗️
+A floor tile swatch image is provided AFTER the product reference images.
+TILE INFO: {viz_request.tile_name} ({tile_size_desc}, {viz_request.tile_finish or 'standard'})
+FLOOR TILE RULES:
+1. Apply this EXACT tile pattern to ALL visible FLOOR surfaces ONLY
+2. Each tile is {tile_size_desc} — scale correctly using door height (~2000mm) as reference
+3. Add thin, natural grout lines between tiles
+4. Apply perspective foreshortening and appropriate reflectivity
+5. ⛔ NEVER apply tile to WALLS — tiles go ONLY on the FLOOR (horizontal ground surface)
+6. ⛔ NEVER apply tile to the ceiling or any vertical surface
+7. The boundary between floor and wall must remain clear
+"""
+        return instructions
 
     def _build_perspective_scaling_instructions(
         self,
@@ -7693,6 +7916,70 @@ RULES:
 
         except Exception as e:
             logger.error(f"[FloorTile] Error: {e}", exc_info=True)
+            return None
+
+    async def apply_room_surfaces(
+        self,
+        room_image: str,
+        wall_color: Optional[dict] = None,
+        texture_image: str = None,
+        texture_name: str = None,
+        texture_type: str = None,
+        tile_swatch_image: str = None,
+        tile_name: str = None,
+        tile_size: str = None,
+        tile_finish: str = None,
+        tile_width_mm: int = None,
+        tile_height_mm: int = None,
+        user_id: str = None,
+        session_id: str = None,
+    ) -> Optional[str]:
+        """
+        Apply surface changes (wall color/texture + floor tile) to a room in a single Gemini call.
+        This is the surface-only path — no furniture products.
+
+        Args:
+            room_image: Base64 encoded room image
+            wall_color: Optional dict with 'name', 'code', 'hex_value' for wall color
+            texture_image: Base64 swatch image for wall texture
+            texture_name: Name of the texture
+            texture_type: Type of texture
+            tile_swatch_image: Base64 swatch image for floor tile
+            tile_name: Name of the floor tile
+            tile_size: Size description
+            tile_finish: Finish type
+            tile_width_mm: Tile width in mm
+            tile_height_mm: Tile height in mm
+            user_id: Optional user ID for tracking
+            session_id: Optional session ID for tracking
+
+        Returns: base64 image data with data URI prefix, or None on failure
+        """
+        logger.info(
+            f"[ApplySurfaces] Combined surface call: wall_color={wall_color.get('name') if wall_color else None}, "
+            f"texture={texture_name}, tile={tile_name}"
+        )
+        try:
+            result = await self.generate_add_multiple_visualization(
+                room_image=room_image,
+                products=[],
+                existing_products=[],
+                user_id=user_id,
+                session_id=session_id,
+                wall_color=wall_color,
+                texture_image=texture_image,
+                texture_name=texture_name,
+                texture_type=texture_type,
+                tile_swatch_image=tile_swatch_image,
+                tile_name=tile_name,
+                tile_size=tile_size,
+                tile_finish=tile_finish,
+                tile_width_mm=tile_width_mm,
+                tile_height_mm=tile_height_mm,
+            )
+            return result
+        except Exception as e:
+            logger.error(f"[ApplySurfaces] Error: {e}", exc_info=True)
             return None
 
     async def close(self):

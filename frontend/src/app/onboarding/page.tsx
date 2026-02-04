@@ -102,6 +102,7 @@ function OnboardingPageContent() {
           const projectName = styleName ? `${styleName} ${roomName}` : `My ${roomName}`;
 
           const project = await projectsAPI.create({ name: projectName });
+          sessionStorage.setItem('newlyCreatedProjectId', project.id);
           router.push(`/design?projectId=${project.id}`);
         } catch (error) {
           console.error('[Onboarding] Failed to create project:', error);
