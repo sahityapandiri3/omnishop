@@ -37,6 +37,30 @@ function AdminPageContent() {
             </div>
           </Link>
 
+          {/* API Usage Card */}
+          <Link
+            href="/admin/api-usage"
+            className="block bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-lg hover:border-blue-300 transition-all group"
+          >
+            <div className="flex items-center mb-4">
+              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-200 transition-colors">
+                <svg className="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              </div>
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">API Usage</h2>
+            <p className="text-gray-600 text-sm">
+              Track Gemini and OpenAI API calls, token usage, and costs.
+            </p>
+            <div className="mt-4 flex items-center text-blue-600 font-medium text-sm group-hover:text-blue-700">
+              View Usage
+              <svg className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+          </Link>
+
           {/* Products Card (placeholder for future) */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 opacity-60">
             <div className="flex items-center mb-4">
@@ -49,24 +73,6 @@ function AdminPageContent() {
             <h2 className="text-xl font-semibold text-gray-500 mb-2">Products</h2>
             <p className="text-gray-400 text-sm">
               View and manage product catalog from connected stores.
-            </p>
-            <div className="mt-4 text-gray-400 text-sm">
-              Coming soon
-            </div>
-          </div>
-
-          {/* Analytics Card (placeholder for future) */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 opacity-60">
-            <div className="flex items-center mb-4">
-              <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-              </div>
-            </div>
-            <h2 className="text-xl font-semibold text-gray-500 mb-2">Analytics</h2>
-            <p className="text-gray-400 text-sm">
-              Track user engagement and popular styles.
             </p>
             <div className="mt-4 text-gray-400 text-sm">
               Coming soon

@@ -3467,14 +3467,68 @@ async def get_api_usage(hours: int = 24, db: AsyncSession = Depends(get_db)):
         provider_result = await db.execute(by_provider_query)
         by_provider = [{"provider": r.provider, "calls": r.calls, "tokens": r.tokens or 0} for r in provider_result.fetchall()]
 
+        # Get breakdown by model
+        by_model_query = (
+            select(
+                ApiUsage.model,
+                func.count(ApiUsage.id).label("calls"),
+                func.sum(ApiUsage.total_tokens).label("tokens"),
+            )
+            .where(ApiUsage.timestamp >= cutoff)
+            .group_by(ApiUsage.model)
+            .order_by(func.count(ApiUsage.id).desc())
+        )
+        model_result = await db.execute(by_model_query)
+        by_model = [{"model": r.model, "calls": r.calls, "tokens": r.tokens or 0} for r in model_result.fetchall()]
+
+        # Get detailed log of individual calls (most recent 100)
+        from database.models import User
+
+        detail_query = (
+            select(
+                ApiUsage.timestamp,
+                ApiUsage.provider,
+                ApiUsage.model,
+                ApiUsage.operation,
+                ApiUsage.prompt_tokens,
+                ApiUsage.completion_tokens,
+                ApiUsage.total_tokens,
+                ApiUsage.estimated_cost,
+                ApiUsage.session_id,
+                User.email,
+            )
+            .outerjoin(User, ApiUsage.user_id == User.id)
+            .where(ApiUsage.timestamp >= cutoff)
+            .order_by(ApiUsage.timestamp.desc())
+            .limit(200)
+        )
+        detail_result = await db.execute(detail_query)
+        detailed_log = [
+            {
+                "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+                "user": r.email or "anonymous",
+                "provider": r.provider,
+                "model": r.model,
+                "operation": r.operation,
+                "prompt_tokens": r.prompt_tokens or 0,
+                "completion_tokens": r.completion_tokens or 0,
+                "total_tokens": r.total_tokens or 0,
+                "estimated_cost": r.estimated_cost or 0,
+                "session_id": r.session_id,
+            }
+            for r in detail_result.fetchall()
+        ]
+
         return {
             "status": "success",
             "period_hours": hours,
             "usage": {
                 "total_api_calls": total_row.total_calls or 0,
                 "total_tokens": total_row.total_tokens or 0,
-                "by_operation": by_operation,
+                "by_operation": sorted(by_operation, key=lambda x: x["calls"], reverse=True),
                 "by_provider": by_provider,
+                "by_model": by_model,
+                "detailed_log": detailed_log,
             },
         }
     except Exception as e:
