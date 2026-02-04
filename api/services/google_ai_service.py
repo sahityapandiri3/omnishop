@@ -5010,10 +5010,10 @@ TREAT THE INPUT IMAGE AS SACRED - IT CANNOT BE MODIFIED.
 ═══════════════════════════════════════════════════════════════
 ⚠️ WHAT MUST STAY IDENTICAL (100% PRESERVATION REQUIRED) ⚠️
 ═══════════════════════════════════════════════════════════════
-🚨 CRITICAL: FLOOR MUST NOT CHANGE - If the input shows solid flooring, output MUST show solid flooring. If input shows checkered floor, output MUST show checkered floor. NEVER change floor patterns or materials.
+{'🚨 CRITICAL: FLOOR MUST NOT CHANGE - If the input shows solid flooring, output MUST show solid flooring. If input shows checkered floor, output MUST show checkered floor. NEVER change floor patterns or materials.' if not visualization_request.tile_swatch_image else ''}
 
-1. FLOOR (MOST CRITICAL) - EXACT SAME material, color, pattern, texture, reflections, grain - DO NOT CHANGE under any circumstances
-2. WALLS - Same position, color, texture, material - walls cannot move or change
+1. {'FLOOR (MOST CRITICAL) - EXACT SAME material, color, pattern, texture, reflections, grain - DO NOT CHANGE under any circumstances' if not visualization_request.tile_swatch_image else 'FLOOR - Apply the provided floor tile swatch pattern (see FLOOR TILE instructions below)'}
+2. {'WALLS - Same position, color, texture, material - walls cannot move or change' if not visualization_request.texture_image else 'WALLS - Apply the provided wall texture pattern (see WALL TEXTURE instructions below). Wall positions and structure must stay the same.'}
 3. WINDOWS - Same size, position, style, with same light coming through - windows are fixed
 4. DOORS - Same position, style, handles - doors are fixed architectural elements
 5. CEILING - Same height, color, fixtures, details - ceiling structure is permanent
@@ -5025,8 +5025,8 @@ TREAT THE INPUT IMAGE AS SACRED - IT CANNOT BE MODIFIED.
 {existing_furniture_instruction}
 
 IF THE ROOM HAS:
-- White walls → Keep white walls
-- Hardwood floor → Keep hardwood floor
+{'- White walls → Keep white walls' if not visualization_request.texture_image else '- Walls → Apply the provided wall texture pattern'}
+{'- Hardwood floor → Keep hardwood floor' if not visualization_request.tile_swatch_image else '- Floor → Apply the provided floor tile pattern'}
 - A window on the left → Keep window on the left
 - 10ft ceiling → Keep 10ft ceiling
 - Modern style → Keep modern style base
@@ -5147,11 +5147,11 @@ Generate ONE image that shows:
 ═══════════════════════════════════════════════════════════════
 
 QUALITY CHECKS:
-✓ Can you overlay the input and output and see the same walls? YES
+{'✓ Can you overlay the input and output and see the same walls? YES' if not visualization_request.texture_image else '✓ Did you apply the wall texture from the swatch? YES'}
 ✓ Are windows in the same position? YES
-✓ Is the floor the same material? YES
+{'✓ Is the floor the same material? YES' if not visualization_request.tile_swatch_image else '✓ Did you apply the floor tile from the swatch? YES'}
 ✓ Is the camera angle identical? YES
-✓ Did you only add products? YES
+✓ Did you only add products{'and apply surface changes' if visualization_request.texture_image or visualization_request.tile_swatch_image else ''}? YES
 ✓ Is the room structure unchanged? YES
 ✓ Does the output show the FULL ROOM (not zoomed in on product)? YES
 ✓ Are ALL products showing their FRONT FACE to the camera? YES
