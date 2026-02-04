@@ -301,11 +301,18 @@ function DesignPageContent() {
     canvas.setTextureVariant(null);
   }, [removeTextureFromCanvas, canvas.setTextureVariant]);
 
-  // Wrap floor tile add-to-canvas to sync with unified canvas
-  const handleAddFloorTileToCanvasUnified = useCallback((tile: FloorTile) => {
-    addFloorTileToCanvas(tile);
-    canvas.addFloorTile(tile);
-  }, [addFloorTileToCanvas, canvas.addFloorTile]);
+  // Toggle floor tile on/off canvas (add if not selected, remove if already selected)
+  const handleToggleFloorTileOnCanvas = useCallback((tile: FloorTile) => {
+    if (canvasFloorTile && canvasFloorTile.id === tile.id) {
+      // Already selected — remove it
+      removeFloorTileFromCanvas();
+      canvas.setFloorTile(null);
+    } else {
+      // Not selected — add it
+      addFloorTileToCanvas(tile);
+      canvas.addFloorTile(tile);
+    }
+  }, [canvasFloorTile, addFloorTileToCanvas, removeFloorTileFromCanvas, canvas.addFloorTile, canvas.setFloorTile]);
 
   const removeFloorTileFromCanvasUnified = useCallback(() => {
     removeFloorTileFromCanvas();
@@ -2212,7 +2219,7 @@ function DesignPageContent() {
                 floorTilesLoading={isLoadingFloorTiles}
                 floorTilesError={floorTilesError}
                 canvasFloorTile={canvasFloorTile}
-                onToggleFloorTile={handleAddFloorTileToCanvasUnified}
+                onToggleFloorTile={handleToggleFloorTileOnCanvas}
               />
             }
             canvasPanel={
@@ -2391,7 +2398,7 @@ function DesignPageContent() {
               floorTilesLoading={isLoadingFloorTiles}
               floorTilesError={floorTilesError}
               canvasFloorTile={canvasFloorTile}
-              onToggleFloorTile={handleAddFloorTileToCanvasUnified}
+              onToggleFloorTile={handleToggleFloorTileOnCanvas}
             />
           </div>
           <div className={`h-full ${activeTab === 'canvas' ? 'block' : 'hidden'}`}>

@@ -138,7 +138,10 @@ export function useVisualization({
   const products = canvasItemsProp ? extractProducts(canvasItemsProp) : productsProp;
   const wallColor = canvasItemsProp ? extractWallColor(canvasItemsProp) : (wallColorProp ?? null);
   const textureVariant = canvasItemsProp ? extractTextureVariant(canvasItemsProp) : (textureVariantProp ?? null);
-  const floorTile = canvasItemsProp ? extractFloorTile(canvasItemsProp) : (floorTileProp ?? null);
+  // For floor tile, prefer canvasItems extraction but fall back to explicit prop
+  // This handles timing issues where canvasItems may not yet contain the tile
+  const floorTileFromCanvas = canvasItemsProp ? extractFloorTile(canvasItemsProp) : null;
+  const floorTile = floorTileFromCanvas ?? (floorTileProp ?? null);
   // ============================================================================
   // History Hook
   // ============================================================================

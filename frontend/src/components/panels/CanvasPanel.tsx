@@ -165,6 +165,7 @@ export default function CanvasPanel({
     cleanRoomImage: cleanRoomImage || roomImage,
     wallColor: canvasWallColor,
     textureVariant: canvasTextureVariant,  // Pass texture for visualization
+    floorTile: canvasFloorTile,  // Pass floor tile for visualization & change detection
     onSetProducts: onSetProducts as (products: VisualizationProduct[]) => void,
     onSetWallColor,  // Pass wall color callback for undo/redo
     canvasItems,  // Pass unified canvas items
@@ -1550,10 +1551,10 @@ export default function CanvasPanel({
           // State 1: Ready to Visualize (Primary gradient, Enabled)
           <button
             onClick={handleVisualize}
-            disabled={isVisualizing}
+            disabled={isVisualizing || isProcessingFurniture}
             className="w-full py-3 px-4 bg-gradient-to-r from-neutral-700 to-neutral-800 hover:from-neutral-800 hover:to-neutral-900 disabled:from-neutral-400 disabled:to-neutral-400 text-white font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg"
           >
-            {isVisualizing ? (
+            {isVisualizing || isProcessingFurniture ? (
               <>
                 <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
                   <circle
@@ -1570,7 +1571,7 @@ export default function CanvasPanel({
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   ></path>
                 </svg>
-                <span className="text-sm">Visualizing...</span>
+                <span className="text-sm">{isProcessingFurniture ? 'Processing Image...' : 'Visualizing...'}</span>
               </>
             ) : (
               <>
