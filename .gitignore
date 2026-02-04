@@ -138,3 +138,6 @@ chat.md
 
 # Large data files for production migration
 api/scripts/products_embeddings_styles.csv.gz
+api/curated_looks_export.json
+api/new_looks_export.json
+api/scripts/asian_paints_textures.json
