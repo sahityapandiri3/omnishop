@@ -3,7 +3,7 @@ Authentication service for user management, JWT tokens, and OAuth
 """
 import logging
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Optional
 
 import bcrypt
 from google.auth.transport import requests as google_requests
@@ -13,19 +13,28 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
-from database.models import User
+from database.models import SystemSettings, User
 
 logger = logging.getLogger(__name__)
 
-# Whitelist of allowed email addresses (set to None to allow all)
-ALLOWED_EMAILS: Optional[List[str]] = None  # Disabled for customer testing
 
+async def check_email_allowed(email: str, db: AsyncSession) -> bool:
+    """
+    Check if email is allowed based on whitelist settings in the database.
+    Returns True if whitelist is disabled or email is in the whitelist.
+    """
+    result = await db.execute(select(SystemSettings).where(SystemSettings.key == "whitelist"))
+    setting = result.scalar_one_or_none()
 
-def check_email_allowed(email: str) -> bool:
-    """Check if email is in the whitelist. Returns True if whitelist is disabled or email is allowed."""
-    if ALLOWED_EMAILS is None:
+    if not setting:
         return True
-    return email.lower() in [e.lower() for e in ALLOWED_EMAILS]
+
+    value = setting.value or {}
+    if not value.get("enabled", False):
+        return True
+
+    allowed_emails = value.get("emails", [])
+    return email.lower() in [e.lower() for e in allowed_emails]
 
 
 class AuthService:
@@ -171,7 +180,7 @@ class AuthService:
             return None
 
         # Check whitelist
-        if not check_email_allowed(google_info["email"]):
+        if not await check_email_allowed(google_info["email"], db):
             logger.warning(f"Google auth blocked for non-whitelisted email: {google_info['email']}")
             return "blocked"  # type: ignore
 

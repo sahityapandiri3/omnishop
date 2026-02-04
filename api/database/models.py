@@ -956,6 +956,25 @@ class WallTextureVariant(Base):
         return f"<WallTextureVariant(id={self.id}, code='{self.code}', texture_id={self.texture_id})>"
 
 
+class SystemSettings(Base):
+    """
+    Key-value store for global system settings.
+
+    Used for features like whitelist-only access control.
+    Each row is a setting identified by its key, with a JSON value.
+    """
+
+    __tablename__ = "system_settings"
+
+    key = Column(String(100), primary_key=True)  # e.g., "whitelist"
+    value = Column(JSON, nullable=False, default=dict)  # Setting data as JSON
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_by = Column(String(36), ForeignKey("users.id"), nullable=True)  # User who last updated
+
+    def __repr__(self):
+        return f"<SystemSettings(key='{self.key}')>"
+
+
 class FloorTile(Base):
     """
     Floor tile catalog for visualization.

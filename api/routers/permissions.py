@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import require_super_admin
 from core.database import get_db
-from database.models import User, UserRole
+from database.models import SystemSettings, User, UserRole
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/permissions", tags=["permissions"])
@@ -21,6 +21,19 @@ class UserRoleUpdate(BaseModel):
     """Schema for updating a user's role"""
 
     role: str  # "user", "admin", or "super_admin"
+
+
+class UserActiveUpdate(BaseModel):
+    """Schema for toggling a user's active status"""
+
+    is_active: bool
+
+
+class WhitelistSettings(BaseModel):
+    """Schema for whitelist settings"""
+
+    enabled: bool
+    emails: list[str]
 
 
 class UserListItem(BaseModel):
@@ -203,3 +216,131 @@ async def update_user_role(
         await db.rollback()
         logger.error(f"Error updating user role: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error updating user role")
+
+
+@router.put("/users/{user_id}/active")
+async def toggle_user_active(
+    user_id: str,
+    update: UserActiveUpdate,
+    current_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Toggle a user's active status (block/unblock).
+    Only accessible by super admins.
+    Cannot block yourself or other super admins.
+    """
+    try:
+        # Prevent self-block
+        if user_id == current_user.id:
+            raise HTTPException(status_code=400, detail="Cannot change your own active status")
+
+        # Find user
+        query = select(User).where(User.id == user_id)
+        result = await db.execute(query)
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Prevent blocking other super admins
+        user_role = user.role.value if hasattr(user.role, "value") else str(user.role)
+        if user_role == "super_admin" and not update.is_active:
+            raise HTTPException(status_code=400, detail="Cannot block a super admin")
+
+        user.is_active = update.is_active
+        await db.commit()
+
+        action = "unblocked" if update.is_active else "blocked"
+        logger.info(f"User {user.email} {action} by {current_user.email}")
+
+        return {
+            "message": f"User {action} successfully",
+            "user_id": user_id,
+            "email": user.email,
+            "is_active": update.is_active,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error toggling user active status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error updating user status")
+
+
+# ============================================================================
+# Whitelist Settings Endpoints
+# ============================================================================
+
+
+@router.get("/settings/whitelist", response_model=WhitelistSettings)
+async def get_whitelist_settings(
+    current_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get the current whitelist settings.
+    Returns enabled status and list of whitelisted emails.
+    """
+    try:
+        result = await db.execute(select(SystemSettings).where(SystemSettings.key == "whitelist"))
+        setting = result.scalar_one_or_none()
+
+        if not setting:
+            return WhitelistSettings(enabled=False, emails=[])
+
+        value = setting.value or {}
+        return WhitelistSettings(
+            enabled=value.get("enabled", False),
+            emails=value.get("emails", []),
+        )
+
+    except Exception as e:
+        logger.error(f"Error fetching whitelist settings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error fetching whitelist settings")
+
+
+@router.put("/settings/whitelist", response_model=WhitelistSettings)
+async def update_whitelist_settings(
+    settings: WhitelistSettings,
+    current_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Update whitelist settings (enable/disable and manage email list).
+    Only accessible by super admins.
+    """
+    try:
+        # Normalize emails to lowercase and deduplicate
+        normalized_emails = list(set(e.strip().lower() for e in settings.emails if e.strip()))
+
+        result = await db.execute(select(SystemSettings).where(SystemSettings.key == "whitelist"))
+        setting = result.scalar_one_or_none()
+
+        value = {"enabled": settings.enabled, "emails": normalized_emails}
+
+        if setting:
+            setting.value = value
+            setting.updated_by = current_user.id
+        else:
+            setting = SystemSettings(
+                key="whitelist",
+                value=value,
+                updated_by=current_user.id,
+            )
+            db.add(setting)
+
+        await db.commit()
+
+        logger.info(
+            f"Whitelist settings updated by {current_user.email}: "
+            f"enabled={settings.enabled}, emails_count={len(normalized_emails)}"
+        )
+
+        return WhitelistSettings(enabled=settings.enabled, emails=normalized_emails)
+
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error updating whitelist settings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error updating whitelist settings")

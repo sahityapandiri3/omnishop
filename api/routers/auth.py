@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user, get_optional_user
 from core.database import get_db
-from database.models import User
+from database.models import SystemSettings, User
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -32,15 +32,24 @@ router = APIRouter()
 # Admin secret for protected endpoints
 ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "omnishop-admin-2024")
 
-# Whitelist of allowed email addresses (set to None to allow all)
-ALLOWED_EMAILS = None  # Disabled for customer testing
 
+async def check_email_allowed(email: str, db: AsyncSession) -> bool:
+    """
+    Check if email is allowed based on whitelist settings in the database.
+    Returns True if whitelist is disabled or email is in the whitelist.
+    """
+    result = await db.execute(select(SystemSettings).where(SystemSettings.key == "whitelist"))
+    setting = result.scalar_one_or_none()
 
-def check_email_allowed(email: str) -> bool:
-    """Check if email is in the whitelist. Returns True if whitelist is disabled or email is allowed."""
-    if ALLOWED_EMAILS is None:
+    if not setting:
         return True
-    return email.lower() in [e.lower() for e in ALLOWED_EMAILS]
+
+    value = setting.value or {}
+    if not value.get("enabled", False):
+        return True
+
+    allowed_emails = value.get("emails", [])
+    return email.lower() in [e.lower() for e in allowed_emails]
 
 
 @router.post("/register", response_model=TokenResponse)
@@ -53,7 +62,7 @@ async def register(
     Returns access token on success.
     """
     # Check whitelist
-    if not check_email_allowed(user_data.email):
+    if not await check_email_allowed(user_data.email, db):
         logger.warning(f"Registration blocked for non-whitelisted email: {user_data.email}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -98,7 +107,7 @@ async def login(
     Returns access token on success.
     """
     # Check whitelist
-    if not check_email_allowed(credentials.email):
+    if not await check_email_allowed(credentials.email, db):
         logger.warning(f"Login blocked for non-whitelisted email: {credentials.email}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

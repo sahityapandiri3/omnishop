@@ -21,6 +21,11 @@ interface UserListResponse {
   size: number;
 }
 
+interface WhitelistSettings {
+  enabled: boolean;
+  emails: string[];
+}
+
 function PermissionsPageContent() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<UserListItem[]>([]);
@@ -31,7 +36,16 @@ function PermissionsPageContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+  const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Whitelist state
+  const [whitelistEnabled, setWhitelistEnabled] = useState(false);
+  const [whitelistEmails, setWhitelistEmails] = useState<string[]>([]);
+  const [newEmail, setNewEmail] = useState('');
+  const [whitelistLoading, setWhitelistLoading] = useState(true);
+  const [whitelistSaving, setWhitelistSaving] = useState(false);
+  const [whitelistDirty, setWhitelistDirty] = useState(false);
 
   const pageSize = 20;
 
@@ -61,9 +75,27 @@ function PermissionsPageContent() {
     }
   }, [page, search, roleFilter]);
 
+  const fetchWhitelistSettings = useCallback(async () => {
+    setWhitelistLoading(true);
+    try {
+      const response = await api.get<WhitelistSettings>('/api/admin/permissions/settings/whitelist');
+      setWhitelistEnabled(response.data.enabled);
+      setWhitelistEmails(response.data.emails);
+      setWhitelistDirty(false);
+    } catch (err: any) {
+      console.error('Error fetching whitelist settings:', err);
+    } finally {
+      setWhitelistLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
+
+  useEffect(() => {
+    fetchWhitelistSettings();
+  }, [fetchWhitelistSettings]);
 
   // Debounced search
   useEffect(() => {
@@ -95,14 +127,96 @@ function PermissionsPageContent() {
       ));
 
       setSuccessMessage(`Role updated successfully for ${response.data.email}`);
-
-      // Clear success message after 3 seconds
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: any) {
       console.error('Error updating role:', err);
       setError(err.response?.data?.detail || 'Failed to update role');
     } finally {
       setUpdatingUserId(null);
+    }
+  };
+
+  const handleToggleActive = async (userId: string, newValue: boolean) => {
+    if (userId === currentUser?.id) {
+      setError("You cannot change your own status");
+      return;
+    }
+
+    setTogglingUserId(userId);
+    setError(null);
+    setSuccessMessage(null);
+
+    // Optimistic update
+    setUsers(prev => prev.map(u =>
+      u.id === userId ? { ...u, is_active: newValue } : u
+    ));
+
+    try {
+      const response = await api.put(`/api/admin/permissions/users/${userId}/active`, {
+        is_active: newValue,
+      });
+
+      const action = newValue ? 'unblocked' : 'blocked';
+      setSuccessMessage(`User ${response.data.email} ${action} successfully`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      console.error('Error toggling user active status:', err);
+      // Revert optimistic update
+      setUsers(prev => prev.map(u =>
+        u.id === userId ? { ...u, is_active: !newValue } : u
+      ));
+      setError(err.response?.data?.detail || 'Failed to update user status');
+    } finally {
+      setTogglingUserId(null);
+    }
+  };
+
+  const handleAddEmail = () => {
+    const email = newEmail.trim().toLowerCase();
+    if (!email) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Please enter a valid email address');
+      return;
+    }
+    if (whitelistEmails.includes(email)) {
+      setError('Email is already in the whitelist');
+      return;
+    }
+    setWhitelistEmails(prev => [...prev, email]);
+    setNewEmail('');
+    setWhitelistDirty(true);
+    setError(null);
+  };
+
+  const handleRemoveEmail = (email: string) => {
+    setWhitelistEmails(prev => prev.filter(e => e !== email));
+    setWhitelistDirty(true);
+  };
+
+  const handleWhitelistToggle = (enabled: boolean) => {
+    setWhitelistEnabled(enabled);
+    setWhitelistDirty(true);
+  };
+
+  const handleSaveWhitelist = async () => {
+    setWhitelistSaving(true);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      await api.put('/api/admin/permissions/settings/whitelist', {
+        enabled: whitelistEnabled,
+        emails: whitelistEmails,
+      });
+
+      setWhitelistDirty(false);
+      setSuccessMessage('Whitelist settings saved successfully');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      console.error('Error saving whitelist:', err);
+      setError(err.response?.data?.detail || 'Failed to save whitelist settings');
+    } finally {
+      setWhitelistSaving(false);
     }
   };
 
@@ -161,6 +275,123 @@ function PermissionsPageContent() {
             <span className="text-neutral-700">{successMessage}</span>
           </div>
         )}
+
+        {/* Access Control - Whitelist Settings */}
+        <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Access Control</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Restrict registration and login to a specific list of email addresses.
+          </p>
+
+          {whitelistLoading ? (
+            <div className="flex items-center gap-2 text-gray-400 text-sm">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-600"></div>
+              Loading settings...
+            </div>
+          ) : (
+            <>
+              {/* Whitelist Toggle */}
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <span className="text-sm font-medium text-gray-700">Whitelist-only access</span>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    When enabled, only whitelisted emails can register or log in.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={whitelistEnabled}
+                  onClick={() => handleWhitelistToggle(!whitelistEnabled)}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 ${
+                    whitelistEnabled ? 'bg-purple-600' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      whitelistEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Email list (shown when enabled) */}
+              {whitelistEnabled && (
+                <div className="border-t border-gray-100 pt-4">
+                  {/* Add email input */}
+                  <div className="flex gap-2 mb-3">
+                    <input
+                      type="email"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddEmail();
+                        }
+                      }}
+                      placeholder="Add email to whitelist..."
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    />
+                    <button
+                      onClick={handleAddEmail}
+                      className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                    >
+                      Add
+                    </button>
+                  </div>
+
+                  {/* Email list */}
+                  {whitelistEmails.length === 0 ? (
+                    <p className="text-sm text-gray-400 italic">
+                      No emails in whitelist. Add emails above to allow access.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {whitelistEmails.map((email) => (
+                        <span
+                          key={email}
+                          className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded-full"
+                        >
+                          {email}
+                          <button
+                            onClick={() => handleRemoveEmail(email)}
+                            className="ml-1 text-gray-400 hover:text-red-500"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Save button */}
+              {whitelistDirty && (
+                <div className="mt-4 flex items-center gap-3 border-t border-gray-100 pt-4">
+                  <button
+                    onClick={handleSaveWhitelist}
+                    disabled={whitelistSaving}
+                    className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {whitelistSaving ? 'Saving...' : 'Save Changes'}
+                  </button>
+                  <button
+                    onClick={fetchWhitelistSettings}
+                    disabled={whitelistSaving}
+                    className="px-4 py-2 text-gray-600 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Cancel
+                  </button>
+                  <span className="text-xs text-amber-600">Unsaved changes</span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
         {/* Filters */}
         <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-200 p-4">
@@ -247,62 +478,98 @@ function PermissionsPageContent() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {users.map((user) => (
-                    <tr key={user.id} className={user.id === currentUser?.id ? 'bg-purple-50' : ''}>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0 h-10 w-10 bg-gray-200 rounded-full flex items-center justify-center">
-                            <span className="text-gray-600 font-medium">
-                              {(user.name || user.email)[0].toUpperCase()}
-                            </span>
-                          </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900">
-                              {user.name || 'No name'}
-                              {user.id === currentUser?.id && (
-                                <span className="ml-2 text-xs text-purple-600">(you)</span>
-                              )}
+                  {users.map((user) => {
+                    const isSelf = user.id === currentUser?.id;
+                    const isSuperAdmin = user.role === 'super_admin';
+                    const canToggle = !isSelf && !isSuperAdmin;
+
+                    return (
+                      <tr key={user.id} className={isSelf ? 'bg-purple-50' : ''}>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-10 w-10 bg-gray-200 rounded-full flex items-center justify-center">
+                              <span className="text-gray-600 font-medium">
+                                {(user.name || user.email)[0].toUpperCase()}
+                              </span>
                             </div>
-                            <div className="text-sm text-gray-500">{user.email}</div>
+                            <div className="ml-4">
+                              <div className="text-sm font-medium text-gray-900">
+                                {user.name || 'No name'}
+                                {isSelf && (
+                                  <span className="ml-2 text-xs text-purple-600">(you)</span>
+                                )}
+                              </div>
+                              <div className="text-sm text-gray-500">{user.email}</div>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getRoleBadgeColor(user.role)}`}>
-                          {user.role === 'super_admin' ? 'Super Admin' : user.role.charAt(0).toUpperCase() + user.role.slice(1)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${user.is_active ? 'bg-neutral-200 text-neutral-700' : 'bg-red-100 text-red-800'}`}>
-                          {user.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {formatDate(user.created_at)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {user.id === currentUser?.id ? (
-                          <span className="text-sm text-gray-400 italic">Cannot change own role</span>
-                        ) : (
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getRoleBadgeColor(user.role)}`}>
+                            {user.role === 'super_admin' ? 'Super Admin' : user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center gap-2">
-                            <select
-                              value={user.role}
-                              onChange={(e) => handleRoleChange(user.id, e.target.value)}
-                              disabled={updatingUserId === user.id}
-                              className="block w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-                            >
-                              <option value="user">User</option>
-                              <option value="admin">Admin</option>
-                              <option value="super_admin">Super Admin</option>
-                            </select>
-                            {updatingUserId === user.id && (
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-600"></div>
+                            {canToggle ? (
+                              <>
+                                <button
+                                  type="button"
+                                  role="switch"
+                                  aria-checked={user.is_active}
+                                  onClick={() => handleToggleActive(user.id, !user.is_active)}
+                                  disabled={togglingUserId === user.id}
+                                  className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                    user.is_active ? 'bg-green-500' : 'bg-red-400'
+                                  }`}
+                                >
+                                  <span
+                                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                      user.is_active ? 'translate-x-4' : 'translate-x-0'
+                                    }`}
+                                  />
+                                </button>
+                                {togglingUserId === user.id ? (
+                                  <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-purple-600"></div>
+                                ) : (
+                                  <span className={`text-xs ${user.is_active ? 'text-green-700' : 'text-red-700'}`}>
+                                    {user.is_active ? 'Active' : 'Blocked'}
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${user.is_active ? 'bg-neutral-200 text-neutral-700' : 'bg-red-100 text-red-800'}`}>
+                                {user.is_active ? 'Active' : 'Blocked'}
+                              </span>
                             )}
                           </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {formatDate(user.created_at)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {isSelf ? (
+                            <span className="text-sm text-gray-400 italic">Cannot change own role</span>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={user.role}
+                                onChange={(e) => handleRoleChange(user.id, e.target.value)}
+                                disabled={updatingUserId === user.id}
+                                className="block w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                              >
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
+                                <option value="super_admin">Super Admin</option>
+                              </select>
+                              {updatingUserId === user.id && (
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-600"></div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
