@@ -61,6 +61,30 @@ function AdminPageContent() {
             </div>
           </Link>
 
+          {/* Permissions Card */}
+          <Link
+            href="/admin/permissions"
+            className="block bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-lg hover:border-green-300 transition-all group"
+          >
+            <div className="flex items-center mb-4">
+              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors">
+                <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              </div>
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Permissions</h2>
+            <p className="text-gray-600 text-sm">
+              Manage user roles, access levels, and account status.
+            </p>
+            <div className="mt-4 flex items-center text-green-600 font-medium text-sm group-hover:text-green-700">
+              Manage Users
+              <svg className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+          </Link>
+
           {/* Products Card (placeholder for future) */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 opacity-60">
             <div className="flex items-center mb-4">
