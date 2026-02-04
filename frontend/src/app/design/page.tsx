@@ -319,6 +319,21 @@ function DesignPageContent() {
     canvas.setFloorTile(null);
   }, [removeFloorTileFromCanvas, canvas.setFloorTile]);
 
+  // Unified canvas item removal — removes from canvas.items AND clears the corresponding legacy hook state
+  // This ensures both the canvas panel (reads canvas.items) and the product discover panel
+  // (reads legacy hook state like canvasTextureVariant) stay in sync
+  const handleRemoveCanvasItem = useCallback((itemId: string) => {
+    // Determine item type from the id prefix (e.g., "wall_texture-123", "wall_color-45", "floor_tile-89")
+    if (itemId.startsWith('wall_texture-')) {
+      removeTextureFromCanvas();
+    } else if (itemId.startsWith('wall_color-')) {
+      removeWallColorFromCanvas();
+    } else if (itemId.startsWith('floor_tile-')) {
+      removeFloorTileFromCanvas();
+    }
+    canvas.removeItem(itemId);
+  }, [removeTextureFromCanvas, removeWallColorFromCanvas, removeFloorTileFromCanvas, canvas.removeItem]);
+
   // Handle canvas items restore from undo/redo
   const handleSetCanvasItems = useCallback((items: CanvasItem[]) => {
     canvas.setItems(items);
@@ -2303,7 +2318,7 @@ function DesignPageContent() {
                 onRemoveFloorTile={removeFloorTileFromCanvasUnified}
                 canvasItems={canvas.items}
                 onSetCanvasItems={handleSetCanvasItems}
-                onRemoveCanvasItem={canvas.removeItem}
+                onRemoveCanvasItem={handleRemoveCanvasItem}
                 onUpdateCanvasItemQuantity={canvas.updateQuantity}
               />
             }
@@ -2482,7 +2497,7 @@ function DesignPageContent() {
               onRemoveFloorTile={removeFloorTileFromCanvasUnified}
               canvasItems={canvas.items}
               onSetCanvasItems={handleSetCanvasItems}
-              onRemoveCanvasItem={canvas.removeItem}
+              onRemoveCanvasItem={handleRemoveCanvasItem}
               onUpdateCanvasItemQuantity={canvas.updateQuantity}
             />
           </div>
