@@ -717,7 +717,7 @@ export default function CanvasPanel({
   // Can visualize if we have any base image (prefer cleanRoomImage) and either products OR wall color OR texture
   const hasCanvasContent = canvasItems
     ? canvasItems.length > 0
-    : (products.length > 0 || canvasWallColor !== null || canvasTextureVariant !== null);
+    : (products.length > 0 || canvasWallColor !== null || canvasTextureVariant !== null || canvasFloorTile !== null);
   const canVisualize = (roomImage !== null || cleanRoomImage !== null) && hasCanvasContent;
   const isUpToDate = canVisualize && !needsRevisualization && visualizationResult !== null;
   const isReady = canVisualize && (needsRevisualization || visualizationResult === null);

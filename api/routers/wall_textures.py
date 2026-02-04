@@ -78,6 +78,7 @@ async def get_wall_textures(
                     code=v.code,
                     name=v.name,
                     image_url=v.image_url,
+                    product_url=v.product_url,
                     color_family=v.color_family,
                     is_active=v.is_active,
                     display_order=v.display_order,

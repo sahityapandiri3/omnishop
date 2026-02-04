@@ -49,6 +49,7 @@ class WallTextureVariantSchema(BaseModel):
     image_data: str = Field(..., description="Base64 encoded room/wall shot image")
     image_url: Optional[str] = None
     swatch_url: Optional[str] = Field(None, description="URL for the texture swatch pattern image")
+    product_url: Optional[str] = Field(None, description="Link to product page on vendor website")
     color_family: Optional[WallColorFamily] = None
     is_active: bool = True
     display_order: int = 0
@@ -65,6 +66,7 @@ class WallTextureVariantLightSchema(BaseModel):
     name: Optional[str] = None
     image_url: Optional[str] = None
     swatch_url: Optional[str] = None
+    product_url: Optional[str] = None
     color_family: Optional[WallColorFamily] = None
     is_active: bool = True
     display_order: int = 0

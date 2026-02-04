@@ -206,6 +206,45 @@ async def get_previous_room_images(
         raise HTTPException(status_code=500, detail=f"Failed to get previous room images: {str(e)}")
 
 
+@router.get("/previous-rooms/{room_id}/image")
+async def get_previous_room_full_image(
+    room_id: str,
+    source: str = Query(..., description="Source of the room: 'project' or 'homestyling'"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get the full clean room image for a previously uploaded room.
+    Used by onboarding flow where no project exists yet.
+    """
+    clean_room_image = None
+
+    if source == "project":
+        query = select(Project).where(
+            Project.id == room_id,
+            Project.user_id == current_user.id,
+        )
+        result = await db.execute(query)
+        project = result.scalar_one_or_none()
+        if project:
+            clean_room_image = project.clean_room_image
+
+    elif source == "homestyling":
+        query = select(HomeStylingSession).where(
+            HomeStylingSession.id == room_id,
+            HomeStylingSession.user_id == current_user.id,
+        )
+        result = await db.execute(query)
+        session = result.scalar_one_or_none()
+        if session:
+            clean_room_image = session.clean_room_image
+
+    if not clean_room_image:
+        raise HTTPException(status_code=404, detail="Previous room not found")
+
+    return {"clean_room_image": clean_room_image}
+
+
 @router.get("/{project_id}", response_model=ProjectResponse)
 async def get_project(
     project_id: str,

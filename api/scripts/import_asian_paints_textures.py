@@ -211,6 +211,7 @@ async def import_textures():
                         name=variant_data.get("name"),
                         image_data=variant_data.get("image_data"),
                         image_url=variant_data.get("image_url"),
+                        product_url=variant_data.get("product_url"),
                         swatch_data=swatch_data,
                         swatch_url=swatch_url,
                         color_family=color_family,

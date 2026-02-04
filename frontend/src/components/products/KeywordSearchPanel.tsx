@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
+import { XMarkIcon } from '@heroicons/react/24/outline';
 import { adminCuratedAPI, searchProducts, getCategorizedStores, StoreCategory } from '@/utils/api';
 import { PRODUCT_STYLES, FURNITURE_COLORS, PRODUCT_MATERIALS } from '@/constants/products';
 import { transformProduct, ExtendedProduct } from '@/utils/product-transforms';
@@ -87,6 +88,8 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  // Track whether a search has been performed in this mount cycle
+  const hasSearchedRef = useRef(false);
 
   // Products state
   const [products, setProducts] = useState<ExtendedProduct[]>([]);
@@ -191,6 +194,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
       setTotalPrimary(response.total_primary || 0);
       setTotalRelated(response.total_related || 0);
       setHasMore(response.has_more);
+      hasSearchedRef.current = true;
     } catch (error) {
       console.error('Error searching products:', error);
       setSearchError('Failed to search products. Please try again.');
@@ -233,8 +237,10 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
   }), [handleLoadMore]);
 
   // Notify parent when search results change (for external display in Panel 2)
+  // Skip when component just mounted with empty state (no search performed yet)
+  // to avoid clearing cached results in the parent when remounting after mode switch
   useEffect(() => {
-    if (onSearchResults) {
+    if (onSearchResults && hasSearchedRef.current) {
       onSearchResults({
         products,
         totalProducts,
@@ -346,160 +352,85 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
     }
   };
 
-  // Render filter panel content (shared between both modes)
-  const renderFilterContent = () => (
-    <>
-      {/* Store Categories */}
-      {storeCategories.length > 0 && (
-        <div className="mb-3">
-          <div className="flex justify-between items-center mb-1.5">
-            <label className="text-xs text-neutral-600 dark:text-neutral-400 font-medium">Stores</label>
-            {selectedStores.length > 0 && (
+  // Chip-style filter section (matches Flooring tab pattern)
+  const FilterChips = ({ label, options, selected, onToggle }: {
+    label: string;
+    options: Array<{ value: string; label: string }>;
+    selected: string[];
+    onToggle: (val: string) => void;
+  }) => {
+    if (options.length === 0) return null;
+    return (
+      <div>
+        <label className="text-[10px] font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1.5 block">
+          {label}
+          {selected.length > 0 && (
+            <span className="ml-1 text-neutral-800 dark:text-neutral-200">({selected.length})</span>
+          )}
+        </label>
+        <div className="flex flex-wrap gap-1.5">
+          {options.map((opt) => {
+            const isActive = selected.includes(opt.value);
+            return (
               <button
                 type="button"
-                onClick={() => updateFilters({ selectedStores: [] })}
-                className="text-xs text-neutral-700 hover:text-neutral-800"
+                key={opt.value}
+                onClick={() => onToggle(opt.value)}
+                className={`px-2 py-1 text-[11px] rounded-md border transition-colors ${
+                  isActive
+                    ? 'bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 border-neutral-800 dark:border-neutral-200'
+                    : 'bg-white dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-500'
+                }`}
               >
-                Clear ({selectedStores.length})
+                {opt.label}
               </button>
-            )}
-          </div>
-          <div className="space-y-2 max-h-32 overflow-y-auto">
-            {storeCategories.map((category) => (
-              <div key={category.tier}>
-                <div className="flex items-center gap-1 mb-1">
-                  <span className="text-[10px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">
-                    {category.label}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1 pl-2 border-l-2 border-neutral-200 dark:border-neutral-600">
-                  {category.stores.map((store) => (
-                    <button
-                      type="button"
-                      key={store.name}
-                      onClick={() => toggleStore(store.name)}
-                      className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
-                        selectedStores.includes(store.name)
-                          ? 'bg-neutral-800 text-white'
-                          : 'bg-white dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-600'
-                      }`}
-                    >
-                      {store.display_name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
+      </div>
+    );
+  };
+
+  // Render filter panel content (shared between both modes)
+  const renderFilterContent = () => (
+    <div className="flex flex-col gap-3">
+      {/* Store Filter */}
+      {allStores.length > 0 && (
+        <FilterChips
+          label="Store"
+          options={allStores.map(s => ({ value: s, label: s }))}
+          selected={selectedStores}
+          onToggle={toggleStore}
+        />
       )}
 
       {/* Style Filter */}
-      <div className="mb-3">
-        <div className="flex justify-between items-center mb-1.5">
-          <label className="text-xs text-neutral-600 dark:text-neutral-400 font-medium">Style</label>
-          {selectedStyles.length > 0 && (
-            <button
-              type="button"
-              onClick={() => updateFilters({ selectedStyles: [] })}
-              className="text-xs text-neutral-700 hover:text-neutral-800"
-            >
-              Clear ({selectedStyles.length})
-            </button>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {PRODUCT_STYLES.map((style) => (
-            <button
-              type="button"
-              key={style.value}
-              onClick={() => toggleStyle(style.value)}
-              className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
-                selectedStyles.includes(style.value)
-                  ? 'bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-400 dark:border-neutral-600'
-                  : 'bg-white dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-600'
-              }`}
-            >
-              {selectedStyles.includes(style.value) && (
-                <svg className="w-2.5 h-2.5 inline mr-0.5 -ml-0.5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-              )}
-              {style.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <FilterChips
+        label="Style"
+        options={PRODUCT_STYLES.map(s => ({ value: s.value, label: s.label }))}
+        selected={selectedStyles}
+        onToggle={toggleStyle}
+      />
 
       {/* Color Filter */}
-      <div className="mb-3">
-        <div className="flex justify-between items-center mb-1.5">
-          <label className="text-xs text-neutral-600 dark:text-neutral-400 font-medium">Color</label>
-          {selectedColors.length > 0 && (
-            <button
-              type="button"
-              onClick={() => updateFilters({ selectedColors: [] })}
-              className="text-xs text-neutral-700 hover:text-neutral-800"
-            >
-              Clear ({selectedColors.length})
-            </button>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {FURNITURE_COLORS.map((color) => (
-            <button
-              type="button"
-              key={color.value}
-              onClick={() => toggleColor(color.value)}
-              title={color.name}
-              className={`w-6 h-6 rounded-full transition-all ${
-                selectedColors.includes(color.value)
-                  ? 'ring-2 ring-neutral-800 ring-offset-2 dark:ring-offset-neutral-800'
-                  : color.border
-                    ? 'border border-neutral-300 dark:border-neutral-600'
-                    : ''
-              }`}
-              style={{ backgroundColor: color.color }}
-            />
-          ))}
-        </div>
-      </div>
+      <FilterChips
+        label="Color"
+        options={FURNITURE_COLORS.map(c => ({ value: c.value, label: c.name }))}
+        selected={selectedColors}
+        onToggle={toggleColor}
+      />
 
       {/* Material Filter */}
-      <div className="mb-3">
-        <div className="flex justify-between items-center mb-1.5">
-          <label className="text-xs text-neutral-600 dark:text-neutral-400 font-medium">Material</label>
-          {selectedMaterials.length > 0 && (
-            <button
-              type="button"
-              onClick={() => updateFilters({ selectedMaterials: [] })}
-              className="text-xs text-neutral-700 hover:text-neutral-800"
-            >
-              Clear ({selectedMaterials.length})
-            </button>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {PRODUCT_MATERIALS.map((material) => (
-            <button
-              type="button"
-              key={material.value}
-              onClick={() => toggleMaterial(material.value)}
-              className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
-                selectedMaterials.includes(material.value)
-                  ? 'bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-400 dark:border-neutral-600'
-                  : 'bg-white dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-600 hover:bg-neutral-100 dark:hover:bg-neutral-600'
-              }`}
-            >
-              {material.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <FilterChips
+        label="Material"
+        options={PRODUCT_MATERIALS.map(m => ({ value: m.value, label: m.label }))}
+        selected={selectedMaterials}
+        onToggle={toggleMaterial}
+      />
 
       {/* Price Range */}
-      <div className="mb-3">
-        <label className="text-xs text-neutral-600 dark:text-neutral-400 font-medium mb-1.5 block">
+      <div>
+        <label className="text-[10px] font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1.5 block">
           Price Range
         </label>
         <div className="flex gap-2 items-center">
@@ -521,31 +452,22 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
         </div>
       </div>
 
-      {/* Sort & Clear */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-neutral-600 dark:text-neutral-400">Sort:</label>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
-            className="text-xs px-2 py-1 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded focus:outline-none focus:ring-1 focus:ring-neutral-500"
-          >
-            <option value="relevance">Relevance</option>
-            <option value="price-low">Price: Low to High</option>
-            <option value="price-high">Price: High to Low</option>
-          </select>
-        </div>
-        {hasActiveFilters && (
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="text-xs text-neutral-700 hover:text-neutral-800 dark:text-neutral-400 font-medium"
-          >
-            Clear all filters
-          </button>
-        )}
+      {/* Sort */}
+      <div>
+        <label className="text-[10px] font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-1.5 block">
+          Sort
+        </label>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as 'relevance' | 'price-low' | 'price-high')}
+          className="text-xs px-2 py-1.5 border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white rounded-md focus:outline-none focus:ring-1 focus:ring-neutral-500 w-full"
+        >
+          <option value="relevance">Relevance</option>
+          <option value="price-low">Price: Low to High</option>
+          <option value="price-high">Price: High to Low</option>
+        </select>
       </div>
-    </>
+    </div>
   );
 
   // =============================================
@@ -585,41 +507,39 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
 
         {/* Scrollable Content Area - Filters + Results */}
         <div className="flex-1 min-h-0 overflow-y-auto">
-          {/* Collapsible Filters Section */}
+          {/* Filters Section */}
           <div className={`${compact ? 'px-3' : 'px-4'} py-3 border-b border-neutral-200 dark:border-neutral-700`}>
-            {/* Filter Toggle Header */}
-            <button
-              type="button"
-              onClick={handleToggleFilters}
-              className="w-full flex items-center justify-between text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white"
-            >
-              <span className="flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                </svg>
-                Filters
-                {hasActiveFilters && (
-                  <span className="px-1.5 py-0.5 text-xs bg-neutral-200 text-neutral-800 dark:bg-neutral-700 dark:text-neutral-200 rounded">
-                    Active
-                  </span>
-                )}
-              </span>
-              <svg
-                className={`w-4 h-4 transition-transform ${showFilters ? 'rotate-180' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+            {/* Filter Header — matches Flooring tab style */}
+            <div className="flex items-center justify-between mb-3">
+              <button
+                type="button"
+                onClick={handleToggleFilters}
+                className="flex items-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
+                Filters
+                <svg
+                  className={`w-3.5 h-3.5 transition-transform ${showFilters ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                >
+                  <XMarkIcon className="w-3 h-3" />
+                  Clear all
+                </button>
+              )}
+            </div>
 
-            {/* Expanded Filters */}
-            {showFilters && (
-              <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700">
-                {renderFilterContent()}
-              </div>
-            )}
+            {/* Filter Chips */}
+            {showFilters && renderFilterContent()}
           </div>
 
           {/* Search Button */}

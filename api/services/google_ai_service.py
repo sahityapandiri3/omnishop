@@ -4107,7 +4107,7 @@ No furniture, rugs, decor, or any other elements should be added, removed, or ch
 DETAILED LIST - ADD EACH OF THESE {total_items_to_add} ITEMS:
 {product_list}
 
-🚨🚨🚨 ABSOLUTE REQUIREMENT - ROOM DIMENSIONS 🚨🚨🚨
+🚨🚨🚨 ABSOLUTE REQUIREMENT - ROOM DIMENSIONS & STRUCTURE 🚨🚨🚨
 ═══════════════════════════════════════════════════════════════
 THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 - If input is 1024x768 pixels → output MUST be 1024x768 pixels
@@ -4117,6 +4117,14 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 - The camera angle, perspective, and field of view MUST remain UNCHANGED
 - DO NOT zoom in or out
 - The walls must be in the EXACT same positions
+
+🏗️ ROOM STRUCTURE PRESERVATION - CRITICAL:
+- ⛔ DO NOT add new walls, partitions, columns, or any architectural elements
+- ⛔ DO NOT remove or modify existing walls, doors, windows, or structural elements
+- The number of walls visible must remain EXACTLY the same as the input image
+- Wall positions, angles, and proportions must be IDENTICAL to input
+- Ceiling height and shape must remain UNCHANGED
+- The room's physical structure is LOCKED — you are ONLY adding furniture
 
 🔒 CRITICAL PRESERVATION RULES:
 1. KEEP ALL EXISTING FURNITURE: Do NOT remove, move, or replace any furniture currently in the room
@@ -4212,6 +4220,45 @@ PLACEMENT GUIDELINES:
 - Accent chairs angle towards the main seating
 - Lamps go on tables or as floor lamps
 - Decor items go on table surfaces
+
+🛋️🛋️🛋️ REALISTIC FURNITURE PLACEMENT — CRITICAL 🛋️🛋️🛋️
+═══════════════════════════════════════════════════════════════
+Place furniture where a REAL INTERIOR DESIGNER would place it:
+
+1. SOFAS & LARGE SEATING:
+   - Place FLUSH AGAINST a SOLID WALL (2-4 inch gap max between sofa back and wall)
+   - NEVER float a sofa in the center of the room with empty space behind it
+   - The sofa back should be nearly TOUCHING the wall
+   - Choose the longest unobstructed wall for sofa placement
+   - If the room has a back wall visible, place the sofa against it
+   - NEVER place sofas against windows or glass doors
+
+2. BEDS:
+   - Place the headboard FLUSH AGAINST a solid wall
+   - NEVER float a bed in the center of the room
+   - Leave walkway space on at least one side
+
+3. COFFEE TABLES & CENTER TABLES:
+   - Place in front of the sofa, centered relative to the seating arrangement
+   - Maintain 14-18 inches between sofa and coffee table
+   - The table should be roughly the same height as the sofa seat
+
+4. BOOKSHELVES, CABINETS, CONSOLES:
+   - Place AGAINST a wall — these are wall-hugging furniture
+   - Never float storage furniture in the middle of the room
+
+5. GENERAL DEPTH/PERSPECTIVE:
+   - Furniture AGAINST the back wall should appear SMALLER (further away)
+   - Furniture near the camera should appear LARGER (closer)
+   - The sofa placed against the far wall should NOT dominate the foreground
+   - Respect the room's depth — back wall furniture is in the background
+
+🚫 FORBIDDEN PLACEMENTS:
+- Floating sofas/beds with visible floor behind them
+- Furniture blocking walkways or doorways
+- Large furniture against windows or glass doors
+- Sofa placed dead-center of the image with wall gap behind
+═══════════════════════════════════════════════════════════════
 
 🗿 SCULPTURES / FIGURINES / DECORATIVE STATUES:
 - ⚠️ FIRST PRIORITY: Place on the CENTER TABLE / COFFEE TABLE (in front of sofa)

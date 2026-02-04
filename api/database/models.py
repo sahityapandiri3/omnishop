@@ -933,6 +933,7 @@ class WallTextureVariant(Base):
     image_url = Column(String(500), nullable=True)  # Original source URL (for reference)
     swatch_data = Column(Text, nullable=True)  # Base64 encoded texture swatch pattern for AI visualization
     swatch_url = Column(String(500), nullable=True)  # Original swatch URL
+    product_url = Column(String(500), nullable=True)  # Link to product page on vendor website
     color_family = Column(
         Enum(WallColorFamily, values_callable=lambda x: [e.value for e in x], name="wallcolorfamily"),
         nullable=True,

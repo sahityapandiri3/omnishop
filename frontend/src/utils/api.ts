@@ -1910,6 +1910,14 @@ export const projectsAPI = {
   },
 
   /**
+   * Get the full clean room image for a previously uploaded room (no project needed)
+   */
+  getPreviousRoomImage: async (roomId: string, source: 'project' | 'homestyling'): Promise<{ clean_room_image: string }> => {
+    const response = await api.get(`/api/projects/previous-rooms/${roomId}/image`, { params: { source } });
+    return response.data;
+  },
+
+  /**
    * Use a previously uploaded room image in the current project
    */
   usePreviousRoom: async (
