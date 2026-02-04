@@ -1,6 +1,6 @@
 'use client';
 
-export type SearchSubMode = 'furniture' | 'walls';
+export type SearchSubMode = 'furniture' | 'walls' | 'flooring';
 
 interface SubModeToggleProps {
   subMode: SearchSubMode;
@@ -8,7 +8,7 @@ interface SubModeToggleProps {
 }
 
 /**
- * Shared SubModeToggle Component - Furniture and Decor vs Walls
+ * Shared SubModeToggle Component - Furniture and Decor vs Walls vs Flooring
  * Used by both /design page and /admin/curated/new page
  */
 export function SubModeToggle({
@@ -36,6 +36,16 @@ export function SubModeToggle({
         }`}
       >
         Walls
+      </button>
+      <button
+        onClick={() => onSubModeChange('flooring')}
+        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all text-center ${
+          subMode === 'flooring'
+            ? 'bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 shadow-sm'
+            : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+        }`}
+      >
+        Flooring
       </button>
     </div>
   );

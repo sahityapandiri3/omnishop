@@ -22,9 +22,12 @@ import { ProductResultsGrid } from '../products/ProductResultsGrid';
 import { WallColorGrid, WallTextureGrid, WallSelectionCard } from '@/components/walls';
 import { WallColor, WallColorFamily } from '@/types/wall-colors';
 import { WallTextureWithVariants, WallTextureVariant, WallType } from '@/types/wall-textures';
+// Flooring components
+import { FloorTileGrid } from '@/components/flooring';
+import { FloorTile } from '@/types/floor-tiles';
 
 type SearchMode = 'ai' | 'keyword';
-type SearchSubMode = 'furniture' | 'walls';
+type SearchSubMode = 'furniture' | 'walls' | 'flooring';
 
 // Keyword search results from Panel 1
 interface KeywordSearchResults {
@@ -94,6 +97,18 @@ interface ProductDiscoveryPanelProps {
   onAddTextureToCanvas?: (variant: WallTextureVariant, texture: WallTextureWithVariants) => void;
   /** Callback to remove wall from canvas */
   onRemoveWallFromCanvas?: () => void;
+
+  // === FLOORING MODE PROPS ===
+  /** Floor tiles data */
+  floorTiles?: FloorTile[];
+  /** Floor tiles loading state */
+  floorTilesLoading?: boolean;
+  /** Floor tiles error state */
+  floorTilesError?: string | null;
+  /** Canvas floor tile */
+  canvasFloorTile?: FloorTile | null;
+  /** Callback when floor tile is toggled on/off canvas */
+  onToggleFloorTile?: (tile: FloorTile) => void;
 }
 
 /**
@@ -132,7 +147,37 @@ export default function ProductDiscoveryPanel({
   onAddWallColorToCanvas,
   onAddTextureToCanvas,
   onRemoveWallFromCanvas,
+  // Flooring mode props
+  floorTiles = [],
+  floorTilesLoading = false,
+  floorTilesError = null,
+  canvasFloorTile = null,
+  onToggleFloorTile,
 }: ProductDiscoveryPanelProps) {
+  // ====================
+  // FLOORING MODE
+  // ====================
+  if (searchSubMode === 'flooring') {
+    const handleFloorTileToggle = (tile: FloorTile) => {
+      onToggleFloorTile?.(tile);
+    };
+
+    return (
+      <div className="flex flex-col h-full">
+        {/* Scrollable Content — filters are in the left (chat) panel on desktop */}
+        <div className="flex-1 overflow-y-auto">
+          <FloorTileGrid
+            tiles={floorTiles}
+            selectedTileId={canvasFloorTile?.id ?? null}
+            onSelectTile={handleFloorTileToggle}
+            isLoading={floorTilesLoading}
+            error={floorTilesError}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // ====================
   // WALLS MODE
   // ====================

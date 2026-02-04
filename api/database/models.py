@@ -953,3 +953,48 @@ class WallTextureVariant(Base):
 
     def __repr__(self):
         return f"<WallTextureVariant(id={self.id}, code='{self.code}', texture_id={self.texture_id})>"
+
+
+class FloorTile(Base):
+    """
+    Floor tile catalog for visualization.
+
+    Stores floor tiles from vendors like Nitco with swatch images for
+    AI-powered floor visualization. Tiles are singular on the canvas
+    (only one at a time, like wall color/texture) and use swatch-based
+    visualization sent to Gemini.
+    """
+
+    __tablename__ = "floor_tiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_code = Column(String(100), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    size = Column(String(50), nullable=False, index=True)  # "1200x1800"
+    size_width_mm = Column(Integer, nullable=True)  # 1200
+    size_height_mm = Column(Integer, nullable=True)  # 1800
+    finish = Column(String(50), nullable=True, index=True)  # "Glossy"
+    look = Column(String(100), nullable=True, index=True)  # "Marble"
+    color = Column(String(50), nullable=True, index=True)  # "Beige"
+    material = Column(String(100), nullable=True)  # "Glazed Vitrified"
+    vendor = Column(String(100), nullable=False, default="Nitco", index=True)
+    product_url = Column(Text, nullable=True)
+    swatch_data = Column(Text, nullable=True)  # Base64 swatch for AI visualization
+    swatch_url = Column(String(500), nullable=True)
+    image_url = Column(String(500), nullable=True)  # Display thumbnail URL
+    image_data = Column(Text, nullable=True)  # Base64 thumbnail for display
+    additional_images = Column(JSON, nullable=True)  # Extra image URLs
+    is_active = Column(Boolean, default=True, index=True)
+    display_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Indexes for efficient filtering
+    __table_args__ = (
+        Index("idx_floor_tile_vendor_finish", "vendor", "finish"),
+        Index("idx_floor_tile_look_color", "look", "color"),
+        Index("idx_floor_tile_size_finish", "size", "finish"),
+    )
+
+    def __repr__(self):
+        return f"<FloorTile(id={self.id}, code='{self.product_code}', name='{self.name}', size='{self.size}')>"

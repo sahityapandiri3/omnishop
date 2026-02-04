@@ -14,8 +14,10 @@ import { WallColor } from '@/types/wall-colors';
 import { WallTexture, WallTextureVariant } from '@/types/wall-textures';
 import type { CanvasItem } from '@/hooks/useCanvas';
 import CanvasItemCard from './CanvasItemCard';
-import { isWallColorData, isWallTextureData, getWallColorItem, getWallTextureItem, getProductItems, WallTextureCanvasData } from '@/hooks/useCanvas';
+import { isWallColorData, isWallTextureData, isFloorTileData, getWallColorItem, getWallTextureItem, getFloorTileItem, getProductItems, WallTextureCanvasData, FloorTileCanvasData } from '@/hooks/useCanvas';
+import { FloorTile } from '@/types/floor-tiles';
 import { TextureDetailModal } from '@/components/walls/TextureDetailModal';
+import { FloorTileDetailModal } from '@/components/flooring/FloorTileDetailModal';
 
 const DraggableFurnitureCanvas = dynamic(
   () => import('../DraggableFurnitureCanvas').then(mod => ({ default: mod.DraggableFurnitureCanvas })),
@@ -108,6 +110,9 @@ interface CanvasPanelProps {
   onSetCanvasItems?: (items: CanvasItem[]) => void;
   onRemoveCanvasItem?: (id: string) => void;
   onUpdateCanvasItemQuantity?: (id: string, delta: number) => void;
+  // Floor tile on canvas
+  canvasFloorTile?: FloorTile | null;
+  onRemoveFloorTile?: () => void;
   // Extensibility props for curation page
   children?: React.ReactNode;  // Additional content rendered in scrollable area after visualization
   footerContent?: React.ReactNode;  // Custom footer content (replaces default Visualize button area)
@@ -145,6 +150,8 @@ export default function CanvasPanel({
   onSetCanvasItems,
   onRemoveCanvasItem,
   onUpdateCanvasItemQuantity,
+  canvasFloorTile,
+  onRemoveFloorTile,
   children,
   footerContent,
   hideDefaultFooter = false,
@@ -241,6 +248,8 @@ export default function CanvasPanel({
   // Texture detail modal state
   const [textureDetailOpen, setTextureDetailOpen] = useState(false);
   const [textureDetailData, setTextureDetailData] = useState<WallTextureCanvasData | null>(null);
+  const [floorTileDetailOpen, setFloorTileDetailOpen] = useState(false);
+  const [floorTileDetailData, setFloorTileDetailData] = useState<FloorTileCanvasData | null>(null);
 
   // Furniture position editing state (DraggableFurnitureCanvas-specific)
   const [furniturePositions, setFurniturePositions] = useState<FurniturePosition[]>([]);
@@ -275,8 +284,12 @@ export default function CanvasPanel({
     return sum + (product.price || 0) * qty;
   }, 0);
 
-  // Calculate total items (accounting for quantity)
-  const totalItems = products.reduce((sum, product) => sum + (product.quantity || 1), 0);
+  // Calculate total items (accounting for quantity + wall/floor items)
+  const productItemCount = products.reduce((sum, product) => sum + (product.quantity || 1), 0);
+  const surfaceItemCount = canvasItems
+    ? (getWallColorItem(canvasItems) ? 1 : 0) + (getWallTextureItem(canvasItems) ? 1 : 0) + (getFloorTileItem(canvasItems) ? 1 : 0)
+    : (canvasWallColor ? 1 : 0) + (canvasTexture ? 1 : 0) + (canvasFloorTile ? 1 : 0);
+  const totalItems = productItemCount + surfaceItemCount;
 
   // Update visualization progress with elapsed time
   useEffect(() => {
@@ -900,6 +913,80 @@ export default function CanvasPanel({
             return (
               <p className="text-xs text-neutral-400 dark:text-neutral-500 italic">
                 No wall color or texture selected
+              </p>
+            );
+          })()}
+        </div>
+
+        {/* Flooring Subsection */}
+        <div className="px-4 pb-3">
+          <h3 className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">
+            Flooring
+          </h3>
+          {(() => {
+            // Use unified canvas items if available
+            if (canvasItems) {
+              const floorTileItem = getFloorTileItem(canvasItems);
+              if (floorTileItem) {
+                return (
+                  <CanvasItemCard
+                    item={floorTileItem}
+                    onRemove={() => onRemoveCanvasItem ? onRemoveCanvasItem(floorTileItem.id) : onRemoveFloorTile?.()}
+                    onViewDetails={() => {
+                      const data = floorTileItem.data as FloorTileCanvasData;
+                      setFloorTileDetailData(data);
+                      setFloorTileDetailOpen(true);
+                    }}
+                  />
+                );
+              }
+              return (
+                <p className="text-xs text-neutral-400 dark:text-neutral-500 italic">
+                  No floor tile selected
+                </p>
+              );
+            }
+
+            // Legacy: separate floor tile prop
+            if (canvasFloorTile) {
+              const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+              return (
+                <div className="relative flex items-center gap-3 p-2 bg-neutral-50 dark:bg-neutral-800 rounded-lg group overflow-hidden">
+                  <div className="w-16 h-16 rounded-lg flex-shrink-0 border border-neutral-200 dark:border-neutral-600 overflow-hidden">
+                    <img
+                      src={canvasFloorTile.image_data
+                        ? formatImageSrc(canvasFloorTile.image_data)
+                        : `${API_URL}/api/floor-tiles/${canvasFloorTile.id}/image`
+                      }
+                      alt={canvasFloorTile.name}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-neutral-900 dark:text-white truncate">{canvasFloorTile.name}</p>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">{canvasFloorTile.size}</p>
+                    {canvasFloorTile.finish && (
+                      <p className="text-xs text-neutral-400 dark:text-neutral-500">{canvasFloorTile.finish}</p>
+                    )}
+                  </div>
+                  {/* Hover overlay */}
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onRemoveFloorTile?.(); }}
+                      className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-[10px] font-medium rounded-lg flex items-center gap-1"
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <p className="text-xs text-neutral-400 dark:text-neutral-500 italic">
+                No floor tile selected
               </p>
             );
           })()}
@@ -1574,6 +1661,16 @@ export default function CanvasPanel({
         variant={textureDetailData.textureVariant}
         isOpen={textureDetailOpen}
         onClose={() => setTextureDetailOpen(false)}
+        inCanvas={true}
+      />
+    )}
+
+    {/* Floor Tile Detail Modal */}
+    {floorTileDetailData && (
+      <FloorTileDetailModal
+        tile={floorTileDetailData.floorTile}
+        isOpen={floorTileDetailOpen}
+        onClose={() => setFloorTileDetailOpen(false)}
         inCanvas={true}
       />
     )}

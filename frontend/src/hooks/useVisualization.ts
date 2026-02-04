@@ -29,12 +29,13 @@ import {
 } from '@/types/visualization';
 import { WallColor } from '@/types/wall-colors';
 import { WallTextureVariant } from '@/types/wall-textures';
+import { FloorTile } from '@/types/floor-tiles';
 import {
   useVisualizationHistory,
   UseVisualizationHistoryReturn,
 } from './useVisualizationHistory';
 import type { CanvasItem } from '@/hooks/useCanvas';
-import { extractProducts, extractWallColor, extractTextureVariant } from '@/hooks/useCanvas';
+import { extractProducts, extractWallColor, extractTextureVariant, extractFloorTile } from '@/hooks/useCanvas';
 import {
   detectChangeType,
   formatProductForApi,
@@ -65,6 +66,9 @@ export interface UseVisualizationProps {
   /** Wall texture variant to apply during visualization */
   textureVariant?: WallTextureVariant | null;
 
+  /** Floor tile to apply during visualization */
+  floorTile?: FloorTile | null;
+
   /** Callback to update products (e.g., from undo/redo) */
   onSetProducts: (products: VisualizationProduct[]) => void;
 
@@ -73,6 +77,9 @@ export interface UseVisualizationProps {
 
   /** Callback to update texture (e.g., from undo/redo) */
   onSetTexture?: (texture: WallTextureVariant | null) => void;
+
+  /** Callback to update floor tile (e.g., from undo/redo) */
+  onSetFloorTile?: (floorTile: FloorTile | null) => void;
 
   /** Unified canvas items (if using useCanvas hook) */
   canvasItems?: CanvasItem[];
@@ -114,9 +121,11 @@ export function useVisualization({
   cleanRoomImage,
   wallColor: wallColorProp,
   textureVariant: textureVariantProp,
+  floorTile: floorTileProp,
   onSetProducts,
   onSetWallColor,
   onSetTexture,
+  onSetFloorTile,
   canvasItems: canvasItemsProp,
   onSetCanvasItems,
   onVisualizationImageChange,
@@ -129,6 +138,7 @@ export function useVisualization({
   const products = canvasItemsProp ? extractProducts(canvasItemsProp) : productsProp;
   const wallColor = canvasItemsProp ? extractWallColor(canvasItemsProp) : (wallColorProp ?? null);
   const textureVariant = canvasItemsProp ? extractTextureVariant(canvasItemsProp) : (textureVariantProp ?? null);
+  const floorTile = canvasItemsProp ? extractFloorTile(canvasItemsProp) : (floorTileProp ?? null);
   // ============================================================================
   // History Hook
   // ============================================================================
@@ -153,6 +163,7 @@ export function useVisualization({
   const [visualizedQuantities, setVisualizedQuantities] = useState<Map<string, number>>(new Map());
   const [visualizedWallColor, setVisualizedWallColor] = useState<WallColor | null>(null);
   const [visualizedTextureVariant, setVisualizedTextureVariant] = useState<WallTextureVariant | null>(null);
+  const [visualizedFloorTile, setVisualizedFloorTile] = useState<FloorTile | null>(null);
   const [visualizedRoomImage, setVisualizedRoomImage] = useState<string | null>(null);  // Track which room image was visualized
   const [needsRevisualization, setNeedsRevisualization] = useState(false);
 
@@ -197,7 +208,7 @@ export function useVisualization({
 
   useEffect(() => {
     // Don't trigger on initial load or if never visualized
-    if (visualizedProductIds.size === 0 && !visualizationImage && !visualizedWallColor && !visualizedTextureVariant) {
+    if (visualizedProductIds.size === 0 && !visualizationImage && !visualizedWallColor && !visualizedTextureVariant && !visualizedFloorTile) {
       return;
     }
 
@@ -231,9 +242,19 @@ export function useVisualization({
       (currentTexture !== null && visualizedTextureVariant !== null && currentTexture.id !== visualizedTextureVariant.id)
     );
 
-    if (productsChanged || quantitiesChanged || wallColorChanged || textureChanged) {
+    // Check if floor tile has changed
+    const currentFloorTile = floorTile ?? null;
+    const floorTileChanged = hasExistingVisualization && (
+      (currentFloorTile === null && visualizedFloorTile !== null) ||
+      (currentFloorTile !== null && visualizedFloorTile === null) ||
+      (currentFloorTile !== null && visualizedFloorTile !== null && currentFloorTile.id !== visualizedFloorTile.id)
+    );
+
+    if (productsChanged || quantitiesChanged || wallColorChanged || textureChanged || floorTileChanged) {
       setNeedsRevisualization(true);
-      if (textureChanged) {
+      if (floorTileChanged) {
+        console.log('[useVisualization] Floor tile changed, needs re-visualization');
+      } else if (textureChanged) {
         console.log('[useVisualization] Texture changed, needs re-visualization');
       } else if (wallColorChanged) {
         console.log('[useVisualization] Wall color changed, needs re-visualization');
@@ -241,7 +262,7 @@ export function useVisualization({
         console.log('[useVisualization] Quantity changed, needs re-visualization');
       }
     }
-  }, [products, visualizedProductIds, visualizedQuantities, visualizationImage, wallColor, visualizedWallColor, textureVariant, visualizedTextureVariant]);
+  }, [products, visualizedProductIds, visualizedQuantities, visualizationImage, wallColor, visualizedWallColor, textureVariant, visualizedTextureVariant, floorTile, visualizedFloorTile]);
 
   // ============================================================================
   // Sync Effect: Keep visualizedProducts in sync when products change
@@ -349,17 +370,19 @@ export function useVisualization({
     const baseImage = cleanRoomImage || roomImage;
     if (!baseImage) return;
 
-    // Allow visualization with products, wall color, or texture
+    // Allow visualization with products, wall color, texture, or floor tile
     const hasProducts = products.length > 0;
     const hasWallColor = !!(wallColor);
     const hasTexture = !!(textureVariant);
+    const hasFloorTile = !!(floorTile);
 
-    if (!hasProducts && !hasWallColor && !hasTexture) return;
+    if (!hasProducts && !hasWallColor && !hasTexture && !hasFloorTile) return;
 
     console.log('[useVisualization] handleVisualize called:', {
       products: products.length,
       wallColorId: wallColor?.id ?? null,
       textureVariantId: textureVariant?.id ?? null,
+      floorTileId: floorTile?.id ?? null,
       baseImage: baseImage ? 'exists' : 'null',
     });
 
@@ -369,14 +392,14 @@ export function useVisualization({
 
     try {
       // ================================================================
-      // Wall-only / Texture-only visualization (no furniture products)
-      // Apply wall color and/or texture directly to the room image
+      // Wall-only / Texture-only / Floor-tile-only visualization (no furniture products)
+      // Apply wall color, texture, and/or floor tile directly to the room image
       // ================================================================
       if (!hasProducts) {
         // Use existing visualization image if available (preserves previously rendered furniture)
         // Fall back to baseImage only if there's no existing visualization
         const startImage = visualizationImage || baseImage;
-        console.log('[useVisualization] No products in canvas - applying wall color/texture only', {
+        console.log('[useVisualization] No products in canvas - applying wall/floor changes only', {
           usingExistingVisualization: !!visualizationImage,
         });
         let newImage = startImage;
@@ -445,6 +468,36 @@ export function useVisualization({
           }
         }
 
+        // Apply floor tile
+        if (hasFloorTile && floorTile) {
+          setVisualizationProgress('Applying floor tile...');
+          const floorTileResponse = await fetch(
+            `${getApiUrl()}/api/visualization/change-floor-tile`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                room_image: newImage,
+                tile_id: floorTile.id,
+              }),
+            }
+          );
+          if (floorTileResponse.ok) {
+            const floorTileData = await floorTileResponse.json();
+            if (floorTileData.success && floorTileData.rendered_image) {
+              newImage = floorTileData.rendered_image;
+              console.log('[useVisualization] Floor tile applied successfully');
+            } else {
+              const errorMsg = floorTileData.error_message || 'Floor tile visualization returned no image';
+              console.error('[useVisualization] Floor tile API returned failure:', errorMsg);
+              throw new Error(errorMsg);
+            }
+          } else {
+            console.error('[useVisualization] Floor tile API HTTP error:', floorTileResponse.status);
+            throw new Error(`Floor tile API failed with status ${floorTileResponse.status}`);
+          }
+        }
+
         // Only update visualization if we actually got a new image
         if (newImage === startImage) {
           throw new Error('Visualization produced no changes. Please try again.');
@@ -460,6 +513,7 @@ export function useVisualization({
         }
         setVisualizedWallColor(wallColor || null);
         setVisualizedTextureVariant(textureVariant || null);
+        setVisualizedFloorTile(floorTile || null);
         setVisualizedRoomImage(baseImage);
         setNeedsRevisualization(false);
 
@@ -734,12 +788,46 @@ export function useVisualization({
         }
       }
 
+      // If floor tile is selected, apply it after texture
+      if (floorTile && floorTile.id) {
+        console.log('[useVisualization] Applying floor tile:', floorTile.name);
+        setVisualizationProgress('Applying floor tile...');
+
+        try {
+          const floorTileResponse = await fetch(
+            `${getApiUrl()}/api/visualization/change-floor-tile`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                room_image: newImage,
+                tile_id: floorTile.id,
+              }),
+            }
+          );
+
+          if (floorTileResponse.ok) {
+            const floorTileData = await floorTileResponse.json();
+            if (floorTileData.success && floorTileData.rendered_image) {
+              newImage = floorTileData.rendered_image;
+              console.log('[useVisualization] Floor tile applied successfully');
+            }
+          } else {
+            console.warn('[useVisualization] Floor tile application failed, using base visualization');
+          }
+        } catch (floorTileError) {
+          console.warn('[useVisualization] Floor tile application error:', floorTileError);
+          // Continue with base visualization if floor tile fails
+        }
+      }
+
       setVisualizationImage(newImage);
       setVisualizedProductIds(newProductIds);
       setVisualizedProducts([...products]);
       setVisualizedQuantities(newQuantities);
       setVisualizedWallColor(wallColor || null);
       setVisualizedTextureVariant(textureVariant || null);
+      setVisualizedFloorTile(floorTile || null);
       setVisualizedRoomImage(baseImage);  // CRITICAL: Track which room image was used
       setNeedsRevisualization(false);
 
@@ -775,6 +863,7 @@ export function useVisualization({
     visualizedProductIds, visualizedProducts, visualizedQuantities,
     wallColor, visualizedWallColor, visualizedRoomImage,
     textureVariant, visualizedTextureVariant,
+    floorTile, visualizedFloorTile,
     config.curatedLookId, config.projectId, historyHook,
     canvasItemsProp,
   ]);
@@ -793,7 +882,9 @@ export function useVisualization({
       setVisualizedProducts(previousState.products);
       setVisualizedQuantities(previousState.visualizedQuantities);  // CRITICAL: Restore quantities
       setVisualizedWallColor(previousState.wallColor || null);  // Restore wall color
-      setVisualizedTextureVariant(null);  // Texture not tracked in history yet
+      setVisualizedTextureVariant(null);  // Texture restored via canvasItems
+      // Restore floor tile from canvasItems to keep change detection in sync
+      setVisualizedFloorTile(previousState.canvasItems ? extractFloorTile(previousState.canvasItems) : null);
 
       // Restore full canvas state if available (unified canvas mode)
       if (previousState.canvasItems && onSetCanvasItems) {
@@ -813,6 +904,7 @@ export function useVisualization({
       setVisualizedQuantities(new Map());
       setVisualizedWallColor(null);
       setVisualizedTextureVariant(null);
+      setVisualizedFloorTile(null);
 
       if (onSetCanvasItems) {
         onSetCanvasItems([]);
@@ -841,7 +933,9 @@ export function useVisualization({
       setVisualizedProducts(stateToRestore.products);
       setVisualizedQuantities(stateToRestore.visualizedQuantities);  // CRITICAL: Restore quantities
       setVisualizedWallColor(stateToRestore.wallColor || null);  // Restore wall color
-      setVisualizedTextureVariant(null);  // Texture not tracked in history yet
+      setVisualizedTextureVariant(null);  // Texture restored via canvasItems
+      // Restore floor tile from canvasItems to keep change detection in sync
+      setVisualizedFloorTile(stateToRestore.canvasItems ? extractFloorTile(stateToRestore.canvasItems) : null);
 
       // Restore full canvas state if available (unified canvas mode)
       if (stateToRestore.canvasItems && onSetCanvasItems) {
@@ -863,7 +957,7 @@ export function useVisualization({
 
   const handleImproveQuality = useCallback(async () => {
     const baseImage = cleanRoomImage || roomImage;
-    if (!baseImage || (products.length === 0 && !wallColor && !textureVariant)) {
+    if (!baseImage || (products.length === 0 && !wallColor && !textureVariant && !floorTile)) {
       console.log('[useVisualization] Improve quality: missing requirements');
       return;
     }
@@ -973,6 +1067,38 @@ export function useVisualization({
         }
       }
 
+      // Apply floor tile if present (same post-processing as handleVisualize)
+      if (floorTile && floorTile.id) {
+        console.log('[useVisualization] Applying floor tile after quality improvement:', floorTile.name);
+        try {
+          const floorTileResponse = await fetch(
+            `${getApiUrl()}/api/visualization/change-floor-tile`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                room_image: newImage,
+                tile_id: floorTile.id,
+              }),
+            }
+          );
+
+          if (floorTileResponse.ok) {
+            const floorTileData = await floorTileResponse.json();
+            if (floorTileData.success && floorTileData.rendered_image) {
+              newImage = floorTileData.rendered_image;
+              console.log('[useVisualization] Floor tile applied successfully after quality improvement');
+            } else {
+              console.warn('[useVisualization] Floor tile application failed during quality improvement');
+            }
+          } else {
+            console.warn('[useVisualization] Floor tile API failed during quality improvement, using base visualization');
+          }
+        } catch (floorTileError) {
+          console.warn('[useVisualization] Floor tile application error during quality improvement:', floorTileError);
+        }
+      }
+
       // Update visualization
       setVisualizationImage(newImage);
 
@@ -991,6 +1117,7 @@ export function useVisualization({
       setVisualizedQuantities(buildQuantityMap(products));
       setVisualizedWallColor(wallColor || null);
       setVisualizedTextureVariant(textureVariant || null);
+      setVisualizedFloorTile(floorTile || null);
       setVisualizedRoomImage(baseImage);  // CRITICAL: Track which room image was used
       setNeedsRevisualization(false);
 
@@ -1000,7 +1127,7 @@ export function useVisualization({
     } finally {
       setIsImprovingQuality(false);
     }
-  }, [products, roomImage, cleanRoomImage, wallColor, textureVariant,
+  }, [products, roomImage, cleanRoomImage, wallColor, textureVariant, floorTile,
     config.curatedLookId, config.projectId, historyHook, canvasItemsProp]);
 
   // ============================================================================
@@ -1154,6 +1281,7 @@ export function useVisualization({
     setVisualizedQuantities(new Map());
     setVisualizedWallColor(null);
     setVisualizedTextureVariant(null);
+    setVisualizedFloorTile(null);
     setVisualizedRoomImage(null);  // Reset room image tracking
     setNeedsRevisualization(false);
     historyHook.reset();

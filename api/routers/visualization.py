@@ -21,7 +21,7 @@ from sqlalchemy.orm import selectinload
 
 from core.config import settings
 from core.database import get_db
-from database.models import CuratedLook, Product, Project
+from database.models import CuratedLook, FloorTile, Product, Project
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/visualization", tags=["visualization"])
@@ -3480,3 +3480,114 @@ async def get_api_usage(hours: int = 24, db: AsyncSession = Depends(get_db)):
     except Exception as e:
         logger.error(f"Error getting API usage: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get API usage: {str(e)}")
+
+
+# =============================================================================
+# Floor Tile Visualization
+# =============================================================================
+
+from schemas.floor_tiles import ChangeFloorTileRequest, ChangeFloorTileResponse
+
+
+@router.post("/change-floor-tile", response_model=ChangeFloorTileResponse)
+async def change_floor_tile(request: ChangeFloorTileRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Change floor tile in a room visualization using AI-powered rendering.
+
+    Takes a room visualization image and applies a floor tile pattern
+    by passing both the room image and the tile swatch to Gemini.
+    The AI uses the tile swatch as a reference to accurately apply
+    the tile pattern to all visible floor surfaces.
+    """
+    import time
+
+    start_time = time.time()
+
+    try:
+        logger.info(f"[FloorTile API] Changing floor tile using tile ID {request.tile_id}")
+
+        # Fetch tile from database
+        query = select(FloorTile).where(FloorTile.id == request.tile_id)
+        result = await db.execute(query)
+        tile = result.scalar_one_or_none()
+
+        if not tile:
+            logger.error(f"[FloorTile API] Tile {request.tile_id} not found")
+            return ChangeFloorTileResponse(
+                success=False,
+                error_message=f"Floor tile with ID {request.tile_id} not found",
+                processing_time=time.time() - start_time,
+            )
+
+        tile_name = tile.name
+        tile_size = tile.size
+        tile_finish = tile.finish or "matte"
+
+        logger.info(f"[FloorTile API] Applying tile: {tile_name} ({tile_size}, {tile_finish})")
+
+        # Strip data URL prefix if present
+        room_image = request.room_image
+        if room_image.startswith("data:"):
+            room_image = room_image.split(",", 1)[1]
+
+        # Get tile swatch image — prefer swatch_data, fall back to image_data
+        swatch_image = tile.swatch_data or tile.image_data
+        if not swatch_image:
+            logger.error(f"[FloorTile API] Tile {tile.id} has no swatch or image data")
+            return ChangeFloorTileResponse(
+                success=False,
+                error_message=f"Floor tile {tile.id} has no image data",
+                processing_time=time.time() - start_time,
+                tile_name=tile_name,
+                tile_size=tile_size,
+            )
+        if swatch_image.startswith("data:"):
+            swatch_image = swatch_image.split(",", 1)[1]
+
+        # Build size description for prompt
+        size_desc = tile_size
+        if tile.size_width_mm and tile.size_height_mm:
+            size_desc = f"{tile.size_width_mm}x{tile.size_height_mm} mm"
+
+        # Call the Google AI service
+        result_image = await google_ai_service.change_floor_tile(
+            room_image=room_image,
+            swatch_image=swatch_image,
+            tile_name=tile_name,
+            tile_size=size_desc,
+            tile_finish=tile_finish,
+            tile_width_mm=tile.size_width_mm,
+            tile_height_mm=tile.size_height_mm,
+            user_id=request.user_id,
+            session_id=request.session_id,
+        )
+
+        processing_time = time.time() - start_time
+
+        if result_image:
+            logger.info(f"[FloorTile API] Successfully applied tile in {processing_time:.2f}s")
+            return ChangeFloorTileResponse(
+                success=True,
+                rendered_image=result_image,
+                processing_time=processing_time,
+                tile_name=tile_name,
+                tile_size=tile_size,
+            )
+        else:
+            logger.error("[FloorTile API] Failed to generate floor tile visualization")
+            return ChangeFloorTileResponse(
+                success=False,
+                error_message="Failed to generate floor tile visualization. Please try again.",
+                processing_time=processing_time,
+                tile_name=tile_name,
+                tile_size=tile_size,
+            )
+
+    except Exception as e:
+        processing_time = time.time() - start_time
+        logger.error(f"[FloorTile API] Error: {e}", exc_info=True)
+        return ChangeFloorTileResponse(
+            success=False,
+            error_message=f"Error applying floor tile: {str(e)}",
+            processing_time=processing_time,
+        )

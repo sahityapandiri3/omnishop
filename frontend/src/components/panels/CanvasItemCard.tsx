@@ -6,9 +6,11 @@ import {
   isProductData,
   isWallColorData,
   isWallTextureData,
+  isFloorTileData,
   ProductCanvasData,
   WallColorCanvasData,
   WallTextureCanvasData,
+  FloorTileCanvasData,
 } from '@/hooks/useCanvas';
 
 // Helper to format image source
@@ -285,6 +287,60 @@ function WallTextureCard({ item, onRemove, onViewDetails }: CanvasItemCardProps)
 }
 
 /**
+ * FloorTileCard — shown in the Flooring subsection with hover overlay
+ */
+function FloorTileCard({ item, onRemove, onViewDetails }: CanvasItemCardProps) {
+  const data = item.data as FloorTileCanvasData;
+  const tile = data.floorTile;
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+  return (
+    <div className="relative flex items-center gap-3 p-2 bg-neutral-50 dark:bg-neutral-800 rounded-lg group overflow-hidden">
+      <div className="w-16 h-16 rounded-lg flex-shrink-0 border border-neutral-200 dark:border-neutral-600 overflow-hidden">
+        <img
+          src={tile.image_data
+            ? formatImageSrc(tile.image_data)
+            : `${API_URL}/api/floor-tiles/${tile.id}/image`
+          }
+          alt={tile.name}
+          className="w-full h-full object-cover"
+        />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-neutral-900 dark:text-white truncate">{tile.name}</p>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">{tile.size}</p>
+        {tile.finish && (
+          <p className="text-xs text-neutral-400 dark:text-neutral-500">{tile.finish}</p>
+        )}
+      </div>
+      {/* Hover overlay */}
+      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-[10px] font-medium rounded-lg flex items-center gap-1"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+          Remove
+        </button>
+        {onViewDetails && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onViewDetails(); }}
+            className="px-2 py-1 bg-white/90 hover:bg-white text-neutral-800 text-[10px] font-medium rounded-lg flex items-center gap-1"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            View Details
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
  * CanvasItemCard — Unified card that renders based on item type and view mode.
  */
 export default function CanvasItemCard(props: CanvasItemCardProps) {
@@ -296,6 +352,10 @@ export default function CanvasItemCard(props: CanvasItemCardProps) {
 
   if (isWallTextureData(item.data)) {
     return <WallTextureCard {...props} />;
+  }
+
+  if (isFloorTileData(item.data)) {
+    return <FloorTileCard {...props} />;
   }
 
   // Product

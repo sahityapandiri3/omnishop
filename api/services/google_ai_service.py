@@ -749,6 +749,93 @@ The room structure, furniture, and camera angle MUST be identical to the FIRST i
 The wall texture MUST match the SECOND reference image exactly.
 """
 
+    @staticmethod
+    def get_floor_tile_change_prompt(
+        tile_name: str,
+        tile_size: str,
+        tile_finish: str,
+        tile_width_mm: int = None,
+        tile_height_mm: int = None,
+    ) -> str:
+        """
+        Prompt for applying floor tile to floor surfaces using Gemini.
+
+        Reuses shared system intro and room preservation rules.
+        IMPORTANT: This prompt is used with TWO images:
+        1. The room image (to modify)
+        2. The tile swatch image (pattern reference)
+        """
+        # Build explicit dimension description when available
+        if tile_width_mm and tile_height_mm:
+            size_detail = (
+                f"- Dimensions: {tile_width_mm} mm wide × {tile_height_mm} mm tall "
+                f"({tile_width_mm / 10:.0f} cm × {tile_height_mm / 10:.0f} cm)"
+            )
+        else:
+            size_detail = f"- Size: {tile_size}"
+
+        return f"""{VisualizationPrompts.get_system_intro()}
+
+═══════════════════════════════════════════════════════════════
+🏗️ TASK: APPLY FLOOR TILE
+═══════════════════════════════════════════════════════════════
+
+You are given TWO images:
+1. FIRST IMAGE: A room photograph
+2. SECOND IMAGE: A tile swatch/pattern to apply to the FLOOR
+
+TILE INFO:
+- Name: {tile_name}
+{size_detail}
+- Finish: {tile_finish}
+
+{VisualizationPrompts.get_room_preservation_rules()}
+
+🚨 FLOOR-TILE-SPECIFIC INSTRUCTIONS:
+
+1. MATCH THE TILE PATTERN EXACTLY from the SECOND IMAGE:
+   - Study the pattern, colors, veining, and details in the tile swatch
+   - Reproduce this EXACT pattern on ALL visible floor surfaces
+
+2. TILE SIZING — THIS IS CRITICAL:
+   - Each tile is {tile_size} in real-world dimensions
+   - A standard interior door is ~2000 mm tall — use that as a scale reference
+   - Replicate tiles at the correct count per meter of floor
+   - Tiles closer to the camera appear larger (perspective foreshortening)
+   - Tiles further away appear smaller toward the vanishing point
+
+3. APPLY TILE TO FLOOR SURFACES ONLY:
+   - Cover ALL visible floor areas with the tile pattern
+   - DO NOT apply tile to walls, ceiling, or furniture surfaces
+   - Add subtle grout lines between tiles (thin, natural-looking)
+   - Maintain realistic perspective (tile grid follows floor plane)
+   - Apply appropriate reflectivity for {tile_finish} finish type
+   - Furniture legs should rest naturally on the tiled surface
+
+4. TECHNICAL REQUIREMENTS:
+   - OUTPUT DIMENSIONS: Match FIRST IMAGE exactly (pixel-for-pixel)
+   - ASPECT RATIO: No cropping or letterboxing
+   - CAMERA ANGLE: Same viewing angle and perspective
+   - NO ZOOM: Show full room view identical to input
+   - PHOTOREALISM: Output must look like a real photograph
+
+🏗️ TILE APPLICATION GUIDELINES:
+- Grout: Thin, natural grout lines forming a regular grid
+- Reflectivity: {tile_finish} finish — adjust specular highlights accordingly
+- Edges: Tiles at walls should appear cut naturally (partial tiles at edges)
+- Shadows: Furniture and room shadows fall naturally on the tiled surface
+
+⚠️ VERIFICATION CHECKLIST:
+☐ ALL floor surfaces show the tile from the reference image
+☐ Tile pattern matches the reference EXACTLY
+☐ Tiles are at correct real-world scale ({tile_size})
+☐ Grout lines are visible and natural
+☐ ALL furniture, walls, and ceiling are unchanged
+☐ Image dimensions match input exactly
+
+OUTPUT: One photorealistic image with floor tiled using the {tile_name} pattern.
+"""
+
 
 def generate_color_description(name: str, hex_value: str) -> str:
     """
@@ -6972,6 +7059,38 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
                 session_id=session_id,
             )
 
+            # Resize output to match input dimensions if they differ
+            try:
+                if generated_image.startswith("data:"):
+                    prefix_end = generated_image.index(",") + 1
+                    raw_b64 = generated_image[prefix_end:]
+                else:
+                    raw_b64 = generated_image
+
+                output_bytes = base64.b64decode(raw_b64)
+                output_img = Image.open(io.BytesIO(output_bytes))
+                output_width, output_height = output_img.size
+                logger.info(
+                    f"[WallTexture] Output resolution: {output_width}x{output_height}, Input was: {input_width}x{input_height}"
+                )
+
+                if output_width != input_width or output_height != input_height:
+                    logger.warning(
+                        f"[WallTexture] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
+                    )
+                    if output_img.mode != "RGB":
+                        output_img = output_img.convert("RGB")
+                    output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
+
+                    buffer = io.BytesIO()
+                    output_img.save(buffer, format="PNG", optimize=False)
+                    buffer.seek(0)
+                    resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                    generated_image = f"data:image/png;base64,{resized_b64}"
+                    logger.info(f"[WallTexture] Resized output to match input: {input_width}x{input_height}")
+            except Exception as resize_err:
+                logger.warning(f"[WallTexture] Could not verify/fix output resolution: {resize_err}")
+
             logger.info(f"[WallTexture] Successfully applied texture {texture_name}")
             return generated_image
 
@@ -7368,6 +7487,213 @@ RULES:
         logger.info(f"[_extract_single_layer] Extracted layer for {product_name}: {cropped.width}x{cropped.height}px")
 
         return f"data:image/png;base64,{cropped_base64}"
+
+    async def change_floor_tile(
+        self,
+        room_image: str,
+        swatch_image: str,
+        tile_name: str,
+        tile_size: str,
+        tile_finish: str,
+        tile_width_mm: int = None,
+        tile_height_mm: int = None,
+        user_id: str = None,
+        session_id: str = None,
+    ) -> Optional[str]:
+        """
+        Change floor tile in a room visualization using Gemini with multi-image input.
+
+        Uses the same pattern as change_wall_texture: passes both the room image
+        and tile swatch to Gemini so it can apply the tile pattern to the floor.
+
+        Args:
+            room_image: Base64 encoded room visualization image
+            swatch_image: Base64 encoded tile swatch image
+            tile_name: Name of the tile (e.g., "Carrara Marble")
+            tile_size: Tile dimensions (e.g., "1200x1800 mm")
+            tile_finish: Finish type (e.g., "Glossy")
+            tile_width_mm: Tile width in millimeters (e.g., 1200)
+            tile_height_mm: Tile height in millimeters (e.g., 1800)
+            user_id: Optional user ID for tracking
+            session_id: Optional session ID for tracking
+
+        Returns:
+            Base64 encoded result image with new floor tile, or None on failure
+        """
+        try:
+            logger.info(f"[FloorTile] Applying tile: {tile_name} ({tile_size}, {tile_finish})")
+
+            # Use editing preprocessor to preserve quality
+            processed_room = self._preprocess_image_for_editing(room_image)
+            processed_swatch = self._preprocess_image_for_editing(swatch_image)
+
+            # Build prompt
+            prompt = VisualizationPrompts.get_floor_tile_change_prompt(
+                tile_name=tile_name,
+                tile_size=tile_size,
+                tile_finish=tile_finish,
+                tile_width_mm=tile_width_mm,
+                tile_height_mm=tile_height_mm,
+            )
+
+            # Build contents list with PIL Images
+            contents = [prompt]
+
+            # Add room image as PIL Image (first image)
+            room_image_bytes = base64.b64decode(processed_room)
+            room_pil_image = Image.open(io.BytesIO(room_image_bytes))
+            room_pil_image = ImageOps.exif_transpose(room_pil_image)
+            if room_pil_image.mode != "RGB":
+                room_pil_image = room_pil_image.convert("RGB")
+
+            input_width, input_height = room_pil_image.size
+            logger.info(f"[FloorTile] Room image dimensions: {input_width}x{input_height}")
+
+            contents.append(room_pil_image)
+
+            # Add tile swatch as PIL Image (second image)
+            swatch_image_bytes = base64.b64decode(processed_swatch)
+            swatch_pil_image = Image.open(io.BytesIO(swatch_image_bytes))
+            swatch_pil_image = ImageOps.exif_transpose(swatch_pil_image)
+            if swatch_pil_image.mode != "RGB":
+                swatch_pil_image = swatch_pil_image.convert("RGB")
+
+            swatch_width, swatch_height = swatch_pil_image.size
+            logger.info(f"[FloorTile] Swatch dimensions: {swatch_width}x{swatch_height}")
+
+            contents.append(swatch_pil_image)
+
+            # Generate visualization with Gemini 3 Pro Image
+            generate_content_config = types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                temperature=0.3,
+            )
+
+            # Retry configuration
+            max_retries = 3
+            timeout_seconds = 90
+
+            def _run_floor_tile_change():
+                """Run the streaming generation in a thread for timeout support."""
+                result_image = None
+                final_chunk = None
+                for chunk in self.genai_client.models.generate_content_stream(
+                    model="gemini-3-pro-image-preview",
+                    contents=contents,
+                    config=generate_content_config,
+                ):
+                    final_chunk = chunk
+                    if chunk.candidates and chunk.candidates[0].content and chunk.candidates[0].content.parts:
+                        for part in chunk.candidates[0].content.parts:
+                            if part.inline_data and part.inline_data.data:
+                                image_data = part.inline_data.data
+                                mime_type = part.inline_data.mime_type or "image/png"
+
+                                # Handle both raw bytes and base64 string bytes
+                                if isinstance(image_data, bytes):
+                                    first_hex = image_data[:4].hex()
+                                    logger.info(f"[FloorTile] First 4 bytes hex: {first_hex}")
+
+                                    if first_hex.startswith("89504e47") or first_hex.startswith("ffd8ff"):
+                                        image_base64 = base64.b64encode(image_data).decode("utf-8")
+                                        logger.info("[FloorTile] Raw image bytes detected, encoded to base64")
+                                    else:
+                                        image_base64 = image_data.decode("utf-8")
+                                        logger.info("[FloorTile] Base64 string bytes detected")
+                                else:
+                                    image_base64 = image_data
+                                    logger.info("[FloorTile] String data received directly")
+
+                                result_image = f"data:{mime_type};base64,{image_base64}"
+                                logger.info("[FloorTile] Generated floor tile visualization")
+                return (result_image, final_chunk)
+
+            generated_image = None
+            final_chunk = None
+
+            for attempt in range(max_retries):
+                try:
+                    loop = asyncio.get_event_loop()
+                    result = await asyncio.wait_for(
+                        loop.run_in_executor(None, _run_floor_tile_change), timeout=timeout_seconds
+                    )
+                    if result:
+                        generated_image, final_chunk = result
+                    if generated_image:
+                        break
+                except asyncio.TimeoutError:
+                    logger.warning(f"[FloorTile] Attempt {attempt + 1} timed out after {timeout_seconds}s")
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** (attempt + 1)
+                        logger.info(f"[FloorTile] Retrying in {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                    continue
+                except Exception as e:
+                    error_str = str(e)
+                    if "503" in error_str or "overloaded" in error_str.lower() or "UNAVAILABLE" in error_str:
+                        if attempt < max_retries - 1:
+                            wait_time = 4 * (2**attempt)
+                            logger.warning(f"[FloorTile] Model overloaded, retrying in {wait_time}s...")
+                            await asyncio.sleep(wait_time)
+                            continue
+                    logger.error(f"[FloorTile] Attempt {attempt + 1} failed: {e}")
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** (attempt + 1)
+                        await asyncio.sleep(wait_time)
+                    continue
+
+            if not generated_image:
+                logger.error(f"[FloorTile] Failed to generate after {max_retries} attempts")
+                return None
+
+            # Log operation
+            self._log_streaming_operation(
+                "change_floor_tile",
+                "gemini-3-pro-image-preview",
+                final_chunk=final_chunk,
+                user_id=user_id,
+                session_id=session_id,
+            )
+
+            # Resize output to match input dimensions if they differ
+            try:
+                # Strip data URI prefix to get raw base64
+                if generated_image.startswith("data:"):
+                    prefix_end = generated_image.index(",") + 1
+                    raw_b64 = generated_image[prefix_end:]
+                else:
+                    raw_b64 = generated_image
+
+                output_bytes = base64.b64decode(raw_b64)
+                output_img = Image.open(io.BytesIO(output_bytes))
+                output_width, output_height = output_img.size
+                logger.info(
+                    f"[FloorTile] Output resolution: {output_width}x{output_height}, Input was: {input_width}x{input_height}"
+                )
+
+                if output_width != input_width or output_height != input_height:
+                    logger.warning(
+                        f"[FloorTile] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
+                    )
+                    if output_img.mode != "RGB":
+                        output_img = output_img.convert("RGB")
+                    output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
+
+                    buffer = io.BytesIO()
+                    output_img.save(buffer, format="PNG", optimize=False)
+                    buffer.seek(0)
+                    resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                    generated_image = f"data:image/png;base64,{resized_b64}"
+                    logger.info(f"[FloorTile] Resized output to match input: {input_width}x{input_height}")
+            except Exception as resize_err:
+                logger.warning(f"[FloorTile] Could not verify/fix output resolution: {resize_err}")
+
+            logger.info(f"[FloorTile] Successfully applied tile {tile_name}")
+            return generated_image
+
+        except Exception as e:
+            logger.error(f"[FloorTile] Error: {e}", exc_info=True)
+            return None
 
     async def close(self):
         """Close HTTP session"""

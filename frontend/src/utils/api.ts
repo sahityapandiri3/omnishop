@@ -2104,6 +2104,17 @@ export const visualizationAPI = {
     const response = await api.post('/api/visualization/change-wall-texture', request);
     return response.data;
   },
+
+  /**
+   * Change floor tile in a room visualization
+   *
+   * @param request - The floor tile change request
+   * @returns Response with rendered image or error
+   */
+  changeFloorTile: async (request: ChangeFloorTileRequest): Promise<ChangeFloorTileResponse> => {
+    const response = await api.post('/api/visualization/change-floor-tile', request);
+    return response.data;
+  },
 };
 
 // =============================================================================
@@ -2196,6 +2207,72 @@ export const wallTexturesAPI = {
    */
   getVariantByCode: async (code: string): Promise<WallTextureVariant> => {
     const response = await api.get(`/api/wall-textures/variant/code/${code}`);
+    return response.data;
+  },
+};
+
+// =============================================================================
+// Floor Tiles API
+// =============================================================================
+
+import type {
+  FloorTile as FloorTileType,
+  FloorTilesResponse,
+  ChangeFloorTileRequest,
+  ChangeFloorTileResponse,
+} from '@/types/floor-tiles';
+
+/**
+ * Floor Tiles API
+ *
+ * API for fetching floor tile catalog and changing floor tiles in visualizations.
+ */
+export const floorTilesAPI = {
+  /**
+   * Get all floor tiles with optional filters and filter metadata
+   */
+  getAll: async (
+    vendors?: string[],
+    sizes?: string[],
+    finishes?: string[],
+    looks?: string[],
+    colors?: string[],
+  ): Promise<FloorTilesResponse> => {
+    // Build URLSearchParams to support repeated keys (e.g., ?finish=Glossy&finish=Matte)
+    const params = new URLSearchParams();
+    if (vendors?.length) vendors.forEach(v => params.append('vendor', v));
+    if (sizes?.length) sizes.forEach(v => params.append('size', v));
+    if (finishes?.length) finishes.forEach(v => params.append('finish', v));
+    if (looks?.length) looks.forEach(v => params.append('look', v));
+    if (colors?.length) colors.forEach(v => params.append('color', v));
+
+    const response = await api.get('/api/floor-tiles/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get a specific floor tile by ID (includes swatch_data)
+   */
+  getById: async (tileId: number): Promise<FloorTileType> => {
+    const response = await api.get(`/api/floor-tiles/${tileId}`);
+    return response.data;
+  },
+
+  /**
+   * Change floor tile in a room visualization
+   */
+  changeFloorTile: async (
+    roomImage: string,
+    tileId: number,
+    userId?: string,
+    sessionId?: string,
+  ): Promise<ChangeFloorTileResponse> => {
+    const response = await api.post('/api/visualization/change-floor-tile', {
+      room_image: roomImage,
+      tile_id: tileId,
+      user_id: userId,
+      session_id: sessionId,
+    });
     return response.data;
   },
 };

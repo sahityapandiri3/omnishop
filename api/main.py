@@ -42,6 +42,7 @@ try:
         categories,
         chat,
         curated,
+        floor_tiles,
         furniture,
         homestyling,
         permissions,
@@ -414,6 +415,9 @@ if "wall_colors" in dir():
 
 if "wall_textures" in dir():
     app.include_router(wall_textures.router, prefix="/api", tags=["wall-textures"])
+
+if "floor_tiles" in dir():
+    app.include_router(floor_tiles.router, prefix="/api", tags=["floor-tiles"])
 
 # Additional routers can be added here as needed
 

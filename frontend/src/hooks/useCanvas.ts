@@ -19,12 +19,13 @@ import { useState, useCallback, useRef } from 'react';
 import { VisualizationProduct } from '@/types/visualization';
 import { WallColor } from '@/types/wall-colors';
 import { WallTexture, WallTextureVariant, WallTextureWithVariants } from '@/types/wall-textures';
+import { FloorTile } from '@/types/floor-tiles';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type CanvasItemType = 'product' | 'wall_color' | 'wall_texture';
+export type CanvasItemType = 'product' | 'wall_color' | 'wall_texture' | 'floor_tile';
 
 /** Data specific to a product canvas item */
 export interface ProductCanvasData {
@@ -42,7 +43,12 @@ export interface WallTextureCanvasData {
   texture: WallTextureWithVariants;
 }
 
-export type CanvasItemData = ProductCanvasData | WallColorCanvasData | WallTextureCanvasData;
+/** Data specific to a floor tile canvas item */
+export interface FloorTileCanvasData {
+  floorTile: FloorTile;
+}
+
+export type CanvasItemData = ProductCanvasData | WallColorCanvasData | WallTextureCanvasData | FloorTileCanvasData;
 
 export interface CanvasItem {
   /** Unique identifier: `product-{id}`, `wall_color-{id}`, `wall_texture-{id}` */
@@ -73,6 +79,10 @@ export function isWallTextureData(data: CanvasItemData): data is WallTextureCanv
   return 'textureVariant' in data;
 }
 
+export function isFloorTileData(data: CanvasItemData): data is FloorTileCanvasData {
+  return 'floorTile' in data;
+}
+
 // ============================================================================
 // Helpers to extract typed data from items
 // ============================================================================
@@ -87,6 +97,10 @@ export function getWallColorItem(items: CanvasItem[]): CanvasItem | null {
 
 export function getWallTextureItem(items: CanvasItem[]): CanvasItem | null {
   return items.find(item => item.type === 'wall_texture') ?? null;
+}
+
+export function getFloorTileItem(items: CanvasItem[]): CanvasItem | null {
+  return items.find(item => item.type === 'floor_tile') ?? null;
 }
 
 /** Extract VisualizationProduct[] from canvas items (for API calls) */
@@ -116,6 +130,13 @@ export function extractTexture(items: CanvasItem[]): WallTextureWithVariants | n
   const textureItem = getWallTextureItem(items);
   if (!textureItem) return null;
   return (textureItem.data as WallTextureCanvasData).texture;
+}
+
+/** Extract FloorTile from canvas items */
+export function extractFloorTile(items: CanvasItem[]): FloorTile | null {
+  const floorTileItem = getFloorTileItem(items);
+  if (!floorTileItem) return null;
+  return (floorTileItem.data as FloorTileCanvasData).floorTile;
 }
 
 // ============================================================================
@@ -164,6 +185,8 @@ export interface UseCanvasReturn {
   wallColorItem: CanvasItem | null;
   /** Convenience: texture item (or null) */
   textureItem: CanvasItem | null;
+  /** Convenience: floor tile item (or null) */
+  floorTileItem: CanvasItem | null;
 
   /** Whether the canvas has any content */
   hasContent: boolean;
@@ -176,6 +199,8 @@ export interface UseCanvasReturn {
   textureVariant: WallTextureVariant | null;
   /** Extracted parent texture for display */
   texture: WallTextureWithVariants | null;
+  /** Extracted floor tile for API/visualization use */
+  floorTile: FloorTile | null;
 
   // === Actions ===
 
@@ -185,6 +210,8 @@ export interface UseCanvasReturn {
   addWallColor: (color: WallColor) => void;
   /** Add a texture to canvas (replaces existing) */
   addTexture: (variant: WallTextureVariant, texture: WallTextureWithVariants) => void;
+  /** Add a floor tile to canvas (replaces existing) */
+  addFloorTile: (tile: FloorTile) => void;
 
   /** Remove an item by its canvas ID */
   removeItem: (id: string) => void;
@@ -204,6 +231,8 @@ export interface UseCanvasReturn {
   setWallColor: (color: WallColor | null) => void;
   /** Set texture variant directly (used by undo/redo) */
   setTextureVariant: (variant: WallTextureVariant | null, texture?: WallTextureWithVariants | null) => void;
+  /** Set floor tile directly (used by undo/redo) */
+  setFloorTile: (tile: FloorTile | null) => void;
 
   // === Computed values ===
 
@@ -230,6 +259,7 @@ export function useCanvas(): UseCanvasReturn {
   const productItems = getProductItems(items);
   const wallColorItem = getWallColorItem(items);
   const textureItem = getWallTextureItem(items);
+  const floorTileItem = getFloorTileItem(items);
   const hasContent = items.length > 0;
 
   // Extracted values for visualization
@@ -237,10 +267,11 @@ export function useCanvas(): UseCanvasReturn {
   const wallColor = extractWallColor(items);
   const textureVariant = extractTextureVariant(items);
   const texture = extractTexture(items);
+  const floorTile = extractFloorTile(items);
 
   // Computed values
   const totalItemCount = productItems.reduce((sum, item) => sum + item.quantity, 0)
-    + (wallColorItem ? 1 : 0) + (textureItem ? 1 : 0);
+    + (wallColorItem ? 1 : 0) + (textureItem ? 1 : 0) + (floorTileItem ? 1 : 0);
   const totalPrice = productItems.reduce((sum, item) => {
     const data = item.data as ProductCanvasData;
     return sum + (data.product.price || 0) * item.quantity;
@@ -302,6 +333,22 @@ export function useCanvas(): UseCanvasReturn {
         type: 'wall_texture' as CanvasItemType,
         quantity: 1,
         data: { textureVariant: variant, texture: parentTexture },
+        addedAt: Date.now(),
+      }];
+    });
+  }, []);
+
+  const addFloorTile = useCallback((tile: FloorTile) => {
+    const canvasId = makeCanvasId('floor_tile', tile.id);
+    setItems(prev => {
+      // Remove any existing floor tile (only one at a time)
+      const filtered = prev.filter(item => item.type !== 'floor_tile');
+      console.log(`[useCanvas] Added floor tile: ${tile.name} (${tile.size})`);
+      return [...filtered, {
+        id: canvasId,
+        type: 'floor_tile' as CanvasItemType,
+        quantity: 1,
+        data: { floorTile: tile },
         addedAt: Date.now(),
       }];
     });
@@ -403,20 +450,38 @@ export function useCanvas(): UseCanvasReturn {
     });
   }, []);
 
+  // Set floor tile directly (undo/redo)
+  const setFloorTile = useCallback((tile: FloorTile | null) => {
+    setItems(prev => {
+      const filtered = prev.filter(item => item.type !== 'floor_tile');
+      if (!tile) return filtered;
+      return [...filtered, {
+        id: makeCanvasId('floor_tile', tile.id),
+        type: 'floor_tile' as CanvasItemType,
+        quantity: 1,
+        data: { floorTile: tile },
+        addedAt: Date.now(),
+      }];
+    });
+  }, []);
+
   return {
     items,
     productItems,
     wallColorItem,
     textureItem,
+    floorTileItem,
     hasContent,
     products,
     wallColor,
     textureVariant,
     texture,
+    floorTile,
 
     addProduct,
     addWallColor,
     addTexture,
+    addFloorTile,
     removeItem,
     updateQuantity,
     removeProduct,
@@ -425,6 +490,7 @@ export function useCanvas(): UseCanvasReturn {
     setProducts,
     setWallColor,
     setTextureVariant,
+    setFloorTile,
 
     totalItemCount,
     totalPrice,

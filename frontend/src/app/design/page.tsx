@@ -12,6 +12,9 @@ import { WallFilterPanel } from '@/components/walls';
 import { useWallColor } from '@/hooks/useWallColor';
 import { useWallFilters } from '@/hooks/useWallFilters';
 import { useWallTextures } from '@/hooks/useWallTextures';
+import { useFloorTiles } from '@/hooks/useFloorTiles';
+import { useFloorTileFilters } from '@/hooks/useFloorTileFilters';
+import { FloorTileFilterPanel } from '@/components/flooring';
 import {
   useCanvas,
   CanvasItem,
@@ -19,9 +22,11 @@ import {
   extractWallColor as extractCanvasWallColor,
   extractTextureVariant as extractCanvasTextureVariant,
   extractTexture as extractCanvasTexture,
+  extractFloorTile as extractCanvasFloorTile,
 } from '@/hooks/useCanvas';
 import { WallColor, WallColorFamily } from '@/types/wall-colors';
 import { WallType, TextureType } from '@/types/wall-textures';
+import { FloorTile } from '@/types/floor-tiles';
 import { SubModeToggle, SearchSubMode } from '@/components/search';
 
 type SearchMode = 'ai' | 'search';
@@ -230,6 +235,48 @@ function DesignPageContent() {
     }
   }, [searchSubMode, wallType, fetchTextures]);
 
+  // Floor tiles state - fetches tiles lazily when flooring tab is selected
+  const {
+    tiles: floorTiles,
+    filterOptions: floorTileFilterOptions,
+    isLoading: isLoadingFloorTiles,
+    error: floorTilesError,
+    fetchTiles: fetchFloorTiles,
+    canvasTile: canvasFloorTile,
+    addToCanvas: addFloorTileToCanvas,
+    removeFromCanvas: removeFloorTileFromCanvas,
+    setCanvasTile: setCanvasFloorTile,
+  } = useFloorTiles();
+
+  // Floor tile filters state
+  const {
+    selectedVendors: floorTileSelectedVendors,
+    selectedSizes: floorTileSelectedSizes,
+    selectedFinishes: floorTileSelectedFinishes,
+    selectedLooks: floorTileSelectedLooks,
+    selectedColors: floorTileSelectedColors,
+    toggleVendor: toggleFloorTileVendor,
+    toggleSize: toggleFloorTileSize,
+    toggleFinish: toggleFloorTileFinish,
+    toggleLook: toggleFloorTileLook,
+    toggleColor: toggleFloorTileColor,
+    clearAllFilters: clearFloorTileFilters,
+    hasActiveFilters: hasActiveFloorTileFilters,
+  } = useFloorTileFilters();
+
+  // Lazy-load floor tiles when user switches to flooring tab
+  useEffect(() => {
+    if (searchSubMode === 'flooring') {
+      fetchFloorTiles({
+        selectedVendors: floorTileSelectedVendors,
+        selectedSizes: floorTileSelectedSizes,
+        selectedFinishes: floorTileSelectedFinishes,
+        selectedLooks: floorTileSelectedLooks,
+        selectedColors: floorTileSelectedColors,
+      });
+    }
+  }, [searchSubMode, fetchFloorTiles, floorTileSelectedVendors, floorTileSelectedSizes, floorTileSelectedFinishes, floorTileSelectedLooks, floorTileSelectedColors]);
+
   // Unified canvas state management
   const canvas = useCanvas();
 
@@ -254,6 +301,17 @@ function DesignPageContent() {
     canvas.setTextureVariant(null);
   }, [removeTextureFromCanvas, canvas.setTextureVariant]);
 
+  // Wrap floor tile add-to-canvas to sync with unified canvas
+  const handleAddFloorTileToCanvasUnified = useCallback((tile: FloorTile) => {
+    addFloorTileToCanvas(tile);
+    canvas.addFloorTile(tile);
+  }, [addFloorTileToCanvas, canvas.addFloorTile]);
+
+  const removeFloorTileFromCanvasUnified = useCallback(() => {
+    removeFloorTileFromCanvas();
+    canvas.setFloorTile(null);
+  }, [removeFloorTileFromCanvas, canvas.setFloorTile]);
+
   // Handle canvas items restore from undo/redo
   const handleSetCanvasItems = useCallback((items: CanvasItem[]) => {
     canvas.setItems(items);
@@ -262,10 +320,12 @@ function DesignPageContent() {
     const restoredWallColor = extractCanvasWallColor(items);
     const restoredTextureVariant = extractCanvasTextureVariant(items);
     const restoredTexture = extractCanvasTexture(items);
+    const restoredFloorTile = extractCanvasFloorTile(items);
     setCanvasProducts(restoredProducts);
     setCanvasWallColor(restoredWallColor);
     setCanvasTextureVariant(restoredTextureVariant, restoredTexture);
-  }, [canvas.setItems, setCanvasWallColor, setCanvasTextureVariant]);
+    setCanvasFloorTile(restoredFloorTile);
+  }, [canvas.setItems, setCanvasWallColor, setCanvasTextureVariant, setCanvasFloorTile]);
 
   // Track if we have unsaved changes
   const hasUnsavedChanges = saveStatus === 'unsaved' || saveStatus === 'saving';
@@ -2063,6 +2123,37 @@ function DesignPageContent() {
                   </div>
                 )}
 
+                {/* Floor Tile Filter Panel - visible when Search + Flooring sub-mode */}
+                {searchMode === 'search' && searchSubMode === 'flooring' && (
+                  <div className="flex-1 min-h-0 overflow-hidden">
+                    <div className="p-4">
+                      <h2 className="font-semibold text-neutral-900 dark:text-white">
+                        Floor Tiles
+                      </h2>
+                      <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                        Browse and apply floor tiles to your design
+                      </p>
+                    </div>
+                    {floorTileFilterOptions && (
+                      <FloorTileFilterPanel
+                        filterOptions={floorTileFilterOptions}
+                        selectedVendors={floorTileSelectedVendors}
+                        selectedSizes={floorTileSelectedSizes}
+                        selectedFinishes={floorTileSelectedFinishes}
+                        selectedLooks={floorTileSelectedLooks}
+                        selectedColors={floorTileSelectedColors}
+                        onToggleVendor={toggleFloorTileVendor}
+                        onToggleSize={toggleFloorTileSize}
+                        onToggleFinish={toggleFloorTileFinish}
+                        onToggleLook={toggleFloorTileLook}
+                        onToggleColor={toggleFloorTileColor}
+                        onClearFilters={clearFloorTileFilters}
+                        hasActiveFilters={hasActiveFloorTileFilters}
+                      />
+                    )}
+                  </div>
+                )}
+
                 {/* AI Chat Panel - Only visible in AI mode */}
                 {searchMode === 'ai' && (
                   <div className="relative flex-1 overflow-hidden border-t border-neutral-200 dark:border-neutral-700">
@@ -2116,6 +2207,12 @@ function DesignPageContent() {
                 onSelectTextureVariant={handleSelectTextureVariant}
                 onAddTextureToCanvas={handleAddTextureToCanvasUnified}
                 onRemoveWallFromCanvas={wallType === 'color' ? removeWallColorFromCanvasUnified : removeTextureFromCanvasUnified}
+                // Flooring mode props
+                floorTiles={floorTiles}
+                floorTilesLoading={isLoadingFloorTiles}
+                floorTilesError={floorTilesError}
+                canvasFloorTile={canvasFloorTile}
+                onToggleFloorTile={handleAddFloorTileToCanvasUnified}
               />
             }
             canvasPanel={
@@ -2141,6 +2238,8 @@ function DesignPageContent() {
                 canvasTexture={canvasTexture}
                 canvasTextureVariant={canvasTextureVariant}
                 onRemoveTexture={removeTextureFromCanvasUnified}
+                canvasFloorTile={canvasFloorTile}
+                onRemoveFloorTile={removeFloorTileFromCanvasUnified}
                 canvasItems={canvas.items}
                 onSetCanvasItems={handleSetCanvasItems}
                 onRemoveCanvasItem={canvas.removeItem}
@@ -2203,6 +2302,37 @@ function DesignPageContent() {
                 </div>
               )}
 
+              {/* Floor Tile Filter Panel - visible when Search + Flooring sub-mode on mobile */}
+              {searchMode === 'search' && searchSubMode === 'flooring' && (
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <div className="p-4">
+                    <h2 className="font-semibold text-neutral-900 dark:text-white">
+                      Floor Tiles
+                    </h2>
+                    <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                      Browse and apply floor tiles to your design
+                    </p>
+                  </div>
+                  {floorTileFilterOptions && (
+                    <FloorTileFilterPanel
+                      filterOptions={floorTileFilterOptions}
+                      selectedVendors={floorTileSelectedVendors}
+                      selectedSizes={floorTileSelectedSizes}
+                      selectedFinishes={floorTileSelectedFinishes}
+                      selectedLooks={floorTileSelectedLooks}
+                      selectedColors={floorTileSelectedColors}
+                      onToggleVendor={toggleFloorTileVendor}
+                      onToggleSize={toggleFloorTileSize}
+                      onToggleFinish={toggleFloorTileFinish}
+                      onToggleLook={toggleFloorTileLook}
+                      onToggleColor={toggleFloorTileColor}
+                      onClearFilters={clearFloorTileFilters}
+                      hasActiveFilters={hasActiveFloorTileFilters}
+                    />
+                  )}
+                </div>
+              )}
+
               {/* AI Chat Panel - Only visible in AI mode */}
               {searchMode === 'ai' && (
                 <div className="relative flex-1 overflow-hidden border-t border-neutral-200 dark:border-neutral-700">
@@ -2256,6 +2386,12 @@ function DesignPageContent() {
               onSelectTextureVariant={handleSelectTextureVariant}
               onAddTextureToCanvas={handleAddTextureToCanvasUnified}
               onRemoveWallFromCanvas={wallType === 'color' ? removeWallColorFromCanvasUnified : removeTextureFromCanvasUnified}
+              // Flooring mode props
+              floorTiles={floorTiles}
+              floorTilesLoading={isLoadingFloorTiles}
+              floorTilesError={floorTilesError}
+              canvasFloorTile={canvasFloorTile}
+              onToggleFloorTile={handleAddFloorTileToCanvasUnified}
             />
           </div>
           <div className={`h-full ${activeTab === 'canvas' ? 'block' : 'hidden'}`}>
@@ -2281,6 +2417,8 @@ function DesignPageContent() {
               canvasTexture={canvasTexture}
               canvasTextureVariant={canvasTextureVariant}
               onRemoveTexture={removeTextureFromCanvasUnified}
+              canvasFloorTile={canvasFloorTile}
+              onRemoveFloorTile={removeFloorTileFromCanvasUnified}
               canvasItems={canvas.items}
               onSetCanvasItems={handleSetCanvasItems}
               onRemoveCanvasItem={canvas.removeItem}

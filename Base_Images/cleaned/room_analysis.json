@@ -1,0 +1,168 @@
+[
+  {
+    "original": "Test_Image14.jpg",
+    "cleaned": "Test_Image14_clean.jpg",
+    "room_analysis": {
+      "camera_view_analysis": {
+        "viewing_angle": "straight_on",
+        "primary_wall": "back",
+        "floor_center_location": "image_center",
+        "recommended_furniture_zone": "center_floor"
+      },
+      "room_type": "unknown",
+      "dimensions": {},
+      "lighting_conditions": "mixed",
+      "color_palette": [],
+      "existing_furniture": [],
+      "architectural_features": [],
+      "style_assessment": "unknown",
+      "scale_references": {}
+    }
+  },
+  {
+    "original": "Test_image15.jpg",
+    "cleaned": "Test_image15_clean.jpg",
+    "room_analysis": {
+      "camera_view_analysis": {
+        "viewing_angle": "straight_on",
+        "primary_wall": "back",
+        "floor_center_location": "image_center",
+        "recommended_furniture_zone": "center_floor"
+      },
+      "room_type": "unknown",
+      "dimensions": {},
+      "lighting_conditions": "mixed",
+      "color_palette": [],
+      "existing_furniture": [],
+      "architectural_features": [],
+      "style_assessment": "unknown",
+      "scale_references": {}
+    }
+  },
+  {
+    "original": "Test_image16.jpg",
+    "cleaned": "Test_image16_clean.jpg",
+    "room_analysis": {
+      "camera_view_analysis": {
+        "viewing_angle": "straight_on",
+        "primary_wall": "back",
+        "floor_center_location": "image_center",
+        "recommended_furniture_zone": "center_floor"
+      },
+      "room_type": "unknown",
+      "dimensions": {},
+      "lighting_conditions": "mixed",
+      "color_palette": [],
+      "existing_furniture": [],
+      "architectural_features": [],
+      "style_assessment": "unknown",
+      "scale_references": {}
+    }
+  },
+  {
+    "original": "Test_image17.jpg",
+    "cleaned": "Test_image17_clean.jpg",
+    "room_analysis": {
+      "camera_view_analysis": {
+        "viewing_angle": "straight_on",
+        "primary_wall": "back",
+        "floor_center_location": "image_center",
+        "recommended_furniture_zone": "center_floor"
+      },
+      "room_type": "unknown",
+      "dimensions": {},
+      "lighting_conditions": "mixed",
+      "color_palette": [],
+      "existing_furniture": [],
+      "architectural_features": [],
+      "style_assessment": "unknown",
+      "scale_references": {}
+    }
+  },
+  {
+    "original": "Test_image18.jpg",
+    "cleaned": "Test_image18_clean.jpg",
+    "room_analysis": {
+      "camera_view_analysis": {
+        "viewing_angle": "straight_on",
+        "primary_wall": "back",
+        "floor_center_location": "image_center",
+        "recommended_furniture_zone": "center_floor"
+      },
+      "room_type": "unknown",
+      "dimensions": {},
+      "lighting_conditions": "mixed",
+      "color_palette": [],
+      "existing_furniture": [],
+      "architectural_features": [],
+      "style_assessment": "unknown",
+      "scale_references": {}
+    }
+  },
+  {
+    "original": "Test_image19.jpg",
+    "cleaned": "Test_image19_clean.jpg",
+    "room_analysis": {
+      "camera_view_analysis": {
+        "viewing_angle": "straight_on",
+        "primary_wall": "back",
+        "floor_center_location": "image_center",
+        "recommended_furniture_zone": "center_floor"
+      },
+      "room_type": "unknown",
+      "dimensions": {},
+      "lighting_conditions": "mixed",
+      "color_palette": [],
+      "existing_furniture": [],
+      "architectural_features": [],
+      "style_assessment": "unknown",
+      "scale_references": {}
+    }
+  },
+  {
+    "original": "Test_image20.jpg",
+    "cleaned": "Test_image20_clean.jpg",
+    "room_analysis": {
+      "camera_view_analysis": {
+        "viewing_angle": "straight_on",
+        "primary_wall": "back",
+        "floor_center_location": "image_center",
+        "recommended_furniture_zone": "center_floor"
+      },
+      "room_type": "living_room",
+      "dimensions": {
+        "estimated_width_ft": 20.0,
+        "estimated_length_ft": 18.0,
+        "estimated_height_ft": 11.0,
+        "square_footage": 360.0
+      },
+      "lighting_conditions": "mixed",
+      "color_palette": [
+        "cream",
+        "beige",
+        "black"
+      ],
+      "existing_furniture": [
+        "curved boucle sofa",
+        "sculptural armchairs",
+        "marble block coffee tables",
+        "grand piano",
+        "side table"
+      ],
+      "architectural_features": [
+        "floor-to-ceiling windows",
+        "tray ceiling with cove lighting",
+        "cylindrical columns",
+        "herringbone wood flooring"
+      ],
+      "style_assessment": "luxury contemporary",
+      "scale_references": {
+        "door_visible": false,
+        "window_visible": true,
+        "camera_perspective": {
+          "angle": "eye_level"
+        }
+      }
+    }
+  }
+]
