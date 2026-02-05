@@ -1623,7 +1623,7 @@ export default function CanvasPanel({
         )}
 
         {/* Improve Quality - Advanced action at bottom */}
-        {visualizationResult && products.length > 0 && (
+        {visualizationResult && hasCanvasContent && (
           <div className="mt-4 pt-3 border-t border-neutral-200 dark:border-neutral-700">
             <button
               onClick={handleImproveQuality}
