@@ -195,11 +195,24 @@ async def get_previous_room_images(
                     )
                 )
 
-        # Sort by date and limit total
-        rooms.sort(key=lambda r: r.created_at, reverse=True)
-        rooms = rooms[:limit]
+        # Deduplicate: if the same clean_room_image exists in both projects and
+        # homestyling_sessions, keep only the project entry (it has a better name).
+        # We compare thumbnails since they're derived from the same clean_room_image.
+        seen_thumbnails = set()
+        deduped_rooms: List[PreviousRoomImage] = []
+        # Process project-sourced rooms first so they win over homestyling duplicates
+        rooms.sort(key=lambda r: (0 if r.source == "project" else 1, r.created_at), reverse=False)
+        for room in rooms:
+            thumb_key = room.thumbnail[:200]  # First 200 chars of thumbnail is enough to identify
+            if thumb_key not in seen_thumbnails:
+                seen_thumbnails.add(thumb_key)
+                deduped_rooms.append(room)
 
-        return PreviousRoomImagesResponse(rooms=rooms, total=len(rooms))
+        # Sort by date and limit total
+        deduped_rooms.sort(key=lambda r: r.created_at, reverse=True)
+        deduped_rooms = deduped_rooms[:limit]
+
+        return PreviousRoomImagesResponse(rooms=deduped_rooms, total=len(deduped_rooms))
 
     except Exception as e:
         logger.error(f"Error getting previous room images: {e}", exc_info=True)

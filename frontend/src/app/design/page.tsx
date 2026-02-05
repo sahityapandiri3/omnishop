@@ -1190,6 +1190,13 @@ function DesignPageContent() {
       return;
     }
 
+    // Show "Saving..." immediately, then yield so React can render the spinner
+    // before we do heavy synchronous payload building (JSON.stringify of large images)
+    setSaveStatus('saving');
+    const saveStartTime = Date.now();
+    const MIN_SAVE_DISPLAY_MS = 400; // Minimum time to show "Saving..." for better UX
+    await new Promise(resolve => setTimeout(resolve, 0));
+
     // Get current state
     // Save full canvas state (products + wall colors + textures + floor tiles)
     // Wrap in { _version: 2, items: [...], products: [...] } to distinguish from legacy format
@@ -1247,10 +1254,6 @@ function DesignPageContent() {
       viz_image_changed: initialVisualizationImage !== lastSavedVizImageRef.current,
       canvas_changed: JSON.stringify(canvasProducts) !== lastSavedCanvasRef.current,
     });
-
-    setSaveStatus('saving');
-    const saveStartTime = Date.now();
-    const MIN_SAVE_DISPLAY_MS = 400; // Minimum time to show "Saving..." for better UX
 
     try {
       await projectsAPI.update(projectId, updatePayload);
