@@ -3991,7 +3991,7 @@ Paint ALL visible walls with the following color:
 
             if texture_image and texture_name:
                 surface_instructions += f"""
- WALL TEXTURE — APPLY TEXTURE PATTERN
+ WALL TEXTURE — APPLY TO THE MAIN BACK WALL ONLY
 A wall texture swatch image is provided AFTER the product reference images.
 
 TEXTURE INFO:
@@ -3999,12 +3999,13 @@ TEXTURE INFO:
 - Type: {texture_type or 'textured'} finish
 
 WALL TEXTURE RULES:
-1. Study the texture swatch pattern, colors, and details
-2. Apply this EXACT pattern to ALL visible wall surfaces
-3. Maintain natural scale (not too small or large)
-4. Blend naturally at wall corners and edges
-5. Preserve natural shadows and lighting ON the texture
-6. DO NOT apply texture to ceiling, floor, or furniture
+1. Study the texture swatch pattern, colors, and surface details — match them accurately on the wall
+2. Apply the texture ONLY to the MAIN BACK WALL (the wall directly facing the camera, occupying the center of the image)
+3. DO NOT apply texture to side walls, left walls, right walls, or any adjacent/return walls — they must stay their ORIGINAL color
+4. Fill the back wall seamlessly with the texture pattern — no visible seams, tile edges, or grid lines
+5. Scale the pattern naturally for a real wall (use door height ~2000mm as scale reference)
+6. Preserve natural shadows and lighting ON the textured wall
+7. DO NOT apply texture to ceiling, floor, or furniture
 """
 
             if tile_swatch_image and tile_name:
@@ -4089,7 +4090,7 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 -  DO NOT remove ANY existing furniture or objects
 -  DO NOT move or reposition ANY existing furniture
 -  DO NOT change ANY furniture colors or materials
-{'' if tile_swatch_image else '-  DO NOT change the floor color or material'}
+{'' if tile_swatch_image else '-  DO NOT change the floor color, material, or tiles — floor must stay EXACTLY as input'}
 -  DO NOT paint the ceiling
 -  DO NOT change window frames, door frames, or trim
 -  DO NOT change the camera angle or zoom level
@@ -4097,6 +4098,7 @@ THE OUTPUT IMAGE MUST HAVE THE EXACT SAME DIMENSIONS AS THE INPUT IMAGE.
 -  DO NOT add new walls, partitions, or architectural structures
 -  DO NOT apply floor tiles to walls — tiles are ONLY for floor surfaces
 -  DO NOT apply wall texture to the floor — texture is ONLY for wall surfaces
+{'-  DO NOT apply wall texture to side walls or adjacent walls — texture goes ONLY on the main back wall' if texture_image else ''}
 ═══════════════════════════════════════════════════════════════
 
  CRITICAL: THE ONLY CHANGES ALLOWED ARE: {changes_summary.upper()}
