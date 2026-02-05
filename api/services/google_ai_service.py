@@ -696,7 +696,7 @@ The room structure, furniture, and camera angle MUST be identical to the input i
 
 You are given TWO images:
 1. FIRST IMAGE: A room photograph
-2. SECOND IMAGE: A texture swatch/pattern to apply
+2. SECOND IMAGE: A small texture swatch — use it ONLY as a material/color reference
 
 TEXTURE INFO:
 - Name: {texture_name}
@@ -705,57 +705,66 @@ TEXTURE INFO:
  CRITICAL INSTRUCTIONS
 ═══════════════════════════════════════════════════════════════
 
-1. MATCH THE TEXTURE EXACTLY from the SECOND IMAGE:
-   - Study the pattern, colors, and details in the texture swatch
-   - Reproduce this EXACT pattern on all visible walls
-   - Maintain the texture's natural scale (not too small or large)
-   - Preserve the texture's color palette accurately
+1. USE THE SWATCH AS A MATERIAL REFERENCE (NOT a tile to copy-paste):
+   - The second image is a SMALL SAMPLE showing the material's color, grain, and feel
+   - DO NOT tile, repeat, or stamp the swatch image onto the wall
+   - DO NOT create visible seams, edges, joints, or grid lines on the wall
+   - Instead, imagine the ENTIRE wall is one continuous surface made of this material
+   - Paint/render the wall as if a professional plasterer applied {texture_name} across the full wall in one seamless coat
+   - The texture's colors, tones, and visual character should match the swatch
+   - Vary the pattern subtly and organically across the wall (natural imperfections, not copy-paste)
 
-2. APPLY TEXTURE TO VISIBLE WALLS ONLY:
+2. ABSOLUTELY NO TILING OR SEAMS:
+   - There must be ZERO visible lines, boundaries, or repeated sections on the wall
+   - The wall must look like ONE continuous textured surface from edge to edge
+   - If the wall spans a corner, each wall face gets its own continuous texture (no seam at corners either)
+   - Think of it as a wall finish (like stucco or venetian plaster), NOT wallpaper panels
+
+3. APPLY TEXTURE TO VISIBLE WALLS ONLY:
    - Cover ONLY the walls that are already visible in the input image
    - DO NOT add any new walls, partitions, or architectural elements
    - DO NOT add, remove, or modify any furniture, objects, or decorations
-   - Blend texture naturally at wall corners and edges
    - Maintain realistic perspective (texture should follow wall angles)
    - Preserve natural shadows and lighting ON the texture
    - Add depth and realism to the textured surface
 
-3. MUST KEEP UNCHANGED (MANDATORY):
-   -  ALL FURNITURE: Exact position, size, color, style - DO NOT MODIFY
-   -  FLOOR: Same material, color, texture - DO NOT MODIFY
-   -  CEILING: Do NOT texture the ceiling - KEEP ORIGINAL
-   -  Windows, doors, and frames - KEEP ORIGINAL
-   -  All decorations, art, and accessories - KEEP ORIGINAL
-   -  Lighting fixtures - KEEP ORIGINAL
-   -  Architectural features (moldings, columns, etc.) - KEEP ORIGINAL
+4. MUST KEEP UNCHANGED (MANDATORY):
+   - ALL FURNITURE: Exact position, size, color, style - DO NOT MODIFY
+   - FLOOR: Same material, color, texture - DO NOT MODIFY
+   - CEILING: Do NOT texture the ceiling - KEEP ORIGINAL
+   - Windows, doors, and frames - KEEP ORIGINAL
+   - All decorations, art, and accessories - KEEP ORIGINAL
+   - Lighting fixtures - KEEP ORIGINAL
+   - Architectural features (moldings, columns, etc.) - KEEP ORIGINAL
 
-4. TECHNICAL REQUIREMENTS:
+5. TECHNICAL REQUIREMENTS:
    - OUTPUT DIMENSIONS: Match FIRST IMAGE exactly (pixel-for-pixel)
    - ASPECT RATIO: No cropping or letterboxing
    - CAMERA ANGLE: Same viewing angle and perspective
    - NO ZOOM: Show full room view identical to input
    - PHOTOREALISM: Output must look like a real photograph
 
- TEXTURE APPLICATION GUIDELINES:
-- Scale: The texture should appear natural on walls (not tiled obviously)
-- Seamless: Ensure smooth transitions across the wall surface
-- Lighting: Room lighting should realistically affect texture appearance
-  (e.g., areas in shadow may show less texture detail)
-- Depth: {texture_type} textures should show realistic 3D depth
+ TEXTURE RENDERING GUIDELINES:
+- Seamless: The wall must be ONE continuous surface — no tiles, panels, or repeated sections
+- Organic variation: Subtly vary the texture across the wall (natural, not mechanical)
+- Lighting: Room lighting should realistically affect how the texture appears
+  (e.g., areas in shadow may show less texture detail, highlights on raised areas)
+- Depth: {texture_type} textures should show realistic 3D depth and surface relief
+- Scale: The texture grain should look natural for a real wall (not miniaturized or enlarged)
 
  VERIFICATION CHECKLIST:
 Before outputting, verify:
- ALL walls show the texture from the reference image
- Texture pattern matches the reference EXACTLY
+ Walls show a SEAMLESS, CONTINUOUS texture — no visible seams, tiles, or repeated sections
+ Texture color and character match the swatch reference
  ALL furniture remains exactly as in the input
  Floor and ceiling are unchanged
  Image dimensions match input exactly
  Camera angle and perspective unchanged
  Lighting is realistic on textured walls
 
-OUTPUT: One photorealistic image showing THE ENTIRE ROOM with walls textured using the {texture_name} pattern.
+OUTPUT: One photorealistic image showing THE ENTIRE ROOM with walls finished in {texture_name}.
+The walls must appear as ONE SEAMLESS continuous textured surface — no tiling, no seams, no repetition.
 The room structure, furniture, and camera angle MUST be identical to the FIRST input image.
-The wall texture MUST match the SECOND reference image exactly.
 """
 
     @staticmethod
