@@ -270,10 +270,15 @@ export function useVisualization({
   // ============================================================================
   // Sync Effect: Keep visualizedProducts in sync when products change
   // ============================================================================
+  // Track whether products have ever been part of a visualization
+  // This prevents the sync effect from incorrectly claiming new products
+  // were already visualized after a surface-only visualization (texture/tile/color).
+  const hasVisualizedProductsRef = useRef(false);
 
   useEffect(() => {
-    // If we have a visualization but visualizedProductIds is empty, sync from products
-    if (visualizationImage && products.length > 0 && visualizedProductIds.size === 0) {
+    // If we have a visualization but visualizedProductIds is empty, sync from products.
+    // BUT only if products were actually visualized before (not after surface-only viz).
+    if (visualizationImage && products.length > 0 && visualizedProductIds.size === 0 && hasVisualizedProductsRef.current) {
       console.log('[useVisualization] CRITICAL SYNC: syncing visualizedProductIds from products');
       setVisualizedProducts([...products]);
       setVisualizedProductIds(buildProductIdSet(products));
@@ -300,6 +305,9 @@ export function useVisualization({
     setVisualizedProductIds(productIds);
     setVisualizedProducts([...products]);
     setVisualizedQuantities(buildQuantityMap(products));
+    if (products.length > 0) {
+      hasVisualizedProductsRef.current = true;
+    }
 
     // Track the room image used for this visualization
     const baseImage = cleanRoomImage || roomImage;
@@ -1086,6 +1094,7 @@ export function useVisualization({
       setVisualizedProductIds(buildProductIdSet(products));
       setVisualizedProducts([...products]);
       setVisualizedQuantities(buildQuantityMap(products));
+      hasVisualizedProductsRef.current = true;
       setVisualizedWallColor(wallColor || null);
       setVisualizedTextureVariant(textureVariant || null);
       setVisualizedFloorTile(floorTile || null);
@@ -1275,6 +1284,9 @@ export function useVisualization({
     setVisualizedProductIds(buildProductIdSet(existingProducts));
     setVisualizedProducts([...existingProducts]);
     setVisualizedQuantities(buildQuantityMap(existingProducts));
+    if (existingProducts.length > 0) {
+      hasVisualizedProductsRef.current = true;
+    }
     setNeedsRevisualization(false);
 
     if (existingHistory && existingHistory.length > 0) {
