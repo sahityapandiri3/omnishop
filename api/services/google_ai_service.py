@@ -705,22 +705,20 @@ TEXTURE INFO:
  CRITICAL INSTRUCTIONS
 ═══════════════════════════════════════════════════════════════
 
-1. USE THE SWATCH AS A MATERIAL REFERENCE ONLY — DO NOT COPY-PASTE IT:
-   - The second image is a SMALL SAMPLE showing the material's color, grain, and feel
-   - DO NOT tile, repeat, stamp, or copy-paste the swatch image onto the wall
-   - DO NOT create visible seams, edges, joints, grid lines, or repeating patterns on the wall
-   - Instead, imagine the wall was professionally finished with {texture_name} as ONE continuous hand-applied coat
-   - Extract ONLY the color palette, material feel, and surface character from the swatch
-   - Then PAINT the wall freehand using those colors and that character — as if an artist rendered it fresh
-   - The result should look like a real wall finish, NOT like a digital pattern was pasted on
-   - Vary the tones and details organically across the wall (like real plaster or paint would look)
+1. USE THE SWATCH PATTERN FAITHFULLY — BUT FILL THE WALL SEAMLESSLY:
+   - The second image shows the {texture_name} pattern, color, and surface detail — match it accurately
+   - Fill the ENTIRE primary wall with this pattern so it looks like a real {texture_type} wall finish
+   - The pattern, colors, and surface detail on the wall MUST closely match what is shown in the swatch
+   - Scale the pattern naturally for a real wall (use door height ~2000mm as scale reference)
+   - The wall must look like one continuous professionally-applied surface — no visible seams, joints, or edges
+   - Where the pattern needs to continue across a large wall, blend it seamlessly so there are no visible boundaries or repetition lines
+   - The result must look like a real photograph of an actual {texture_type} finished wall
 
-2. ABSOLUTELY NO TILING, REPETITION, OR SEAMS:
-   - There must be ZERO visible lines, boundaries, repeating sections, or grid patterns on the wall
-   - The wall must look like ONE continuous textured surface — never like tiles or wallpaper panels
-   - DO NOT repeat any section of the swatch — every part of the wall should look unique
-   - Think of it as venetian plaster or a hand-applied wall finish, NOT as wallpaper or tiles
-   - If you see yourself creating a repeating pattern, STOP — the wall must have organic, non-repeating variation
+2. NO VISIBLE SEAMS OR TILING GRID:
+   - There must be ZERO visible seam lines, tile edges, grid patterns, or hard boundaries on the wall
+   - The pattern should flow continuously across the wall without any visible joins
+   - DO NOT simply copy-paste the swatch as rectangular tiles — the wall must look like one continuous surface
+   - Blend transitions naturally so no section boundary is detectable
 
 3. APPLY TEXTURE TO THE PRIMARY WALL ONLY:
    - Apply the texture ONLY to the MAIN wall facing the camera (the largest wall in the image)
@@ -748,12 +746,12 @@ TEXTURE INFO:
    - PHOTOREALISM: Output must look like a real photograph
 
  TEXTURE RENDERING GUIDELINES:
-- Seamless: The primary wall must be ONE continuous surface — no tiles, panels, or repeated sections
-- Organic variation: Subtly vary the texture across the wall (natural, not mechanical) — every area should look unique
+- Faithful: The wall pattern must accurately match the swatch — same colors, grain, and surface character
+- Seamless: Fill the wall as one continuous surface — no visible seams, joints, or tile edges
 - Lighting: Room lighting should realistically affect how the texture appears
   (e.g., areas in shadow may show less texture detail, highlights on raised areas)
 - Depth: {texture_type} textures should show realistic 3D depth and surface relief
-- Scale: The texture grain should look natural for a real wall (not miniaturized or enlarged)
+- Scale: The texture grain should look natural for a real wall (use door height ~2000mm as reference)
 
  VERIFICATION CHECKLIST:
 Before outputting, verify:
@@ -6526,9 +6524,9 @@ Paint ALL visible walls with the following color:
 A wall texture swatch image is provided AFTER the product reference images.
 TEXTURE INFO: {viz_request.texture_name} ({viz_request.texture_type or 'textured'} finish)
 WALL TEXTURE RULES:
-1. Study the texture swatch for its color palette, material feel, and surface character
+1. Match the swatch pattern, colors, and surface detail accurately on the wall
 2. Apply the texture ONLY to the PRIMARY wall (main wall facing the camera) — NOT side or adjacent walls
-3. DO NOT tile or repeat the swatch — render the wall as one continuous hand-applied finish
+3. Fill the wall seamlessly — no visible seams, tile edges, or grid lines
 4. Preserve natural shadows and lighting ON the texture
 5. DO NOT apply texture to ceiling, floor, furniture, or any wall other than the primary wall
 6. Side walls must keep their ORIGINAL color and finish
