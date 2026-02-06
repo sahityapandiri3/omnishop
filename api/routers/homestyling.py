@@ -635,6 +635,10 @@ async def reset_session_for_retry(
 # VIEW GENERATION
 # =============================================================================
 
+# Keep references to background tasks to prevent garbage collection
+# This is critical for production - without this, asyncio.create_task() tasks can be GC'd
+_background_tasks = set()
+
 
 async def _run_generation_in_background(session_id: str):
     """Background task to run the actual generation work with its own db session."""
@@ -722,9 +726,11 @@ async def generate_views(
         await db.commit()
 
         # Start generation in background using asyncio.create_task
-        # (BackgroundTasks doesn't work well with async functions)
+        # IMPORTANT: We keep a reference to prevent garbage collection in production
         logger.info(f"Starting background generation for session {session_id}")
-        asyncio.create_task(_run_generation_in_background(session_id))
+        task = asyncio.create_task(_run_generation_in_background(session_id))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
 
         return {
             "status": "started",
