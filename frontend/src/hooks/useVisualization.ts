@@ -412,7 +412,7 @@ export function useVisualization({
       products: products.map(p => ({
         id: p.id,
         name: p.name,
-        category: p.category,
+        category: p.productType || p.product_type,
       })),
     };
     if (wallColor) {
