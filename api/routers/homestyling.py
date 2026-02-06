@@ -67,6 +67,7 @@ def get_primary_image_url(product: Product) -> Optional[str]:
 async def create_session(
     request: CreateSessionRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user),
 ):
     """
     Create a new home styling session.
@@ -95,6 +96,7 @@ async def create_session(
 
         session = HomeStylingSession(
             id=str(uuid.uuid4()),
+            user_id=current_user.id if current_user else None,  # Link session to user if logged in
             room_type=request.room_type.value if request.room_type else None,
             style=request.style.value if request.style else None,
             color_palette=[c.value for c in request.color_palette] if request.color_palette else [],
@@ -369,6 +371,7 @@ async def upload_room_image(
     session_id: str,
     request: UploadImageRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user),
 ):
     """
     Upload a room image for the session.
@@ -389,6 +392,11 @@ async def upload_room_image(
 
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
+
+        # Link session to user if authenticated (ensures previous uploads show up)
+        if current_user and not session.user_id:
+            session.user_id = current_user.id
+            logger.info(f"Linked session {session_id} to user {current_user.id} during upload")
 
         # Handle base64 prefix if present
         image_data = request.image
