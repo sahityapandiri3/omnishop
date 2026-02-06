@@ -642,23 +642,34 @@ _background_tasks = set()
 
 async def _run_generation_in_background(session_id: str):
     """Background task to run the actual generation work with its own db session."""
-    from core.database import AsyncSessionLocal
+    logger.info(f"[BG-TASK] Background task STARTED for session {session_id}")
+    try:
+        from core.database import AsyncSessionLocal
+        logger.info(f"[BG-TASK] AsyncSessionLocal imported for session {session_id}")
+    except Exception as e:
+        logger.error(f"[BG-TASK] Failed to import AsyncSessionLocal: {e}", exc_info=True)
+        return
 
-    async with AsyncSessionLocal() as db:
-        try:
-            await _generate_views_impl(session_id, db)
-        except Exception as e:
-            logger.error(f"Background generation failed for session {session_id}: {e}", exc_info=True)
-            # Try to mark session as failed
+    try:
+        async with AsyncSessionLocal() as db:
+            logger.info(f"[BG-TASK] DB session acquired for session {session_id}")
             try:
-                query = select(HomeStylingSession).where(HomeStylingSession.id == session_id)
-                result = await db.execute(query)
-                session = result.scalars().first()
-                if session:
-                    session.status = HomeStylingSessionStatus.FAILED
-                    await db.commit()
-            except:
-                pass
+                await _generate_views_impl(session_id, db)
+                logger.info(f"[BG-TASK] Generation completed for session {session_id}")
+            except Exception as e:
+                logger.error(f"[BG-TASK] Generation failed for session {session_id}: {e}", exc_info=True)
+                # Try to mark session as failed
+                try:
+                    query = select(HomeStylingSession).where(HomeStylingSession.id == session_id)
+                    result = await db.execute(query)
+                    session = result.scalars().first()
+                    if session:
+                        session.status = HomeStylingSessionStatus.FAILED
+                        await db.commit()
+                except:
+                    pass
+    except Exception as e:
+        logger.error(f"[BG-TASK] Failed to get DB session for {session_id}: {e}", exc_info=True)
 
 
 @router.post("/sessions/{session_id}/generate")
