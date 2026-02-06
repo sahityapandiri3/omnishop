@@ -393,11 +393,17 @@ export function useCanvas(): UseCanvasReturn {
 
   // Set products from external source (undo/redo, curated looks)
   const setProducts = useCallback((newProducts: VisualizationProduct[]) => {
+    // Defensive check: ensure newProducts is an array
+    if (!Array.isArray(newProducts)) {
+      console.warn('[useCanvas] setProducts called with non-array:', typeof newProducts, newProducts);
+    }
+    const productsArray = Array.isArray(newProducts) ? newProducts : [];
+
     setItems(prev => {
       // Keep non-product items
       const nonProducts = prev.filter(item => item.type !== 'product');
       // Create product items from the array
-      const productCanvasItems: CanvasItem[] = newProducts.map(p => ({
+      const productCanvasItems: CanvasItem[] = productsArray.map(p => ({
         id: makeCanvasId('product', p.id),
         type: 'product' as CanvasItemType,
         quantity: p.quantity || 1,

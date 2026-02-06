@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import api from '@/utils/api';
+import { useTrackEvent } from '@/contexts/AnalyticsContext';
 
 interface ProductInView {
   id: number;
@@ -59,6 +60,7 @@ const STAGE_MESSAGES: Record<GenerationStage, string> = {
 export default function ResultsPage() {
   const params = useParams();
   const router = useRouter();
+  const trackEvent = useTrackEvent();
   const sessionId = params?.sessionId as string;
 
   const [session, setSession] = useState<SessionData | null>(null);
@@ -81,6 +83,7 @@ export default function ResultsPage() {
   // Timer for elapsed time display
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerInterval = useRef<NodeJS.Timeout | null>(null);
+  const generationStartTime = useRef<number>(0);  // Track start time for duration calculation
 
   // Fetch session data
   const fetchSession = useCallback(async (includeImages: boolean = true) => {
@@ -102,6 +105,7 @@ export default function ResultsPage() {
     setGenerationStage('starting');
     setError(null);
     setElapsedSeconds(0);
+    generationStartTime.current = Date.now();  // Record start time
 
     // Start timer
     if (timerInterval.current) {
@@ -144,6 +148,12 @@ export default function ResultsPage() {
             setGenerationStage('completed');
             setIsGenerating(false);
             retryCount.current = 0;
+            trackEvent('homestyling.generate_complete', undefined, {
+              session_id: sessionId,
+              views_count: sessionData.views_count,
+              duration_ms: Date.now() - generationStartTime.current,
+              success: true,
+            });
             router.push(`/purchases/${sessionId}`);
             return;
           } else if (sessionData.status === 'failed') {

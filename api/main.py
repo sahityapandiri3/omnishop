@@ -38,6 +38,7 @@ try:
     from routers import (
         admin_curated,
         admin_migrations,
+        analytics,
         auth,
         categories,
         chat,
@@ -418,6 +419,9 @@ if "wall_textures" in dir():
 
 if "floor_tiles" in dir():
     app.include_router(floor_tiles.router, prefix="/api", tags=["floor-tiles"])
+
+if "analytics" in dir():
+    app.include_router(analytics.router, prefix="/api", tags=["analytics"])
 
 # Additional routers can be added here as needed
 

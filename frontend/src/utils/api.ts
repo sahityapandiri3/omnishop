@@ -902,9 +902,32 @@ export const imageAPI = {
 };
 
 export const analyticsAPI = {
-  trackProductView: async (productId: number) => { /* Mock */ },
-  trackSearch: async (query: string, results_count: number) => { /* Mock */ },
-  trackChatInteraction: async (sessionId: string, messageType: string) => { /* Mock */ }
+  // Core tracking methods
+  trackEvent: (event_type: string, step_name?: string, event_data?: Record<string, unknown>) =>
+    api.post('/api/analytics/track', { event_type, step_name, event_data }),
+  trackBatch: (events: Array<{ event_type: string; step_name?: string; event_data?: Record<string, unknown>; page_url?: string; timestamp?: string }>) =>
+    api.post('/api/analytics/track/batch', { events }),
+
+  // Backward-compatible convenience wrappers
+  trackProductView: (productId: number) =>
+    api.post('/api/analytics/track', { event_type: 'product.view', step_name: 'detail', event_data: { product_id: productId } }),
+  trackSearch: (query: string, results_count: number) =>
+    api.post('/api/analytics/track', { event_type: 'product.search', step_name: 'search', event_data: { query, results_count } }),
+  trackChatInteraction: (sessionId: string, messageType: string) =>
+    api.post('/api/analytics/track', { event_type: 'chat.message_sent', step_name: 'message', event_data: { session_id: sessionId, message_type: messageType } }),
+
+  // Admin dashboard endpoints
+  getOverview: (days: number = 7) => api.get(`/api/analytics/admin/overview?days=${days}`),
+  getFunnel: (days: number = 7) => api.get(`/api/analytics/admin/funnel?days=${days}`),
+  getPages: (days: number = 7) => api.get(`/api/analytics/admin/pages?days=${days}`),
+  getFeatures: (days: number = 7) => api.get(`/api/analytics/admin/features?days=${days}`),
+  getDropoff: (days: number = 7) => api.get(`/api/analytics/admin/dropoff?days=${days}`),
+  // Detailed event views
+  getActiveUsers: (days: number = 7) => api.get(`/api/analytics/admin/users?days=${days}`),
+  getSearches: (days: number = 7, userId?: string, limit: number = 50) =>
+    api.get(`/api/analytics/admin/searches?days=${days}${userId ? `&user_id=${userId}` : ''}&limit=${limit}`),
+  getVisualizations: (days: number = 7, userId?: string, limit: number = 50) =>
+    api.get(`/api/analytics/admin/visualizations?days=${days}${userId ? `&user_id=${userId}` : ''}&limit=${limit}`),
 };
 
 // Curated Styling API

@@ -721,11 +721,12 @@ class AnalyticsEvent(Base):
     __tablename__ = "analytics_events"
 
     id = Column(Integer, primary_key=True, index=True)
-    event_type = Column(String(50), nullable=False, index=True)  # "page_view", "preferences_selected", etc.
+    event_type = Column(String(100), nullable=False, index=True)  # "category.action" format, e.g. "page.view"
     session_id = Column(String(36), nullable=True, index=True)  # HomeStylingSession ID
     user_id = Column(String(36), nullable=True, index=True)
-    step_name = Column(String(50), nullable=True)  # "preferences", "upload", "tier", "results"
+    step_name = Column(String(100), nullable=True)  # Funnel step name
     event_data = Column(JSON, default=dict)  # Additional event data (renamed from 'metadata' which is reserved)
+    page_url = Column(String(500), nullable=True)  # Page URL where event occurred
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
@@ -735,6 +736,7 @@ class AnalyticsEvent(Base):
         Index("idx_analytics_event_type_created", "event_type", "created_at"),
         Index("idx_analytics_session_created", "session_id", "created_at"),
         Index("idx_analytics_user_created", "user_id", "created_at"),
+        Index("idx_analytics_user_event_type", "user_id", "event_type", "created_at"),
     )
 
     def __repr__(self):

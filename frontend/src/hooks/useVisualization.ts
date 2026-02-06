@@ -101,6 +101,9 @@ export interface UseVisualizationProps {
 
   /** Configuration options */
   config?: VisualizationConfig;
+
+  /** Optional analytics callback for tracking visualization events */
+  onTrackEvent?: (eventType: string, stepName?: string, eventData?: Record<string, unknown>) => void;
 }
 
 // ============================================================================
@@ -133,6 +136,7 @@ export function useVisualization({
   initialVisualizationImage,
   initialVisualizationHistory = [],
   config = {},
+  onTrackEvent,
 }: UseVisualizationProps): UseVisualizationReturn {
   // Derive products/wallColor/textureVariant from canvasItems if provided
   const products = canvasItemsProp ? extractProducts(canvasItemsProp) : productsProp;
@@ -397,6 +401,43 @@ export function useVisualization({
       baseImage: baseImage ? 'exists' : 'null',
     });
 
+    const vizStartTime = Date.now();
+
+    // Track API method used for analytics
+    let vizMethod = 'unknown';
+
+    // Build comprehensive tracking data for analytics
+    const trackingData: Record<string, unknown> = {
+      product_count: products.length,
+      products: products.map(p => ({
+        id: p.id,
+        name: p.name,
+        category: p.category,
+      })),
+    };
+    if (wallColor) {
+      trackingData.wall_color = {
+        id: wallColor.id,
+        name: wallColor.name,
+        code: wallColor.code,
+        hex: wallColor.hex_value,
+      };
+    }
+    if (textureVariant) {
+      trackingData.wall_texture = {
+        id: textureVariant.id,
+        name: textureVariant.name,
+      };
+    }
+    if (floorTile) {
+      trackingData.floor_tile = {
+        id: floorTile.id,
+        name: floorTile.name,
+      };
+    }
+
+    // Note: visualize_start tracking removed - only track complete events for cleaner analytics
+
     setIsVisualizing(true);
     setVisualizationStartTime(Date.now());
     setVisualizationProgress('Preparing visualization...');
@@ -453,6 +494,7 @@ export function useVisualization({
             const surfaceData = await response.json();
             if (surfaceData.success && surfaceData.rendered_image) {
               newImage = surfaceData.rendered_image;
+              vizMethod = 'apply_surfaces';
               console.log('[useVisualization] Combined surface call succeeded:', surfaceData.surfaces_applied);
             } else {
               console.warn('[useVisualization] Combined surface call returned failure:', surfaceData.error_message);
@@ -467,6 +509,7 @@ export function useVisualization({
         // Fallback: sequential calls if combined call failed
         if (!newImage) {
           console.log('[useVisualization] Falling back to sequential surface calls');
+          vizMethod = 'sequential_surfaces';
           newImage = startImage;
 
           if (hasWallColor && wallColor) {
@@ -854,6 +897,9 @@ export function useVisualization({
         throw new Error('No visualization image was generated');
       }
 
+      // Capture the visualization mode/method from the API response
+      vizMethod = data.mode || 'visualize';
+
       // Update state with new visualization
       // Texture and floor tile are now handled in the same Gemini call (unified visualization)
       const newImage = data.visualization.rendered_image;
@@ -879,6 +925,12 @@ export function useVisualization({
       });
 
       console.log('[useVisualization] Visualization successful, tracked room image');
+      onTrackEvent?.('design.visualize_complete', undefined, {
+        ...trackingData,
+        method: vizMethod,
+        success: true,
+        duration_ms: Date.now() - vizStartTime,
+      });
 
     } catch (error: unknown) {
       console.error('[useVisualization] Visualization error:', error);

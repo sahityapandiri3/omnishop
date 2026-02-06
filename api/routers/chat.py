@@ -3919,6 +3919,14 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 # Never fail the main request due to precomputation
                 logger.warning(f"[Precompute] Failed to trigger: {precompute_error}")
 
+        # Determine mode for analytics tracking
+        if forced_incremental:
+            viz_mode = "add_visualization_sequential"
+        elif is_incremental:
+            viz_mode = "add_visualization"
+        else:
+            viz_mode = "visualize"
+
         return {
             "visualization": {
                 "rendered_image": viz_result.rendered_image,
@@ -3930,6 +3938,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     "confidence_score": viz_result.confidence_score if hasattr(viz_result, "confidence_score") else 0.87,
                 },
             },
+            "mode": viz_mode,
             "message": message,
             "technical_note": "Generative AI models create new images rather than edit existing ones. Some variation in room structure is expected.",
             "can_undo": conversation_context_manager.can_undo(session_id),

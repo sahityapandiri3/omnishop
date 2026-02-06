@@ -764,6 +764,13 @@ Before outputting, verify:
  Camera angle and perspective unchanged
  Lighting is realistic on the textured wall
 
+CRITICAL OUTPUT REQUIREMENT:
+You MUST output the ROOM IMAGE (the FIRST image) with the wall texture applied.
+DO NOT output the texture swatch image (second image).
+DO NOT output just the texture pattern.
+The output must be the COMPLETE ROOM with furniture, floor, ceiling, etc.
+Only the PRIMARY WALL surface should be changed to show the texture.
+
 OUTPUT: One photorealistic image showing THE ENTIRE ROOM with ONLY the primary wall finished in {texture_name}.
 Side walls and adjacent walls must keep their ORIGINAL appearance.
 The primary wall must appear as ONE SEAMLESS continuous textured surface — no tiling, no seams, no repetition.
@@ -854,7 +861,14 @@ TILE INFO:
  ALL furniture, walls, and ceiling are unchanged
  Image dimensions match input exactly
 
-OUTPUT: One photorealistic image with floor tiled using the {tile_name} pattern.
+CRITICAL OUTPUT REQUIREMENT:
+You MUST output the ROOM IMAGE (the FIRST image) with the floor tile applied.
+DO NOT output the tile swatch image (second image).
+DO NOT output just the tile pattern.
+The output must be the COMPLETE ROOM with furniture, walls, ceiling, etc.
+Only the FLOOR surface should be changed to show the tile pattern.
+
+OUTPUT: The complete room photograph (from FIRST IMAGE) with floor surfaces re-textured using the {tile_name} tile pattern from the swatch.
 """
 
 
@@ -4490,19 +4504,33 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 )
 
                 if output_width != input_width or output_height != input_height:
-                    logger.warning(
-                        f"[AddMultiple] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
-                    )
-                    if output_img.mode != "RGB":
-                        output_img = output_img.convert("RGB")
-                    output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
+                    # Check aspect ratio difference to avoid distortion
+                    input_aspect = input_width / input_height
+                    output_aspect = output_width / output_height
+                    aspect_diff = abs(input_aspect - output_aspect) / input_aspect
 
-                    buffer = io.BytesIO()
-                    output_img.save(buffer, format="PNG", optimize=False)
-                    buffer.seek(0)
-                    resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-                    generated_image = f"data:image/png;base64,{resized_b64}"
-                    logger.info(f"[AddMultiple] Resized output to match input: {input_width}x{input_height}")
+                    if aspect_diff > 0.1:  # More than 10% aspect ratio difference
+                        logger.warning(
+                            f"[AddMultiple] Aspect ratio mismatch too large ({aspect_diff:.1%})! "
+                            f"Input: {input_width}x{input_height} ({input_aspect:.2f}), "
+                            f"Output: {output_width}x{output_height} ({output_aspect:.2f}). "
+                            f"NOT resizing to avoid distortion - returning output as-is."
+                        )
+                        # Don't resize - return as-is to avoid distortion
+                    else:
+                        logger.warning(
+                            f"[AddMultiple] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
+                        )
+                        if output_img.mode != "RGB":
+                            output_img = output_img.convert("RGB")
+                        output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
+
+                        buffer = io.BytesIO()
+                        output_img.save(buffer, format="PNG", optimize=False)
+                        buffer.seek(0)
+                        resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                        generated_image = f"data:image/png;base64,{resized_b64}"
+                        logger.info(f"[AddMultiple] Resized output to match input: {input_width}x{input_height}")
             except Exception as resize_err:
                 logger.warning(f"[AddMultiple] Could not verify/fix output resolution: {resize_err}")
 
@@ -5499,23 +5527,37 @@ Create a photorealistic interior design visualization that addresses the user's 
                         f"[VIZ] Output resolution: {output_width}x{output_height}, Input was: {input_width}x{input_height}"
                     )
 
-                    # If output is significantly different from input, resize with high quality
+                    # If output is significantly different from input, check aspect ratio before resizing
                     if output_width != input_width or output_height != input_height:
-                        logger.warning(
-                            f"[VIZ] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
-                        )
-                        if output_img.mode != "RGB":
-                            output_img = output_img.convert("RGB")
-                        # Use LANCZOS for high-quality upscaling/downscaling
-                        output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
+                        # Check aspect ratio difference to avoid distortion
+                        input_aspect = input_width / input_height
+                        output_aspect = output_width / output_height
+                        aspect_diff = abs(input_aspect - output_aspect) / input_aspect
 
-                        # Re-encode to base64 with high quality
-                        buffer = io.BytesIO()
-                        output_img.save(buffer, format="PNG", optimize=False)
-                        buffer.seek(0)
-                        resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-                        transformed_image = f"data:image/png;base64,{resized_b64}"
-                        logger.info(f"[VIZ] Resized output to match input: {input_width}x{input_height}")
+                        if aspect_diff > 0.1:  # More than 10% aspect ratio difference
+                            logger.warning(
+                                f"[VIZ] Aspect ratio mismatch too large ({aspect_diff:.1%})! "
+                                f"Input: {input_width}x{input_height} ({input_aspect:.2f}), "
+                                f"Output: {output_width}x{output_height} ({output_aspect:.2f}). "
+                                f"NOT resizing to avoid distortion - returning output as-is."
+                            )
+                            # Don't resize - return as-is to avoid distortion
+                        else:
+                            logger.warning(
+                                f"[VIZ] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
+                            )
+                            if output_img.mode != "RGB":
+                                output_img = output_img.convert("RGB")
+                            # Use LANCZOS for high-quality upscaling/downscaling
+                            output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
+
+                            # Re-encode to base64 with high quality
+                            buffer = io.BytesIO()
+                            output_img.save(buffer, format="PNG", optimize=False)
+                            buffer.seek(0)
+                            resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                            transformed_image = f"data:image/png;base64,{resized_b64}"
+                            logger.info(f"[VIZ] Resized output to match input: {input_width}x{input_height}")
                 except Exception as resize_err:
                     logger.warning(f"[VIZ] Could not verify/fix output resolution: {resize_err}")
 
@@ -7364,7 +7406,7 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
                 session_id=session_id,
             )
 
-            # Resize output to match input dimensions if they differ
+            # Validate and resize output to match input dimensions if they differ
             try:
                 if generated_image.startswith("data:"):
                     prefix_end = generated_image.index(",") + 1
@@ -7376,23 +7418,49 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
                 output_img = Image.open(io.BytesIO(output_bytes))
                 output_width, output_height = output_img.size
                 logger.info(
-                    f"[WallTexture] Output resolution: {output_width}x{output_height}, Input was: {input_width}x{input_height}"
+                    f"[WallTexture] Output resolution: {output_width}x{output_height}, Input was: {input_width}x{input_height}, Texture swatch was: {texture_width}x{texture_height}"
                 )
 
-                if output_width != input_width or output_height != input_height:
-                    logger.warning(
-                        f"[WallTexture] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
-                    )
-                    if output_img.mode != "RGB":
-                        output_img = output_img.convert("RGB")
-                    output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
+                # VALIDATION: Check if Gemini returned the texture swatch instead of the room
+                # If output matches swatch dimensions but not room dimensions, this is likely wrong
+                output_matches_swatch = (output_width == texture_width and output_height == texture_height)
+                output_matches_room = (output_width == input_width and output_height == input_height)
 
-                    buffer = io.BytesIO()
-                    output_img.save(buffer, format="PNG", optimize=False)
-                    buffer.seek(0)
-                    resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-                    generated_image = f"data:image/png;base64,{resized_b64}"
-                    logger.info(f"[WallTexture] Resized output to match input: {input_width}x{input_height}")
+                if output_matches_swatch and not output_matches_room:
+                    logger.error(
+                        f"[WallTexture] VALIDATION FAILED: Output ({output_width}x{output_height}) matches swatch dimensions, not room. "
+                        f"Gemini likely returned the swatch instead of the modified room. Rejecting result."
+                    )
+                    return None
+
+                if output_width != input_width or output_height != input_height:
+                    # Check aspect ratio difference to avoid distortion
+                    input_aspect = input_width / input_height
+                    output_aspect = output_width / output_height
+                    aspect_diff = abs(input_aspect - output_aspect) / input_aspect
+
+                    if aspect_diff > 0.1:  # More than 10% aspect ratio difference
+                        logger.warning(
+                            f"[WallTexture] Aspect ratio mismatch too large ({aspect_diff:.1%})! "
+                            f"Input: {input_width}x{input_height} ({input_aspect:.2f}), "
+                            f"Output: {output_width}x{output_height} ({output_aspect:.2f}). "
+                            f"NOT resizing to avoid distortion - returning output as-is."
+                        )
+                        # Don't resize - return as-is to avoid distortion
+                    else:
+                        logger.warning(
+                            f"[WallTexture] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
+                        )
+                        if output_img.mode != "RGB":
+                            output_img = output_img.convert("RGB")
+                        output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
+
+                        buffer = io.BytesIO()
+                        output_img.save(buffer, format="PNG", optimize=False)
+                        buffer.seek(0)
+                        resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                        generated_image = f"data:image/png;base64,{resized_b64}"
+                        logger.info(f"[WallTexture] Resized output to match input: {input_width}x{input_height}")
             except Exception as resize_err:
                 logger.warning(f"[WallTexture] Could not verify/fix output resolution: {resize_err}")
 
@@ -7960,7 +8028,7 @@ RULES:
                 session_id=session_id,
             )
 
-            # Resize output to match input dimensions if they differ
+            # Validate and resize output to match input dimensions if they differ
             try:
                 # Strip data URI prefix to get raw base64
                 if generated_image.startswith("data:"):
@@ -7973,23 +8041,49 @@ RULES:
                 output_img = Image.open(io.BytesIO(output_bytes))
                 output_width, output_height = output_img.size
                 logger.info(
-                    f"[FloorTile] Output resolution: {output_width}x{output_height}, Input was: {input_width}x{input_height}"
+                    f"[FloorTile] Output resolution: {output_width}x{output_height}, Input was: {input_width}x{input_height}, Swatch was: {swatch_width}x{swatch_height}"
                 )
 
-                if output_width != input_width or output_height != input_height:
-                    logger.warning(
-                        f"[FloorTile] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
-                    )
-                    if output_img.mode != "RGB":
-                        output_img = output_img.convert("RGB")
-                    output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
+                # VALIDATION: Check if Gemini returned the swatch instead of the room
+                # If output matches swatch dimensions but not room dimensions, this is likely wrong
+                output_matches_swatch = (output_width == swatch_width and output_height == swatch_height)
+                output_matches_room = (output_width == input_width and output_height == input_height)
 
-                    buffer = io.BytesIO()
-                    output_img.save(buffer, format="PNG", optimize=False)
-                    buffer.seek(0)
-                    resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-                    generated_image = f"data:image/png;base64,{resized_b64}"
-                    logger.info(f"[FloorTile] Resized output to match input: {input_width}x{input_height}")
+                if output_matches_swatch and not output_matches_room:
+                    logger.error(
+                        f"[FloorTile] VALIDATION FAILED: Output ({output_width}x{output_height}) matches swatch dimensions, not room. "
+                        f"Gemini likely returned the swatch instead of the modified room. Rejecting result."
+                    )
+                    return None
+
+                if output_width != input_width or output_height != input_height:
+                    # Check aspect ratio difference to avoid distortion
+                    input_aspect = input_width / input_height
+                    output_aspect = output_width / output_height
+                    aspect_diff = abs(input_aspect - output_aspect) / input_aspect
+
+                    if aspect_diff > 0.1:  # More than 10% aspect ratio difference
+                        logger.warning(
+                            f"[FloorTile] Aspect ratio mismatch too large ({aspect_diff:.1%})! "
+                            f"Input: {input_width}x{input_height} ({input_aspect:.2f}), "
+                            f"Output: {output_width}x{output_height} ({output_aspect:.2f}). "
+                            f"NOT resizing to avoid distortion - returning output as-is."
+                        )
+                        # Don't resize - return as-is to avoid distortion
+                    else:
+                        logger.warning(
+                            f"[FloorTile] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
+                        )
+                        if output_img.mode != "RGB":
+                            output_img = output_img.convert("RGB")
+                        output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
+
+                        buffer = io.BytesIO()
+                        output_img.save(buffer, format="PNG", optimize=False)
+                        buffer.seek(0)
+                        resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                        generated_image = f"data:image/png;base64,{resized_b64}"
+                        logger.info(f"[FloorTile] Resized output to match input: {input_width}x{input_height}")
             except Exception as resize_err:
                 logger.warning(f"[FloorTile] Could not verify/fix output resolution: {resize_err}")
 

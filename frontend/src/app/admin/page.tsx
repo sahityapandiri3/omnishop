@@ -85,23 +85,29 @@ function AdminPageContent() {
             </div>
           </Link>
 
-          {/* Products Card (placeholder for future) */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 opacity-60">
+          {/* User Analytics Card */}
+          <Link
+            href="/admin/analytics"
+            className="block bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-lg hover:border-amber-300 transition-all group"
+          >
             <div className="flex items-center mb-4">
-              <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+              <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center group-hover:bg-amber-200 transition-colors">
+                <svg className="w-6 h-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
               </div>
             </div>
-            <h2 className="text-xl font-semibold text-gray-500 mb-2">Products</h2>
-            <p className="text-gray-400 text-sm">
-              View and manage product catalog from connected stores.
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">User Analytics</h2>
+            <p className="text-gray-600 text-sm">
+              Track user funnels, page views, feature usage, and drop-off analysis.
             </p>
-            <div className="mt-4 text-gray-400 text-sm">
-              Coming soon
+            <div className="mt-4 flex items-center text-amber-600 font-medium text-sm group-hover:text-amber-700">
+              View Analytics
+              <svg className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
             </div>
-          </div>
+          </Link>
         </div>
       </div>
     </div>
