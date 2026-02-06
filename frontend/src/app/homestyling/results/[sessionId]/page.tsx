@@ -246,7 +246,7 @@ export default function ResultsPage() {
         setTotalViews(sessionData.views_count || 1);
 
         // Check if we need to start generation
-        if (sessionData.status === 'tier_selection' || sessionData.status === 'upload') {
+        if (sessionData.status === 'preferences' || sessionData.status === 'tier_selection' || sessionData.status === 'upload') {
           // Generation hasn't started yet - start it
           setLoading(false);
           startGeneration();
