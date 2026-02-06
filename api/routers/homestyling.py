@@ -241,17 +241,22 @@ async def get_previous_rooms(
     try:
         # Query sessions with clean_room_image, ordered by most recent
         # Exclude sessions where the image was copied from another session (source_session_id is set)
-        query = (
-            select(HomeStylingSession)
-            .where(HomeStylingSession.clean_room_image.isnot(None))
-            .where(HomeStylingSession.source_session_id.is_(None))  # Only original uploads
-            .order_by(HomeStylingSession.created_at.desc())
-            .limit(limit)
-        )
+        # IMPORTANT: User filter MUST be applied BEFORE limit, otherwise limit cuts off user's older rooms
+        conditions = [
+            HomeStylingSession.clean_room_image.isnot(None),
+            HomeStylingSession.source_session_id.is_(None),  # Only original uploads
+        ]
 
         # If user is logged in, only show their rooms
         if current_user:
-            query = query.where(HomeStylingSession.user_id == current_user.id)
+            conditions.append(HomeStylingSession.user_id == current_user.id)
+
+        query = (
+            select(HomeStylingSession)
+            .where(*conditions)
+            .order_by(HomeStylingSession.created_at.desc())
+            .limit(limit)
+        )
 
         result = await db.execute(query)
         sessions = result.scalars().all()

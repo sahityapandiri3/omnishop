@@ -14,6 +14,7 @@ import asyncio
 import logging
 import os
 import sys
+from typing import Optional
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -35,7 +36,7 @@ elif DATABASE_URL.startswith("postgresql://") and "asyncpg" not in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 
-async def find_user_for_session(db: AsyncSession, session_id: str) -> str | None:
+async def find_user_for_session(db: AsyncSession, session_id: str) -> Optional[str]:
     """
     Try to find the user who owns a session by looking at:
     1. ApiUsage records with the same session_id
