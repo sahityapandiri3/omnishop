@@ -465,47 +465,65 @@ async def admin_searches(
     Get detailed search and filter events.
     Shows search queries, result counts, and filters applied.
     """
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    try:
+        cutoff = datetime.utcnow() - timedelta(days=days)
 
-    # Build query
-    conditions = [
-        AnalyticsEvent.created_at >= cutoff,
-        AnalyticsEvent.event_type.in_(["product.search", "product.filter"]),
-    ]
-    if user_id:
-        conditions.append(AnalyticsEvent.user_id == user_id)
+        # Build query
+        conditions = [
+            AnalyticsEvent.created_at >= cutoff,
+            AnalyticsEvent.event_type.in_(["product.search", "product.filter"]),
+        ]
+        if user_id:
+            conditions.append(AnalyticsEvent.user_id == user_id)
 
-    q = await db.execute(select(AnalyticsEvent).where(*conditions).order_by(AnalyticsEvent.created_at.desc()).limit(limit))
-    events = q.scalars().all()
+        q = await db.execute(select(AnalyticsEvent).where(*conditions).order_by(AnalyticsEvent.created_at.desc()).limit(limit))
+        events = q.scalars().all()
 
-    # Get user emails for display
-    user_ids = list(set(e.user_id for e in events if e.user_id))
-    users_map = {}
-    if user_ids:
-        users_q = await db.execute(select(User.id, User.email).where(User.id.in_(user_ids)))
-        users_map = {row.id: row.email for row in users_q.fetchall()}
+        # Get user emails for display
+        user_ids = list(set(e.user_id for e in events if e.user_id))
+        users_map = {}
+        if user_ids:
+            users_q = await db.execute(select(User.id, User.email).where(User.id.in_(user_ids)))
+            users_map = {row.id: row.email for row in users_q.fetchall()}
 
-    # Count total
-    count_q = await db.execute(select(func.count(AnalyticsEvent.id)).where(*conditions))
-    total = count_q.scalar() or 0
+        # Count total
+        count_q = await db.execute(select(func.count(AnalyticsEvent.id)).where(*conditions))
+        total = count_q.scalar() or 0
 
-    search_events = []
-    for e in events:
-        event_data = e.event_data or {}
-        search_events.append(
-            SearchEvent(
-                id=e.id,
-                user_id=e.user_id,
-                user_email=users_map.get(e.user_id) if e.user_id else None,
-                query=event_data.get("query"),
-                results_count=event_data.get("results_count"),
-                filters_applied=event_data.get("filters_applied") or event_data,
-                page_url=e.page_url,
-                created_at=e.created_at,
-            )
-        )
+        search_events = []
+        for e in events:
+            try:
+                event_data = e.event_data or {}
+                # Get filters_applied, or use specific fields from event_data (not the whole dict)
+                filters = event_data.get("filters_applied")
+                if not filters:
+                    # Extract relevant filter fields only (avoid non-serializable types)
+                    filters = {
+                        k: v
+                        for k, v in event_data.items()
+                        if k in ["categories", "brands", "price_min", "price_max", "sort_by", "filters"] and v is not None
+                    }
+                search_events.append(
+                    SearchEvent(
+                        id=e.id,
+                        user_id=str(e.user_id) if e.user_id else None,
+                        user_email=users_map.get(e.user_id) if e.user_id else None,
+                        query=event_data.get("query"),
+                        results_count=event_data.get("results_count"),
+                        filters_applied=filters if filters else None,
+                        page_url=e.page_url,
+                        created_at=e.created_at,
+                    )
+                )
+            except Exception as evt_error:
+                logger.error(f"Error processing search event {e.id}: {evt_error}")
+                continue
 
-    return SearchEventsResponse(events=search_events, total=total)
+        return SearchEventsResponse(events=search_events, total=total)
+    except Exception as e:
+        logger.error(f"Error in admin_searches endpoint: {e}", exc_info=True)
+        # Return empty response with error logged, rather than crashing
+        return SearchEventsResponse(events=[], total=0)
 
 
 @router.get("/admin/visualizations", response_model=VisualizationEventsResponse)
