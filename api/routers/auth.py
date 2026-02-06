@@ -1,6 +1,7 @@
 """
 Authentication API routes
 """
+import enum
 import logging
 import os
 from datetime import datetime, timedelta
@@ -281,6 +282,10 @@ async def upgrade_subscription(
     - advanced: Full Omni Studio access (₹11,999/mo)
     - curator: Full access + publish to gallery (₹14,999/mo)
 
+    IMPORTANT: Advanced and Curator are monthly subscriptions that persist.
+    Users with these tiers can still use lower tiers for homestyling sessions,
+    but their account badge always shows Advanced/Curator until subscription expires.
+
     TODO: Integrate with Razorpay/Stripe for actual payment processing.
     """
     try:
@@ -289,7 +294,28 @@ async def upgrade_subscription(
         if request.tier not in valid_tiers:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid tier. Must be one of: {valid_tiers}")
 
-        # Update user's subscription tier
+        # Monthly subscription tiers that should never be downgraded automatically
+        monthly_tiers = ["advanced", "curator", "upgraded"]
+        lower_tiers = ["free", "basic", "basic_plus"]
+
+        current_tier = current_user.subscription_tier
+        if isinstance(current_tier, enum.Enum):
+            current_tier = current_tier.value
+
+        # Protect Advanced/Curator users from accidental downgrades
+        # They keep their badge even when selecting lower tiers for homestyling sessions
+        if current_tier in monthly_tiers and request.tier in lower_tiers:
+            logger.info(
+                f"User {current_user.email} selected {request.tier} for session but keeping {current_tier} subscription"
+            )
+            # Return success but keep the original tier
+            return UpgradeResponse(
+                success=True,
+                subscription_tier=current_tier,
+                message=f"Session tier set to {request.tier}, but your {current_tier} subscription is preserved"
+            )
+
+        # Update user's subscription tier (for actual upgrades or non-monthly users)
         current_user.subscription_tier = request.tier
         await db.commit()
         await db.refresh(current_user)
