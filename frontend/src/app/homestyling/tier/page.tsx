@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTrackEvent } from '@/contexts/AnalyticsContext';
 
 type TierType = 'free' | 'basic' | 'premium';
 
@@ -41,6 +42,7 @@ const TIERS = [
 export default function TierSelectionPage() {
   const router = useRouter();
   const { isAuthenticated, isLoading } = useAuth();
+  const trackEvent = useTrackEvent();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [selectedTier, setSelectedTier] = useState<TierType | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -82,6 +84,9 @@ export default function TierSelectionPage() {
       await api.post(`/api/homestyling/sessions/${sessionId}/select-tier`, {
         tier: selectedTier,
       });
+
+      const tierData = TIERS.find((t) => t.value === selectedTier);
+      trackEvent('homestyling.tier_selected', undefined, { tier: selectedTier, views_count: tierData?.views });
 
       // Navigate to results page immediately - generation will happen there
       router.push(`/homestyling/results/${sessionId}`);

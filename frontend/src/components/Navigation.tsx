@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useState, useRef, useEffect } from 'react'
 import { Bars3Icon, XMarkIcon, UserCircleIcon, FolderIcon, ArrowRightOnRectangleIcon, ArrowLeftOnRectangleIcon } from '@heroicons/react/24/outline'
 import { useAuth, isAdmin, isSuperAdmin, canAccessDesignStudio, canAccessCurated } from '@/contexts/AuthContext'
+import { useTrackEvent } from '@/contexts/AnalyticsContext'
 
 // Base navigation - shown to all users
 const baseNavigation = [
@@ -42,6 +43,7 @@ export function Navigation() {
   const userMenuRef = useRef<HTMLDivElement>(null)
 
   const { user, isAuthenticated, isLoading, logout } = useAuth()
+  const trackEvent = useTrackEvent()
   const [imageError, setImageError] = useState(false)
 
   // Close user menu when clicking outside
@@ -57,6 +59,7 @@ export function Navigation() {
   }, [])
 
   const handleLogout = () => {
+    trackEvent('auth.logout')
     logout()
     setUserMenuOpen(false)
     router.push('/')

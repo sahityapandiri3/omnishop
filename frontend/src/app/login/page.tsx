@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
 import { useAuth, canAccessDesignStudio } from '@/contexts/AuthContext';
+import { useTrackEvent } from '@/contexts/AnalyticsContext';
 
 type AuthMode = 'login' | 'register';
 
@@ -15,6 +16,7 @@ export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login, register, loginWithGoogle, isAuthenticated, isLoading, user } = useAuth();
+  const trackEvent = useTrackEvent();
 
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
@@ -63,8 +65,10 @@ export default function LoginPage() {
       let loggedInUser;
       if (mode === 'login') {
         loggedInUser = await login(email, password);
+        trackEvent('auth.login', undefined, { method: 'email' });
       } else {
         loggedInUser = await register(email, password, name);
+        trackEvent('auth.signup', undefined, { method: 'email', tier: loggedInUser?.subscription_tier });
       }
       // Use explicit redirect if available, otherwise determine by user tier
       const targetUrl = explicitRedirectUrl || (canAccessDesignStudio(loggedInUser) ? '/projects' : '/pricing');
@@ -87,6 +91,7 @@ export default function LoginPage() {
 
     try {
       const loggedInUser = await loginWithGoogle(credentialResponse.credential);
+      trackEvent('auth.login', undefined, { method: 'google' });
       // Use explicit redirect if available, otherwise determine by user tier
       const targetUrl = explicitRedirectUrl || (canAccessDesignStudio(loggedInUser) ? '/projects' : '/pricing');
       router.push(targetUrl);

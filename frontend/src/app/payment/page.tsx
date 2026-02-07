@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { authAPI } from '@/utils/api';
+import { useTrackEvent } from '@/contexts/AnalyticsContext';
 
 type PricingTier = 'free' | 'basic' | 'basic_plus' | 'advanced' | 'curator';
 
@@ -59,6 +60,7 @@ function PaymentPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, refreshUser } = useAuth();
+  const trackEvent = useTrackEvent();
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedTier, setSelectedTier] = useState<PricingTier>('basic');
 
@@ -89,6 +91,7 @@ function PaymentPageContent() {
       if (refreshUser) {
         await refreshUser();
       }
+      trackEvent('auth.upgrade', undefined, { from_tier: user?.subscription_tier, to_tier: selectedTier });
 
       // Store payment info in sessionStorage
       sessionStorage.setItem('paymentCompleted', 'true');

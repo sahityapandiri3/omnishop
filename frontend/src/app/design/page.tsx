@@ -77,6 +77,7 @@ import { checkFurnitureRemovalStatus, startFurnitureRemoval, getCategorizedStore
 import { STYLE_LABEL_OPTIONS, BUDGET_TIER_OPTIONS } from '@/constants/products';
 import { calculateBudgetTier } from '@/utils/product-transforms';
 import { useAuth, canPublishLooks } from '@/contexts/AuthContext';
+import { useTrackEvent } from '@/contexts/AnalyticsContext';
 import { useNavigationGuard } from '@/hooks/useNavigationGuard';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 
@@ -89,6 +90,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
  * - Right Panel (25%): Canvas & Visualization
  */
 function DesignPageContent() {
+  const trackEvent = useTrackEvent();
   // Mobile tab state
   const [activeTab, setActiveTab] = useState<'chat' | 'products' | 'canvas'>('chat');
 
@@ -715,6 +717,7 @@ function DesignPageContent() {
             name: `New Design ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
           });
           console.log('[DesignPage] Auto-created new project:', newProject.id, newProject.name);
+          trackEvent('design.project_create', undefined, { project_id: newProject.id });
 
           // Mark this project ID as newly created so we know to use sessionStorage data for it
           sessionStorage.setItem('newlyCreatedProjectId', newProject.id);
@@ -1757,6 +1760,7 @@ function DesignPageContent() {
   const handleRoomImageUpload = async (imageData: string, isAlreadyProcessed: boolean = false) => {
     try {
       console.log('[DesignPage] Starting room image upload...', { isAlreadyProcessed });
+      trackEvent('design.image_upload', undefined, { project_id: projectId });
 
       // If the room is already processed (from previous rooms), skip furniture removal
       if (isAlreadyProcessed) {

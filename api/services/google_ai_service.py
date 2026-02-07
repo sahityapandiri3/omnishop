@@ -7423,8 +7423,8 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
 
                 # VALIDATION: Check if Gemini returned the texture swatch instead of the room
                 # If output matches swatch dimensions but not room dimensions, this is likely wrong
-                output_matches_swatch = (output_width == texture_width and output_height == texture_height)
-                output_matches_room = (output_width == input_width and output_height == input_height)
+                output_matches_swatch = output_width == texture_width and output_height == texture_height
+                output_matches_room = output_width == input_width and output_height == input_height
 
                 if output_matches_swatch and not output_matches_room:
                     logger.error(
@@ -8046,8 +8046,8 @@ RULES:
 
                 # VALIDATION: Check if Gemini returned the swatch instead of the room
                 # If output matches swatch dimensions but not room dimensions, this is likely wrong
-                output_matches_swatch = (output_width == swatch_width and output_height == swatch_height)
-                output_matches_room = (output_width == input_width and output_height == input_height)
+                output_matches_swatch = output_width == swatch_width and output_height == swatch_height
+                output_matches_room = output_width == input_width and output_height == input_height
 
                 if output_matches_swatch and not output_matches_room:
                     logger.error(

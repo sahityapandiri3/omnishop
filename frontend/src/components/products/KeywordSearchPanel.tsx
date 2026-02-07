@@ -9,6 +9,7 @@ import { ProductResultsGrid } from './ProductResultsGrid';
 import { ProductFilterPanel, FilterToggleButton } from './ProductFilterPanel';
 import { ProductFilters, useProductFilters } from '@/hooks/useProductFilters';
 import { ProductDetailModal } from '../ProductDetailModal';
+import { useTrackEvent } from '@/contexts/AnalyticsContext';
 
 // Ref handle interface for parent to call loadMore
 export interface KeywordSearchPanelRef {
@@ -84,6 +85,9 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
   showFilters: externalShowFilters,
   onShowFiltersChange,
 }, ref) {
+  // Analytics tracking
+  const trackEvent = useTrackEvent();
+
   // Search state
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [isSearching, setIsSearching] = useState(false);
@@ -195,13 +199,30 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
       setTotalRelated(response.total_related || 0);
       setHasMore(response.has_more);
       hasSearchedRef.current = true;
+
+      // Track search event for analytics
+      if (resetPage) {
+        const filtersApplied: Record<string, unknown> = {};
+        if (selectedStores.length > 0) filtersApplied.stores = selectedStores;
+        if (selectedStyles.length > 0) filtersApplied.styles = selectedStyles;
+        if (selectedColors.length > 0) filtersApplied.colors = selectedColors;
+        if (selectedMaterials.length > 0) filtersApplied.materials = selectedMaterials;
+        if (priceMin > 0) filtersApplied.price_min = priceMin;
+        if (priceMax < Infinity && priceMax !== 999999) filtersApplied.price_max = priceMax;
+
+        trackEvent('product.search', undefined, {
+          query: searchQuery.trim(),
+          results_count: response.total,
+          filters_applied: Object.keys(filtersApplied).length > 0 ? filtersApplied : null,
+        });
+      }
     } catch (error) {
       console.error('Error searching products:', error);
       setSearchError('Failed to search products. Please try again.');
     } finally {
       setIsSearching(false);
     }
-  }, [searchQuery, buildSearchParams, currentPage, selectedStores, selectedStyles, selectedColors, selectedMaterials, priceMin, priceMax]);
+  }, [searchQuery, buildSearchParams, currentPage, selectedStores, selectedStyles, selectedColors, selectedMaterials, priceMin, priceMax, trackEvent]);
 
   // Load more products
   // IMPORTANT: Products from page 2+ are marked as non-primary to always append

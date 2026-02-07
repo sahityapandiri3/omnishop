@@ -9,8 +9,10 @@ import SearchBar from '@/components/SearchBar'
 import FilterSidebar from '@/components/FilterSidebar'
 import { AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { useTrackEvent } from '@/contexts/AnalyticsContext'
 
 function ProductsPageContent() {
+  const trackEvent = useTrackEvent()
   const [filters, setFilters] = useState<ProductFilters>({})
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(1)
@@ -47,11 +49,13 @@ function ProductsPageContent() {
   const handleSearch = (query: string) => {
     setSearchQuery(query)
     setPage(1) // Reset to first page on new search
+    if (query) trackEvent('product.search', undefined, { query, results_count: productsResponse?.total || 0 })
   }
 
   const handleFiltersChange = (newFilters: ProductFilters) => {
     setFilters(newFilters)
     setPage(1) // Reset to first page on filter change
+    trackEvent('product.filter', undefined, { filters_applied: newFilters })
   }
 
   const handleSortChange = (newSortBy: string, newSortDirection: string) => {

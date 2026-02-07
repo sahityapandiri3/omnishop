@@ -8,6 +8,7 @@ import { CuratedLookCard } from '@/components/curated/CuratedLookCard';
 import { LookDetailModal } from '@/components/curated/LookDetailModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { useTrackEvent } from '@/contexts/AnalyticsContext';
 
 type RoomType = 'all' | 'living_room' | 'bedroom' | 'foyer';
 type StyleOption = 'modern' | 'modern_luxury' | 'indian_contemporary';
@@ -18,6 +19,7 @@ const LOOKS_PER_PAGE = 12;
 function CuratedPageContent() {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
+  const trackEvent = useTrackEvent();
   const [looksData, setLooksData] = useState<CuratedLooksResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -32,6 +34,26 @@ function CuratedPageContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
 
+  // Track search queries on curated page (debounced)
+  useEffect(() => {
+    if (!searchQuery.trim()) return;
+
+    const timer = setTimeout(() => {
+      const filteredCount = looksData?.looks.filter(look =>
+        look.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        look.style_theme?.toLowerCase().includes(searchQuery.toLowerCase())
+      ).length || 0;
+
+      trackEvent('product.search', undefined, {
+        source: 'curated_looks',
+        query: searchQuery.trim(),
+        results_count: filteredCount,
+      });
+    }, 1000); // Debounce 1 second
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, looksData, trackEvent]);
+
   // Fetch curated looks when filter changes (reset pagination)
   useEffect(() => {
     const fetchLooks = async () => {
@@ -45,6 +67,20 @@ function CuratedPageContent() {
         const result = await getCuratedLooks(roomType, 'thumbnail', style, budget, LOOKS_PER_PAGE, 0);
         setLooksData(result);
         setHasMore(result.looks.length >= LOOKS_PER_PAGE);
+
+        // Track curated looks filter/search for analytics
+        const hasFilters = roomTypeFilter !== 'all' || selectedStyles.length > 0 || budgetFilter !== 'all';
+        if (hasFilters) {
+          trackEvent('product.filter', undefined, {
+            source: 'curated_looks',
+            results_count: result.looks.length,
+            filters_applied: {
+              room_type: roomTypeFilter !== 'all' ? roomTypeFilter : null,
+              styles: selectedStyles.length > 0 ? selectedStyles : null,
+              budget: budgetFilter !== 'all' ? budgetFilter : null,
+            },
+          });
+        }
       } catch (err: any) {
         console.error('Error fetching looks:', err);
         setError('Failed to load curated looks. Please try again.');
@@ -54,7 +90,7 @@ function CuratedPageContent() {
     };
 
     fetchLooks();
-  }, [roomTypeFilter, selectedStyles, budgetFilter]);
+  }, [roomTypeFilter, selectedStyles, budgetFilter, trackEvent]);
 
   // Load more looks
   const handleLoadMore = useCallback(async () => {
@@ -88,9 +124,11 @@ function CuratedPageContent() {
   const handleViewDetails = useCallback((look: CuratedLook) => {
     setSelectedLook(look);
     setIsModalOpen(true);
-  }, []);
+    trackEvent('curated.view_look', undefined, { look_id: look.look_id, style_theme: look.style_theme });
+  }, [trackEvent]);
 
   const handleStyleThisLook = useCallback(async (look: CuratedLook) => {
+    trackEvent('curated.use_style', undefined, { look_id: look.look_id });
     try {
       setIsCreatingProject(true);
 

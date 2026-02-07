@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import api from '@/utils/api';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { useTrackEvent } from '@/contexts/AnalyticsContext';
 
 type PricingTier = 'free' | 'basic' | 'basic_plus' | 'advanced' | 'curator';
 
@@ -89,6 +90,7 @@ const BUDGET_TIERS = [
 function PreferencesPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const trackEvent = useTrackEvent();
   const [roomType, setRoomType] = useState<RoomType | null>(null);
   const [style, setStyle] = useState<StyleType | null>(null);
   const [budgetTier, setBudgetTier] = useState<BudgetTier | null>(null);
@@ -133,6 +135,7 @@ function PreferencesPageContent() {
       const sessionId = response.data.id;
       // Store session ID in sessionStorage
       sessionStorage.setItem('homestyling_session_id', sessionId);
+      trackEvent('homestyling.preferences_complete', undefined, { room_type: roomType, style });
 
       // NEW FLOW: Payment already happened before preferences
       // Navigate based on pricing tier

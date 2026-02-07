@@ -18,6 +18,7 @@ import { isWallColorData, isWallTextureData, isFloorTileData, getWallColorItem, 
 import { FloorTile } from '@/types/floor-tiles';
 import { TextureDetailModal } from '@/components/walls/TextureDetailModal';
 import { FloorTileDetailModal } from '@/components/flooring/FloorTileDetailModal';
+import { useTrackEvent } from '@/contexts/AnalyticsContext';
 
 const DraggableFurnitureCanvas = dynamic(
   () => import('../DraggableFurnitureCanvas').then(mod => ({ default: mod.DraggableFurnitureCanvas })),
@@ -156,6 +157,7 @@ export default function CanvasPanel({
   footerContent,
   hideDefaultFooter = false,
 }: CanvasPanelProps) {
+  const trackEvent = useTrackEvent();
   // ============================================================================
   // Use shared visualization hook - replaces most local state and handlers
   // ============================================================================
@@ -182,6 +184,7 @@ export default function CanvasPanel({
     onVisualizationImageChange,
     initialVisualizationImage,
     initialVisualizationHistory,
+    onTrackEvent: trackEvent,
   });
 
   // Destructure hook values
