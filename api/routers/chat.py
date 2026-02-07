@@ -40,6 +40,7 @@ from services.ml_recommendation_model import ml_recommendation_model
 from services.nlp_processor import design_nlp_processor
 from services.ranking_service import get_ranking_service
 from services.recommendation_engine import RecommendationRequest, recommendation_engine
+from services.search_service import semantic_search_products as _shared_semantic_search
 from sqlalchemy import and_, case, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -5778,126 +5779,21 @@ async def _semantic_search(
     price_max: Optional[float] = None,
     limit: int = 100,
 ) -> Dict[int, float]:
+    """Thin wrapper around the shared semantic search service.
+
+    Preserves the existing call signature used throughout chat.py
+    (store_filter, price_min/price_max) while delegating to the
+    numpy-vectorized implementation in search_service.
     """
-    Perform vector similarity search for semantic matching.
-
-    This function generates an embedding for the query text and searches
-    products using cosine similarity with their stored embeddings.
-
-    OPTIMIZATION: Uses numpy for vectorized cosine similarity computation
-    instead of Python loops, which is ~100x faster for large datasets.
-
-    Args:
-        query_text: Search query (e.g., "cozy minimalist sofa")
-        db: Database session
-        category_ids: Optional list of category IDs to filter by
-        store_filter: Optional list of store names to filter by
-        price_min: Optional minimum price
-        price_max: Optional maximum price
-        limit: Maximum products to return
-
-    Returns:
-        Dict mapping product_id to similarity score (0.0 to 1.0)
-    """
-    import json
-    import time
-
-    import numpy as np
-
-    start_time = time.time()
-    embedding_service = get_embedding_service()
-
-    # Get query embedding
-    query_embedding = await embedding_service.get_query_embedding(query_text)
-    if not query_embedding:
-        logger.warning(f"[SEMANTIC SEARCH] Failed to generate embedding for: {query_text[:50]}...")
-        return {}
-
-    embed_time = time.time() - start_time
-    logger.info(f"[SEMANTIC SEARCH] Generated query embedding in {embed_time:.2f}s for: {query_text[:50]}...")
-
-    # Build base query for products with embeddings
-    query = select(Product.id, Product.embedding).where(Product.is_available.is_(True)).where(Product.embedding.isnot(None))
-
-    # Apply filters
-    if category_ids:
-        query = query.where(Product.category_id.in_(category_ids))
-
-    if store_filter:
-        query = query.where(Product.source_website.in_(store_filter))
-
-    if price_min is not None:
-        query = query.where(Product.price >= price_min)
-
-    if price_max is not None:
-        query = query.where(Product.price <= price_max)
-
-    # Execute query
-    db_start = time.time()
-    result = await db.execute(query)
-    rows = result.fetchall()
-    db_time = time.time() - db_start
-
-    logger.info(f"[SEMANTIC SEARCH] Fetched {len(rows)} products with embeddings in {db_time:.2f}s")
-
-    if len(rows) == 0:
-        return {}
-
-    # OPTIMIZATION: Use numpy for vectorized cosine similarity
-    # This is ~100x faster than computing similarity in a Python loop
-    calc_start = time.time()
-
-    # Convert query embedding to numpy array
-    query_vec = np.array(query_embedding, dtype=np.float32)
-    query_norm = np.linalg.norm(query_vec)
-    if query_norm == 0:
-        logger.warning("[SEMANTIC SEARCH] Query embedding has zero norm")
-        return {}
-    query_vec_normalized = query_vec / query_norm
-
-    # Parse all embeddings and compute similarity in batches
-    product_ids = []
-    valid_embeddings = []
-
-    for product_id, embedding_json in rows:
-        try:
-            product_embedding = json.loads(embedding_json)
-            product_ids.append(product_id)
-            valid_embeddings.append(product_embedding)
-        except (json.JSONDecodeError, Exception):
-            continue
-
-    if not valid_embeddings:
-        return {}
-
-    # Stack into matrix and compute all similarities at once
-    embeddings_matrix = np.array(valid_embeddings, dtype=np.float32)
-
-    # Normalize each row (product embedding)
-    norms = np.linalg.norm(embeddings_matrix, axis=1, keepdims=True)
-    norms[norms == 0] = 1  # Avoid division by zero
-    embeddings_normalized = embeddings_matrix / norms
-
-    # Compute cosine similarity: dot product of normalized vectors
-    similarities = np.dot(embeddings_normalized, query_vec_normalized)
-
-    calc_time = time.time() - calc_start
-
-    # Get top N indices
-    top_indices = np.argsort(similarities)[::-1][:limit]
-
-    # Build result dict
-    result_dict = {product_ids[i]: float(similarities[i]) for i in top_indices}
-
-    total_time = time.time() - start_time
-    if result_dict:
-        top_score = similarities[top_indices[0]] if len(top_indices) > 0 else 0
-        logger.info(
-            f"[SEMANTIC SEARCH] Top score: {top_score:.3f}, returning {len(result_dict)} products "
-            f"(embed={embed_time:.2f}s, db={db_time:.2f}s, calc={calc_time:.2f}s, total={total_time:.2f}s)"
-        )
-
-    return result_dict
+    return await _shared_semantic_search(
+        query_text=query_text,
+        db=db,
+        category_ids=category_ids,
+        source_websites=store_filter,
+        min_price=price_min,
+        max_price=price_max,
+        limit=limit,
+    )
 
 
 async def _get_category_based_recommendations(
@@ -6598,17 +6494,12 @@ async def get_paginated_products(
             # "carpets" and "rugs" should return the same results since they're synonyms
             # But their embeddings might be different, causing different search results
             # By expanding the query with synonyms, we get more consistent results
-            synonym_expansions = {
-                "carpets": "rugs carpets area rug floor covering dhurrie kilim",
-                "carpet": "rugs carpets area rug floor covering dhurrie kilim",
-                "rugs": "rugs carpets area rug floor covering dhurrie kilim",
-                "rug": "rugs carpets area rug floor covering dhurrie kilim",
-                "rugs & carpets": "rugs carpets area rug floor covering dhurrie kilim",
-                "wallpapers": "wallpaper wall paper wall covering wallpapers",
-                "wallpaper": "wallpaper wall paper wall covering wallpapers",
-            }
+            # Use shared SEARCH_SYNONYMS for query expansion
+            from services.search_service import SEARCH_SYNONYMS as _SYNONYMS
+
             query_lower = request.semantic_query.lower().strip()
-            expanded_query = synonym_expansions.get(query_lower, request.semantic_query)
+            synonyms = _SYNONYMS.get(query_lower)
+            expanded_query = " ".join(synonyms) if synonyms else request.semantic_query
 
             if expanded_query != request.semantic_query:
                 logger.info(f"[PAGINATED] Expanded semantic query: '{request.semantic_query}' -> '{expanded_query}'")

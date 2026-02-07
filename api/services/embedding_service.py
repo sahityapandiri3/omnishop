@@ -26,7 +26,7 @@ class EmbeddingService:
     """Service for generating and managing product embeddings."""
 
     # Embedding model configuration
-    MODEL_NAME = "text-embedding-004"
+    MODEL_NAME = "gemini-embedding-001"
     EMBEDDING_DIMENSION = 768
 
     # Caching configuration

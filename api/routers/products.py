@@ -1,7 +1,6 @@
 """
 Product API routes
 """
-import json
 import logging
 import re
 from typing import Dict, List, Optional
@@ -17,7 +16,14 @@ from schemas.products import (
     ProductStatsResponse,
     ProductSummarySchema,
 )
-from sqlalchemy import and_, func, or_, select
+from services.search_service import (
+    build_keyword_conditions,
+    expand_search_query_grouped,
+    get_exclusion_terms,
+    semantic_search_products,
+    should_exclude_product,
+)
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -26,78 +32,6 @@ from database.models import Category, Product, ProductAttribute, ProductImage
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/products", tags=["products"])
-
-# Embedding service singleton for semantic search
-_embedding_service = None
-
-
-def _get_embedding_service():
-    """Lazily initialize the embedding service for semantic search."""
-    global _embedding_service
-    if _embedding_service is None:
-        try:
-            from services.embedding_service import EmbeddingService
-
-            _embedding_service = EmbeddingService()
-            logger.info("[SEARCH] Embedding service initialized for public search")
-        except Exception as e:
-            logger.warning(f"[SEARCH] Could not initialize embedding service: {e}")
-            return None
-    return _embedding_service
-
-
-async def _semantic_search(
-    query_text: str,
-    db: AsyncSession,
-    source_websites: Optional[List[str]] = None,
-    category_id: Optional[int] = None,
-    min_price: Optional[float] = None,
-    max_price: Optional[float] = None,
-    limit: int = 10000,
-) -> Dict[int, float]:
-    """
-    Perform semantic search using embeddings.
-    Returns dict mapping product_id to similarity score.
-    """
-    embedding_service = _get_embedding_service()
-    if not embedding_service:
-        return {}
-
-    query_embedding = await embedding_service.get_query_embedding(query_text)
-    if not query_embedding:
-        return {}
-
-    # Fetch products with embeddings
-    emb_query = (
-        select(Product.id, Product.embedding).where(Product.is_available.is_(True)).where(Product.embedding.isnot(None))
-    )
-    if source_websites:
-        emb_query = emb_query.where(Product.source_website.in_(source_websites))
-    if category_id:
-        emb_query = emb_query.where(Product.category_id == category_id)
-    if min_price is not None:
-        emb_query = emb_query.where(Product.price >= min_price)
-    if max_price is not None:
-        emb_query = emb_query.where(Product.price <= max_price)
-
-    result = await db.execute(emb_query)
-    rows = result.fetchall()
-
-    if not rows:
-        return {}
-
-    scores: Dict[int, float] = {}
-    for product_id, embedding_json in rows:
-        try:
-            product_embedding = json.loads(embedding_json)
-            similarity = embedding_service.compute_cosine_similarity(query_embedding, product_embedding)
-            scores[product_id] = similarity
-        except Exception:
-            continue
-
-    # Sort and limit
-    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:limit]
-    return dict(sorted_scores)
 
 
 def _format_product(product) -> dict:
@@ -144,6 +78,30 @@ def _format_product(product) -> dict:
     }
 
 
+def _name_matches_all_groups(product_name: str, groups: List[List[str]]) -> bool:
+    """Check if product name contains at least one term from EACH group."""
+    if not groups:
+        return True
+    name_lower = product_name.lower()
+    name_normalized = re.sub(r"\s*-\s*", "-", name_lower)
+    name_spaced = re.sub(r"-", " ", name_lower)
+
+    for group in groups:
+        group_matched = False
+        for term in group:
+            term_normalized = re.sub(r"\s*-\s*", "-", term.lower())
+            if term_normalized in name_normalized or term_normalized in name_spaced:
+                group_matched = True
+                break
+            term_spaced = re.sub(r"-", " ", term.lower())
+            if term_spaced in name_lower or term_spaced in name_spaced:
+                group_matched = True
+                break
+        if not group_matched:
+            return False
+    return True
+
+
 @router.get("/search")
 async def search_products(
     query: Optional[str] = Query(None),
@@ -169,135 +127,182 @@ async def search_products(
 
         logger.info(f"Search products: query={query}, sources={source_websites}, category={category_id}, page={page}")
 
-        # Step 1: Try semantic search for the query
+        # ---- Step 1: Semantic search (numpy-vectorized) ----
         semantic_ids: Dict[int, float] = {}
         if query:
             try:
-                semantic_ids = await _semantic_search(
+                semantic_ids = await semantic_search_products(
                     query_text=query,
                     db=db,
+                    category_ids=[category_id] if category_id else None,
                     source_websites=source_websites,
-                    category_id=category_id,
                     min_price=min_price,
                     max_price=max_price,
+                    limit=10000,
                 )
                 logger.info(f"[SEARCH] Semantic search returned {len(semantic_ids)} products")
             except Exception as e:
                 logger.warning(f"[SEARCH] Semantic search failed, using keyword only: {e}")
 
-        # Step 2: Keyword search (ILIKE)
-        # Split query into words and match each word individually for better recall.
-        # Also generate singular/plural variants so "single seaters" matches "single seater".
-        base_query = select(Product).options(selectinload(Product.category), selectinload(Product.images))
+        # ---- Step 2: Keyword search (word-boundary + AND-grouped synonyms) ----
+        search_groups: List[List[str]] = []
+        base_query = (
+            select(Product)
+            .options(selectinload(Product.category), selectinload(Product.images))
+            .where(Product.is_available.is_(True))
+        )
 
         if query:
-            query_words = [w.strip() for w in query.split() if w.strip()]
-            # Generate word variants (singular/plural)
-            word_variants = set()
-            for w in query_words:
-                word_variants.add(w)
-                if w.endswith("s") and len(w) > 3:
-                    word_variants.add(w[:-1])  # seaters -> seater
-                elif w.endswith("ies") and len(w) > 4:
-                    word_variants.add(w[:-3] + "y")  # categories -> category
-                else:
-                    word_variants.add(w + "s")  # seater -> seaters
-
-            # Each variant should match in name, description, or brand
-            word_conditions = []
-            for variant in word_variants:
-                word_conditions.append(Product.name.ilike(f"%{variant}%"))
-                word_conditions.append(Product.description.ilike(f"%{variant}%"))
-                word_conditions.append(Product.brand.ilike(f"%{variant}%"))
-            # Also match the full original query as a phrase
-            word_conditions.append(Product.name.ilike(f"%{query}%"))
-            word_conditions.append(Product.description.ilike(f"%{query}%"))
-            word_conditions.append(Product.brand.ilike(f"%{query}%"))
-
-            base_query = base_query.where(or_(*word_conditions))
+            where_clause, search_groups = build_keyword_conditions(query)
+            base_query = base_query.where(where_clause)
 
         if category_id:
             base_query = base_query.where(Product.category_id == category_id)
-
-        # Support comma-separated source websites with IN filter
         if source_websites:
             base_query = base_query.where(Product.source_website.in_(source_websites))
-
         if min_price is not None:
             base_query = base_query.where(Product.price >= min_price)
         if max_price is not None:
             base_query = base_query.where(Product.price <= max_price)
 
-        base_query = base_query.where(Product.is_available == True)
+        # Filter by colors
+        if colors:
+            color_list = [c.strip().lower() for c in colors.split(",")]
+            color_conditions = []
+            for color in color_list:
+                color_conditions.append(or_(Product.name.ilike(f"%{color}%"), Product.description.ilike(f"%{color}%")))
+            if color_conditions:
+                base_query = base_query.where(or_(*color_conditions))
 
-        # Execute keyword search
+        # Filter by styles
+        if styles:
+            style_list = [s.strip().lower() for s in styles.split(",") if s.strip()]
+            if style_list:
+                base_query = base_query.where(func.lower(Product.primary_style).in_(style_list))
+
+        # Filter by materials
+        if materials:
+            material_list = [m.strip().lower() for m in materials.split(",") if m.strip()]
+            if material_list:
+                material_subquery = (
+                    select(ProductAttribute.product_id)
+                    .where(ProductAttribute.attribute_name.in_(["material", "material_primary"]))
+                    .where(func.lower(ProductAttribute.attribute_value).in_(material_list))
+                )
+                base_query = base_query.where(Product.id.in_(material_subquery))
+
+        # Order by match priority (name > brand > description)
+        if query:
+            escaped_query = re.escape(query)
+            all_search_terms = [term for group in search_groups for term in group]
+            name_match_conditions = [Product.name.op("~*")(rf"\y{re.escape(term)}\y") for term in all_search_terms]
+            match_priority = case(
+                (or_(*name_match_conditions), 0) if name_match_conditions else (Product.id.isnot(None), 2),
+                (Product.brand.op("~*")(rf"\y{escaped_query}\y"), 1),
+                else_=2,
+            )
+            base_query = base_query.order_by(match_priority, Product.price.desc().nullslast())
+        else:
+            base_query = base_query.order_by(Product.price.desc().nullslast())
+
+        base_query = base_query.limit(10000)
+
         keyword_result = await db.execute(base_query)
         keyword_products = keyword_result.scalars().unique().all()
         keyword_ids = {p.id for p in keyword_products}
 
-        # Step 3: Merge results - semantic matches that aren't in keyword results
-        # Fetch high-similarity semantic-only products (similarity >= 0.3)
-        SIMILARITY_THRESHOLD = 0.3
-        HIGH_SIMILARITY = 0.5
-        semantic_only_ids = [
-            pid for pid, score in semantic_ids.items() if pid not in keyword_ids and score >= SIMILARITY_THRESHOLD
-        ]
+        # ---- Step 3: Merge semantic + keyword, apply exclusions ----
+        exclusion_terms = get_exclusion_terms(query) if query else []
+        if exclusion_terms:
+            logger.info(f"[SEARCH] Exclusion terms for '{query}': {exclusion_terms}")
 
-        semantic_only_products = []
-        if semantic_only_ids:
-            sem_query = (
+        ordered_product_ids: List[int] = []
+        semantic_scores: Dict[int, float] = {}
+        seen_ids: set = set()
+
+        SIMILARITY_THRESHOLD = 0.3
+
+        if semantic_ids:
+            keyword_product_names = {p.id: p.name for p in keyword_products}
+            semantic_sorted = sorted(semantic_ids.items(), key=lambda x: x[1], reverse=True)
+
+            # Fetch names for semantic-only products if we need exclusion checks
+            semantic_only_names: Dict[int, str] = {}
+            if exclusion_terms:
+                semantic_only_id_list = [pid for pid, _ in semantic_sorted if pid not in keyword_ids]
+                if semantic_only_id_list:
+                    names_query = select(Product.id, Product.name).where(Product.id.in_(semantic_only_id_list))
+                    names_result = await db.execute(names_query)
+                    semantic_only_names = {row[0]: row[1] for row in names_result.fetchall()}
+
+            for product_id, similarity in semantic_sorted:
+                if similarity >= SIMILARITY_THRESHOLD:
+                    if product_id in keyword_ids or similarity >= 0.5:
+                        product_name = keyword_product_names.get(product_id) or semantic_only_names.get(product_id, "")
+                        if exclusion_terms and should_exclude_product(product_name, exclusion_terms):
+                            continue
+                        ordered_product_ids.append(product_id)
+                        semantic_scores[product_id] = similarity
+                        seen_ids.add(product_id)
+
+        # Add keyword-only results
+        for p in keyword_products:
+            if p.id not in seen_ids:
+                if exclusion_terms and should_exclude_product(p.name, exclusion_terms):
+                    continue
+                ordered_product_ids.append(p.id)
+                seen_ids.add(p.id)
+
+        total_results = len(ordered_product_ids)
+
+        # ---- Calculate total_primary / total_related ----
+        total_primary = 0
+        total_related = 0
+        if ordered_product_ids and search_groups:
+            names_query = select(Product.id, Product.name).where(Product.id.in_(ordered_product_ids))
+            names_result = await db.execute(names_query)
+            all_product_names = {row[0]: row[1] for row in names_result.fetchall()}
+            for product_id in ordered_product_ids:
+                name = all_product_names.get(product_id, "")
+                if _name_matches_all_groups(name, search_groups):
+                    total_primary += 1
+                else:
+                    total_related += 1
+        else:
+            total_primary = total_results
+
+        # ---- Step 4: Paginate ----
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        page_product_ids = ordered_product_ids[start_idx:end_idx]
+        has_more = end_idx < total_results
+
+        # ---- Step 5: Fetch product details for this page ----
+        if page_product_ids:
+            products_query = (
                 select(Product)
                 .options(selectinload(Product.category), selectinload(Product.images))
-                .where(Product.id.in_(semantic_only_ids))
+                .where(Product.id.in_(page_product_ids))
             )
-            sem_result = await db.execute(sem_query)
-            semantic_only_products = list(sem_result.scalars().unique().all())
+            products_result = await db.execute(products_query)
+            products_map = {p.id: p for p in products_result.scalars().unique().all()}
 
-        # Combine and rank: keyword matches first (boosted if also semantic), then semantic-only
-        # Track which products are primary (keyword) matches for the frontend
-        all_products = []  # List of (product, is_primary) tuples
-        seen_ids = set()
-
-        # Primary: keyword matches, sorted by semantic score if available
-        keyword_list = sorted(
-            keyword_products,
-            key=lambda p: semantic_ids.get(p.id, 0),
-            reverse=True,
-        )
-        for p in keyword_list:
-            if p.id not in seen_ids:
-                all_products.append((p, True))
-                seen_ids.add(p.id)
-
-        # Related: semantic-only matches, sorted by similarity
-        semantic_sorted = sorted(
-            semantic_only_products,
-            key=lambda p: semantic_ids.get(p.id, 0),
-            reverse=True,
-        )
-        for p in semantic_sorted:
-            if p.id not in seen_ids:
-                all_products.append((p, False))
-                seen_ids.add(p.id)
-
-        total_primary = len(keyword_products)
-        total_related = len(semantic_only_products)
-        total = total_primary + total_related
-
-        # Apply pagination
-        offset = (page - 1) * page_size
-        paginated = all_products[offset : offset + page_size]
-
-        formatted_products = []
-        for product, is_primary in paginated:
-            formatted = _format_product(product)
-            formatted["is_primary_match"] = is_primary
-            formatted_products.append(formatted)
-        has_more = (offset + len(paginated)) < total
+            formatted_products = []
+            for product_id in page_product_ids:
+                if product_id in products_map:
+                    p = products_map[product_id]
+                    formatted = _format_product(p)
+                    formatted["is_primary_match"] = _name_matches_all_groups(p.name, search_groups) if search_groups else True
+                    formatted["similarity_score"] = (
+                        round(semantic_scores[product_id], 3) if product_id in semantic_scores else None
+                    )
+                    formatted_products.append(formatted)
+        else:
+            formatted_products = []
 
         return {
             "products": formatted_products,
-            "total": total,
+            "total": total_results,
             "total_primary": total_primary,
             "total_related": total_related,
             "page": page,
@@ -334,18 +339,26 @@ async def get_products(
         query = select(Product).options(selectinload(Product.category), selectinload(Product.images))
         logger.info("Base query built with eager loading")
 
-        # Apply filters
+        # Apply search with synonym expansion + word boundaries
         if search:
-            # Use PostgreSQL regex with word boundaries (\y) for accurate matching
-            # This prevents "bed" from matching "bedspread", "bedside", etc.
-            escaped_search = re.escape(search)
-            query = query.where(
-                or_(
-                    Product.name.op("~*")(rf"\y{escaped_search}\y"),
-                    Product.description.op("~*")(rf"\y{escaped_search}\y"),
-                    Product.brand.op("~*")(rf"\y{escaped_search}\y"),
-                )
-            )
+            search_groups = expand_search_query_grouped(search)
+            # Build AND conditions across groups, OR within each group
+            and_conditions = []
+            for group in search_groups:
+                group_conditions = []
+                for term in group:
+                    escaped_term = re.escape(term)
+                    group_conditions.append(
+                        or_(
+                            Product.name.op("~*")(rf"\y{escaped_term}\y"),
+                            Product.description.op("~*")(rf"\y{escaped_term}\y"),
+                            Product.brand.op("~*")(rf"\y{escaped_term}\y"),
+                        )
+                    )
+                if group_conditions:
+                    and_conditions.append(or_(*group_conditions))
+            if and_conditions:
+                query = query.where(and_(*and_conditions))
 
         if category_id:
             query = query.where(Product.category_id == category_id)
@@ -385,16 +398,40 @@ async def get_products(
             else:
                 query = query.order_by(Product.scraped_at.asc())
 
-        # Get total count
+        # Get total count (must use same WHERE conditions)
         count_query = select(func.count()).select_from(Product)
         if search:
-            count_query = count_query.where(
-                or_(
-                    Product.name.op("~*")(rf"\y{escaped_search}\y"),
-                    Product.description.op("~*")(rf"\y{escaped_search}\y"),
-                    Product.brand.op("~*")(rf"\y{escaped_search}\y"),
-                )
-            )
+            count_and_conditions = []
+            for group in search_groups:
+                group_conditions = []
+                for term in group:
+                    escaped_term = re.escape(term)
+                    group_conditions.append(
+                        or_(
+                            Product.name.op("~*")(rf"\y{escaped_term}\y"),
+                            Product.description.op("~*")(rf"\y{escaped_term}\y"),
+                            Product.brand.op("~*")(rf"\y{escaped_term}\y"),
+                        )
+                    )
+                if group_conditions:
+                    count_and_conditions.append(or_(*group_conditions))
+            if count_and_conditions:
+                count_query = count_query.where(and_(*count_and_conditions))
+
+        if category_id:
+            count_query = count_query.where(Product.category_id == category_id)
+        if min_price is not None:
+            count_query = count_query.where(Product.price >= min_price)
+        if max_price is not None:
+            count_query = count_query.where(Product.price <= max_price)
+        if brand:
+            count_query = count_query.where(Product.brand.in_(brand))
+        if source_website:
+            count_query = count_query.where(Product.source_website.in_(source_website))
+        if is_available is not None:
+            count_query = count_query.where(Product.is_available == is_available)
+        if is_on_sale is not None:
+            count_query = count_query.where(Product.is_on_sale == is_on_sale)
 
         logger.info("Executing count query")
         total_result = await db.execute(count_query)
@@ -417,23 +454,15 @@ async def get_products(
         has_prev = page > 1
 
         # Convert to summary schemas
-        logger.info("Converting products to summary schemas")
         product_summaries = []
-        for idx, product in enumerate(products):
+        for product in products:
             try:
-                logger.info(f"Processing product {idx+1}/{len(products)}: {product.id}")
-
                 primary_image = None
-                logger.info(f"  - Accessing product.images for product {product.id}")
                 if product.images:
                     primary_image = next((img for img in product.images if img.is_primary), product.images[0])
-                    logger.info(f"  - Found primary image: {primary_image.id if primary_image else None}")
 
-                logger.info(f"  - Accessing product.category for product {product.id}")
                 category = product.category
-                logger.info(f"  - Category: {category.name if category else None}")
 
-                logger.info(f"  - Creating ProductSummarySchema for product {product.id}")
                 product_summaries.append(
                     ProductSummarySchema(
                         id=product.id,
@@ -449,7 +478,6 @@ async def get_products(
                         category=category,
                     )
                 )
-                logger.info(f"  - Successfully processed product {product.id}")
             except Exception as e:
                 logger.error(f"Error processing product {product.id}: {e}", exc_info=True)
                 raise

@@ -1,7 +1,6 @@
 """
 Admin API routes for managing curated looks
 """
-import json
 import logging
 import re
 from datetime import datetime
@@ -17,7 +16,12 @@ from schemas.curated import (
     CuratedLookSummarySchema,
     CuratedLookUpdate,
 )
-from services.embedding_service import EmbeddingService
+from services.search_service import (
+    expand_search_query_grouped,
+    get_exclusion_terms,
+    semantic_search_products,
+    should_exclude_product,
+)
 from sqlalchemy import and_, case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -25,17 +29,6 @@ from sqlalchemy.orm import selectinload
 from core.auth import require_admin
 from core.database import get_db
 from database.models import Category, CuratedLook, CuratedLookProduct, Product, ProductAttribute, User
-
-# Global embedding service instance
-_embedding_service: Optional[EmbeddingService] = None
-
-
-def get_embedding_service() -> EmbeddingService:
-    """Get or create the embedding service singleton."""
-    global _embedding_service
-    if _embedding_service is None:
-        _embedding_service = EmbeddingService()
-    return _embedding_service
 
 
 def calculate_budget_tier(total_price: float) -> str:
@@ -60,355 +53,6 @@ def calculate_budget_tier(total_price: float) -> str:
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/curated", tags=["admin-curated"])
-
-
-# Simple singular/plural normalization
-def normalize_singular_plural(word: str) -> list:
-    """
-    Returns both singular and plural forms of a word.
-    Handles common English patterns and hyphenated words.
-    """
-    word = word.lower().strip()
-    forms = [word]
-
-    # Common irregular plurals
-    irregulars = {
-        "furniture": "furniture",  # Uncountable
-        "decor": "decor",
-        "seating": "seating",
-    }
-
-    if word in irregulars:
-        return [word]
-
-    # Handle hyphenated words (e.g., "l-shaped" -> "l-shape", "l shaped", "l shape")
-    if "-" in word:
-        # Add space-separated version: "l-shaped" -> "l shaped"
-        space_version = word.replace("-", " ")
-        forms.append(space_version)
-
-        # If ends in "-shaped", also add "-shape" version: "l-shaped" -> "l-shape", "l shape"
-        if word.endswith("-shaped"):
-            no_d_version = word[:-1]  # "l-shaped" -> "l-shape"
-            forms.append(no_d_version)
-            forms.append(no_d_version.replace("-", " "))  # "l-shape" -> "l shape"
-        elif word.endswith("ed"):
-            # Generic -ed handling for hyphenated words
-            no_d_version = word[:-1]
-            forms.append(no_d_version)
-            forms.append(no_d_version.replace("-", " "))
-
-    # If word ends in 's', try to get singular
-    if word.endswith("ies"):
-        # categories -> category
-        forms.append(word[:-3] + "y")
-    elif word.endswith("es"):
-        # boxes -> box, dishes -> dish
-        if word.endswith("sses") or word.endswith("shes") or word.endswith("ches") or word.endswith("xes"):
-            forms.append(word[:-2])
-        else:
-            forms.append(word[:-1])  # tables -> table (via 'es' -> 'e')
-            forms.append(word[:-2])  # boxes -> box
-    elif word.endswith("s") and not word.endswith("ss"):
-        # sculptures -> sculpture
-        forms.append(word[:-1])
-
-    # If word doesn't end in 's', try to get plural
-    if not word.endswith("s"):
-        if word.endswith("y") and len(word) > 2 and word[-2] not in "aeiou":
-            # category -> categories
-            forms.append(word[:-1] + "ies")
-        elif word.endswith(("s", "sh", "ch", "x", "z")):
-            # box -> boxes
-            forms.append(word + "es")
-        else:
-            # sculpture -> sculptures
-            forms.append(word + "s")
-
-    return list(set(forms))  # Remove duplicates
-
-
-# Exclusion dictionary - when searching for key, exclude products containing these terms
-# This prevents "center table" search from returning "dining table" etc.
-SEARCH_EXCLUSIONS = {
-    "center table": ["dining", "console", "side table", "end table", "nightstand"],
-    "centre table": ["dining", "console", "side table", "end table", "nightstand"],
-    "coffee table": ["dining", "console", "side table", "end table", "nightstand"],
-    "dining table": ["center", "centre", "coffee", "side table", "end table", "console"],
-    "side table": ["dining", "center", "centre", "coffee"],
-    "end table": ["dining", "center", "centre", "coffee"],
-    "console table": ["dining", "center", "centre", "coffee", "side table"],
-    "nightstand": ["dining", "center", "centre", "coffee", "console"],
-    "bedside table": ["dining", "center", "centre", "coffee", "console"],
-}
-
-# Synonym dictionary for search terms - maps search term to list of synonyms
-SEARCH_SYNONYMS = {
-    "carpet": ["rug", "carpet", "runner", "mat", "floor covering"],
-    "rug": ["rug", "carpet", "runner", "mat", "floor covering"],
-    "sofa": ["sofa", "couch", "settee", "sectional"],
-    "sofas": ["sofa", "couch", "settee", "sectional"],
-    "couch": ["sofa", "couch", "settee", "sectional"],
-    "couches": ["sofa", "couch", "settee", "sectional"],
-    # L-shaped / corner / sectional sofa synonyms
-    "l-shaped": ["l-shaped", "l-shape", "l shaped", "l shape", "corner", "sectional"],
-    "l-shape": ["l-shaped", "l-shape", "l shaped", "l shape", "corner", "sectional"],
-    "corner": ["corner", "l-shaped", "l-shape", "l shaped", "l shape", "sectional"],
-    "sectional": ["sectional", "l-shaped", "l-shape", "l shaped", "l shape", "corner", "chaise"],
-    "sectionals": ["sectional", "l-shaped", "l-shape", "l shaped", "l shape", "corner", "chaise"],
-    "cupboard": ["cupboard", "cabinet", "wardrobe", "armoire"],
-    "cabinet": ["cupboard", "cabinet", "wardrobe", "armoire"],
-    "lamp": ["lamp", "floor lamp", "standing lamp", "table lamp"],
-    "lamps": ["lamp", "floor lamp", "standing lamp", "table lamp"],
-    "floor lamp": ["floor lamp", "standing lamp", "lamp"],
-    "standing lamp": ["standing lamp", "floor lamp", "lamp"],
-    "table lamp": ["table lamp", "desk lamp", "lamp"],
-    "light": ["light", "lighting", "chandelier", "pendant light"],
-    "lights": ["light", "lighting", "chandelier", "pendant light"],
-    "chandelier": ["chandelier", "pendant light", "ceiling light"],
-    "table": ["table", "desk"],
-    # Center/Centre table synonyms (American vs British spelling)
-    "center": ["center", "centre"],
-    "centre": ["centre", "center"],
-    "coffee": ["coffee", "center", "centre"],  # Coffee tables are similar to center tables
-    "tables": ["table", "desk"],
-    "desk": ["table", "desk"],
-    "desks": ["table", "desk"],
-    "chair": ["chair", "seat", "seating"],
-    "chairs": ["chair", "seat", "seating"],
-    "curtain": ["curtain", "drape", "drapes", "blind", "blinds"],
-    "curtains": ["curtain", "drape", "drapes", "blind", "blinds"],
-    "drape": ["curtain", "drape", "drapes"],
-    "drapes": ["curtain", "drape", "drapes"],
-    # Bedroom furniture - handle plurals
-    "bed": ["bed", "bedframe", "bed frame"],
-    "beds": ["bed", "bedframe", "bed frame"],
-    "bedside table": ["bedside table", "nightstand", "night stand", "bedside"],
-    "bedside tables": ["bedside table", "nightstand", "night stand", "bedside"],
-    "nightstand": ["nightstand", "bedside table", "night stand", "bedside"],
-    "nightstands": ["nightstand", "bedside table", "night stand", "bedside"],
-    # Planters and pots
-    "planter": ["planter", "pot", "plant pot", "flower pot"],
-    "planters": ["planter", "pot", "plant pot", "flower pot"],
-    "pot": ["pot", "planter", "plant pot", "flower pot"],
-    "pots": ["pot", "planter", "plant pot", "flower pot"],
-    # Wall art and paintings
-    "painting": ["painting", "wall art", "artwork", "canvas art", "art print"],
-    "paintings": ["painting", "wall art", "artwork", "canvas art", "art print"],
-    "wall art": ["wall art", "painting", "artwork", "canvas art", "art print", "wall decor"],
-    "wall decor": ["wall decor", "wall art", "painting", "artwork", "canvas art"],
-    "artwork": ["artwork", "wall art", "painting", "canvas art", "art print"],
-    "art": ["art", "wall art", "painting", "artwork", "art print"],
-    # Storage furniture - drawers, dressers, chests
-    "drawer": ["drawer", "drawers", "chest of drawers", "dresser", "chest"],
-    "drawers": ["drawer", "drawers", "chest of drawers", "dresser", "chest"],
-    "draws": ["drawer", "drawers", "chest of drawers", "dresser", "chest"],  # Common misspelling
-    "chest of drawers": ["chest of drawers", "drawer", "drawers", "dresser", "chest"],
-    "chest of draws": ["chest of drawers", "drawer", "drawers", "dresser", "chest"],  # Common misspelling
-    "dresser": ["dresser", "drawer", "drawers", "chest of drawers", "chest"],
-    "dressers": ["dresser", "drawer", "drawers", "chest of drawers", "chest"],
-    "storage": ["storage", "cabinet", "cupboard", "drawer", "shelf", "shelves"],
-    "storage unit": ["storage", "cabinet", "cupboard", "drawer", "shelf"],
-    "storage units": ["storage", "cabinet", "cupboard", "drawer", "shelf"],
-}
-
-
-def expand_search_query(query: str) -> list:
-    """Expand a search query to include synonyms and singular/plural forms.
-
-    For single-word queries, returns flat list of synonyms.
-    For multi-word queries, returns flat list but search logic handles AND between words.
-    """
-    query_lower = query.lower().strip()
-
-    # Split query into words for multi-word searches
-    words = query_lower.split()
-
-    # For single-word queries, use original logic
-    if len(words) == 1:
-        # Check if query matches any synonym key directly
-        for key, synonyms in SEARCH_SYNONYMS.items():
-            if key == query_lower or query_lower == key:
-                return synonyms
-
-        # Try singular/plural forms
-        word_forms = normalize_singular_plural(query_lower)
-        for form in word_forms:
-            for key, synonyms in SEARCH_SYNONYMS.items():
-                if key == form or form == key:
-                    return synonyms
-
-        logger.info(f"No synonym match for '{query}', using singular/plural forms: {word_forms}")
-        return word_forms
-
-    # For multi-word queries, collect all terms and their synonyms
-    all_terms = set()
-
-    for word in words:
-        # Check for direct synonym match
-        matched = False
-        for key, synonyms in SEARCH_SYNONYMS.items():
-            if key == word or word == key:
-                all_terms.update(synonyms)
-                matched = True
-                break
-
-        # If no synonym match, add the word itself (and its singular/plural forms)
-        if not matched:
-            word_forms = normalize_singular_plural(word)
-            all_terms.update(word_forms)
-
-    result = list(all_terms)
-    logger.info(f"Multi-word query '{query}' expanded to: {result}")
-    return result
-
-
-def expand_search_query_grouped(query: str) -> List[List[str]]:
-    """Expand a search query and return GROUPED synonyms for AND logic.
-
-    Returns list of lists: [[synonyms for word1], [synonyms for word2], ...]
-    Search should match: (any of group1) AND (any of group2) AND ...
-
-    Example: "L-shaped sofa" -> [["l-shaped", "l-shapeds"], ["sofa", "couch", "settee"]]
-    """
-    query_lower = query.lower().strip()
-    words = query_lower.split()
-
-    if len(words) == 1:
-        # Single word - return as single group
-        for key, synonyms in SEARCH_SYNONYMS.items():
-            if key == query_lower or query_lower == key:
-                return [synonyms]
-
-        word_forms = normalize_singular_plural(query_lower)
-        for form in word_forms:
-            for key, synonyms in SEARCH_SYNONYMS.items():
-                if key == form or form == key:
-                    return [synonyms]
-
-        return [word_forms]
-
-    # Multi-word query - create groups for each word
-    groups = []
-    for word in words:
-        matched = False
-        for key, synonyms in SEARCH_SYNONYMS.items():
-            if key == word or word == key:
-                groups.append(list(synonyms))
-                matched = True
-                break
-
-        if not matched:
-            word_forms = normalize_singular_plural(word)
-            groups.append(word_forms)
-
-    logger.info(f"Multi-word query '{query}' grouped to: {groups}")
-    return groups
-
-
-def get_exclusion_terms(query: str) -> List[str]:
-    """Get list of terms to exclude from search results based on query.
-
-    Example: "center table" -> ["dining", "console", "side table", "end table", "nightstand"]
-    """
-    query_lower = query.lower().strip()
-
-    # Check for exact match first
-    if query_lower in SEARCH_EXCLUSIONS:
-        return SEARCH_EXCLUSIONS[query_lower]
-
-    # Check if query contains any exclusion key
-    for key, exclusions in SEARCH_EXCLUSIONS.items():
-        if key in query_lower:
-            return exclusions
-
-    return []
-
-
-def should_exclude_product(product_name: str, exclusion_terms: List[str]) -> bool:
-    """Check if a product should be excluded based on exclusion terms."""
-    if not exclusion_terms:
-        return False
-
-    name_lower = product_name.lower()
-    for term in exclusion_terms:
-        if term.lower() in name_lower:
-            return True
-    return False
-
-
-async def semantic_search_products(
-    query_text: str,
-    db: AsyncSession,
-    source_websites: Optional[List[str]] = None,
-    category_id: Optional[int] = None,
-    min_price: Optional[float] = None,
-    max_price: Optional[float] = None,
-    limit: int = 500,
-) -> Dict[int, float]:
-    """
-    Perform semantic search using embeddings.
-
-    Returns dict mapping product_id to similarity score (0.0 to 1.0).
-    Only searches products that have embeddings.
-    """
-    embedding_service = get_embedding_service()
-
-    # Get query embedding
-    query_embedding = await embedding_service.get_query_embedding(query_text)
-    if not query_embedding:
-        logger.warning(f"[SEMANTIC SEARCH] Failed to generate embedding for: {query_text[:50]}...")
-        return {}
-
-    logger.info(f"[SEMANTIC SEARCH] Generated query embedding for: {query_text[:50]}...")
-
-    # Build query for products with embeddings
-    query = select(Product.id, Product.embedding).where(Product.is_available.is_(True)).where(Product.embedding.isnot(None))
-
-    # Apply filters
-    if source_websites:
-        query = query.where(Product.source_website.in_(source_websites))
-
-    if category_id:
-        query = query.where(Product.category_id == category_id)
-
-    if min_price is not None:
-        query = query.where(Product.price >= min_price)
-
-    if max_price is not None:
-        query = query.where(Product.price <= max_price)
-
-    # Execute query
-    result = await db.execute(query)
-    rows = result.fetchall()
-
-    logger.info(f"[SEMANTIC SEARCH] Found {len(rows)} products with embeddings")
-
-    if not rows:
-        return {}
-
-    # Calculate similarity scores
-    similarity_scores: Dict[int, float] = {}
-
-    for product_id, embedding_json in rows:
-        try:
-            product_embedding = json.loads(embedding_json)
-            similarity = embedding_service.compute_cosine_similarity(query_embedding, product_embedding)
-            similarity_scores[product_id] = similarity
-        except (json.JSONDecodeError, Exception) as e:
-            logger.debug(f"[SEMANTIC SEARCH] Error processing product {product_id}: {e}")
-            continue
-
-    # Sort by similarity and take top N
-    sorted_scores = sorted(similarity_scores.items(), key=lambda x: x[1], reverse=True)[:limit]
-
-    result_dict = dict(sorted_scores)
-
-    if result_dict:
-        top_score = sorted_scores[0][1] if sorted_scores else 0
-        logger.info(f"[SEMANTIC SEARCH] Top similarity score: {top_score:.3f}, returning {len(result_dict)} products")
-
-    return result_dict
 
 
 def get_primary_image_url(product: Product) -> Optional[str]:
@@ -530,8 +174,8 @@ async def search_products_for_look(
                 semantic_product_ids = await semantic_search_products(
                     query_text=query,
                     db=db,
+                    category_ids=[category_id] if category_id else None,
                     source_websites=source_websites,
-                    category_id=category_id,
                     min_price=min_price,
                     max_price=max_price,
                     limit=10000,  # Get all semantic matches, pagination happens later
