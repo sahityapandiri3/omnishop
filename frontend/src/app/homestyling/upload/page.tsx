@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/utils/api';
+import { useTrackEvent } from '@/contexts/AnalyticsContext';
 
 interface PreviousRoom {
   session_id: string;
@@ -14,6 +15,7 @@ interface PreviousRoom {
 
 export default function UploadPage() {
   const router = useRouter();
+  const trackEvent = useTrackEvent();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [originalImage, setOriginalImage] = useState<string | null>(null);
@@ -44,7 +46,7 @@ export default function UploadPage() {
   const fetchPreviousRooms = async () => {
     setLoadingPrevious(true);
     try {
-      const response = await api.get('/api/homestyling/previous-rooms?limit=10');
+      const response = await api.get('/api/homestyling/previous-rooms?limit=50');
       setPreviousRooms(response.data.rooms || []);
     } catch (err) {
       console.error('Failed to fetch previous rooms:', err);
@@ -78,6 +80,7 @@ export default function UploadPage() {
       }
 
       setIsProcessed(true);
+      trackEvent('homestyling.upload_complete', undefined, { image_size_kb: Math.round(imageData.length * 0.75 / 1024) });
     } catch (err: any) {
       console.error('Error processing image:', err);
       setError(err.response?.data?.detail || 'Failed to process image. Please try again.');

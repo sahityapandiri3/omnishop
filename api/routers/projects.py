@@ -120,7 +120,7 @@ async def create_project(
 @router.get("/previous-rooms", response_model=PreviousRoomImagesResponse)
 async def get_previous_room_images(
     exclude_project_id: Optional[str] = Query(None, description="Project ID to exclude from results"),
-    limit: int = Query(10, ge=1, le=50, description="Maximum number of rooms to return"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of rooms to return"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

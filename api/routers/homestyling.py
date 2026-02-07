@@ -224,7 +224,7 @@ async def get_session(
 
 @router.get("/previous-rooms")
 async def get_previous_rooms(
-    limit: int = Query(10, ge=1, le=50, description="Maximum number of rooms to return"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of rooms to return"),
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_user),
 ):
@@ -251,12 +251,7 @@ async def get_previous_rooms(
         if current_user:
             conditions.append(HomeStylingSession.user_id == current_user.id)
 
-        query = (
-            select(HomeStylingSession)
-            .where(*conditions)
-            .order_by(HomeStylingSession.created_at.desc())
-            .limit(limit)
-        )
+        query = select(HomeStylingSession).where(*conditions).order_by(HomeStylingSession.created_at.desc()).limit(limit)
 
         result = await db.execute(query)
         sessions = result.scalars().all()
@@ -658,6 +653,7 @@ async def _run_generation_in_background(session_id: str):
     logger.info(f"[BG-TASK] Background task STARTED for session {session_id}")
     try:
         from core.database import AsyncSessionLocal
+
         logger.info(f"[BG-TASK] AsyncSessionLocal imported for session {session_id}")
     except Exception as e:
         logger.error(f"[BG-TASK] Failed to import AsyncSessionLocal: {e}", exc_info=True)

@@ -1923,7 +1923,7 @@ export const projectsAPI = {
   /**
    * Get previously uploaded room images that can be reused
    */
-  getPreviousRooms: async (excludeProjectId?: string, limit: number = 10): Promise<PreviousRoomImagesResponse> => {
+  getPreviousRooms: async (excludeProjectId?: string, limit: number = 50): Promise<PreviousRoomImagesResponse> => {
     const params: Record<string, string | number> = { limit };
     if (excludeProjectId) {
       params.exclude_project_id = excludeProjectId;

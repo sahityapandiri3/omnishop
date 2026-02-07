@@ -57,7 +57,7 @@ export function PhotoUploadStep({
       const fetchPreviousRooms = async () => {
         setLoadingPreviousRooms(true);
         try {
-          const response = await projectsAPI.getPreviousRooms(undefined, 10);
+          const response = await projectsAPI.getPreviousRooms(undefined, 50);
           if (!cancelled) {
             setPreviousRooms(response.rooms);
             setPreviousRoomsFetched(true);
