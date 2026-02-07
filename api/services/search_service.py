@@ -147,6 +147,12 @@ SEARCH_SYNONYMS: Dict[str, List[str]] = {
     "tables": ["table", "desk"],
     "desk": ["table", "desk"],
     "desks": ["table", "desk"],
+    # Seater size synonyms (number vs word forms)
+    "single": ["single", "1", "one"],
+    "double": ["double", "2", "two"],
+    "triple": ["triple", "3", "three"],
+    "seater": ["seater", "seat"],
+    "seaters": ["seater", "seat"],
     # Chairs
     "chair": ["chair", "seat", "seating"],
     "chairs": ["chair", "seat", "seating"],
