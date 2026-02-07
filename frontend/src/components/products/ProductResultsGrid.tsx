@@ -381,12 +381,8 @@ export function ProductResultsGrid({
 
   // Use API counts if available, otherwise use loaded counts
   const displayPrimaryCount = totalPrimaryCount ?? bestMatches.length;
-  const displayRelatedCount = totalRelatedCount ?? moreProducts.length;
-  const hasMoreProducts = displayRelatedCount > 0 || moreProducts.length > 0;
-  // Only show "More Products" after all Best Matches pages have been loaded
-  const allBestMatchesLoaded = totalPrimaryCount != null
-    ? bestMatches.length >= totalPrimaryCount
-    : !hasMore;
+  // Only show "More Products" after every page has been loaded (!hasMore)
+  const showMoreSection = !hasMore && moreProducts.length > 0;
 
   // When showSeparation is false, show all products in a single grid
   // but still mark best matches with badges
@@ -436,19 +432,17 @@ export function ProductResultsGrid({
         </>
       )}
 
-      {/* More Products Section - Only show after all Best Matches pages have loaded */}
-      {hasMoreProducts && allBestMatchesLoaded && (
+      {/* More Products Section - Only show after all pages have been loaded */}
+      {showMoreSection && (
         <>
-          <div className={`mb-2 ${(bestMatches.length > 0 || displayPrimaryCount > 0) ? 'mt-4 pt-3 border-t border-neutral-200 dark:border-neutral-700' : ''}`}>
+          <div className={`mb-2 ${bestMatches.length > 0 ? 'mt-4 pt-3 border-t border-neutral-200 dark:border-neutral-700' : ''}`}>
             <span className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-1 rounded">
-              {(bestMatches.length > 0 || displayPrimaryCount > 0) ? 'More Products' : 'Products'} ({displayRelatedCount || moreProducts.length})
+              {bestMatches.length > 0 ? 'More Products' : 'Products'} ({moreProducts.length})
             </span>
           </div>
-          {moreProducts.length > 0 && (
-            <div className={gridClassName}>
-              {moreProducts.map(product => renderProductCard(product, false))}
-            </div>
-          )}
+          <div className={gridClassName}>
+            {moreProducts.map(product => renderProductCard(product, false))}
+          </div>
         </>
       )}
 
