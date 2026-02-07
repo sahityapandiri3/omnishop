@@ -165,6 +165,12 @@ SEARCH_SYNONYMS: Dict[str, List[str]] = {
     "6": ["six", "6"],
     "seven": ["seven", "7"],
     "7": ["seven", "7"],
+    "eight": ["eight", "8"],
+    "8": ["eight", "8"],
+    "nine": ["nine", "9"],
+    "9": ["nine", "9"],
+    "ten": ["ten", "10"],
+    "10": ["ten", "10"],
     "seater": ["seater", "seat"],
     "seaters": ["seater", "seat"],
     # Chairs
