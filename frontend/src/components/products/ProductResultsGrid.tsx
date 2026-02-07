@@ -383,6 +383,10 @@ export function ProductResultsGrid({
   const displayPrimaryCount = totalPrimaryCount ?? bestMatches.length;
   const displayRelatedCount = totalRelatedCount ?? moreProducts.length;
   const hasMoreProducts = displayRelatedCount > 0 || moreProducts.length > 0;
+  // Only show "More Products" after all Best Matches pages have been loaded
+  const allBestMatchesLoaded = totalPrimaryCount != null
+    ? bestMatches.length >= totalPrimaryCount
+    : !hasMore;
 
   // When showSeparation is false, show all products in a single grid
   // but still mark best matches with badges
@@ -432,18 +436,13 @@ export function ProductResultsGrid({
         </>
       )}
 
-      {/* More Products Section - Show even if not loaded yet, if API says there are more */}
-      {hasMoreProducts && (
+      {/* More Products Section - Only show after all Best Matches pages have loaded */}
+      {hasMoreProducts && allBestMatchesLoaded && (
         <>
           <div className={`mb-2 ${(bestMatches.length > 0 || displayPrimaryCount > 0) ? 'mt-4 pt-3 border-t border-neutral-200 dark:border-neutral-700' : ''}`}>
             <span className="text-xs font-semibold text-neutral-600 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-1 rounded">
               {(bestMatches.length > 0 || displayPrimaryCount > 0) ? 'More Products' : 'Products'} ({displayRelatedCount || moreProducts.length})
             </span>
-            {moreProducts.length === 0 && displayRelatedCount > 0 && (
-              <span className="ml-2 text-xs text-neutral-500 dark:text-neutral-400">
-                Scroll down to load
-              </span>
-            )}
           </div>
           {moreProducts.length > 0 && (
             <div className={gridClassName}>

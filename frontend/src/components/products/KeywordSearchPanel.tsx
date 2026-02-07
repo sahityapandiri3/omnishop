@@ -627,6 +627,8 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
                   hasMore={hasMore}
                   isLoadingMore={isLoadingMore}
                   totalCount={totalProducts}
+                  totalPrimaryCount={totalPrimary}
+                  totalRelatedCount={totalRelated}
                   isLoading={isSearching && products.length === 0}
                   emptyMessage={searchQuery ? 'No products found for your search' : 'Enter a search term or select filters to find products'}
                   gridClassName={compact ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-2 md:grid-cols-3 gap-2'}
@@ -711,6 +713,8 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
               hasMore={hasMore}
               isLoadingMore={isLoadingMore}
               totalCount={totalProducts}
+              totalPrimaryCount={totalPrimary}
+              totalRelatedCount={totalRelated}
               isLoading={isSearching && products.length === 0}
               emptyMessage="Chat with AI Stylist to get personalized recommendations"
               gridClassName={compact ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-2 md:grid-cols-3 gap-2'}
