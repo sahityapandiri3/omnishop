@@ -237,11 +237,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
 
       const response = await searchProducts(buildSearchParams(nextPage));
 
-      // Mark all products from page 2+ as non-primary so they append to "More Products"
-      const transformedProducts = response.products.map(p => ({
-        ...transformProduct(p),
-        is_primary_match: false, // Force to More Products section
-      }));
+      const transformedProducts = response.products.map(transformProduct);
       setProducts(prev => [...prev, ...transformedProducts]);
       setCurrentPage(nextPage);
       setHasMore(response.has_more);
