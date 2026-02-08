@@ -113,9 +113,8 @@ export default function HomePage() {
   useEffect(() => {
     const fetchLooks = async () => {
       try {
-        // Request medium-quality images for landing page (1200px, 80% quality - faster loading)
-        // Fetch 50 looks (API max) to ensure we find the hardcoded home page looks (IDs 4, 5, 7, 8, 10)
-        const response = await getCuratedLooks(undefined, 'medium', undefined, undefined, 50, 0);
+        // Request medium-quality images for landing page - only fetch 6 (what we display)
+        const response = await getCuratedLooks(undefined, 'medium', undefined, undefined, 6, 0);
         setLooks(response.looks);
       } catch (error) {
         console.error('Failed to fetch curated looks:', error);
@@ -125,15 +124,6 @@ export default function HomePage() {
     };
     fetchLooks();
   }, []);
-
-  // Show loading only while fetching looks (auth check no longer blocks the page)
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-2 border-neutral-200 border-t-neutral-800" />
-      </div>
-    );
-  }
 
   // Use first look with a visualization image for the hero section
   const heroLook = looks.find(look => look.visualization_image || look.room_image);
@@ -152,6 +142,7 @@ export default function HomePage() {
               src={heroImage}
               alt="Beautifully styled room"
               className="absolute inset-0 w-full h-full object-cover opacity-90"
+              fetchPriority="high"
             />
           ) : (
             <div className="absolute inset-0 bg-gradient-to-br from-neutral-700 to-neutral-900" />
@@ -224,6 +215,7 @@ export default function HomePage() {
                       src={formatImageSrc(look.visualization_image || look.room_image)}
                       alt={look.style_theme}
                       className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                      loading="lazy"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent opacity-70 group-hover:opacity-90 transition-opacity duration-500" />
                     <div className="absolute bottom-0 left-0 right-0 p-5">
@@ -319,12 +311,14 @@ export default function HomePage() {
               src={formatImageSrc(looks[2].visualization_image || looks[2].room_image)}
               alt="Transform your space"
               className="absolute inset-0 w-full h-full object-cover opacity-85"
+              loading="lazy"
             />
           ) : heroLook?.visualization_image || heroLook?.room_image ? (
             <img
               src={formatImageSrc(heroLook.visualization_image || heroLook.room_image)}
               alt="Transform your space"
               className="absolute inset-0 w-full h-full object-cover opacity-85"
+              loading="lazy"
             />
           ) : (
             <div className="absolute inset-0 bg-gradient-to-br from-neutral-700 to-neutral-900" />
