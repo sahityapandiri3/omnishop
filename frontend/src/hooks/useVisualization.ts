@@ -358,9 +358,13 @@ export function useVisualization({
   const getOrCreateSession = async (): Promise<string> => {
     let sessionId = sessionStorage.getItem('design_session_id');
     if (!sessionId) {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const response = await fetch(`${getApiUrl()}/api/chat/sessions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({})
       });
 

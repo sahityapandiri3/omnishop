@@ -45,8 +45,9 @@ from sqlalchemy import and_, case, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from core.auth import get_optional_user
 from core.database import get_db
-from database.models import Category, ChatLog, ChatMessage, ChatSession, CuratedLook, Product, Project, UserPreferences
+from database.models import Category, ChatLog, ChatMessage, ChatSession, CuratedLook, Product, Project, User, UserPreferences
 from utils.chat_logger import chat_logger
 
 logger = logging.getLogger(__name__)
@@ -165,21 +166,28 @@ async def save_user_preferences_to_db(user_id: str, session_id: str, db: AsyncSe
 
 
 @router.post("/sessions", response_model=StartSessionResponse)
-async def start_chat_session(request: StartSessionRequest, db: AsyncSession = Depends(get_db)):
+async def start_chat_session(
+    request: StartSessionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user),
+):
     """Start a new chat session"""
     try:
+        # Prefer authenticated user over request body user_id
+        user_id = (current_user.id if current_user else None) or request.user_id
+
         # Create new session
         session_id = str(uuid.uuid4())
         session = ChatSession(
-            id=session_id, user_id=request.user_id, created_at=datetime.utcnow(), updated_at=datetime.utcnow()
+            id=session_id, user_id=user_id, created_at=datetime.utcnow(), updated_at=datetime.utcnow()
         )
 
         db.add(session)
         await db.commit()
 
         # Load user preferences from DB if authenticated
-        if request.user_id:
-            await load_user_preferences_from_db(request.user_id, session_id, db)
+        if user_id:
+            await load_user_preferences_from_db(user_id, session_id, db)
 
         # Check if returning user with preferences
         is_returning = conversation_context_manager.is_returning_user(session_id)

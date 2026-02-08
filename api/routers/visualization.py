@@ -3482,13 +3482,17 @@ async def get_api_usage(hours: int = 24, db: AsyncSession = Depends(get_db)):
         by_model = [{"model": r.model, "calls": r.calls, "tokens": r.tokens or 0} for r in model_result.fetchall()]
 
         # Get detailed log of individual calls (most recent 200)
-        # Resolve user via: ApiUsage.user_id -> User, OR ApiUsage.session_id -> ChatSession.user_id -> User
+        # Resolve user via multiple paths:
+        # 1. ApiUsage.user_id -> User (direct)
+        # 2. ApiUsage.session_id -> ChatSession.user_id -> User
+        # 3. ApiUsage.session_id -> HomeStylingSession.user_id -> User
         from sqlalchemy.orm import aliased
 
-        from database.models import ChatSession, User
+        from database.models import ChatSession, HomeStylingSession, User
 
         DirectUser = aliased(User, name="direct_user")
-        SessionUser = aliased(User, name="session_user")
+        ChatSessionUser = aliased(User, name="chat_session_user")
+        HSSessionUser = aliased(User, name="hs_session_user")
 
         detail_query = (
             select(
@@ -3501,11 +3505,13 @@ async def get_api_usage(hours: int = 24, db: AsyncSession = Depends(get_db)):
                 ApiUsage.total_tokens,
                 ApiUsage.estimated_cost,
                 ApiUsage.session_id,
-                func.coalesce(DirectUser.email, SessionUser.email).label("user_email"),
+                func.coalesce(DirectUser.email, ChatSessionUser.email, HSSessionUser.email).label("user_email"),
             )
             .outerjoin(DirectUser, ApiUsage.user_id == DirectUser.id)
             .outerjoin(ChatSession, ApiUsage.session_id == ChatSession.id)
-            .outerjoin(SessionUser, ChatSession.user_id == SessionUser.id)
+            .outerjoin(ChatSessionUser, ChatSession.user_id == ChatSessionUser.id)
+            .outerjoin(HomeStylingSession, ApiUsage.session_id == HomeStylingSession.id)
+            .outerjoin(HSSessionUser, HomeStylingSession.user_id == HSSessionUser.id)
             .where(ApiUsage.timestamp >= cutoff)
             .order_by(ApiUsage.timestamp.desc())
             .limit(200)
