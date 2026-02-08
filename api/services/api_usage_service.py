@@ -107,7 +107,7 @@ async def log_api_usage(
     return usage
 
 
-def log_gemini_usage(response, operation: str, model: str = None):
+def log_gemini_usage(response, operation: str, model: str = None, session_id: str = None, user_id: str = None):
     """
     Simple helper to log Gemini API usage directly to database.
     Can be called from anywhere - creates its own database connection.
@@ -116,6 +116,8 @@ def log_gemini_usage(response, operation: str, model: str = None):
         response: Gemini API response object
         operation: Operation name (e.g., "identify_object", "inpaint")
         model: Model name override (if not in response)
+        session_id: Optional session ID for tracing back to user
+        user_id: Optional user ID for direct attribution
     """
     try:
         from core.database import get_sync_db_session
@@ -142,6 +144,8 @@ def log_gemini_usage(response, operation: str, model: str = None):
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 total_tokens=total_tokens,
+                session_id=session_id,
+                user_id=user_id,
             )
             db.add(usage)
 

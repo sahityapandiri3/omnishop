@@ -70,13 +70,13 @@ function ApiUsageContent() {
   }, [fetchUsage]);
 
   const formatTime = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    const d = new Date(iso + 'Z'); // Backend returns UTC, mark as UTC
+    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
   };
 
   const formatDate = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const d = new Date(iso + 'Z');
+    return d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' });
   };
 
   return (
@@ -208,7 +208,7 @@ function ApiUsageContent() {
                 <table className="w-full">
                   <thead>
                     <tr className="bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      <th className="px-4 py-3">Time</th>
+                      <th className="px-4 py-3">Time (IST)</th>
                       <th className="px-4 py-3">User</th>
                       <th className="px-4 py-3">Model</th>
                       <th className="px-4 py-3">Operation</th>

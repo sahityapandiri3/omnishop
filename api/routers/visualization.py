@@ -2065,7 +2065,7 @@ IMPORTANT: The bbox MUST be for the object the RED CIRCLE is ON, not nearby obje
                     temperature=0.2,
                 ),
             )
-            log_gemini_usage(response, "identify_object", "gemini-2.0-flash-exp")
+            log_gemini_usage(response, "identify_object", "gemini-2.0-flash-exp", session_id=session_id)
             if response.text:
                 return response.text
             return None
@@ -2271,7 +2271,7 @@ If none match well, return 0.""",
                             contents=contents,
                             config=types.GenerateContentConfig(temperature=0.1),
                         )
-                        log_gemini_usage(response, "match_product", "gemini-2.0-flash-exp")
+                        log_gemini_usage(response, "match_product", "gemini-2.0-flash-exp", session_id=session_id)
                         if response.text:
                             return response.text.strip()
                         return None
@@ -2376,7 +2376,7 @@ Generate the room image with the {object_name} cleanly removed."""
                             temperature=0.3,
                         ),
                     )
-                    log_gemini_usage(response, "inpaint_object_removal", "gemini-3-pro-image-preview")
+                    log_gemini_usage(response, "inpaint_object_removal", "gemini-3-pro-image-preview", session_id=session_id)
 
                     inpainted_image = None
                     parts = None
@@ -2487,7 +2487,7 @@ Generate the room image with the object cleanly removed."""
                     temperature=0.3,
                 ),
             )
-            log_gemini_usage(response, "fallback_inpaint", "gemini-3-pro-image-preview")
+            log_gemini_usage(response, "fallback_inpaint", "gemini-3-pro-image-preview", session_id=session_id)
             inpainted_image = None
             parts = None
             if hasattr(response, "parts") and response.parts:
@@ -2793,7 +2793,7 @@ QUALITY REQUIREMENTS:
                     temperature=0.4,
                 ),
             )
-            log_gemini_usage(response, "replace_product_harmonize", "gemini-3-pro-image-preview")
+            log_gemini_usage(response, "replace_product_harmonize", "gemini-3-pro-image-preview", session_id=session_id)
 
             result_image = None
             parts = None
@@ -3325,7 +3325,7 @@ FAILURE CONDITIONS (you WILL fail if you do these):
                     temperature=0.4,
                 ),
             )
-            log_gemini_usage(response, "edit_with_instructions", "gemini-3-pro-image-preview")
+            log_gemini_usage(response, "edit_with_instructions", "gemini-3-pro-image-preview", session_id=session_id)
 
             result_image = None
             parts = None
@@ -3481,8 +3481,14 @@ async def get_api_usage(hours: int = 24, db: AsyncSession = Depends(get_db)):
         model_result = await db.execute(by_model_query)
         by_model = [{"model": r.model, "calls": r.calls, "tokens": r.tokens or 0} for r in model_result.fetchall()]
 
-        # Get detailed log of individual calls (most recent 100)
-        from database.models import User
+        # Get detailed log of individual calls (most recent 200)
+        # Resolve user via: ApiUsage.user_id -> User, OR ApiUsage.session_id -> ChatSession.user_id -> User
+        from sqlalchemy.orm import aliased
+
+        from database.models import ChatSession, User
+
+        DirectUser = aliased(User, name="direct_user")
+        SessionUser = aliased(User, name="session_user")
 
         detail_query = (
             select(
@@ -3495,9 +3501,11 @@ async def get_api_usage(hours: int = 24, db: AsyncSession = Depends(get_db)):
                 ApiUsage.total_tokens,
                 ApiUsage.estimated_cost,
                 ApiUsage.session_id,
-                User.email,
+                func.coalesce(DirectUser.email, SessionUser.email).label("user_email"),
             )
-            .outerjoin(User, ApiUsage.user_id == User.id)
+            .outerjoin(DirectUser, ApiUsage.user_id == DirectUser.id)
+            .outerjoin(ChatSession, ApiUsage.session_id == ChatSession.id)
+            .outerjoin(SessionUser, ChatSession.user_id == SessionUser.id)
             .where(ApiUsage.timestamp >= cutoff)
             .order_by(ApiUsage.timestamp.desc())
             .limit(200)
@@ -3506,7 +3514,7 @@ async def get_api_usage(hours: int = 24, db: AsyncSession = Depends(get_db)):
         detailed_log = [
             {
                 "timestamp": r.timestamp.isoformat() if r.timestamp else None,
-                "user": r.email or "anonymous",
+                "user": r.user_email or "anonymous",
                 "provider": r.provider,
                 "model": r.model,
                 "operation": r.operation,
