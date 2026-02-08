@@ -10,6 +10,7 @@ import { adminCuratedAPI, getCategorizedStores, visualizeRoom, startChatSession,
 import { FurniturePosition, MagicGrabLayer, PendingMoveData } from '@/components/DraggableFurnitureCanvas';
 import { AngleSelector, ViewingAngle } from '@/components/AngleSelector';
 import { useVisualization } from '@/hooks/useVisualization';
+import { useTrackEvent } from '@/contexts/AnalyticsContext';
 import { VisualizationProduct, SerializableHistoryEntry, VisualizationHistoryEntry } from '@/types/visualization';
 // Shared constants and utilities
 import {
@@ -59,6 +60,8 @@ export default function CreateCuratedLookPage() {
   const editId = searchParams?.get('edit');
   // Use either style_from or edit parameter for loading existing look
   const initialLookId = styleFromId || editId || null;
+
+  const trackEvent = useTrackEvent();
 
   // Track existing look ID as state so we can update it after creating a new draft
   const [existingLookId, setExistingLookId] = useState<string | null>(initialLookId);
@@ -149,6 +152,7 @@ export default function CreateCuratedLookPage() {
       enableImproveQuality: true,
       curatedLookId: curatedLookIdNumber,
     },
+    onTrackEvent: trackEvent,
   });
 
   // Destructure hook values - these replace all the old local state and handlers

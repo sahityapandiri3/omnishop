@@ -408,6 +408,8 @@ export function useVisualization({
 
     // Build comprehensive tracking data for analytics
     const trackingData: Record<string, unknown> = {
+      project_id: config?.projectId,
+      curated_look_id: config?.curatedLookId,
       product_count: products.length,
       products: products.map(p => ({
         id: p.id,
@@ -436,7 +438,7 @@ export function useVisualization({
       };
     }
 
-    // Note: visualize_start tracking removed - only track complete events for cleaner analytics
+    onTrackEvent?.('design.visualize_start', undefined, trackingData);
 
     setIsVisualizing(true);
     setVisualizationStartTime(Date.now());
@@ -606,6 +608,13 @@ export function useVisualization({
         });
 
         console.log('[useVisualization] Surface-only visualization complete');
+        onTrackEvent?.('design.visualize_complete', undefined, {
+          ...trackingData,
+          method: vizMethod,
+          success: true,
+          duration_ms: Date.now() - vizStartTime,
+          visualization_type: 'surface_only',
+        });
         return;
       }
 
@@ -708,6 +717,13 @@ export function useVisualization({
         });
 
         console.log('[useVisualization] Floor-tile-only visualization complete');
+        onTrackEvent?.('design.visualize_complete', undefined, {
+          ...trackingData,
+          method: 'floor_tile_only',
+          success: true,
+          duration_ms: Date.now() - vizStartTime,
+          visualization_type: 'floor_tile_only',
+        });
         setIsVisualizing(false);
         setVisualizationStartTime(null);
         setVisualizationProgress('');
@@ -760,6 +776,13 @@ export function useVisualization({
         });
 
         console.log('[useVisualization] Texture-only visualization complete');
+        onTrackEvent?.('design.visualize_complete', undefined, {
+          ...trackingData,
+          method: 'texture_only',
+          success: true,
+          duration_ms: Date.now() - vizStartTime,
+          visualization_type: 'texture_only',
+        });
         setIsVisualizing(false);
         setVisualizationStartTime(null);
         setVisualizationProgress('');
@@ -943,6 +966,12 @@ export function useVisualization({
           errorMessage = error.message;
         }
       }
+      onTrackEvent?.('design.visualize_fail', undefined, {
+        ...trackingData,
+        method: vizMethod,
+        error: errorMessage,
+        duration_ms: Date.now() - vizStartTime,
+      });
       alert(errorMessage);
     } finally {
       setIsVisualizing(false);
@@ -956,7 +985,7 @@ export function useVisualization({
     textureVariant, visualizedTextureVariant,
     floorTile, visualizedFloorTile,
     config.curatedLookId, config.projectId, historyHook,
-    canvasItemsProp,
+    canvasItemsProp, onTrackEvent,
   ]);
 
   // ============================================================================

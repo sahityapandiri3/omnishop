@@ -107,7 +107,7 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // Internal filter state (used when no external filters provided)
-  const [internalShowFilters, setInternalShowFilters] = useState(false);
+  const [internalShowFilters, setInternalShowFilters] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [internalSelectedStores, setInternalSelectedStores] = useState<string[]>([]);
   const [internalSelectedStyles, setInternalSelectedStyles] = useState<string[]>([]);
