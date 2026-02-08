@@ -126,7 +126,7 @@ function DesignPageContent() {
 
   // Global filter state (persists across mode switches)
   const [searchFilters, setSearchFilters] = useState<SearchFilters>(DEFAULT_FILTERS);
-  const [showSearchFilters, setShowSearchFilters] = useState(false);
+  const [showSearchFilters, setShowSearchFilters] = useState(true);
 
   // Furniture removal state
   const [isProcessingFurniture, setIsProcessingFurniture] = useState(false);
