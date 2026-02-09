@@ -3588,9 +3588,12 @@ The room structure, walls, and camera angle MUST be identical to the input image
 
             # Generate visualization with Gemini 3 Pro Image (Nano Banana Pro)
             # Use HIGH media resolution for better quality output
+            # Match output aspect ratio to input to prevent zoom/crop
+            _aspect = self._get_gemini_aspect_ratio(input_width, input_height)
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 temperature=0.3,
+                image_config=types.ImageConfig(aspect_ratio=_aspect) if _aspect else None,
             )
 
             # Retry configuration with timeout protection
@@ -4474,9 +4477,12 @@ The room structure, walls, and camera angle MUST be identical to the input image
 
             # Generate visualization with Gemini 3 Pro Image
             # Use HIGH media resolution for better quality output
+            # Match output aspect ratio to input to prevent zoom/crop
+            _aspect = self._get_gemini_aspect_ratio(input_width, input_height)
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 temperature=0.3,
+                image_config=types.ImageConfig(aspect_ratio=_aspect) if _aspect else None,
             )
 
             # Retry configuration with timeout protection
@@ -4766,9 +4772,12 @@ Generate a photorealistic image of the room with the {product_name} replacing th
             # Generate visualization with Gemini 3 Pro Image (Nano Banana Pro)
             # Use temperature 0.4 to match Google AI Studio's default
             # Use HIGH media resolution for better quality output
+            # Match output aspect ratio to input to prevent zoom/crop
+            _aspect = self._get_gemini_aspect_ratio(input_width, input_height)
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 temperature=0.4,
+                image_config=types.ImageConfig(aspect_ratio=_aspect) if _aspect else None,
             )
 
             # Retry configuration with timeout protection
@@ -5486,9 +5495,12 @@ Create a photorealistic interior design visualization that addresses the user's 
                     contents.append(dimension_instruction)
 
                     # Use response modalities for image and text generation
+                    # Match output aspect ratio to input to prevent zoom/crop
+                    _aspect = self._get_gemini_aspect_ratio(input_width, input_height)
                     generate_content_config = types.GenerateContentConfig(
                         response_modalities=["IMAGE", "TEXT"],
                         temperature=0.25,  # Lower temperature for better room preservation consistency
+                        image_config=types.ImageConfig(aspect_ratio=_aspect) if _aspect else None,
                     )
 
                     # Stream response with timeout protection
@@ -5733,9 +5745,15 @@ QUALITY REQUIREMENTS:
 
             contents = [types.Content(role="user", parts=parts)]
             # Use HIGH media resolution for better quality output
+            # Match output aspect ratio to input to prevent zoom/crop
+            _room_bytes = base64.b64decode(processed_image)
+            _room_tmp = Image.open(io.BytesIO(_room_bytes))
+            _rw, _rh = _room_tmp.size
+            _aspect = self._get_gemini_aspect_ratio(_rw, _rh)
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE", "TEXT"],
                 temperature=0.4,
+                image_config=types.ImageConfig(aspect_ratio=_aspect) if _aspect else None,
             )
 
             transformed_image = None
@@ -5880,9 +5898,15 @@ QUALITY REQUIREMENTS:
 
             contents = [types.Content(role="user", parts=parts)]
             # Use HIGH media resolution for better quality output
+            # Match output aspect ratio to input to prevent zoom/crop
+            _room_bytes2 = base64.b64decode(processed_image)
+            _room_tmp2 = Image.open(io.BytesIO(_room_bytes2))
+            _rw2, _rh2 = _room_tmp2.size
+            _aspect = self._get_gemini_aspect_ratio(_rw2, _rh2)
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE", "TEXT"],
                 temperature=0.3,  # Lower temperature for more consistent modifications
+                image_config=types.ImageConfig(aspect_ratio=_aspect) if _aspect else None,
             )
 
             transformed_image = None
@@ -6190,6 +6214,48 @@ QUALITY REQUIREMENTS:
 
         logger.error(f"Failed to download image after {max_retries} attempts: {image_url}, last error: {last_error}")
         return None
+
+    @staticmethod
+    def _get_gemini_aspect_ratio(width: int, height: int) -> Optional[str]:
+        """
+        Map input image dimensions to the closest Gemini-supported aspect ratio.
+
+        Without this, Gemini defaults to ~1:1 output regardless of input shape,
+        causing tall/wide rooms to get cropped and zoomed in.
+
+        Supported values: "1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"
+        Returns None for near-square images (lets Gemini use its default).
+        """
+        if width == 0 or height == 0:
+            return None
+
+        ratio = width / height
+        # Supported ratios mapped to their string labels
+        supported = [
+            (9 / 16, "9:16"),   # 0.5625  — tall portrait
+            (2 / 3, "2:3"),     # 0.6667  — portrait
+            (3 / 4, "3:4"),     # 0.75    — mild portrait
+            (1 / 1, "1:1"),     # 1.0     — square
+            (4 / 3, "4:3"),     # 1.3333  — mild landscape
+            (3 / 2, "3:2"),     # 1.5     — landscape
+            (16 / 9, "16:9"),   # 1.7778  — wide landscape
+            (21 / 9, "21:9"),   # 2.3333  — ultra-wide
+        ]
+        # Find closest match
+        best_label = None
+        best_diff = float("inf")
+        for supported_ratio, label in supported:
+            diff = abs(ratio - supported_ratio)
+            if diff < best_diff:
+                best_diff = diff
+                best_label = label
+
+        # If very close to square (within 5%), skip — let Gemini default
+        if best_label == "1:1" and best_diff < 0.05:
+            return None
+
+        logger.info(f"[AspectRatio] Input {width}x{height} (ratio={ratio:.3f}) → Gemini aspect_ratio={best_label}")
+        return best_label
 
     def _preprocess_image(self, image_data: str) -> str:
         """
@@ -7242,9 +7308,12 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
             contents.append(room_pil_image)
 
             # Generate visualization with Gemini 3 Pro Image
+            # Match output aspect ratio to input to prevent zoom/crop
+            _aspect = self._get_gemini_aspect_ratio(input_width, input_height)
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 temperature=0.3,
+                image_config=types.ImageConfig(aspect_ratio=_aspect) if _aspect else None,
             )
 
             # Retry configuration
@@ -7412,9 +7481,12 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
             contents.append(texture_pil_image)
 
             # Generate visualization with Gemini 3 Pro Image
+            # Match output aspect ratio to input to prevent zoom/crop
+            _aspect = self._get_gemini_aspect_ratio(input_width, input_height)
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 temperature=0.3,
+                image_config=types.ImageConfig(aspect_ratio=_aspect) if _aspect else None,
             )
 
             # Retry configuration
@@ -8037,9 +8109,12 @@ RULES:
             contents.append(swatch_pil_image)
 
             # Generate visualization with Gemini 3 Pro Image
+            # Match output aspect ratio to input to prevent zoom/crop
+            _aspect = self._get_gemini_aspect_ratio(input_width, input_height)
             generate_content_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 temperature=0.3,
+                image_config=types.ImageConfig(aspect_ratio=_aspect) if _aspect else None,
             )
 
             # Retry configuration
