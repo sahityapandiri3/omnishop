@@ -174,6 +174,13 @@ export function useVisualization({
   const [visualizedRoomImage, setVisualizedRoomImage] = useState<string | null>(null);  // Track which room image was visualized
   const [needsRevisualization, setNeedsRevisualization] = useState(false);
 
+  // Quality guard: tracks how many consecutive incremental adds have been done
+  // on the same base. After RERENDER_THRESHOLD (5) iterations, the backend
+  // re-renders all products from the clean room image to prevent generational
+  // quality loss (like photocopying a photocopy — each AI pass slightly degrades
+  // the image, and after 4-5 rounds artifacts become visible).
+  const [incrementalIterationCount, setIncrementalIterationCount] = useState(0);
+
   // Edit mode
   const [isEditingPositions, setIsEditingPositions] = useState(false);
   const [editInstructions, setEditInstructions] = useState('');
@@ -810,12 +817,14 @@ export function useVisualization({
         imageToUse = baseImage;
         productsToVisualize = products;
         forceReset = true;
+        setIncrementalIterationCount(0);  // Reset quality guard counter on room change
         console.log('[useVisualization] Room image changed: re-visualizing all products on NEW room image');
       } else if (changeInfo.type === 'additive') {
         imageToUse = visualizationImage!;
         productsToVisualize = changeInfo.newProducts!;
         isIncremental = true;
-        console.log(`[useVisualization] Incremental: adding ${productsToVisualize.length} products`);
+        setIncrementalIterationCount(prev => prev + 1);
+        console.log(`[useVisualization] Incremental: adding ${productsToVisualize.length} products (iteration ${incrementalIterationCount + 1})`);
       } else if (changeInfo.type === 'remove_and_add') {
         imageToUse = visualizationImage!;
         productsToVisualize = products;
@@ -842,6 +851,7 @@ export function useVisualization({
         imageToUse = cleanRoomImage || roomImage!;
         productsToVisualize = products;
         forceReset = true;
+        setIncrementalIterationCount(0);  // Reset quality guard counter on full reset
         console.log('[useVisualization] Reset: re-visualizing all products');
       } else if (changeInfo.type === 'no_change' && (wallColorChanged || textureChanged || floorTileChanged)) {
         // Wall color, texture, and/or floor tile changed but products didn't - apply changes to existing visualization
@@ -852,6 +862,7 @@ export function useVisualization({
         // Initial
         imageToUse = cleanRoomImage || roomImage!;
         productsToVisualize = products;
+        setIncrementalIterationCount(0);  // Reset quality guard counter on initial viz
         console.log('[useVisualization] Initial visualization');
       }
 
@@ -896,6 +907,14 @@ export function useVisualization({
             user_uploaded_new_image: changeInfo.type === 'initial',
             curated_look_id: config.curatedLookId,
             project_id: config.projectId,
+            // Quality guard: send iteration count so backend can trigger full re-render
+            // when too many consecutive incremental adds degrade quality
+            iteration_count: isIncremental ? incrementalIterationCount + 1 : 0,
+            // Current surface state — sent so the backend can re-apply surfaces
+            // during a quality guard full re-render (even if surfaces didn't change this iteration)
+            current_wall_color: wallColor ? { name: wallColor.name, code: wallColor.code, hex_value: wallColor.hex_value } : undefined,
+            current_texture_variant_id: textureVariant?.id || undefined,
+            current_tile_id: floorTile?.id || undefined,
             // Wall color to apply during visualization
             // For incremental adds, only send wall color if it actually changed
             wall_color: ((!isIncremental || wallColorChanged) && wallColor) ? {
@@ -926,6 +945,13 @@ export function useVisualization({
 
       // Capture the visualization mode/method from the API response
       vizMethod = data.mode || 'visualize';
+
+      // Reset iteration counter when backend performed a quality re-render
+      // (full re-render from clean room) or a standard full visualize.
+      // This means the next incremental add starts from a fresh, high-quality base.
+      if (data.mode === 'quality_rerender' || data.mode === 'visualize') {
+        setIncrementalIterationCount(0);
+      }
 
       // Update state with new visualization
       // Texture and floor tile are now handled in the same Gemini call (unified visualization)
@@ -989,7 +1015,7 @@ export function useVisualization({
     textureVariant, visualizedTextureVariant,
     floorTile, visualizedFloorTile,
     config.curatedLookId, config.projectId, historyHook,
-    canvasItemsProp, onTrackEvent,
+    canvasItemsProp, onTrackEvent, incrementalIterationCount,
   ]);
 
   // ============================================================================
@@ -1185,6 +1211,7 @@ export function useVisualization({
       setVisualizedFloorTile(floorTile || null);
       setVisualizedRoomImage(baseImage);  // CRITICAL: Track which room image was used
       setNeedsRevisualization(false);
+      setIncrementalIterationCount(0);  // Reset quality guard counter after full re-render
 
     } catch (error) {
       console.error('[useVisualization] Quality improvement error:', error);
@@ -1349,6 +1376,7 @@ export function useVisualization({
     setVisualizedFloorTile(null);
     setVisualizedRoomImage(null);  // Reset room image tracking
     setNeedsRevisualization(false);
+    setIncrementalIterationCount(0);  // Reset quality guard counter
     historyHook.reset();
     initializationRef.current = false;
   }, [historyHook]);

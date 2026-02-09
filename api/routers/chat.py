@@ -2778,6 +2778,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         curated_look_id = request.get("curated_look_id")  # For curated look editing
         project_id = request.get("project_id")  # For design page project editing
         visualized_products = request.get("visualized_products", [])  # Products already in base image (for incremental)
+        iteration_count = request.get("iteration_count", 0)  # Quality guard: consecutive incremental add count
         wall_color = request.get("wall_color")  # Wall color to apply: {name, code, hex_value}
         texture_variant_id = request.get("texture_variant_id")  # Wall texture variant to apply
         tile_id = request.get("tile_id")  # Floor tile to apply
@@ -3207,6 +3208,10 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         # The Gemini API has input size limitations and fails with 500 errors when
         # processing 5+ products simultaneously. Use incremental mode as workaround.
         MAX_PRODUCTS_BATCH = 4
+        # Quality guard: after this many consecutive incremental adds, re-render
+        # everything from the clean room image to prevent generational quality loss.
+        # Iterations 1-4 are fast incremental; the 5th triggers a full re-render.
+        RERENDER_ITERATION_THRESHOLD = 5
         # Reduce batch size when surface swatch images are also being sent
         # to keep total image count manageable for Gemini (room + products + swatches ≤ ~6 images)
         swatch_count = (1 if texture_image else 0) + (1 if tile_swatch_image else 0)
@@ -3216,6 +3221,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 f"[Visualize] Reduced MAX_PRODUCTS_BATCH to {MAX_PRODUCTS_BATCH} due to {swatch_count} surface swatch(es)"
             )
         forced_incremental = False
+        quality_guard_triggered = False
 
         # Check expanded product count (after quantity expansion) for batch limit
         # We need to check this BEFORE deciding on incremental mode
@@ -3609,6 +3615,114 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 new_dims_map = await load_product_dimensions(db, new_product_ids)
                 new_products_to_visualize = enrich_products_with_dimensions(new_products_to_visualize, new_dims_map)
 
+        # ================================================================
+        # Quality Guard: After RERENDER_ITERATION_THRESHOLD consecutive
+        # incremental adds, re-render ALL products from the clean room image.
+        # This prevents generational quality loss (each AI pass slightly
+        # degrades the image — like photocopying a photocopy).
+        # ================================================================
+        if is_incremental and iteration_count >= RERENDER_ITERATION_THRESHOLD:
+            logger.info(
+                f"[QualityGuard] Iteration {iteration_count} >= threshold {RERENDER_ITERATION_THRESHOLD}. "
+                f"Converting incremental add to full re-render from clean room image."
+            )
+
+            # Fetch clean room image from the Project record
+            clean_room_for_rerender = None
+            if project_id:
+                try:
+                    result = await db.execute(select(Project).where(Project.id == project_id))
+                    project = result.scalar_one_or_none()
+                    if project and project.clean_room_image:
+                        clean_room_for_rerender = project.clean_room_image
+                        logger.info(f"[QualityGuard] Loaded clean room image from project {project_id}")
+                    else:
+                        logger.warning(f"[QualityGuard] Project {project_id} has no clean_room_image, skipping re-render")
+                except Exception as e:
+                    logger.warning(f"[QualityGuard] Failed to load project {project_id}: {e}")
+
+            if clean_room_for_rerender:
+                # Swap to clean room and all products
+                base_image = clean_room_for_rerender
+                is_incremental = False
+                force_reset = True
+                forced_incremental = True
+                quality_guard_triggered = True
+
+                # Use ALL products (the full product list from frontend) instead of just new ones
+                all_products_from_request = request.get("all_products", products)
+                products = all_products_from_request
+                new_products_to_visualize = all_products_from_request
+
+                # Re-expand products with quantities for the batch flow
+                expanded_products = []
+                for p in products:
+                    qty = p.get("quantity", 1)
+                    for _ in range(qty):
+                        expanded_products.append({**p, "quantity": 1})
+
+                # Re-enrich with dimensions
+                all_product_ids_qg = [p.get("id") for p in expanded_products if p.get("id")]
+                if all_product_ids_qg:
+                    dims_map_qg = await load_product_dimensions(db, all_product_ids_qg)
+                    expanded_products = enrich_products_with_dimensions(expanded_products, dims_map_qg)
+
+                # Load current surface state so surfaces survive the re-render
+                # (the frontend always sends these, even if they didn't change this iteration)
+                current_wall_color = request.get("current_wall_color")
+                current_texture_variant_id = request.get("current_texture_variant_id")
+                current_tile_id = request.get("current_tile_id")
+
+                if current_wall_color and not wall_color:
+                    wall_color = current_wall_color
+                    logger.info(f"[QualityGuard] Restoring wall color: {wall_color.get('name')}")
+
+                if current_texture_variant_id and not texture_variant_id:
+                    texture_variant_id = current_texture_variant_id
+                    # Re-fetch texture swatch data from DB
+                    from database.models import WallTexture, WallTextureVariant
+
+                    variant_query = select(WallTextureVariant).where(WallTextureVariant.id == texture_variant_id)
+                    variant_result = await db.execute(variant_query)
+                    variant = variant_result.scalar_one_or_none()
+                    if variant:
+                        texture_image = variant.swatch_data or variant.image_data
+                        if texture_image and texture_image.startswith("data:"):
+                            texture_image = texture_image.split(",", 1)[1]
+                        parent_query = select(WallTexture).where(WallTexture.id == variant.texture_id)
+                        parent_result = await db.execute(parent_query)
+                        parent = parent_result.scalar_one_or_none()
+                        texture_name = parent.name if parent else "texture"
+                        texture_type = parent.texture_type if parent else "textured"
+                        logger.info(f"[QualityGuard] Restoring texture: {texture_name}")
+
+                if current_tile_id and not tile_id:
+                    tile_id = current_tile_id
+                    # Re-fetch tile swatch data from DB
+                    from database.models import FloorTile
+
+                    tile_query = select(FloorTile).where(FloorTile.id == tile_id)
+                    tile_result = await db.execute(tile_query)
+                    tile = tile_result.scalar_one_or_none()
+                    if tile:
+                        tile_swatch_image = tile.swatch_data or tile.image_data
+                        if tile_swatch_image and tile_swatch_image.startswith("data:"):
+                            tile_swatch_image = tile_swatch_image.split(",", 1)[1]
+                        tile_name = tile.name
+                        tile_size = tile.size
+                        tile_finish = tile.finish
+                        tile_look = tile.look
+                        tile_width_mm = tile.width_mm if hasattr(tile, "width_mm") else None
+                        tile_height_mm = tile.height_mm if hasattr(tile, "height_mm") else None
+                        logger.info(f"[QualityGuard] Restoring floor tile: {tile_name}")
+
+                logger.info(
+                    f"[QualityGuard] Re-render setup complete: {len(expanded_products)} expanded products, "
+                    f"wall_color={wall_color is not None}, texture={texture_image is not None}, tile={tile_swatch_image is not None}"
+                )
+            else:
+                logger.info("[QualityGuard] No clean room image available, proceeding with normal incremental add")
+
         # Handle incremental visualization (add ONLY NEW products to existing visualization)
         if is_incremental:
             logger.info(
@@ -3934,7 +4048,9 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                 logger.warning(f"[Precompute] Failed to trigger: {precompute_error}")
 
         # Determine mode for analytics tracking
-        if forced_incremental:
+        if quality_guard_triggered:
+            viz_mode = "quality_rerender"
+        elif forced_incremental:
             viz_mode = "add_visualization_sequential"
         elif is_incremental:
             viz_mode = "add_visualization"
