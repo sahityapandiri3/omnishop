@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:staging": "PLAYWRIGHT_BASE_URL=https://staging.omnishop.app playwright test"
   },
   "dependencies": {
     "@headlessui/react": "^1.7.17",
@@ -44,6 +47,7 @@
     "use-image": "^1.1.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@typescript-eslint/eslint-plugin": "^6.11.0",
     "@typescript-eslint/parser": "^6.11.0",
     "eslint": "^8.53.0",

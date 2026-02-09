@@ -136,6 +136,11 @@ db_exports/chat_messages.csv
 db_exports/chat_sessions.csv
 chat.md
 
+# Playwright
+frontend/test-results/
+frontend/playwright-report/
+frontend/tests/fixtures/.auth-*.json
+
 # Large data files for production migration
 api/scripts/products_embeddings_styles.csv.gz
 api/curated_looks_export.json
