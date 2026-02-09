@@ -178,9 +178,7 @@ async def start_chat_session(
 
         # Create new session
         session_id = str(uuid.uuid4())
-        session = ChatSession(
-            id=session_id, user_id=user_id, created_at=datetime.utcnow(), updated_at=datetime.utcnow()
-        )
+        session = ChatSession(id=session_id, user_id=user_id, created_at=datetime.utcnow(), updated_at=datetime.utcnow())
 
         db.add(session)
         await db.commit()
@@ -2826,6 +2824,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
         tile_name = None
         tile_size = None
         tile_finish = None
+        tile_look = None
         tile_width_mm = None
         tile_height_mm = None
         if tile_id:
@@ -2840,6 +2839,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     tile_swatch_image = tile_swatch_image.split(",", 1)[1]
                 tile_name = tile.name
                 tile_finish = tile.finish or "standard"
+                tile_look = tile.look
                 tile_width_mm = tile.size_width_mm
                 tile_height_mm = tile.size_height_mm
                 if tile_width_mm and tile_height_mm:
@@ -3148,6 +3148,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                         tile_name=tile_name,
                         tile_size=tile_size,
                         tile_finish=tile_finish,
+                        tile_look=tile_look,
                         tile_width_mm=tile_width_mm,
                         tile_height_mm=tile_height_mm,
                     )
@@ -3654,6 +3655,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     tile_name=tile_name,
                     tile_size=tile_size,
                     tile_finish=tile_finish,
+                    tile_look=tile_look,
                     tile_width_mm=tile_width_mm,
                     tile_height_mm=tile_height_mm,
                 )
@@ -3700,6 +3702,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     tile_name=tile_name,
                     tile_size=tile_size,
                     tile_finish=tile_finish,
+                    tile_look=tile_look,
                     tile_width_mm=tile_width_mm,
                     tile_height_mm=tile_height_mm,
                 )
@@ -3753,6 +3756,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     tile_name=tile_name,
                     tile_size=tile_size,
                     tile_finish=tile_finish,
+                    tile_look=tile_look,
                     tile_width_mm=tile_width_mm,
                     tile_height_mm=tile_height_mm,
                 )
@@ -3788,6 +3792,7 @@ async def visualize_room(session_id: str, request: dict, db: AsyncSession = Depe
                     tile_name=tile_name,
                     tile_size=tile_size,
                     tile_finish=tile_finish,
+                    tile_look=tile_look,
                     tile_width_mm=tile_width_mm,
                     tile_height_mm=tile_height_mm,
                 )

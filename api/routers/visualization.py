@@ -3590,8 +3590,9 @@ async def change_floor_tile(request: ChangeFloorTileRequest, db: AsyncSession = 
         tile_name = tile.name
         tile_size = tile.size
         tile_finish = tile.finish or "matte"
+        tile_look = tile.look
 
-        logger.info(f"[FloorTile API] Applying tile: {tile_name} ({tile_size}, {tile_finish})")
+        logger.info(f"[FloorTile API] Applying tile: {tile_name} ({tile_size}, {tile_finish}, look={tile_look})")
 
         # Strip data URL prefix if present
         room_image = request.room_image
@@ -3624,6 +3625,7 @@ async def change_floor_tile(request: ChangeFloorTileRequest, db: AsyncSession = 
             tile_name=tile_name,
             tile_size=size_desc,
             tile_finish=tile_finish,
+            tile_look=tile_look,
             tile_width_mm=tile.size_width_mm,
             tile_height_mm=tile.size_height_mm,
             user_id=request.user_id,
@@ -3758,6 +3760,7 @@ async def apply_surfaces(request: ApplySurfacesRequest, db: AsyncSession = Depen
         tile_name = None
         tile_size = None
         tile_finish = None
+        tile_look = None
         tile_width_mm = None
         tile_height_mm = None
         if has_tile:
@@ -3770,6 +3773,7 @@ async def apply_surfaces(request: ApplySurfacesRequest, db: AsyncSession = Depen
                     tile_swatch_image = tile_swatch_image.split(",", 1)[1]
                 tile_name = tile.name
                 tile_finish = tile.finish or "standard"
+                tile_look = tile.look
                 tile_width_mm = tile.size_width_mm
                 tile_height_mm = tile.size_height_mm
                 if tile_width_mm and tile_height_mm:
@@ -3791,6 +3795,7 @@ async def apply_surfaces(request: ApplySurfacesRequest, db: AsyncSession = Depen
             tile_name=tile_name,
             tile_size=tile_size,
             tile_finish=tile_finish,
+            tile_look=tile_look,
             tile_width_mm=tile_width_mm,
             tile_height_mm=tile_height_mm,
             user_id=request.user_id,

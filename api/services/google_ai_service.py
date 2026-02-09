@@ -118,6 +118,7 @@ class VisualizationRequest:
     tile_name: Optional[str] = None
     tile_size: Optional[str] = None
     tile_finish: Optional[str] = None
+    tile_look: Optional[str] = None  # "Cement", "Marble", "Stone", etc.
     tile_width_mm: Optional[int] = None
     tile_height_mm: Optional[int] = None
 
@@ -784,6 +785,7 @@ The room structure, furniture, and camera angle MUST be identical to the FIRST i
         tile_finish: str,
         tile_width_mm: int = None,
         tile_height_mm: int = None,
+        tile_look: str = None,
     ) -> str:
         """
         Prompt for applying floor tile to floor surfaces using Gemini.
@@ -802,6 +804,20 @@ The room structure, furniture, and camera angle MUST be identical to the FIRST i
         else:
             size_detail = f"- Size: {tile_size}"
 
+        # Cement/concrete looks should be seamless (no grout lines)
+        is_seamless = tile_look and tile_look.lower() in ("cement", "concrete")
+
+        if is_seamless:
+            grout_instruction = (
+                "DO NOT add any grout lines, tile edges, or seams — the floor must look like one continuous seamless surface"
+            )
+            grout_guideline = "Seamless: NO grout lines, NO tile edges, NO seams — one continuous poured surface"
+            grout_checklist = "Floor is one continuous seamless surface with NO visible tile lines or grout"
+        else:
+            grout_instruction = "Add subtle grout lines between tiles (thin, natural-looking)"
+            grout_guideline = "Grout: Thin, natural grout lines forming a regular grid"
+            grout_checklist = "Grout lines are visible and natural"
+
         return f"""{VisualizationPrompts.get_system_intro()}
 
 ═══════════════════════════════════════════════════════════════
@@ -816,6 +832,7 @@ TILE INFO:
 - Name: {tile_name}
 {size_detail}
 - Finish: {tile_finish}
+- Look: {tile_look or 'standard'}
 
 {VisualizationPrompts.get_room_preservation_rules()}
 
@@ -835,7 +852,7 @@ TILE INFO:
 3. APPLY TILE TO FLOOR SURFACES ONLY:
    - Cover ALL visible floor areas with the tile pattern
    - DO NOT apply tile to walls, ceiling, or furniture surfaces
-   - Add subtle grout lines between tiles (thin, natural-looking)
+   - {grout_instruction}
    - Maintain realistic perspective (tile grid follows floor plane)
    - Apply appropriate reflectivity for {tile_finish} finish type
    - Furniture legs should rest naturally on the tiled surface
@@ -848,7 +865,7 @@ TILE INFO:
    - PHOTOREALISM: Output must look like a real photograph
 
  TILE APPLICATION GUIDELINES:
-- Grout: Thin, natural grout lines forming a regular grid
+- {grout_guideline}
 - Reflectivity: {tile_finish} finish — adjust specular highlights accordingly
 - Edges: Tiles at walls should appear cut naturally (partial tiles at edges)
 - Shadows: Furniture and room shadows fall naturally on the tiled surface
@@ -857,7 +874,7 @@ TILE INFO:
  ALL floor surfaces show the tile from the reference image
  Tile pattern matches the reference EXACTLY
  Tiles are at correct real-world scale ({tile_size})
- Grout lines are visible and natural
+ {grout_checklist}
  ALL furniture, walls, and ceiling are unchanged
  Image dimensions match input exactly
 
@@ -3686,6 +3703,7 @@ The room structure, walls, and camera angle MUST be identical to the input image
         tile_name: str = None,
         tile_size: str = None,
         tile_finish: str = None,
+        tile_look: str = None,
         tile_width_mm: int = None,
         tile_height_mm: int = None,
     ) -> str:
@@ -4086,6 +4104,14 @@ WALL TEXTURE RULES:
                 else:
                     tile_size_desc = tile_size or "standard size"
 
+                # Cement/concrete looks should be seamless (no grout lines)
+                _is_seamless = tile_look and tile_look.lower() in ("cement", "concrete")
+                _grout_rule = (
+                    "DO NOT add any grout lines, tile edges, or seams — the floor must look like one continuous seamless surface"
+                    if _is_seamless
+                    else "Add thin, natural grout lines between tiles"
+                )
+
                 surface_instructions += f"""
  FLOOR TILE — APPLY TILE PATTERN
 A floor tile swatch image is provided AFTER the product reference images{' and wall texture swatch' if texture_image else ''}.
@@ -4094,12 +4120,13 @@ TILE INFO:
 - Name: {tile_name}
 - Size: {tile_size_desc}
 - Finish: {tile_finish or 'standard'}
+- Look: {tile_look or 'standard'}
 
 FLOOR TILE RULES:
 1. Study the tile swatch pattern, colors, veining, and details
 2. Apply this EXACT pattern to ALL visible FLOOR surfaces ONLY
 3. Each tile is {tile_size_desc} — scale tiles correctly using door height (~2000mm) as reference
-4. Add thin, natural grout lines between tiles
+4. {_grout_rule}
 5. Tiles closer to camera appear larger (perspective foreshortening)
 6. Apply appropriate reflectivity for {tile_finish or 'standard'} finish
 7.  NEVER apply tile pattern to WALLS — tiles go ONLY on the FLOOR (horizontal ground surface)
@@ -6636,14 +6663,22 @@ WALL TEXTURE RULES:
                 tile_size_desc = f"{viz_request.tile_width_mm} mm × {viz_request.tile_height_mm} mm"
             else:
                 tile_size_desc = viz_request.tile_size or "standard size"
+            # Cement/concrete looks should be seamless (no grout lines)
+            _tile_look = getattr(viz_request, "tile_look", None) or ""
+            _is_seamless = _tile_look.lower() in ("cement", "concrete")
+            _grout_rule = (
+                "DO NOT add any grout lines, tile edges, or seams — the floor must look like one continuous seamless surface"
+                if _is_seamless
+                else "Add thin, natural grout lines between tiles"
+            )
             instructions += f"""
  FLOOR TILE — APPLY TILE PATTERN
 A floor tile swatch image is provided AFTER the product reference images.
-TILE INFO: {viz_request.tile_name} ({tile_size_desc}, {viz_request.tile_finish or 'standard'})
+TILE INFO: {viz_request.tile_name} ({tile_size_desc}, {viz_request.tile_finish or 'standard'}, {_tile_look or 'standard'} look)
 FLOOR TILE RULES:
 1. Apply this EXACT tile pattern to ALL visible FLOOR surfaces ONLY
 2. Each tile is {tile_size_desc} — scale correctly using door height (~2000mm) as reference
-3. Add thin, natural grout lines between tiles
+3. {_grout_rule}
 4. Apply perspective foreshortening and appropriate reflectivity
 5.  NEVER apply tile to WALLS — tiles go ONLY on the FLOOR (horizontal ground surface)
 6.  NEVER apply tile to the ceiling or any vertical surface
@@ -7923,6 +7958,7 @@ RULES:
         tile_name: str,
         tile_size: str,
         tile_finish: str,
+        tile_look: str = None,
         tile_width_mm: int = None,
         tile_height_mm: int = None,
         user_id: str = None,
@@ -7962,6 +7998,7 @@ RULES:
                 tile_finish=tile_finish,
                 tile_width_mm=tile_width_mm,
                 tile_height_mm=tile_height_mm,
+                tile_look=tile_look,
             )
 
             # Build contents list with PIL Images
@@ -8160,6 +8197,7 @@ RULES:
         tile_name: str = None,
         tile_size: str = None,
         tile_finish: str = None,
+        tile_look: str = None,
         tile_width_mm: int = None,
         tile_height_mm: int = None,
         user_id: str = None,
@@ -8205,6 +8243,7 @@ RULES:
                 tile_name=tile_name,
                 tile_size=tile_size,
                 tile_finish=tile_finish,
+                tile_look=tile_look,
                 tile_width_mm=tile_width_mm,
                 tile_height_mm=tile_height_mm,
             )
