@@ -804,15 +804,21 @@ The room structure, furniture, and camera angle MUST be identical to the FIRST i
         else:
             size_detail = f"- Size: {tile_size}"
 
-        # Cement/concrete looks should be seamless (no grout lines)
-        is_seamless = tile_look and tile_look.lower() in ("cement", "concrete")
-
-        if is_seamless:
+        # Grout line style depends on tile look
+        _look = (tile_look or "").lower()
+        if _look in ("cement", "concrete"):
             grout_instruction = (
                 "DO NOT add any grout lines, tile edges, or seams — the floor must look like one continuous seamless surface"
             )
             grout_guideline = "Seamless: NO grout lines, NO tile edges, NO seams — one continuous poured surface"
             grout_checklist = "Floor is one continuous seamless surface with NO visible tile lines or grout"
+        elif _look == "marble":
+            grout_instruction = (
+                "Grout lines must be EXTREMELY thin and subtle — nearly invisible, "
+                "like a razor-thin hairline. The marble slabs should appear almost seamless"
+            )
+            grout_guideline = "Grout: Razor-thin hairline joints barely visible — marble should look nearly seamless"
+            grout_checklist = "Grout lines are extremely thin and subtle, almost invisible"
         else:
             grout_instruction = "Add subtle grout lines between tiles (thin, natural-looking)"
             grout_guideline = "Grout: Thin, natural grout lines forming a regular grid"
@@ -4104,13 +4110,14 @@ WALL TEXTURE RULES:
                 else:
                     tile_size_desc = tile_size or "standard size"
 
-                # Cement/concrete looks should be seamless (no grout lines)
-                _is_seamless = tile_look and tile_look.lower() in ("cement", "concrete")
-                _grout_rule = (
-                    "DO NOT add any grout lines, tile edges, or seams — the floor must look like one continuous seamless surface"
-                    if _is_seamless
-                    else "Add thin, natural grout lines between tiles"
-                )
+                # Grout line style depends on tile look
+                _look = (tile_look or "").lower()
+                if _look in ("cement", "concrete"):
+                    _grout_rule = "DO NOT add any grout lines, tile edges, or seams — the floor must look like one continuous seamless surface"
+                elif _look == "marble":
+                    _grout_rule = "Grout lines must be EXTREMELY thin and subtle — nearly invisible, like a razor-thin hairline. The marble slabs should appear almost seamless"
+                else:
+                    _grout_rule = "Add thin, natural grout lines between tiles"
 
                 surface_instructions += f"""
  FLOOR TILE — APPLY TILE PATTERN
@@ -6663,14 +6670,15 @@ WALL TEXTURE RULES:
                 tile_size_desc = f"{viz_request.tile_width_mm} mm × {viz_request.tile_height_mm} mm"
             else:
                 tile_size_desc = viz_request.tile_size or "standard size"
-            # Cement/concrete looks should be seamless (no grout lines)
+            # Grout line style depends on tile look
             _tile_look = getattr(viz_request, "tile_look", None) or ""
-            _is_seamless = _tile_look.lower() in ("cement", "concrete")
-            _grout_rule = (
-                "DO NOT add any grout lines, tile edges, or seams — the floor must look like one continuous seamless surface"
-                if _is_seamless
-                else "Add thin, natural grout lines between tiles"
-            )
+            _look_lower = _tile_look.lower()
+            if _look_lower in ("cement", "concrete"):
+                _grout_rule = "DO NOT add any grout lines, tile edges, or seams — the floor must look like one continuous seamless surface"
+            elif _look_lower == "marble":
+                _grout_rule = "Grout lines must be EXTREMELY thin and subtle — nearly invisible, like a razor-thin hairline. The marble slabs should appear almost seamless"
+            else:
+                _grout_rule = "Add thin, natural grout lines between tiles"
             instructions += f"""
  FLOOR TILE — APPLY TILE PATTERN
 A floor tile swatch image is provided AFTER the product reference images.
