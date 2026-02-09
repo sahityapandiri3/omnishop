@@ -1624,15 +1624,52 @@ For recommended_furniture_zone: Place furniture against solid walls, NOT windows
             logger.error(f"Error in room analysis: {e}")
             return self._create_fallback_room_analysis()
 
-    async def analyze_room_with_furniture(self, image_data: str) -> RoomAnalysis:
+    async def analyze_room_with_furniture(self, image_data: str, max_retries: int = 3) -> RoomAnalysis:
         """
         Combined room analysis AND furniture detection in ONE API call.
 
         This optimization combines analyze_room_image() + detect_objects_in_room()
         into a single Gemini call, saving 2-5 seconds per visualization.
 
+        Includes retry logic with exponential backoff for transient Gemini API
+        failures (429 rate limit, 503 overloaded, network timeouts). On persistent
+        failure, returns a safe fallback analysis so the upload flow can continue.
+
         Returns RoomAnalysis with existing_furniture populated from detailed detection.
         """
+        for attempt in range(max_retries):
+            try:
+                return await self._analyze_room_with_furniture_attempt(image_data)
+            except Exception as e:
+                error_str = str(e)
+                is_retryable = any(
+                    keyword in error_str
+                    for keyword in ["429", "503", "overloaded", "UNAVAILABLE", "timeout", "Timeout", "RESOURCE_EXHAUSTED"]
+                )
+                if is_retryable and attempt < max_retries - 1:
+                    wait_time = 3 * (2**attempt)  # 3s, 6s, 12s
+                    logger.warning(
+                        f"analyze_room_with_furniture attempt {attempt + 1}/{max_retries} failed "
+                        f"(retryable: {error_str[:120]}), retrying in {wait_time}s..."
+                    )
+                    await asyncio.sleep(wait_time)
+                elif attempt < max_retries - 1:
+                    # Non-retryable but still have attempts left — try once more with shorter wait
+                    wait_time = 2
+                    logger.warning(
+                        f"analyze_room_with_furniture attempt {attempt + 1}/{max_retries} failed: "
+                        f"{error_str[:120]}, retrying in {wait_time}s..."
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"analyze_room_with_furniture failed after {max_retries} attempts: {error_str[:200]}")
+
+        # All retries exhausted — return fallback so the upload endpoint doesn't crash
+        logger.warning("Returning fallback room analysis after all retries failed")
+        return self._create_fallback_room_analysis()
+
+    async def _analyze_room_with_furniture_attempt(self, image_data: str) -> RoomAnalysis:
+        """Single attempt of analyze_room_with_furniture (extracted for retry wrapper)."""
         try:
             processed_image = self._preprocess_image(image_data)
 
@@ -1763,8 +1800,8 @@ List ALL furniture and decor objects visible in the room with detailed attribute
             )
 
         except Exception as e:
-            logger.error(f"Error in combined room analysis: {e}")
-            return self._create_fallback_room_analysis()
+            logger.error(f"Error in combined room analysis attempt: {e}")
+            raise
 
     def _get_fallback_combined_analysis(self) -> Dict[str, Any]:
         """Fallback data for combined room analysis when JSON parsing fails"""
@@ -2485,30 +2522,48 @@ OUTPUT: Same image with corrected perspective - walls perfectly vertical, lines 
         """
         try:
             # Step 1: Analyze room for viewing angle AND capture full room analysis (JSON call)
+            # Retries with exponential backoff for transient Gemini errors (429/503)
             viewing_angle = "straight_on"  # default
             room_analysis_dict = None
-            try:
-                room_analysis = await self.analyze_room_image(
-                    image_base64, workflow_id=workflow_id, user_id=user_id, session_id=session_id
-                )
-                viewing_angle = room_analysis.camera_view_analysis.get("viewing_angle", "straight_on")
-                # Capture full room analysis for return
-                room_analysis_dict = {
-                    "camera_view_analysis": room_analysis.camera_view_analysis,
-                    "room_type": room_analysis.room_type,
-                    "dimensions": room_analysis.dimensions,
-                    "lighting_conditions": room_analysis.lighting_conditions,
-                    "color_palette": room_analysis.color_palette,
-                    "existing_furniture": room_analysis.existing_furniture,
-                    "architectural_features": room_analysis.architectural_features,
-                    "style_assessment": room_analysis.style_assessment,
-                    "scale_references": room_analysis.scale_references,
-                }
-                logger.info(
-                    f"Room analysis complete: viewing_angle={viewing_angle}, style={room_analysis.style_assessment}, workflow_id={workflow_id}"
-                )
-            except Exception as e:
-                logger.warning(f"Room analysis failed, assuming straight_on: {e}")
+            analysis_max_retries = 3
+            for analysis_attempt in range(analysis_max_retries):
+                try:
+                    room_analysis = await self.analyze_room_image(
+                        image_base64, workflow_id=workflow_id, user_id=user_id, session_id=session_id
+                    )
+                    viewing_angle = room_analysis.camera_view_analysis.get("viewing_angle", "straight_on")
+                    room_analysis_dict = {
+                        "camera_view_analysis": room_analysis.camera_view_analysis,
+                        "room_type": room_analysis.room_type,
+                        "dimensions": room_analysis.dimensions,
+                        "lighting_conditions": room_analysis.lighting_conditions,
+                        "color_palette": room_analysis.color_palette,
+                        "existing_furniture": room_analysis.existing_furniture,
+                        "architectural_features": room_analysis.architectural_features,
+                        "style_assessment": room_analysis.style_assessment,
+                        "scale_references": room_analysis.scale_references,
+                    }
+                    logger.info(
+                        f"Room analysis complete: viewing_angle={viewing_angle}, style={room_analysis.style_assessment}, workflow_id={workflow_id}"
+                    )
+                    break  # Success — exit retry loop
+                except Exception as e:
+                    error_str = str(e)
+                    is_retryable = any(
+                        kw in error_str
+                        for kw in ["429", "503", "overloaded", "UNAVAILABLE", "timeout", "Timeout", "RESOURCE_EXHAUSTED"]
+                    )
+                    if is_retryable and analysis_attempt < analysis_max_retries - 1:
+                        wait_time = 3 * (2**analysis_attempt)
+                        logger.warning(
+                            f"Room analysis attempt {analysis_attempt + 1}/{analysis_max_retries} failed "
+                            f"(retryable: {error_str[:120]}), retrying in {wait_time}s..."
+                        )
+                        await asyncio.sleep(wait_time)
+                    else:
+                        logger.warning(
+                            f"Room analysis failed after {analysis_attempt + 1} attempts, assuming straight_on: {e}"
+                        )
 
             # Step 2: Remove furniture + transform perspective + straighten lines (single IMAGE call)
             # Convert base64 to PIL Image
