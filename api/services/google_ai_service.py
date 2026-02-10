@@ -4475,6 +4475,11 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 contents.append(tile_pil)
                 logger.info("Added floor tile swatch to contents array")
 
+            # Add orientation emphasis to help Gemini respect portrait/landscape
+            orientation_instruction = self._get_orientation_instruction(input_width, input_height)
+            if orientation_instruction:
+                contents.append(orientation_instruction)
+
             # Generate visualization with Gemini 3 Pro Image
             # Use HIGH media resolution for better quality output
             # Match output aspect ratio to input to prevent zoom/crop
@@ -4543,6 +4548,40 @@ The room structure, walls, and camera angle MUST be identical to the input image
                     if result:
                         generated_image, final_chunk = result
                     if generated_image:
+                        # Check aspect ratio before accepting — retry on mismatch
+                        try:
+                            _check_b64 = generated_image
+                            if _check_b64.startswith("data:"):
+                                _check_b64 = _check_b64.split(",", 1)[1]
+                            _check_bytes = base64.b64decode(_check_b64)
+                            _check_img = Image.open(io.BytesIO(_check_bytes))
+                            _out_w, _out_h = _check_img.size
+                            if _out_w > 0 and _out_h > 0 and input_height > 0:
+                                _in_aspect = input_width / input_height
+                                _out_aspect = _out_w / _out_h
+                                _ar_diff = abs(_in_aspect - _out_aspect) / _in_aspect
+                                if _ar_diff > 0.1:
+                                    logger.warning(
+                                        f"[AddMultiple] Aspect ratio mismatch ({_ar_diff:.1%}). "
+                                        f"Input: {input_width}x{input_height}, Output: {_out_w}x{_out_h}"
+                                    )
+                                    if attempt < max_retries - 1:
+                                        logger.info("[AddMultiple] Retrying due to aspect ratio mismatch...")
+                                        generated_image = None
+                                        continue
+                                    else:
+                                        logger.warning(
+                                            "[AddMultiple] Final attempt — center-cropping output to match input aspect ratio."
+                                        )
+                                        _check_img = self._crop_to_aspect_ratio(_check_img, input_width, input_height)
+                                        _buf = io.BytesIO()
+                                        _check_img.save(_buf, format="PNG", optimize=False)
+                                        _buf.seek(0)
+                                        _cropped_b64 = base64.b64encode(_buf.getvalue()).decode("utf-8")
+                                        generated_image = f"data:image/png;base64,{_cropped_b64}"
+                                        logger.info(f"[AddMultiple] Center-cropped output to {input_width}x{input_height}")
+                        except Exception as ar_check_err:
+                            logger.warning(f"[AddMultiple] Could not check aspect ratio in retry loop: {ar_check_err}")
                         break
                 except asyncio.TimeoutError:
                     logger.warning(f"ADD MULTIPLE visualization attempt {attempt + 1} timed out after {timeout_seconds}s")
@@ -4599,33 +4638,21 @@ The room structure, walls, and camera angle MUST be identical to the input image
                 )
 
                 if output_width != input_width or output_height != input_height:
-                    # Check aspect ratio difference to avoid distortion
-                    input_aspect = input_width / input_height
-                    output_aspect = output_width / output_height
-                    aspect_diff = abs(input_aspect - output_aspect) / input_aspect
+                    # Aspect ratio mismatches are already handled by retry loop above
+                    # (retried or center-cropped). This handles minor resolution differences.
+                    logger.warning(
+                        f"[AddMultiple] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
+                    )
+                    if output_img.mode != "RGB":
+                        output_img = output_img.convert("RGB")
+                    output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
 
-                    if aspect_diff > 0.1:  # More than 10% aspect ratio difference
-                        logger.warning(
-                            f"[AddMultiple] Aspect ratio mismatch too large ({aspect_diff:.1%})! "
-                            f"Input: {input_width}x{input_height} ({input_aspect:.2f}), "
-                            f"Output: {output_width}x{output_height} ({output_aspect:.2f}). "
-                            f"NOT resizing to avoid distortion - returning output as-is."
-                        )
-                        # Don't resize - return as-is to avoid distortion
-                    else:
-                        logger.warning(
-                            f"[AddMultiple] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
-                        )
-                        if output_img.mode != "RGB":
-                            output_img = output_img.convert("RGB")
-                        output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
-
-                        buffer = io.BytesIO()
-                        output_img.save(buffer, format="PNG", optimize=False)
-                        buffer.seek(0)
-                        resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-                        generated_image = f"data:image/png;base64,{resized_b64}"
-                        logger.info(f"[AddMultiple] Resized output to match input: {input_width}x{input_height}")
+                    buffer = io.BytesIO()
+                    output_img.save(buffer, format="PNG", optimize=False)
+                    buffer.seek(0)
+                    resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                    generated_image = f"data:image/png;base64,{resized_b64}"
+                    logger.info(f"[AddMultiple] Resized output to match input: {input_width}x{input_height}")
             except Exception as resize_err:
                 logger.warning(f"[AddMultiple] Could not verify/fix output resolution: {resize_err}")
 
@@ -5494,6 +5521,11 @@ Create a photorealistic interior design visualization that addresses the user's 
 """
                     contents.append(dimension_instruction)
 
+                    # Add orientation emphasis to help Gemini respect portrait/landscape
+                    orientation_instruction = self._get_orientation_instruction(input_width, input_height)
+                    if orientation_instruction:
+                        contents.append(orientation_instruction)
+
                     # Use response modalities for image and text generation
                     # Match output aspect ratio to input to prevent zoom/crop
                     _aspect = self._get_gemini_aspect_ratio(input_width, input_height)
@@ -5563,6 +5595,42 @@ Create a photorealistic interior design visualization that addresses the user's 
                     # Log with token tracking from final chunk
                     self._log_streaming_operation("visualize_curated_look", model, final_chunk=final_chunk)
 
+                    # Check aspect ratio BEFORE breaking — retry if mismatch
+                    if transformed_image:
+                        try:
+                            _check_b64 = transformed_image
+                            if _check_b64.startswith("data:"):
+                                _check_b64 = _check_b64.split(",", 1)[1]
+                            _check_bytes = base64.b64decode(_check_b64)
+                            _check_img = Image.open(io.BytesIO(_check_bytes))
+                            _out_w, _out_h = _check_img.size
+                            if _out_w > 0 and _out_h > 0 and input_height > 0:
+                                _in_aspect = input_width / input_height
+                                _out_aspect = _out_w / _out_h
+                                _ar_diff = abs(_in_aspect - _out_aspect) / _in_aspect
+                                if _ar_diff > 0.1:
+                                    logger.warning(
+                                        f"[VIZ] Aspect ratio mismatch ({_ar_diff:.1%}). "
+                                        f"Input: {input_width}x{input_height}, Output: {_out_w}x{_out_h}"
+                                    )
+                                    if attempt < max_retries - 1:
+                                        logger.info("[VIZ] Retrying due to aspect ratio mismatch...")
+                                        transformed_image = None
+                                        continue  # Go to next attempt in the retry loop
+                                    else:
+                                        logger.warning(
+                                            "[VIZ] Final attempt — center-cropping output to match input aspect ratio."
+                                        )
+                                        _check_img = self._crop_to_aspect_ratio(_check_img, input_width, input_height)
+                                        _buf = io.BytesIO()
+                                        _check_img.save(_buf, format="PNG", optimize=False)
+                                        _buf.seek(0)
+                                        _cropped_b64 = base64.b64encode(_buf.getvalue()).decode("utf-8")
+                                        transformed_image = f"data:image/png;base64,{_cropped_b64}"
+                                        logger.info(f"[VIZ] Center-cropped output to {input_width}x{input_height}")
+                        except Exception as ar_check_err:
+                            logger.warning(f"[VIZ] Could not check aspect ratio in retry loop: {ar_check_err}")
+
                     # If we got here without exception, break the retry loop
                     break
 
@@ -5630,35 +5698,23 @@ Create a photorealistic interior design visualization that addresses the user's 
 
                     # If output is significantly different from input, check aspect ratio before resizing
                     if output_width != input_width or output_height != input_height:
-                        # Check aspect ratio difference to avoid distortion
-                        input_aspect = input_width / input_height
-                        output_aspect = output_width / output_height
-                        aspect_diff = abs(input_aspect - output_aspect) / input_aspect
+                        # Aspect ratio mismatches are already handled by retry loop above
+                        # (retried or center-cropped). This handles minor resolution differences.
+                        logger.warning(
+                            f"[VIZ] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
+                        )
+                        if output_img.mode != "RGB":
+                            output_img = output_img.convert("RGB")
+                        # Use LANCZOS for high-quality upscaling/downscaling
+                        output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
 
-                        if aspect_diff > 0.1:  # More than 10% aspect ratio difference
-                            logger.warning(
-                                f"[VIZ] Aspect ratio mismatch too large ({aspect_diff:.1%})! "
-                                f"Input: {input_width}x{input_height} ({input_aspect:.2f}), "
-                                f"Output: {output_width}x{output_height} ({output_aspect:.2f}). "
-                                f"NOT resizing to avoid distortion - returning output as-is."
-                            )
-                            # Don't resize - return as-is to avoid distortion
-                        else:
-                            logger.warning(
-                                f"[VIZ] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
-                            )
-                            if output_img.mode != "RGB":
-                                output_img = output_img.convert("RGB")
-                            # Use LANCZOS for high-quality upscaling/downscaling
-                            output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
-
-                            # Re-encode to base64 with high quality
-                            buffer = io.BytesIO()
-                            output_img.save(buffer, format="PNG", optimize=False)
-                            buffer.seek(0)
-                            resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-                            transformed_image = f"data:image/png;base64,{resized_b64}"
-                            logger.info(f"[VIZ] Resized output to match input: {input_width}x{input_height}")
+                        # Re-encode to base64 with high quality
+                        buffer = io.BytesIO()
+                        output_img.save(buffer, format="PNG", optimize=False)
+                        buffer.seek(0)
+                        resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                        transformed_image = f"data:image/png;base64,{resized_b64}"
+                        logger.info(f"[VIZ] Resized output to match input: {input_width}x{input_height}")
                 except Exception as resize_err:
                     logger.warning(f"[VIZ] Could not verify/fix output resolution: {resize_err}")
 
@@ -6232,14 +6288,14 @@ QUALITY REQUIREMENTS:
         ratio = width / height
         # Supported ratios mapped to their string labels
         supported = [
-            (9 / 16, "9:16"),   # 0.5625  — tall portrait
-            (2 / 3, "2:3"),     # 0.6667  — portrait
-            (3 / 4, "3:4"),     # 0.75    — mild portrait
-            (1 / 1, "1:1"),     # 1.0     — square
-            (4 / 3, "4:3"),     # 1.3333  — mild landscape
-            (3 / 2, "3:2"),     # 1.5     — landscape
-            (16 / 9, "16:9"),   # 1.7778  — wide landscape
-            (21 / 9, "21:9"),   # 2.3333  — ultra-wide
+            (9 / 16, "9:16"),  # 0.5625  — tall portrait
+            (2 / 3, "2:3"),  # 0.6667  — portrait
+            (3 / 4, "3:4"),  # 0.75    — mild portrait
+            (1 / 1, "1:1"),  # 1.0     — square
+            (4 / 3, "4:3"),  # 1.3333  — mild landscape
+            (3 / 2, "3:2"),  # 1.5     — landscape
+            (16 / 9, "16:9"),  # 1.7778  — wide landscape
+            (21 / 9, "21:9"),  # 2.3333  — ultra-wide
         ]
         # Find closest match
         best_label = None
@@ -6256,6 +6312,44 @@ QUALITY REQUIREMENTS:
 
         logger.info(f"[AspectRatio] Input {width}x{height} (ratio={ratio:.3f}) → Gemini aspect_ratio={best_label}")
         return best_label
+
+    @staticmethod
+    def _get_orientation_instruction(width: int, height: int) -> str:
+        """Return a prompt instruction emphasizing the required output orientation."""
+        if width == 0 or height == 0:
+            return ""
+        ratio = width / height
+        if ratio < 0.8:  # Portrait
+            return (
+                "\n\nCRITICAL — OUTPUT ORIENTATION: This is a PORTRAIT (tall) image. "
+                f"The output MUST be PORTRAIT orientation ({width}x{height}). "
+                "DO NOT output a landscape or square image. The height must be greater than the width.\n"
+            )
+        elif ratio > 1.25:  # Landscape
+            return (
+                "\n\nCRITICAL — OUTPUT ORIENTATION: This is a LANDSCAPE (wide) image. "
+                f"The output MUST be LANDSCAPE orientation ({width}x{height}). "
+                "DO NOT output a portrait or square image. The width must be greater than the height.\n"
+            )
+        return ""  # Near-square — no special instruction needed
+
+    @staticmethod
+    def _crop_to_aspect_ratio(image: Image.Image, target_width: int, target_height: int) -> Image.Image:
+        """Center-crop image to match target aspect ratio, then resize to exact dims."""
+        target_aspect = target_width / target_height
+        img_w, img_h = image.size
+        img_aspect = img_w / img_h
+
+        if img_aspect > target_aspect:
+            new_w = int(img_h * target_aspect)
+            left = (img_w - new_w) // 2
+            image = image.crop((left, 0, left + new_w, img_h))
+        elif img_aspect < target_aspect:
+            new_h = int(img_w / target_aspect)
+            top = (img_h - new_h) // 2
+            image = image.crop((0, top, img_w, top + new_h))
+
+        return image.resize((target_width, target_height), Image.Resampling.LANCZOS)
 
     def _preprocess_image(self, image_data: str) -> str:
         """
@@ -7480,6 +7574,11 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
 
             contents.append(texture_pil_image)
 
+            # Add orientation emphasis to help Gemini respect portrait/landscape
+            orientation_instruction = self._get_orientation_instruction(input_width, input_height)
+            if orientation_instruction:
+                contents.append(orientation_instruction)
+
             # Generate visualization with Gemini 3 Pro Image
             # Match output aspect ratio to input to prevent zoom/crop
             _aspect = self._get_gemini_aspect_ratio(input_width, input_height)
@@ -7541,6 +7640,40 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
                     if result:
                         generated_image, final_chunk = result
                     if generated_image:
+                        # Check aspect ratio before accepting — retry on mismatch
+                        try:
+                            _check_b64 = generated_image
+                            if _check_b64.startswith("data:"):
+                                _check_b64 = _check_b64.split(",", 1)[1]
+                            _check_bytes = base64.b64decode(_check_b64)
+                            _check_img = Image.open(io.BytesIO(_check_bytes))
+                            _out_w, _out_h = _check_img.size
+                            if _out_w > 0 and _out_h > 0 and input_height > 0:
+                                _in_aspect = input_width / input_height
+                                _out_aspect = _out_w / _out_h
+                                _ar_diff = abs(_in_aspect - _out_aspect) / _in_aspect
+                                if _ar_diff > 0.1:
+                                    logger.warning(
+                                        f"[WallTexture] Aspect ratio mismatch ({_ar_diff:.1%}). "
+                                        f"Input: {input_width}x{input_height}, Output: {_out_w}x{_out_h}"
+                                    )
+                                    if attempt < max_retries - 1:
+                                        logger.info("[WallTexture] Retrying due to aspect ratio mismatch...")
+                                        generated_image = None
+                                        continue
+                                    else:
+                                        logger.warning(
+                                            "[WallTexture] Final attempt — center-cropping output to match input aspect ratio."
+                                        )
+                                        _check_img = self._crop_to_aspect_ratio(_check_img, input_width, input_height)
+                                        _buf = io.BytesIO()
+                                        _check_img.save(_buf, format="PNG", optimize=False)
+                                        _buf.seek(0)
+                                        _cropped_b64 = base64.b64encode(_buf.getvalue()).decode("utf-8")
+                                        generated_image = f"data:image/png;base64,{_cropped_b64}"
+                                        logger.info(f"[WallTexture] Center-cropped output to {input_width}x{input_height}")
+                        except Exception as ar_check_err:
+                            logger.warning(f"[WallTexture] Could not check aspect ratio in retry loop: {ar_check_err}")
                         break
                 except asyncio.TimeoutError:
                     logger.warning(f"[WallTexture] Attempt {attempt + 1} timed out after {timeout_seconds}s")
@@ -7604,33 +7737,21 @@ Placing furniture against them would BLOCK the windows/doors - this is WRONG.
                     return None
 
                 if output_width != input_width or output_height != input_height:
-                    # Check aspect ratio difference to avoid distortion
-                    input_aspect = input_width / input_height
-                    output_aspect = output_width / output_height
-                    aspect_diff = abs(input_aspect - output_aspect) / input_aspect
+                    # Aspect ratio mismatches are already handled by retry loop above
+                    # (retried or center-cropped). This handles minor resolution differences.
+                    logger.warning(
+                        f"[WallTexture] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
+                    )
+                    if output_img.mode != "RGB":
+                        output_img = output_img.convert("RGB")
+                    output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
 
-                    if aspect_diff > 0.1:  # More than 10% aspect ratio difference
-                        logger.warning(
-                            f"[WallTexture] Aspect ratio mismatch too large ({aspect_diff:.1%})! "
-                            f"Input: {input_width}x{input_height} ({input_aspect:.2f}), "
-                            f"Output: {output_width}x{output_height} ({output_aspect:.2f}). "
-                            f"NOT resizing to avoid distortion - returning output as-is."
-                        )
-                        # Don't resize - return as-is to avoid distortion
-                    else:
-                        logger.warning(
-                            f"[WallTexture] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
-                        )
-                        if output_img.mode != "RGB":
-                            output_img = output_img.convert("RGB")
-                        output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
-
-                        buffer = io.BytesIO()
-                        output_img.save(buffer, format="PNG", optimize=False)
-                        buffer.seek(0)
-                        resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-                        generated_image = f"data:image/png;base64,{resized_b64}"
-                        logger.info(f"[WallTexture] Resized output to match input: {input_width}x{input_height}")
+                    buffer = io.BytesIO()
+                    output_img.save(buffer, format="PNG", optimize=False)
+                    buffer.seek(0)
+                    resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                    generated_image = f"data:image/png;base64,{resized_b64}"
+                    logger.info(f"[WallTexture] Resized output to match input: {input_width}x{input_height}")
             except Exception as resize_err:
                 logger.warning(f"[WallTexture] Could not verify/fix output resolution: {resize_err}")
 
@@ -8108,6 +8229,11 @@ RULES:
 
             contents.append(swatch_pil_image)
 
+            # Add orientation emphasis to help Gemini respect portrait/landscape
+            orientation_instruction = self._get_orientation_instruction(input_width, input_height)
+            if orientation_instruction:
+                contents.append(orientation_instruction)
+
             # Generate visualization with Gemini 3 Pro Image
             # Match output aspect ratio to input to prevent zoom/crop
             _aspect = self._get_gemini_aspect_ratio(input_width, input_height)
@@ -8168,6 +8294,40 @@ RULES:
                     if result:
                         generated_image, final_chunk = result
                     if generated_image:
+                        # Check aspect ratio before accepting — retry on mismatch
+                        try:
+                            _check_b64 = generated_image
+                            if _check_b64.startswith("data:"):
+                                _check_b64 = _check_b64.split(",", 1)[1]
+                            _check_bytes = base64.b64decode(_check_b64)
+                            _check_img = Image.open(io.BytesIO(_check_bytes))
+                            _out_w, _out_h = _check_img.size
+                            if _out_w > 0 and _out_h > 0 and input_height > 0:
+                                _in_aspect = input_width / input_height
+                                _out_aspect = _out_w / _out_h
+                                _ar_diff = abs(_in_aspect - _out_aspect) / _in_aspect
+                                if _ar_diff > 0.1:
+                                    logger.warning(
+                                        f"[FloorTile] Aspect ratio mismatch ({_ar_diff:.1%}). "
+                                        f"Input: {input_width}x{input_height}, Output: {_out_w}x{_out_h}"
+                                    )
+                                    if attempt < max_retries - 1:
+                                        logger.info("[FloorTile] Retrying due to aspect ratio mismatch...")
+                                        generated_image = None
+                                        continue
+                                    else:
+                                        logger.warning(
+                                            "[FloorTile] Final attempt — center-cropping output to match input aspect ratio."
+                                        )
+                                        _check_img = self._crop_to_aspect_ratio(_check_img, input_width, input_height)
+                                        _buf = io.BytesIO()
+                                        _check_img.save(_buf, format="PNG", optimize=False)
+                                        _buf.seek(0)
+                                        _cropped_b64 = base64.b64encode(_buf.getvalue()).decode("utf-8")
+                                        generated_image = f"data:image/png;base64,{_cropped_b64}"
+                                        logger.info(f"[FloorTile] Center-cropped output to {input_width}x{input_height}")
+                        except Exception as ar_check_err:
+                            logger.warning(f"[FloorTile] Could not check aspect ratio in retry loop: {ar_check_err}")
                         break
                 except asyncio.TimeoutError:
                     logger.warning(f"[FloorTile] Attempt {attempt + 1} timed out after {timeout_seconds}s")
@@ -8232,33 +8392,21 @@ RULES:
                     return None
 
                 if output_width != input_width or output_height != input_height:
-                    # Check aspect ratio difference to avoid distortion
-                    input_aspect = input_width / input_height
-                    output_aspect = output_width / output_height
-                    aspect_diff = abs(input_aspect - output_aspect) / input_aspect
+                    # Aspect ratio mismatches are already handled by retry loop above
+                    # (retried or center-cropped). This handles minor resolution differences.
+                    logger.warning(
+                        f"[FloorTile] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
+                    )
+                    if output_img.mode != "RGB":
+                        output_img = output_img.convert("RGB")
+                    output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
 
-                    if aspect_diff > 0.1:  # More than 10% aspect ratio difference
-                        logger.warning(
-                            f"[FloorTile] Aspect ratio mismatch too large ({aspect_diff:.1%})! "
-                            f"Input: {input_width}x{input_height} ({input_aspect:.2f}), "
-                            f"Output: {output_width}x{output_height} ({output_aspect:.2f}). "
-                            f"NOT resizing to avoid distortion - returning output as-is."
-                        )
-                        # Don't resize - return as-is to avoid distortion
-                    else:
-                        logger.warning(
-                            f"[FloorTile] Output resolution mismatch! Resizing from {output_width}x{output_height} to {input_width}x{input_height}"
-                        )
-                        if output_img.mode != "RGB":
-                            output_img = output_img.convert("RGB")
-                        output_img = output_img.resize((input_width, input_height), Image.Resampling.LANCZOS)
-
-                        buffer = io.BytesIO()
-                        output_img.save(buffer, format="PNG", optimize=False)
-                        buffer.seek(0)
-                        resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-                        generated_image = f"data:image/png;base64,{resized_b64}"
-                        logger.info(f"[FloorTile] Resized output to match input: {input_width}x{input_height}")
+                    buffer = io.BytesIO()
+                    output_img.save(buffer, format="PNG", optimize=False)
+                    buffer.seek(0)
+                    resized_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                    generated_image = f"data:image/png;base64,{resized_b64}"
+                    logger.info(f"[FloorTile] Resized output to match input: {input_width}x{input_height}")
             except Exception as resize_err:
                 logger.warning(f"[FloorTile] Could not verify/fix output resolution: {resize_err}")
 
