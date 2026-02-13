@@ -501,7 +501,7 @@ export default function ProductDiscoveryPanel({
   // If in keyword search mode, display keyword search results from Panel 1
   if (isKeywordSearchMode) {
     const hasKeywordResults = keywordSearchResults && keywordSearchResults.products.length > 0;
-    const isLoading = keywordSearchResults?.isSearching && !hasKeywordResults;
+    const isLoading = keywordSearchResults?.isSearching;
 
     return (
       <div className="flex flex-col h-full">
