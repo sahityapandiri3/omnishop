@@ -179,6 +179,20 @@ export const KeywordSearchPanel = forwardRef<KeywordSearchPanelRef, KeywordSearc
       setIsSearching(true);
       setSearchError(null);
 
+      // Immediately notify parent that a search is in progress so Panel 2
+      // shows the loading spinner without waiting for the useEffect cycle
+      if (onSearchResults) {
+        onSearchResults({
+          products: resetPage ? [] : products,
+          totalProducts: resetPage ? 0 : totalProducts,
+          totalPrimary: resetPage ? 0 : totalPrimary,
+          totalRelated: resetPage ? 0 : totalRelated,
+          hasMore: resetPage ? false : hasMore,
+          isSearching: true,
+          isLoadingMore,
+        });
+      }
+
       if (resetPage) {
         setCurrentPage(1);
         setProducts([]);
