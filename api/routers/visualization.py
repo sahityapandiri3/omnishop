@@ -3486,6 +3486,7 @@ async def get_api_usage(hours: int = 24, db: AsyncSession = Depends(get_db)):
         # 1. ApiUsage.user_id -> User (direct)
         # 2. ApiUsage.session_id -> ChatSession.user_id -> User
         # 3. ApiUsage.session_id -> HomeStylingSession.user_id -> User
+        # 4. ApiUsage.session_id -> Project.id -> Project.user_id -> User
         from sqlalchemy.orm import aliased
 
         from database.models import ChatSession, HomeStylingSession, User
@@ -3493,6 +3494,7 @@ async def get_api_usage(hours: int = 24, db: AsyncSession = Depends(get_db)):
         DirectUser = aliased(User, name="direct_user")
         ChatSessionUser = aliased(User, name="chat_session_user")
         HSSessionUser = aliased(User, name="hs_session_user")
+        ProjectUser = aliased(User, name="project_user")
 
         detail_query = (
             select(
@@ -3505,13 +3507,17 @@ async def get_api_usage(hours: int = 24, db: AsyncSession = Depends(get_db)):
                 ApiUsage.total_tokens,
                 ApiUsage.estimated_cost,
                 ApiUsage.session_id,
-                func.coalesce(DirectUser.email, ChatSessionUser.email, HSSessionUser.email).label("user_email"),
+                func.coalesce(DirectUser.email, ChatSessionUser.email, HSSessionUser.email, ProjectUser.email).label(
+                    "user_email"
+                ),
             )
             .outerjoin(DirectUser, ApiUsage.user_id == DirectUser.id)
             .outerjoin(ChatSession, ApiUsage.session_id == ChatSession.id)
             .outerjoin(ChatSessionUser, ChatSession.user_id == ChatSessionUser.id)
             .outerjoin(HomeStylingSession, ApiUsage.session_id == HomeStylingSession.id)
             .outerjoin(HSSessionUser, HomeStylingSession.user_id == HSSessionUser.id)
+            .outerjoin(Project, ApiUsage.session_id == Project.id)
+            .outerjoin(ProjectUser, Project.user_id == ProjectUser.id)
             .where(ApiUsage.timestamp >= cutoff)
             .order_by(ApiUsage.timestamp.desc())
             .limit(200)

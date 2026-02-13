@@ -4876,7 +4876,11 @@ Generate a photorealistic image of the room with the {product_name} replacing th
 
             # Log visualization operation with token tracking from final chunk
             self._log_streaming_operation(
-                "generate_replace_visualization", "gemini-3-pro-image-preview", final_chunk=final_chunk
+                "generate_replace_visualization",
+                "gemini-3-pro-image-preview",
+                final_chunk=final_chunk,
+                user_id=user_id,
+                session_id=session_id,
             )
 
             return generated_image

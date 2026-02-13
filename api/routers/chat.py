@@ -1226,6 +1226,7 @@ async def send_message(session_id: str, request: ChatMessageRequest, db: AsyncSe
                         furniture_type=furniture_type,
                         product_image=product_image_url,
                         product_color=product_color,
+                        session_id=session_id,
                     )
                 else:
                     raise HTTPException(
