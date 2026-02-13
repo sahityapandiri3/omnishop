@@ -804,25 +804,12 @@ The room structure, furniture, and camera angle MUST be identical to the FIRST i
         else:
             size_detail = f"- Size: {tile_size}"
 
-        # Grout line style depends on tile look
-        _look = (tile_look or "").lower()
-        if _look in ("cement", "concrete"):
-            grout_instruction = (
-                "DO NOT add any grout lines, tile edges, or seams — the floor must look like one continuous seamless surface"
-            )
-            grout_guideline = "Seamless: NO grout lines, NO tile edges, NO seams — one continuous poured surface"
-            grout_checklist = "Floor is one continuous seamless surface with NO visible tile lines or grout"
-        elif _look == "marble":
-            grout_instruction = (
-                "Grout lines must be EXTREMELY thin and subtle — nearly invisible, "
-                "like a razor-thin hairline. The marble slabs should appear almost seamless"
-            )
-            grout_guideline = "Grout: Razor-thin hairline joints barely visible — marble should look nearly seamless"
-            grout_checklist = "Grout lines are extremely thin and subtle, almost invisible"
-        else:
-            grout_instruction = "Add subtle grout lines between tiles (thin, natural-looking)"
-            grout_guideline = "Grout: Thin, natural grout lines forming a regular grid"
-            grout_checklist = "Grout lines are visible and natural"
+        # Grout line style — no grout lines for any flooring type
+        grout_instruction = (
+            "DO NOT add any grout lines, tile edges, or seams — the floor must look like one continuous seamless surface"
+        )
+        grout_guideline = "Seamless: NO grout lines, NO tile edges, NO seams — one continuous seamless surface"
+        grout_checklist = "Floor is one continuous seamless surface with NO visible tile lines or grout"
 
         return f"""{VisualizationPrompts.get_system_intro()}
 
@@ -4113,14 +4100,8 @@ WALL TEXTURE RULES:
                 else:
                     tile_size_desc = tile_size or "standard size"
 
-                # Grout line style depends on tile look
-                _look = (tile_look or "").lower()
-                if _look in ("cement", "concrete"):
-                    _grout_rule = "DO NOT add any grout lines, tile edges, or seams — the floor must look like one continuous seamless surface"
-                elif _look == "marble":
-                    _grout_rule = "Grout lines must be EXTREMELY thin and subtle — nearly invisible, like a razor-thin hairline. The marble slabs should appear almost seamless"
-                else:
-                    _grout_rule = "Add thin, natural grout lines between tiles"
+                # Grout line style — no grout lines for any flooring type
+                _grout_rule = "DO NOT add any grout lines, tile edges, or seams — the floor must look like one continuous seamless surface"
 
                 surface_instructions += f"""
  FLOOR TILE — APPLY TILE PATTERN
@@ -4671,6 +4652,8 @@ The room structure, walls, and camera angle MUST be identical to the input image
         furniture_type: str,
         product_image: Optional[str] = None,
         product_color: Optional[str] = None,
+        user_id: str = None,
+        session_id: str = None,
     ) -> str:
         """
         Generate visualization with furniture REPLACED
@@ -4682,6 +4665,8 @@ The room structure, walls, and camera angle MUST be identical to the input image
             furniture_type: Type of furniture being replaced
             product_image: URL of product reference image
             product_color: Explicit color from product attributes (e.g., "beige", "cream", "walnut")
+            user_id: Optional user ID for tracking
+            session_id: Optional session ID for tracking
         """
         try:
             # Use editing preprocessor to preserve quality for visualization output
@@ -6830,19 +6815,14 @@ WALL TEXTURE RULES:
                 tile_size_desc = f"{viz_request.tile_width_mm} mm × {viz_request.tile_height_mm} mm"
             else:
                 tile_size_desc = viz_request.tile_size or "standard size"
-            # Grout line style depends on tile look
-            _tile_look = getattr(viz_request, "tile_look", None) or ""
-            _look_lower = _tile_look.lower()
-            if _look_lower in ("cement", "concrete"):
-                _grout_rule = "DO NOT add any grout lines, tile edges, or seams — the floor must look like one continuous seamless surface"
-            elif _look_lower == "marble":
-                _grout_rule = "Grout lines must be EXTREMELY thin and subtle — nearly invisible, like a razor-thin hairline. The marble slabs should appear almost seamless"
-            else:
-                _grout_rule = "Add thin, natural grout lines between tiles"
+            # Grout line style — no grout lines for any flooring type
+            _grout_rule = (
+                "DO NOT add any grout lines, tile edges, or seams — the floor must look like one continuous seamless surface"
+            )
             instructions += f"""
  FLOOR TILE — APPLY TILE PATTERN
 A floor tile swatch image is provided AFTER the product reference images.
-TILE INFO: {viz_request.tile_name} ({tile_size_desc}, {viz_request.tile_finish or 'standard'}, {_tile_look or 'standard'} look)
+TILE INFO: {viz_request.tile_name} ({tile_size_desc}, {viz_request.tile_finish or 'standard'}, {getattr(viz_request, 'tile_look', '') or 'standard'} look)
 FLOOR TILE RULES:
 1. Apply this EXACT tile pattern to ALL visible FLOOR surfaces ONLY
 2. Each tile is {tile_size_desc} — scale correctly using door height (~2000mm) as reference
