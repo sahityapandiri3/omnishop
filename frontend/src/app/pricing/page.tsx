@@ -24,7 +24,7 @@ const tiers: TierInfo[] = [
   {
     id: 'free',
     name: 'Free',
-    price: '₹0',
+    price: 'X',
     priceSubtext: 'one-time',
     description: 'Try our AI styling with a sample room',
     features: [
@@ -39,7 +39,7 @@ const tiers: TierInfo[] = [
   {
     id: 'basic',
     name: 'Basic',
-    price: '₹399',
+    price: 'X',
     priceSubtext: 'one-time',
     description: 'Style your own room with AI',
     features: [
@@ -54,7 +54,7 @@ const tiers: TierInfo[] = [
   {
     id: 'basic_plus',
     name: 'Basic+',
-    price: '₹699',
+    price: 'X',
     priceSubtext: 'one-time',
     description: 'More options for your space',
     features: [
@@ -71,7 +71,7 @@ const tiers: TierInfo[] = [
   {
     id: 'advanced',
     name: 'Advanced',
-    price: '₹11,999',
+    price: 'X',
     priceSubtext: '/month',
     description: 'Full design studio access',
     features: [
@@ -88,7 +88,7 @@ const tiers: TierInfo[] = [
   {
     id: 'curator',
     name: 'Curator',
-    price: '₹14,999',
+    price: 'X',
     priceSubtext: '/month',
     description: 'For design professionals',
     features: [
